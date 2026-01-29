@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto TA</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+    <div id="toolbar">
+        <!-- Ticker selector -->
+        <div id="ticker-selector">
+            <span id="current-ticker">HYPEUSDT</span>
+            <svg id="ticker-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 5L6 8L9 5" stroke="#787b86" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <div id="ticker-dropdown" class="hidden">
+                <div id="search-wrapper">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="6" cy="6" r="4.5" stroke="#787b86" stroke-width="1.2"/>
+                        <path d="M9.5 9.5L13 13" stroke="#787b86" stroke-width="1.2" stroke-linecap="round"/>
+                    </svg>
+                    <input type="text" id="ticker-search" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+                </div>
+                <div id="ticker-list"></div>
+            </div>
+        </div>
+
+        <!-- Timeframe bar -->
+        <div id="timeframe-bar">
+            <button class="tf-btn" data-tf="5m">5m</button>
+            <button class="tf-btn" data-tf="15m">15m</button>
+            <button class="tf-btn active" data-tf="1h">1h</button>
+            <button class="tf-btn" data-tf="4h">4h</button>
+            <button class="tf-btn" data-tf="1d">1D</button>
+        </div>
+
+        <div id="toolbar-spacer"></div>
+
+        <!-- Replay controls -->
+        <div id="replay-controls">
+            <label id="replay-label">
+                <input type="checkbox" id="replay-toggle">
+                <span>Replay</span>
+            </label>
+            <input type="datetime-local" id="replay-time" class="hidden" step="60">
+        </div>
+    </div>
+
+    <!-- Chart fills remaining viewport -->
+    <div id="chart-container"></div>
+
+    <!-- OHLC legend overlay -->
+    <div id="ohlc-legend"></div>
+
+    <!-- Loading overlay -->
+    <div id="loading" class="hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

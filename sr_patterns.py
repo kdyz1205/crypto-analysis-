@@ -12,7 +12,7 @@ Features:
 # USER CONFIGURATION - Edit these values
 # =============================================================================
 # Data file path (e.g., "riverusdt_1h.csv", "data/btc_4h.csv")
-DATA_PATH = "enso_1h.csv"
+DATA_PATH = "data/riverusdt_1h.csv"
 
 # Start date filter (set to None to use all data)
 START_DATE = "2026-01-18"
@@ -21,6 +21,20 @@ START_DATE = "2026-01-18"
 # Format: "YYYY-MM-DD HH:MM" (24-hour format)
 # Set to None for normal mode (use all data as current)
 REPLAY_TIME = None  # e.g., "2026-01-20 14:00"
+
+# Display timeframe (resample to this interval)
+# Use Polars duration strings: "5m", "15m", "1h", "4h", "1d"
+# Set to None to use the dataset's native timeframe
+DISPLAY_TIMEFRAME = "15m" # e.g., "4h"
+
+# Display toggles
+SHOW_EMA = True              # Show EMA line
+SHOW_TRENDLINES = True       # Show support/resistance trendlines
+SHOW_SR_ZONES = False        # Show horizontal S/R zone lines (yellow)
+SHOW_TRIANGLES = False       # Show triangle pattern overlays (blue)
+SHOW_CONSOLIDATION = True    # Show consolidation zone rectangles (orange)
+SHOW_LOCAL_EXTREMA = True    # Show local high/low markers
+SHOW_TREND_SEGMENTS = True   # Show trend segment bar at x-axis (green/yellow/red)
 # =============================================================================
 
 import polars as pl
@@ -68,51 +82,209 @@ def extract_token_and_interval(filepath: str) -> tuple[str, str]:
     return name.upper(), ""
 
 
+# Map human-friendly interval strings to timedelta for comparison
+_INTERVAL_TO_MINUTES = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "6h": 360, "8h": 480, "12h": 720,
+    "1d": 1440, "3d": 4320, "1w": 10080,
+}
+
+
+def _interval_str_to_minutes(interval: str) -> int:
+    """Convert interval string like '1h', '4h', '15m', '1d' to minutes."""
+    key = interval.lower().strip()
+    if key in _INTERVAL_TO_MINUTES:
+        return _INTERVAL_TO_MINUTES[key]
+    # Try parsing: number + unit
+    m = re.match(r"^(\d+)\s*(m|h|d|w)$", key)
+    if m:
+        val, unit = int(m.group(1)), m.group(2)
+        mult = {"m": 1, "h": 60, "d": 1440, "w": 10080}[unit]
+        return val * mult
+    raise ValueError(f"Cannot parse interval: {interval}")
+
+
+def _interval_to_polars_duration(interval: str) -> str:
+    """Convert interval string to Polars duration format (e.g. '4h' -> '4h')."""
+    key = interval.lower().strip()
+    m = re.match(r"^(\d+)\s*(m|h|d|w)$", key)
+    if m:
+        val, unit = m.group(1), m.group(2)
+        return f"{val}{unit}"
+    raise ValueError(f"Cannot parse interval for Polars: {interval}")
+
+
+def detect_data_interval(df: pl.DataFrame) -> tuple[int, str]:
+    """
+    Detect the native interval of the dataset from the first two timestamps.
+    Returns (minutes, human_label) e.g. (60, "1H").
+    """
+    times = df["open_time"]
+    if len(times) < 2:
+        return 0, "?"
+    delta = times[1] - times[0]
+    total_minutes = int(delta.total_seconds() / 60)
+
+    # Find best human label
+    for label, mins in sorted(_INTERVAL_TO_MINUTES.items(), key=lambda x: x[1]):
+        if mins == total_minutes:
+            return total_minutes, label.upper()
+    # Fallback
+    if total_minutes >= 1440:
+        return total_minutes, f"{total_minutes // 1440}D"
+    elif total_minutes >= 60:
+        return total_minutes, f"{total_minutes // 60}H"
+    else:
+        return total_minutes, f"{total_minutes}M"
+
+
+def resample_ohlcv(df: pl.DataFrame, target_interval: str, native_minutes: int) -> tuple[pl.DataFrame, bool, str]:
+    """
+    Resample OHLCV data to a larger timeframe using Polars group_by_dynamic.
+
+    Returns (resampled_df, was_resampled, message).
+    - If target is smaller than native, returns original with a warning.
+    - If target produces fewer than 3 bars, reduces to a workable interval.
+    """
+    target_minutes = _interval_str_to_minutes(target_interval)
+
+    if target_minutes < native_minutes:
+        _, native_label = detect_data_interval(df)
+        msg = (f"Warning: requested timeframe {target_interval} is smaller than "
+               f"dataset granularity ({native_label}). Showing native {native_label}.")
+        return df, False, msg
+
+    if target_minutes == native_minutes:
+        return df, False, ""
+
+    # Resample
+    duration = _interval_to_polars_duration(target_interval)
+    resampled = (
+        df.sort("open_time")
+        .group_by_dynamic("open_time", every=duration)
+        .agg([
+            pl.col("open").first(),
+            pl.col("high").max(),
+            pl.col("low").min(),
+            pl.col("close").last(),
+            pl.col("volume").sum() if "volume" in df.columns else pl.lit(0).alias("volume"),
+        ])
+    )
+
+    # Check if we have enough bars
+    if len(resampled) < 3:
+        # Try halving the interval until we get >= 3 bars
+        attempt_minutes = target_minutes // 2
+        while attempt_minutes > native_minutes and attempt_minutes > 0:
+            # Build a label for the attempt
+            if attempt_minutes >= 1440:
+                attempt_label = f"{attempt_minutes // 1440}d"
+            elif attempt_minutes >= 60:
+                attempt_label = f"{attempt_minutes // 60}h"
+            else:
+                attempt_label = f"{attempt_minutes}m"
+
+            attempt_duration = _interval_to_polars_duration(attempt_label)
+            resampled = (
+                df.sort("open_time")
+                .group_by_dynamic("open_time", every=attempt_duration)
+                .agg([
+                    pl.col("open").first(),
+                    pl.col("high").max(),
+                    pl.col("low").min(),
+                    pl.col("close").last(),
+                    pl.col("volume").sum() if "volume" in df.columns else pl.lit(0).alias("volume"),
+                ])
+            )
+            if len(resampled) >= 3:
+                msg = (f"Warning: {target_interval} produces <3 bars. "
+                       f"Reduced to {attempt_label.upper()} ({len(resampled)} bars).")
+                return resampled, True, msg
+            attempt_minutes //= 2
+
+        # If nothing works, return native
+        _, native_label = detect_data_interval(df)
+        msg = (f"Warning: {target_interval} produces <3 bars even after reduction. "
+               f"Showing native {native_label}.")
+        return df, False, msg
+
+    return resampled, True, f"Resampled to {target_interval.upper()} ({len(resampled)} bars)."
+
+
 @dataclass
 class SRParams:
-    """Parameters for pattern detection."""
-    window_left: int = 1
-    window_right: int = 5
-    window_short: int = 2  # Shortened window for trend-aware extrema detection
-    # Trend detection parameters
-    ema_span: int = 50  # EMA period for trend detection
-    trend_threshold: float = 0.5  # % slope threshold for trend classification
-    use_fast_trend: bool = True  # Use faster trend detection (price vs EMA + momentum)
-    atr_period: int = 14
-    atr_multiplier: float = 0.5  # For trendline eps (ATR-based)
-    sr_eps_pct: float = 0.01  # S/R zone eps as percentage of price (0.01 = 1%)
-    lookback: int = 100
-    min_touches: int = 2  # Minimum touches for horizontal zones
-    zone_merge_factor: float = 1.5  # Merge zones within this * eps
-    slope_tolerance: float = 0.0001  # Slopes below this are "flat"
-    max_lines: int = 10  # Limit lines to avoid clutter
-    # Consolidation zone parameters
-    consol_window: int = 10  # Rolling window for consolidation detection
-    consol_range_pct: float = 0.15  # Max channel width as percentage (0.05 = 5%)
-    consol_slope_threshold: float = 0.008  # Max normalized slope (0.002 = 0.2% per bar)
-    consol_min_duration: int = 10  # Minimum bars to form a consolidation zone
+    """
+    Parameters for pattern detection.
+
+    Epsilon (eps) values — there are two, both price-adaptive:
+      1. eps (trendline eps) = ATR(atr_period) * atr_multiplier
+         Computed at runtime from recent volatility. Used for:
+         - Trendline touch detection (is price "near" the line?)
+         - Trendline break detection (has price crossed through?)
+         - Collinear point merging (are 3+ extrema on the same line?)
+      2. sr_eps = current_price * sr_eps_pct
+         Percentage of price. Used for horizontal S/R zone clustering.
+    """
+    # --- Local extrema detection ---
+    window_left: int = 1       # Left lookback for local high/low detection (bars)
+    window_right: int = 5      # Right lookback for local high/low detection (bars)
+    window_short: int = 2      # Shortened window used on the trend side (asymmetric detection)
+
+    # --- Trend detection ---
+    ema_span: int = 50         # EMA period; lower = more reactive, higher = smoother
+    trend_threshold: float = 0.5  # Combined score threshold to classify up/down/sideways (%)
+    use_fast_trend: bool = True   # True = price-vs-EMA + momentum; False = EMA slope only
+
+    # --- Epsilon / tolerance (ATR-based, for trendlines) ---
+    atr_period: int = 14          # ATR lookback period
+    atr_multiplier: float = 0.5   # eps = ATR * this. Controls how close a touch must be to a line
+    line_break_factor: float = 0.3  # A line is "broken" if price exceeds eps * this beyond the line
+
+    # --- Epsilon / tolerance (%-based, for horizontal S/R zones) ---
+    sr_eps_pct: float = 0.01     # sr_eps = price * this (0.01 = 1%). Cluster width for S/R zones
+
+    # --- General line / zone parameters ---
+    lookback: Optional[int] = 300  # Only consider bars within this window (None = all data)
+    min_touches: int = 0           # Minimum touch count for a valid horizontal zone or trendline
+    show_horizontal_zones: bool = False  # Toggle yellow horizontal S/R zone lines on the plot
+    show_triangles: bool = False          # Toggle blue triangle pattern overlays on the plot
+    trend_filter_lines: bool = True       # Hide counter-trend lines (dashed green in downtrend, dashed red in uptrend)
+    zone_merge_factor: float = 1.5  # Merge horizontal zones within sr_eps * this of each other
+    slope_tolerance: float = 0.0001 # Slopes with abs < this are treated as flat (per bar)
+    max_lines: int = None           # Cap on trendlines per type (None = unlimited)
+
+    # --- Consolidation zone detection ---
+    consol_window: int = 10         # Rolling window size for consolidation check (bars)
+    consol_range_pct: float = 0.1   # Max (high-low)/low within window to count as tight (0.10 = 10%)
+    consol_slope_threshold: float = 0.003  # Max abs normalized slope to count as flat
+    consol_min_duration: int = 10   # Minimum consecutive bars to form a consolidation zone
+    consol_efficiency_max: float = 0.35  # Max efficiency ratio (net move / total move); low = choppy/consolidating
 
 
 # =============================================================================
 # PATTERN DETECTION PARAMETERS - Edit these values to tune detection
 # =============================================================================
 PARAMS = SRParams(
-    # Window parameters for local extrema detection
-    window_left=1,
-    window_right=5,
-    window_short=2,  # Shortened window for trend-aware detection
-    # Trend detection parameters
-    ema_span=50,  # EMA period (lower = more reactive, higher = smoother)
-    trend_threshold=0.5,  # % threshold for trend classification
-    use_fast_trend=True,  # True = price vs EMA + momentum, False = EMA slope only
-    # Other parameters
-    atr_period=14,
-    atr_multiplier=0.5,
-    lookback=100,
-    min_touches=2,
-    zone_merge_factor=1.5,
-    slope_tolerance=0.0001,
-    max_lines=15
+    # Local extrema detection
+    window_left=1,          # bars to the left for peak/trough detection
+    window_right=5,         # bars to the right for peak/trough detection
+    window_short=2,         # shortened window on the trend-favored side
+    # Trend detection
+    ema_span=50,            # EMA period for trend classification
+    trend_threshold=0.5,    # score threshold for up/down/sideways
+    use_fast_trend=True,    # True = price-vs-EMA + momentum; False = EMA slope
+    # Trendline epsilon (ATR-based): eps = ATR(atr_period) * atr_multiplier
+    atr_period=14,          # ATR lookback
+    atr_multiplier=0.5,     # touch distance = ATR * this
+    line_break_factor=0.3,  # line broken when price exceeds eps * this past it
+    # Horizontal S/R epsilon (%-based): sr_eps = price * sr_eps_pct
+    sr_eps_pct=0.01,        # 0.01 = 1% of price
+    # General
+    lookback=None,          # bar window (None = all data)
+    min_touches=2,          # min touches for zones and trendlines
+    zone_merge_factor=1.5,  # merge zones within sr_eps * this
+    slope_tolerance=0.0001, # slopes below this are "flat"
+    max_lines=15,           # max trendlines per type
 )
 
 
@@ -168,6 +340,167 @@ class ConsolidationZone:
 
 
 @dataclass
+class TrendSegment:
+    """A contiguous segment of bars sharing the same trend classification."""
+    start_idx: int
+    end_idx: int
+    trend: int       # 1=uptrend, -1=downtrend, 0=sideways
+    avg_score: float  # Average trend score over the segment
+
+
+def segment_trends(
+    df: pl.DataFrame,
+    local_high_indices: np.ndarray,
+    local_high_prices: np.ndarray,
+    local_low_indices: np.ndarray,
+    local_low_prices: np.ndarray,
+    min_segment_bars: int = 3,
+    min_swing_pct: float = 0.03,
+) -> list[TrendSegment]:
+    """
+    Classify bars into uptrend / downtrend / sideways using market structure
+    (local highs and lows) instead of EMA-based scoring.
+
+    Logic (Dow Theory / swing structure):
+    - Uptrend:  higher highs AND higher lows
+    - Downtrend: lower highs AND lower lows
+    - Mixed signals (e.g. higher high + lower low): keep current state
+
+    Transition placement:
+    - UP → DOWN: at the bar of the last swing high (the peak)
+    - DOWN → UP: at the bar of the last swing low (the trough)
+
+    Only "significant" swings (reversals >= min_swing_pct of price) are used,
+    to avoid noisy flip-flopping from small oscillations.
+
+    Short segments (< min_segment_bars) are absorbed into their neighbour.
+    """
+    n = len(df)
+    if n == 0:
+        return []
+
+    # Build chronological swing list
+    raw_swings = []
+    for i in range(len(local_high_indices)):
+        raw_swings.append(('H', int(local_high_indices[i]), float(local_high_prices[i])))
+    for i in range(len(local_low_indices)):
+        raw_swings.append(('L', int(local_low_indices[i]), float(local_low_prices[i])))
+    raw_swings.sort(key=lambda x: x[1])  # sort by bar index
+
+    if len(raw_swings) < 4:
+        return [TrendSegment(0, n - 1, 0, 0.0)]
+
+    # Filter to significant swings: alternating H-L-H-L where each reversal
+    # represents at least min_swing_pct move from the previous swing.
+    # If same type repeats, keep the more extreme one (highest H, lowest L).
+    swings: list[tuple[str, int, float]] = [raw_swings[0]]
+    for swing_type, bar_idx, price in raw_swings[1:]:
+        last_type, last_idx, last_price = swings[-1]
+        if swing_type == last_type:
+            # Same type: keep the more extreme
+            if (swing_type == 'H' and price > last_price) or \
+               (swing_type == 'L' and price < last_price):
+                swings[-1] = (swing_type, bar_idx, price)
+        else:
+            # Different type: only accept if move is significant
+            move_pct = abs(price - last_price) / last_price
+            if move_pct >= min_swing_pct:
+                swings.append((swing_type, bar_idx, price))
+            # else: ignore this minor swing, keep looking
+
+    if len(swings) < 2:
+        return [TrendSegment(0, n - 1, 0, 0.0)]
+
+    # Each significant swing marks a trend transition:
+    #   Swing HIGH → price just peaked → DOWN segment starts here
+    #   Swing LOW  → price just bottomed → UP segment starts here
+    transitions: list[tuple[int, int]] = []
+    for swing_type, bar_idx, price in swings:
+        new_state = -1 if swing_type == 'H' else 1
+        transitions.append((bar_idx, new_state))
+
+    # Infer the segment before the first swing from its type:
+    # if first swing is a HIGH, price was rising → UP before it
+    # if first swing is a LOW, price was falling → DOWN before it
+    first_state = 1 if swings[0][0] == 'H' else -1
+    if transitions[0][0] > 0:
+        transitions.insert(0, (0, first_state))
+
+    # --- build segments from transitions ---
+    if not transitions:
+        return [TrendSegment(0, n - 1, 0, 0.0)]
+
+    segments: list[TrendSegment] = []
+    # Before first transition: sideways
+    if transitions[0][0] > 0:
+        segments.append(TrendSegment(0, transitions[0][0] - 1, 0, 0.0))
+
+    for i, (t_bar, trend) in enumerate(transitions):
+        end_bar = transitions[i + 1][0] - 1 if i + 1 < len(transitions) else n - 1
+        if end_bar >= t_bar:
+            segments.append(TrendSegment(t_bar, end_bar, trend, 0.0))
+
+    if not segments:
+        return [TrendSegment(0, n - 1, 0, 0.0)]
+
+    # --- merge short segments into the longer neighbour ---
+    while True:
+        # Find the shortest segment below the threshold
+        shortest_idx = None
+        shortest_dur = float('inf')
+        for i, seg in enumerate(segments):
+            dur = seg.end_idx - seg.start_idx + 1
+            if dur < min_segment_bars and dur < shortest_dur:
+                shortest_dur = dur
+                shortest_idx = i
+
+        if shortest_idx is None:
+            break  # all segments meet the minimum
+
+        if len(segments) <= 1:
+            break  # nothing to merge into
+
+        seg = segments[shortest_idx]
+        if shortest_idx == 0:
+            # First segment: merge into next
+            nxt = segments[1]
+            segments[1] = TrendSegment(seg.start_idx, nxt.end_idx, nxt.trend, 0.0)
+            segments.pop(0)
+        elif shortest_idx == len(segments) - 1:
+            # Last segment: merge into previous
+            prev = segments[-2]
+            segments[-2] = TrendSegment(prev.start_idx, seg.end_idx, prev.trend, 0.0)
+            segments.pop(-1)
+        else:
+            # Middle: merge into the longer neighbour
+            prev = segments[shortest_idx - 1]
+            nxt = segments[shortest_idx + 1]
+            prev_dur = prev.end_idx - prev.start_idx + 1
+            nxt_dur = nxt.end_idx - nxt.start_idx + 1
+            if prev_dur >= nxt_dur:
+                segments[shortest_idx - 1] = TrendSegment(
+                    prev.start_idx, seg.end_idx, prev.trend, 0.0
+                )
+            else:
+                segments[shortest_idx + 1] = TrendSegment(
+                    seg.start_idx, nxt.end_idx, nxt.trend, 0.0
+                )
+            segments.pop(shortest_idx)
+
+    # Merge consecutive segments with the same trend
+    merged: list[TrendSegment] = [segments[0]]
+    for seg in segments[1:]:
+        if seg.trend == merged[-1].trend:
+            merged[-1] = TrendSegment(
+                merged[-1].start_idx, seg.end_idx, seg.trend, 0.0
+            )
+        else:
+            merged.append(seg)
+
+    return merged
+
+
+@dataclass
 class PatternResult:
     """Container for all detected patterns."""
     df: pl.DataFrame
@@ -182,6 +515,7 @@ class PatternResult:
     sr_eps: float = 0.0  # Percentage-based eps (for S/R zones)
     replay_idx: Optional[int] = None  # Index of replay cutoff (None = no replay)
     ema: Optional[np.ndarray] = None  # EMA array for plotting
+    trend_segments: list[TrendSegment] = field(default_factory=list)
 
 
 def calculate_atr(df: pl.DataFrame, period: int = 14) -> pl.DataFrame:
@@ -433,21 +767,23 @@ def is_valid_line(
     slope: float,
     current_idx: int,
     eps: float,
-    line_type: str
+    line_type: str,
+    x2: int = None,
+    break_factor: float = 0.3
 ) -> tuple[bool, int]:
     """
     Check if line is valid and count touches.
     Returns (is_valid, touch_count).
 
-    Validation: No candle should pass through the line.
-    - For support: all lows must be >= line (with tiny tolerance for float precision)
-    - For resistance: all highs must be <= line (with tiny tolerance)
+    Validation: Price should not break through the line by more than
+    eps * break_factor (ATR-based tolerance).
+    - For support: all lows must be >= line - break_tolerance
+    - For resistance: all highs must be <= line + break_tolerance
 
     Touch counting uses the larger eps for determining if price is "near" the line.
     """
     touches = 0
-    # Small tolerance for floating point precision only (not for allowing breaks)
-    break_tolerance = eps * 0.1
+    break_tolerance = eps * break_factor
 
     for offset in range(current_idx - x1 + 1):
         bar_idx = x1 + offset
@@ -485,7 +821,8 @@ def find_trendlines(
     line_type: str,
     max_lines: int,
     slope_tolerance: float,
-    required_slope_sign: Optional[int] = None  # 1 for positive, -1 for negative, None for any
+    required_slope_sign: Optional[int] = None,  # 1 for positive, -1 for negative, None for any
+    break_factor: float = 0.3
 ) -> list[TrendLine]:
     """
     Find valid trend lines with slope constraints.
@@ -496,12 +833,28 @@ def find_trendlines(
     if len(local_prices) < 2:
         return []
 
+    n_pts = len(local_prices)
+
+    # ================================================================
+    # Step 1: For each pair (i, j), find all collinear points.
+    #   A point k is collinear with line(i, j) if its distance to the
+    #   line is < eps. Group collinear points, then for each group emit
+    #   ONE line from the earliest point with a best-fit slope.
+    # ================================================================
+
+    # Build sorted arrays (by bar index) for consistent ordering
+    sort_order = np.argsort(local_indices)
+    pts_x = local_indices[sort_order].astype(float)
+    pts_y = local_prices[sort_order]
+
+    # Track which groups we've already emitted (as frozensets of indices)
+    seen_groups = set()
     lines = []
 
-    for i in range(len(local_prices)):
-        for j in range(i + 1, len(local_prices)):
-            x1, y1 = int(local_indices[i]), local_prices[i]
-            x2, y2 = int(local_indices[j]), local_prices[j]
+    for i in range(n_pts):
+        for j in range(i + 1, n_pts):
+            x1, y1 = pts_x[i], pts_y[i]
+            x2, y2 = pts_x[j], pts_y[j]
 
             if x1 >= x2:
                 continue
@@ -511,63 +864,122 @@ def find_trendlines(
             # Check slope constraint
             if required_slope_sign is not None:
                 if required_slope_sign == 1 and slope <= 0:
-                    continue  # Need positive slope but got zero or negative
+                    continue
                 if required_slope_sign == -1 and slope >= 0:
-                    continue  # Need negative slope but got zero or positive
+                    continue
 
+            # Find collinear points: within eps of the line AND at or after x1.
+            # Only extend the group forward (>= x1) to avoid pulling in
+            # earlier points that happen to be near the line by coincidence
+            # but belong to a different trajectory.
+            group = [i, j]
+            for k in range(n_pts):
+                if k == i or k == j:
+                    continue
+                xk, yk = pts_x[k], pts_y[k]
+                if xk < x1:
+                    continue  # don't extend backwards before the anchor
+                line_y_at_k = y1 + slope * (xk - x1)
+                if abs(yk - line_y_at_k) < eps:
+                    group.append(k)
+
+            # Deduplicate: skip if we've seen this exact set of points
+            group_key = frozenset(group)
+            if group_key in seen_groups:
+                continue
+            seen_groups.add(group_key)
+
+            # Build the line from the earliest point.
+            # If 3+ collinear points, use least-squares for the slope.
+            group_sorted = sorted(group)
+            gx = pts_x[group_sorted]
+            gy = pts_y[group_sorted]
+
+            anchor_x = gx[0]
+            anchor_y = gy[0]
+
+            if len(group_sorted) >= 3:
+                # Least-squares fit through all collinear points
+                slope, intercept = np.polyfit(gx, gy, 1)
+                # Recompute anchor_y so line passes through the fit at anchor_x
+                anchor_y = intercept + slope * anchor_x
+            # else: keep the original 2-point slope, anchored at point i
+
+            # Validate: no bar breaks through the line from anchor_x to current_idx
             valid, touches = is_valid_line(
-                all_prices, x1, y1, slope, current_idx, eps, line_type
+                all_prices, int(anchor_x), anchor_y, slope, current_idx, eps,
+                line_type, x2=int(gx[-1]), break_factor=break_factor
             )
 
-            if valid and touches >= 2:
-                # Extend line to current bar + some future
-                end_x = current_idx + 30
-                end_y = y1 + slope * (end_x - x1)
+            if not valid or touches < 2:
+                continue
 
-                # Line price at current bar
-                line_at_current = y1 + slope * (current_idx - x1)
+            # Extend line to current bar + some future
+            end_x = current_idx + 30
+            end_y = anchor_y + slope * (end_x - anchor_x)
 
-                # ============================================================
-                # STRENGTH CALCULATION
-                # ============================================================
-                # Strength determines which lines to keep when max_lines exceeded.
-                # Higher strength = more important line.
-                #
-                # Components (each normalized to ~0-1 range):
-                #   1. touches: Number of times price touched the line (2+)
-                #   2. span_score: How much of lookback the line covers (x2-x1)/current_idx
-                #   3. recency: How recent the 2nd anchor point is (x2/current_idx)
-                #   4. proximity: How close line is to current price (inverse of distance)
-                #
-                # Formula:
-                #   base_score = 0.2*span + 0.2*recency + 0.6*proximity
-                #   strength = touches * base_score
-                #
-                # Proximity dominates (60%) so lines near current price rank higher.
-                # ============================================================
-                span = x2 - x1
-                span_score = span / current_idx  # 0 to ~1
-                recency = x2 / current_idx       # 0 to 1
+            # Line price at current bar
+            line_at_current = anchor_y + slope * (current_idx - anchor_x)
 
-                # Proximity: inverse distance as percentage of price
-                # Closer to current price = higher score
-                distance_pct = abs(line_at_current - current_price) / current_price
-                proximity = 1.0 / (1.0 + distance_pct * 10)  # 0 to 1, decays with distance
+            # ============================================================
+            # STRENGTH CALCULATION
+            # ============================================================
+            # Components (each normalized to ~0-1 range):
+            #   1. touches: how many bars are near the line (>= 2)
+            #   2. span_score: (last_anchor - first_anchor) / current_idx
+            #   3. recency: last_anchor / current_idx
+            #   4. proximity: inverse distance of line to current price
+            #
+            # Formula: strength = touches * (0.2*span + 0.2*recency + 0.6*proximity)
+            # ============================================================
+            span = gx[-1] - gx[0]
+            span_score = span / current_idx
+            recency = gx[-1] / current_idx
 
-                strength = touches * (0.2 * span_score + 0.2 * recency + 0.6 * proximity)
+            distance_pct = abs(line_at_current - current_price) / current_price
+            proximity = 1.0 / (1.0 + distance_pct * 10)
 
-                lines.append(TrendLine(
-                    x1=x1, y1=y1,
-                    x2=end_x, y2=end_y,
-                    slope=slope,
-                    line_type=line_type,
-                    touches=touches,
-                    strength=strength
-                ))
+            strength = touches * (0.2 * span_score + 0.2 * recency + 0.6 * proximity)
 
-    # Sort by strength (descending) and limit to max_lines
+            lines.append(TrendLine(
+                x1=int(anchor_x), y1=anchor_y,
+                x2=end_x, y2=end_y,
+                slope=slope,
+                line_type=line_type,
+                touches=touches,
+                strength=strength
+            ))
+
+    # ================================================================
+    # Step 2: Merge collinear lines.
+    #   Two lines are collinear if their y-values at two reference
+    #   points (current_idx and midpoint) are both within eps.
+    #   Keep the one with higher strength.
+    # ================================================================
     lines.sort(key=lambda x: x.strength, reverse=True)
-    return lines[:max_lines]
+
+    merged = []
+    for line in lines:
+        is_collinear = False
+        for kept in merged:
+            # Compare y-values at current bar and at the midpoint of overlap
+            mid_x = (max(line.x1, kept.x1) + current_idx) // 2
+            y_line_at_cur = line.y1 + line.slope * (current_idx - line.x1)
+            y_kept_at_cur = kept.y1 + kept.slope * (current_idx - kept.x1)
+            y_line_at_mid = line.y1 + line.slope * (mid_x - line.x1)
+            y_kept_at_mid = kept.y1 + kept.slope * (mid_x - kept.x1)
+
+            if abs(y_line_at_cur - y_kept_at_cur) < eps and abs(y_line_at_mid - y_kept_at_mid) < eps:
+                is_collinear = True
+                # If the new line has more touches, update the kept line's touches/strength
+                if line.touches > kept.touches:
+                    kept.touches = line.touches
+                    kept.strength = max(kept.strength, line.strength)
+                break
+        if not is_collinear:
+            merged.append(line)
+
+    return merged[:max_lines]
 
 
 def find_triangles(
@@ -664,95 +1076,185 @@ def detect_consolidation_zones(
     window: int,
     range_pct_threshold: float,  # Max channel width as percentage (e.g., 0.05 = 5%)
     slope_threshold: float,
-    min_duration: int
+    min_duration: int,
+    efficiency_max: float = 0.35,
 ) -> list[ConsolidationZone]:
     """
-    Detect consolidation zones based on channel tightness and trend flatness.
+    Detect consolidation zones based on channel tightness, trend flatness,
+    and low directional efficiency.
 
-    Uses two conditions:
+    Per-window conditions (all must hold):
     1. Tightness: (rolling_max - rolling_min) / rolling_min <= range_pct_threshold
-    2. Flatness: |normalized slope| <= slope_threshold
+    2. Flatness:  |normalized slope| <= slope_threshold
+    3. Choppiness: efficiency ratio <= efficiency_max
+       ER = |net move| / total absolute bar-to-bar movement.
+       ER ≈ 0 → price goes nowhere (consolidation).
+       ER ≈ 1 → straight-line trend.
 
-    After detecting a consolidation zone, extends it backwards to find where
-    price first entered the zone's price range.
+    Rolling computations are vectorized (no Python loops per bar).
+
+    After detecting a consolidation zone, extends it backwards/forwards to find
+    where price first entered the zone's price range, then re-validates the
+    full zone's range, slope, and efficiency.
     """
     n = len(df)
     if n < window:
         return []
 
-    highs = df["high"].to_numpy()
-    lows = df["low"].to_numpy()
-    closes = df["close"].to_numpy()
+    highs = df["high"].to_numpy().astype(np.float64)
+    lows = df["low"].to_numpy().astype(np.float64)
+    closes = df["close"].to_numpy().astype(np.float64)
 
-    # Pre-compute rolling max/min for the channel
-    rolling_max = np.empty(n)
-    rolling_min = np.empty(n)
-    rolling_max[:] = np.nan
-    rolling_min[:] = np.nan
+    w = window
 
-    for i in range(window - 1, n):
-        rolling_max[i] = np.max(highs[i - window + 1:i + 1])
-        rolling_min[i] = np.min(lows[i - window + 1:i + 1])
+    # ------------------------------------------------------------------
+    # 1. Rolling max(high) and min(low) — vectorized via sliding_window_view
+    # ------------------------------------------------------------------
+    high_windows = np.lib.stride_tricks.sliding_window_view(highs, w)  # shape (n-w+1, w)
+    low_windows = np.lib.stride_tricks.sliding_window_view(lows, w)
 
-    # Calculate channel width as percentage
+    rolling_max = np.full(n, np.nan)
+    rolling_min = np.full(n, np.nan)
+    rolling_max[w - 1:] = high_windows.max(axis=1)
+    rolling_min[w - 1:] = low_windows.min(axis=1)
+
     channel_width_pct = (rolling_max - rolling_min) / rolling_min
 
-    # Calculate normalized slope for each window
-    # Slope is normalized: (y/y[0]) regression, so it's scale-independent
-    slopes = np.empty(n)
-    slopes[:] = np.nan
-    x = np.arange(window)
+    # ------------------------------------------------------------------
+    # 2. Rolling normalized slope — closed-form linear regression
+    #    slope_raw = (w * Sxy - Sx * Sy) / denom
+    #    slope_norm = slope_raw / y[0]   (first close in window)
+    #
+    #    Sx, Sx2, denom are constants (x = 0..w-1).
+    #    Sy and Sxy use cumulative sums for O(n) computation.
+    # ------------------------------------------------------------------
+    Sx = w * (w - 1) / 2.0
+    Sx2 = w * (w - 1) * (2 * w - 1) / 6.0
+    denom = w * Sx2 - Sx * Sx  # constant
 
-    for i in range(window - 1, n):
-        y = closes[i - window + 1:i + 1]
-        y_norm = y / y[0] if y[0] != 0 else y
-        slope, _ = np.polyfit(x, y_norm, 1)
-        slopes[i] = slope
+    # Cumulative sums (prepend 0 for easy range queries)
+    cum_c = np.concatenate(([0.0], np.cumsum(closes)))           # Σ closes
+    indices = np.arange(n, dtype=np.float64)
+    cum_ic = np.concatenate(([0.0], np.cumsum(indices * closes)))  # Σ (k * closes[k])
 
-    # Mark consolidation bars
+    # For window ending at bar i (i >= w-1):
+    #   window spans [i-w+1 .. i]
+    #   Sy  = cum_c[i+1] - cum_c[i-w+1]
+    #   Sic = cum_ic[i+1] - cum_ic[i-w+1]  (sum of k*closes[k])
+    #   Sxy = Sic - (i-w+1) * Sy            (rebase x to start at 0)
+    valid = np.arange(w - 1, n)
+    Sy = cum_c[valid + 1] - cum_c[valid - w + 1]
+    Sic = cum_ic[valid + 1] - cum_ic[valid - w + 1]
+    window_start = valid - w + 1
+    Sxy = Sic - window_start.astype(np.float64) * Sy
+
+    slope_raw = (w * Sxy - Sx * Sy) / denom
+
+    # Normalize by the first close in each window
+    first_close = closes[window_start]
+    safe_first = np.where(first_close != 0, first_close, 1.0)
+    slope_norm_arr = slope_raw / safe_first
+
+    slopes = np.full(n, np.nan)
+    slopes[w - 1:] = slope_norm_arr
+
+    # ------------------------------------------------------------------
+    # 3. Rolling efficiency ratio — vectorized
+    #    ER = |close[end] - close[start]| / Σ|close[i] - close[i-1]|
+    # ------------------------------------------------------------------
+    abs_diffs = np.abs(np.diff(closes))  # length n-1
+    cum_abs = np.concatenate(([0.0], np.cumsum(abs_diffs)))  # length n
+
+    # For window [i-w+1 .. i]: net = |closes[i] - closes[i-w+1]|
+    #   total_path = cum_abs[i] - cum_abs[i-w+1]
+    #   (cum_abs[k] = sum of abs_diffs[0..k-1] = path from bar 0 to bar k)
+    net_move = np.abs(closes[valid] - closes[window_start])
+    total_path = cum_abs[valid] - cum_abs[window_start]
+    safe_path = np.where(total_path > 0, total_path, 1.0)
+    er_arr = net_move / safe_path
+
+    efficiency = np.full(n, np.nan)
+    efficiency[w - 1:] = er_arr
+
+    # ------------------------------------------------------------------
+    # 4. Mark consolidation bars (all three conditions)
+    # ------------------------------------------------------------------
     is_consolidation = (
         (channel_width_pct <= range_pct_threshold) &
         (np.abs(slopes) <= slope_threshold) &
+        (efficiency <= efficiency_max) &
         ~np.isnan(channel_width_pct)
     )
 
-    # Merge consecutive consolidation bars into zones
+    # ------------------------------------------------------------------
+    # 5. Merge consecutive bars into zones, extend, and validate
+    # ------------------------------------------------------------------
     zones = []
     i = 0
     while i < n:
         if is_consolidation[i]:
             start_idx = i
-            # Extend while consolidation continues
             while i < n and is_consolidation[i]:
                 i += 1
             end_idx = i - 1
             duration = end_idx - start_idx + 1
 
             if duration >= min_duration:
-                # Calculate zone boundaries from actual price range
                 zone_high = np.max(highs[start_idx:end_idx + 1])
                 zone_low = np.min(lows[start_idx:end_idx + 1])
 
-                # Extend start backwards: find where price first entered this range
-                # Look for the bar where price crosses into the zone from outside
+                # Extend backwards
                 extended_start = start_idx
                 for j in range(start_idx - 1, -1, -1):
-                    # Check if this bar is still within the zone's price range
-                    bar_in_range = (lows[j] <= zone_high and highs[j] >= zone_low)
-                    if bar_in_range:
+                    if lows[j] <= zone_high and highs[j] >= zone_low:
                         extended_start = j
                     else:
-                        # Price was outside the range, stop extending
                         break
 
-                # Recalculate zone boundaries with extended range
+                # Extend forwards
+                extended_end = end_idx
+                for j in range(end_idx + 1, n):
+                    if lows[j] <= zone_high and highs[j] >= zone_low:
+                        extended_end = j
+                    else:
+                        break
+                end_idx = extended_end
+                i = end_idx + 1
+
+                # Recalculate boundaries with extended range
                 zone_high = np.max(highs[extended_start:end_idx + 1])
                 zone_low = np.min(lows[extended_start:end_idx + 1])
                 zone_center = (zone_high + zone_low) / 2
                 width_pct = (zone_high - zone_low) / zone_low if zone_low > 0 else 0
                 duration = end_idx - extended_start + 1
 
-                # Average slope over the zone
+                # --- Post-extension validation ---
+                # 1. Range check
+                if width_pct > range_pct_threshold:
+                    continue
+                # 2. Overall slope
+                zone_closes = closes[extended_start:end_idx + 1]
+                zn = len(zone_closes)
+                if zn >= 2:
+                    zx = np.arange(zn, dtype=np.float64)
+                    zy = zone_closes / zone_closes[0] if zone_closes[0] != 0 else zone_closes
+                    z_Sx = zn * (zn - 1) / 2.0
+                    z_Sx2 = zn * (zn - 1) * (2 * zn - 1) / 6.0
+                    z_denom = zn * z_Sx2 - z_Sx * z_Sx
+                    z_Sy = zy.sum()
+                    z_Sxy = (zx * zy).sum()
+                    overall_slope = (zn * z_Sxy - z_Sx * z_Sy) / z_denom if z_denom != 0 else 0
+                    if abs(overall_slope) > slope_threshold:
+                        continue
+                # 3. Overall efficiency ratio
+                if zn >= 2:
+                    zone_net = abs(zone_closes[-1] - zone_closes[0])
+                    zone_path = np.sum(np.abs(np.diff(zone_closes)))
+                    zone_er = zone_net / zone_path if zone_path > 0 else 0
+                    if zone_er > efficiency_max:
+                        continue
+
+                # Average slope (from per-window values)
                 valid_slopes = slopes[start_idx:end_idx + 1]
                 valid_slopes = valid_slopes[~np.isnan(valid_slopes)]
                 avg_slope = np.mean(valid_slopes) if len(valid_slopes) > 0 else 0
@@ -816,7 +1318,7 @@ def detect_patterns(
 
     # Get arrays
     current_idx = len(df_analysis) - 1
-    min_bar = max(0, current_idx - params.lookback)
+    min_bar = 0 if params.lookback is None else max(0, current_idx - params.lookback)
 
     highs = df_analysis["high"].to_numpy()
     lows = df_analysis["low"].to_numpy()
@@ -827,7 +1329,8 @@ def detect_patterns(
         window=params.consol_window,
         range_pct_threshold=params.consol_range_pct,
         slope_threshold=params.consol_slope_threshold,
-        min_duration=params.consol_min_duration
+        min_duration=params.consol_min_duration,
+        efficiency_max=params.consol_efficiency_max,
     )
 
     # Detect local extrema with trend-aware asymmetric windows
@@ -934,35 +1437,23 @@ def detect_patterns(
         params.min_touches, params.zone_merge_factor, "resistance"
     )
 
-    # Find trend lines with slope constraints based on current trend
-    # In uptrend: focus on support (positive slope), fewer resistance (negative slope only)
-    # In downtrend: focus on resistance (negative slope), fewer support (positive slope only)
-    # In sideways: show both directions
-    if current_trend == 1:  # Uptrend
-        support_slope_sign = 1      # Rising support (with trend)
-        resistance_slope_sign = -1  # Falling resistance only (counter-trend)
-        support_max = params.max_lines
-        resistance_max = max(3, params.max_lines // 3)  # Fewer counter-trend lines
-    elif current_trend == -1:  # Downtrend
-        support_slope_sign = 1      # Rising support only (counter-trend)
-        resistance_slope_sign = -1  # Falling resistance (with trend)
-        support_max = max(3, params.max_lines // 3)  # Fewer counter-trend lines
-        resistance_max = params.max_lines
-    else:  # Sideways
-        support_slope_sign = None
-        resistance_slope_sign = None
-        support_max = params.max_lines
-        resistance_max = params.max_lines
+    # Find trend lines - no slope restriction so both support and resistance appear
+    support_slope_sign = None
+    resistance_slope_sign = None
+    support_max = params.max_lines
+    resistance_max = params.max_lines
 
     support_lines = find_trendlines(
         local_low_prices, local_low_indices, lows, current_eps,
         current_idx, current_price, "support", support_max, params.slope_tolerance,
-        required_slope_sign=support_slope_sign
+        required_slope_sign=support_slope_sign,
+        break_factor=params.line_break_factor
     )
     resistance_lines = find_trendlines(
         local_high_prices, local_high_indices, highs, current_eps,
         current_idx, current_price, "resistance", resistance_max, params.slope_tolerance,
-        required_slope_sign=resistance_slope_sign
+        required_slope_sign=resistance_slope_sign,
+        break_factor=params.line_break_factor
     )
 
     # Find triangles
@@ -988,6 +1479,15 @@ def detect_patterns(
     # Calculate EMA for full dataframe for plotting
     ema_full = calculate_ema(df["close"].to_numpy(), params.ema_span)
 
+    # Segment trends using local highs/lows (market structure)
+    trend_segments = segment_trends(
+        df_analysis,
+        local_high_indices=local_high_indices,
+        local_high_prices=local_high_prices,
+        local_low_indices=local_low_indices,
+        local_low_prices=local_low_prices,
+    )
+
     return PatternResult(
         df=df_full,
         horizontal_zones=support_zones + resistance_zones,
@@ -1000,11 +1500,24 @@ def detect_patterns(
         eps=current_eps,
         sr_eps=sr_eps,
         replay_idx=replay_idx,
-        ema=ema_full
+        ema=ema_full,
+        trend_segments=trend_segments,
     )
 
 
-def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patterns"):
+def plot_patterns(
+    result: PatternResult,
+    title: str = "Support & Resistance Patterns",
+    params: SRParams = None,
+    show_ema: bool = True,
+    show_trendlines: bool = True,
+    show_sr_zones: bool = False,
+    show_triangles: bool = False,
+    show_consolidation: bool = True,
+    show_local_extrema: bool = True,
+    show_trend_segments: bool = True,
+    save_path: Optional[str] = None,
+):
     """
     Plot all detected patterns.
 
@@ -1062,7 +1575,7 @@ def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patt
         ax.add_patch(rect)
 
     # Plot EMA (semi-transparent blue line)
-    if result.ema is not None:
+    if show_ema and result.ema is not None:
         # In replay mode, only plot EMA up to replay_idx
         if replay_idx is not None:
             ema_times = times[:replay_idx + 1]
@@ -1081,35 +1594,37 @@ def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patt
         df_visible = df
 
     # Plot local highs/lows (only up to replay time)
-    local_highs = df_visible.filter(pl.col("is_local_high"))
-    local_lows = df_visible.filter(pl.col("is_local_low"))
+    if show_local_extrema:
+        local_highs = df_visible.filter(pl.col("is_local_high"))
+        local_lows = df_visible.filter(pl.col("is_local_low"))
 
-    if local_highs.height > 0:
-        ax.scatter(local_highs["open_time"].to_numpy(), local_highs["high"].to_numpy(),
-                   marker="v", color="red", s=30, alpha=0.7, zorder=5, label=f"Local Highs ({local_highs.height})")
-    if local_lows.height > 0:
-        ax.scatter(local_lows["open_time"].to_numpy(), local_lows["low"].to_numpy(),
-                   marker="^", color="lime", s=30, alpha=0.7, zorder=5, label=f"Local Lows ({local_lows.height})")
+        if local_highs.height > 0:
+            ax.scatter(local_highs["open_time"].to_numpy(), local_highs["high"].to_numpy(),
+                       marker="v", color="red", s=30, alpha=0.7, zorder=5, label=f"Local Highs ({local_highs.height})")
+        if local_lows.height > 0:
+            ax.scatter(local_lows["open_time"].to_numpy(), local_lows["low"].to_numpy(),
+                       marker="^", color="lime", s=30, alpha=0.7, zorder=5, label=f"Local Lows ({local_lows.height})")
 
-    # Plot horizontal zones as lines (light yellow) with price labels
-    for zone in result.horizontal_zones:
+    # Calculate right edge for S/R zone lines (extend past last candle for labels)
+    time_delta = times[-1] - times[-2] if len(times) >= 2 else np.timedelta64(1, 'h')
+    x_right_edge = times[-1] + time_delta * 5
+    if replay_idx is not None:
+        x_right_edge = times[min(replay_idx, len(times) - 1)] + time_delta * 5
+
+    # Plot horizontal zones as lines (light yellow) extending to right edge with price labels
+    for zone in result.horizontal_zones if show_sr_zones else []:
         alpha = min(0.9, 0.5 + zone.strength * 0.1)
         linewidth = min(2.5, 1 + zone.touches * 0.3)
 
         x_start = times[zone.start_idx]
-        # Extend to replay time or end of data
-        if replay_idx is not None:
-            x_end = times[min(replay_idx, len(times) - 1)]
-        else:
-            x_end = times[-1]
 
-        ax.hlines(y=zone.price_center, xmin=x_start, xmax=x_end,
+        ax.hlines(y=zone.price_center, xmin=x_start, xmax=x_right_edge,
                   color="#FFEB3B", linewidth=linewidth, alpha=alpha, linestyle="-")
 
-        # Add price label to the right of the line (yellow box with black text)
-        ax.text(x_end, zone.price_center, f" {zone.price_center:.4f} ",
+        ax.text(x_right_edge, zone.price_center, f" {zone.price_center:.4f}",
                 fontsize=7, color="black", va="center", ha="left",
-                bbox=dict(boxstyle="round,pad=0.15", facecolor="#FFEB3B", edgecolor="none", alpha=0.9))
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="#FFEB3B", edgecolor="none", alpha=0.9),
+                clip_on=True)
 
     # Helper to convert bar index to time
     def idx_to_time(idx):
@@ -1125,58 +1640,93 @@ def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patt
             return min(line.x2, replay_idx + 30)
         return line.x2
 
-    # Plot support lines (green, various styles based on slope)
-    for i, line in enumerate(result.support_lines[:10]):
-        style = "-" if line.slope >= 0 else "--"
-        alpha = min(0.7, 0.3 + line.strength * 0.1)
-        end_idx = get_line_end_idx(line)
-        end_y = line.y1 + line.slope * (end_idx - line.x1)
-        ax.plot([idx_to_time(line.x1), idx_to_time(end_idx)], [line.y1, end_y],
-                color="green", linewidth=1, linestyle=style, alpha=alpha)
+    # Compute visible price range for y-range culling
+    current_bar = replay_idx if replay_idx is not None else len(times) - 1
+    if replay_idx is not None:
+        visible_lows_arr = lows[:replay_idx + 1]
+        visible_highs_arr = highs[:replay_idx + 1]
+    else:
+        visible_lows_arr = lows
+        visible_highs_arr = highs
+    price_min = np.min(visible_lows_arr)
+    price_max = np.max(visible_highs_arr)
 
-    # Plot resistance lines (red, various styles based on slope)
-    for i, line in enumerate(result.resistance_lines[:10]):
-        style = "-" if line.slope <= 0 else "--"
-        alpha = min(0.7, 0.3 + line.strength * 0.1)
-        end_idx = get_line_end_idx(line)
-        end_y = line.y1 + line.slope * (end_idx - line.x1)
-        ax.plot([idx_to_time(line.x1), idx_to_time(end_idx)], [line.y1, end_y],
-                color="red", linewidth=1, linestyle=style, alpha=alpha)
+    # ================================================================
+    # TRENDLINE DISPLAY RULES (when trend_filter_lines=True):
+    #
+    # "Solid" = slope agrees with line type (rising support, falling resistance)
+    # "Dashed" = slope disagrees (falling support, rising resistance)
+    #
+    # Downtrend: show ALL green (support) lines, only SOLID red (resistance)
+    # Uptrend:   show ALL red (resistance) lines, only SOLID green (support)
+    # Sideways:  show ALL lines
+    # ================================================================
+    if show_trendlines:
+        trend = result.current_trend
+        filter_lines = params.trend_filter_lines if params else False
 
-    # Highlight triangles
-    for tri in result.triangles:
-        # Draw triangle boundary with thicker lines
-        sup, res = tri.support_line, tri.resistance_line
+        def line_in_y_range(line):
+            """Check if line's y-value at current bar is within visible price range."""
+            y_at_current = line.y1 + line.slope * (current_bar - line.x1)
+            return price_min <= y_at_current <= price_max
 
-        # Limit apex display in replay mode
-        apex_x_display = tri.apex_x
-        if replay_idx is not None:
-            apex_x_display = min(apex_x_display, replay_idx + 50)
-        apex_y_display = sup.y1 + sup.slope * (apex_x_display - sup.x1)
+        # Plot support lines (green, solid=rising, dashed=falling)
+        for i, line in enumerate(result.support_lines):
+            if not line_in_y_range(line):
+                continue
+            style = "-" if line.slope >= 0 else "--"
+            if filter_lines and trend == 1 and line.slope < 0:
+                continue
+            alpha = min(0.7, 0.3 + line.strength * 0.1)
+            end_idx = get_line_end_idx(line)
+            end_y = line.y1 + line.slope * (end_idx - line.x1)
+            ax.plot([idx_to_time(line.x1), idx_to_time(end_idx)], [line.y1, end_y],
+                    color="green", linewidth=1, linestyle=style, alpha=alpha)
 
-        ax.plot([idx_to_time(sup.x1), idx_to_time(apex_x_display)],
-                [sup.y1, apex_y_display],
-                color="blue", linewidth=2, alpha=0.8)
+        # Plot resistance lines (red, solid=falling, dashed=rising)
+        for i, line in enumerate(result.resistance_lines):
+            if not line_in_y_range(line):
+                continue
+            style = "-" if line.slope <= 0 else "--"
+            if filter_lines and trend == -1 and line.slope > 0:
+                continue
+            alpha = min(0.7, 0.3 + line.strength * 0.1)
+            end_idx = get_line_end_idx(line)
+            end_y = line.y1 + line.slope * (end_idx - line.x1)
+            ax.plot([idx_to_time(line.x1), idx_to_time(end_idx)], [line.y1, end_y],
+                    color="red", linewidth=1, linestyle=style, alpha=alpha)
 
-        apex_y_res = res.y1 + res.slope * (apex_x_display - res.x1)
-        ax.plot([idx_to_time(res.x1), idx_to_time(apex_x_display)],
-                [res.y1, apex_y_res],
-                color="blue", linewidth=2, alpha=0.8)
+    # Highlight triangles (blue lines + star apex)
+    if show_triangles:
+        for tri in result.triangles:
+            sup, res = tri.support_line, tri.resistance_line
 
-        # Add apex marker
-        ax.scatter([idx_to_time(tri.apex_x)], [tri.apex_price],
-                   marker="*", color="yellow", s=200, zorder=10, edgecolor="black")
+            apex_x_display = tri.apex_x
+            if replay_idx is not None:
+                apex_x_display = min(apex_x_display, replay_idx + 50)
+            apex_y_display = sup.y1 + sup.slope * (apex_x_display - sup.x1)
 
-        # Add label
-        bias_color = "green" if tri.breakout_bias == "bullish" else ("red" if tri.breakout_bias == "bearish" else "gray")
-        ax.annotate(f"{tri.pattern_type}\n{tri.completion_pct:.0f}% complete\n{tri.breakout_bias}",
-                    xy=(idx_to_time(tri.apex_x), tri.apex_price),
-                    xytext=(10, 10), textcoords="offset points",
-                    fontsize=9, color=bias_color,
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
+            ax.plot([idx_to_time(sup.x1), idx_to_time(apex_x_display)],
+                    [sup.y1, apex_y_display],
+                    color="blue", linewidth=2, alpha=0.8)
+
+            apex_y_res = res.y1 + res.slope * (apex_x_display - res.x1)
+            ax.plot([idx_to_time(res.x1), idx_to_time(apex_x_display)],
+                    [res.y1, apex_y_res],
+                    color="blue", linewidth=2, alpha=0.8)
+
+            ax.scatter([idx_to_time(tri.apex_x)], [tri.apex_price],
+                       marker="*", color="yellow", s=200, zorder=10, edgecolor="black")
+
+            bias_color = "green" if tri.breakout_bias == "bullish" else ("red" if tri.breakout_bias == "bearish" else "gray")
+            ax.annotate(f"{tri.pattern_type}\n{tri.completion_pct:.0f}% complete\n{tri.breakout_bias}",
+                        xy=(idx_to_time(tri.apex_x), tri.apex_price),
+                        xytext=(10, 10), textcoords="offset points",
+                        fontsize=9, color=bias_color,
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
 
     # Plot consolidation zones (orange rectangles) - only up to replay_idx
-    for cz in result.consolidation_zones:
+    for cz in result.consolidation_zones if show_consolidation else []:
         # Skip zones that are entirely after replay time
         if replay_idx is not None and cz.start_idx > replay_idx:
             continue
@@ -1238,6 +1788,40 @@ def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patt
             fontsize=10, verticalalignment="top",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8))
 
+    # Set y-axis limits based on actual price data (reuse price_min/price_max from above)
+    price_range = price_max - price_min
+    padding = price_range * 0.05  # 5% padding above and below
+    # Reserve extra space at the bottom for the trend segment bar
+    bottom_pad = price_range * 0.08 if show_trend_segments else padding
+    ax.set_ylim(price_min - bottom_pad, price_max + padding)
+
+    # Plot trend segment colored bar at the bottom of the chart
+    if show_trend_segments and result.trend_segments:
+        trend_colors = {1: "#26a69a", 0: "#FFC107", -1: "#ef5350"}  # green, amber, red
+        bar_y = price_min - bottom_pad  # Bottom of visible area
+        bar_height = bottom_pad * 0.35  # Thick bar
+
+        for seg in result.trend_segments:
+            # Clamp to replay_idx if in replay mode
+            s_start = seg.start_idx
+            s_end = seg.end_idx
+            if replay_idx is not None:
+                if s_start > replay_idx:
+                    continue
+                s_end = min(s_end, replay_idx)
+
+            x_start = mdates.date2num(times[min(s_start, len(times) - 1)])
+            x_end = mdates.date2num(times[min(s_end, len(times) - 1)])
+            color = trend_colors.get(seg.trend, "#FFC107")
+
+            rect = Rectangle(
+                (x_start, bar_y),
+                x_end - x_start, bar_height,
+                facecolor=color, alpha=0.5, edgecolor="none", zorder=20,
+                clip_on=True,
+            )
+            ax.add_patch(rect)
+
     # Format
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d %H:%M"))
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
@@ -1250,9 +1834,14 @@ def plot_patterns(result: PatternResult, title: str = "Support & Resistance Patt
     ax.legend(loc="upper left")
 
     plt.tight_layout()
-    plt.savefig("sr_patterns_plot.png", dpi=150)
-    print("Plot saved to sr_patterns_plot.png")
-    plt.show()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+        print(f"Plot saved to {save_path}")
+    else:
+        plt.savefig("sr_patterns_plot.png", dpi=150)
+        print("Plot saved to sr_patterns_plot.png")
+    if not save_path:
+        plt.show()
 
     return fig, ax
 
@@ -1278,73 +1867,180 @@ def parse_replay_time(time_str: str) -> datetime:
     raise ValueError(f"Could not parse time: {time_str}. Use format like 'YYYY-MM-DD HH:MM'")
 
 
-if __name__ == "__main__":
-    # Extract token and interval from filename for chart title
-    token, interval = extract_token_and_interval(DATA_PATH)
+def process_file(
+    data_path: str,
+    params: SRParams = None,
+    display_timeframe: Optional[str] = None,
+    start_date: Optional[str] = None,
+    replay_time: Optional[str] = None,
+    save_path: Optional[str] = None,
+    show_ema: bool = True,
+    show_trendlines: bool = True,
+    show_sr_zones: bool = False,
+    show_triangles: bool = False,
+    show_consolidation: bool = True,
+    show_local_extrema: bool = True,
+    show_trend_segments: bool = True,
+):
+    """Process a single CSV file: load data, detect patterns, plot and save."""
+    if params is None:
+        params = PARAMS
 
-    print(f"Loading data from: {DATA_PATH}")
+    token, interval = extract_token_and_interval(data_path)
+    print(f"\nProcessing: {data_path} ({token} {interval})")
 
-    # Load data
-    df = pl.read_csv(DATA_PATH)
+    df = pl.read_csv(data_path)
     df = df.with_columns([
         pl.col("open_time").str.to_datetime("%Y-%m-%d %H:%M:%S")
     ])
 
-    # Filter by start date if specified
-    if START_DATE:
-        start_date = datetime.strptime(START_DATE, "%Y-%m-%d")
-        df = df.filter(pl.col("open_time") >= start_date)
+    if start_date:
+        dt = datetime.strptime(start_date, "%Y-%m-%d")
+        df = df.filter(pl.col("open_time") >= dt)
 
-    print(f"Data shape: {df.shape}")
-    print(f"Date range: {df['open_time'].min()} to {df['open_time'].max()}")
+    native_minutes, native_label = detect_data_interval(df)
+    display_interval = native_label
 
-    # Determine replay index if REPLAY_TIME is set
+    if display_timeframe is not None:
+        df, was_resampled, resample_msg = resample_ohlcv(df, display_timeframe, native_minutes)
+        if resample_msg:
+            print(f"  {resample_msg}")
+        if was_resampled:
+            display_interval = display_timeframe.upper()
+
+    print(f"  Data shape: {df.shape}")
+    print(f"  Date range: {df['open_time'].min()} to {df['open_time'].max()}")
+
     replay_idx = None
-    if REPLAY_TIME is not None:
-        replay_dt = parse_replay_time(REPLAY_TIME)
-        print(f"Replay mode enabled: {replay_dt}")
-
-        # Find the bar index closest to (but not after) the replay time
+    if replay_time is not None:
+        replay_dt = parse_replay_time(replay_time)
         df_temp = df.with_row_index("_idx")
         matching = df_temp.filter(pl.col("open_time") <= replay_dt)
-
         if matching.height == 0:
-            print(f"Warning: No data before {replay_dt}. Using first bar.")
             replay_idx = 0
         else:
             replay_idx = int(matching["_idx"][-1])
-            replay_time_str = str(df['open_time'][replay_idx])[:16]
-            print(f"Replay bar index: {replay_idx} (time: {replay_time_str})")
-            print(f"Future bars shown in gray: {len(df) - replay_idx - 1}")
-    else:
-        print("Normal mode (no replay)")
 
-    # Detect patterns (using global PARAMS from top of file)
-    result = detect_patterns(df, PARAMS, replay_idx=replay_idx)
+    result = detect_patterns(df, params, replay_idx=replay_idx)
 
-    print(f"\nDetected patterns (as of {'replay time' if replay_idx else 'current'}):")
-    print(f"  Horizontal zones: {len(result.horizontal_zones)}")
-    print(f"  Support lines: {len(result.support_lines)}")
-    print(f"  Resistance lines: {len(result.resistance_lines)}")
-    print(f"  Triangles: {len(result.triangles)}")
-    print(f"  Consolidation zones: {len(result.consolidation_zones)}")
-    print(f"  Current eps: {result.eps:.6f}")
+    print(f"  Support: {len(result.support_lines)}, Resistance: {len(result.resistance_lines)}, "
+          f"Consolidation: {len(result.consolidation_zones)}, Triangles: {len(result.triangles)}")
 
-    for tri in result.triangles:
-        print(f"\n  Triangle: {tri.pattern_type}")
-        print(f"    Bias: {tri.breakout_bias}")
-        print(f"    Completion: {tri.completion_pct:.1f}%")
-        print(f"    Apex at bar {tri.apex_x}, price {tri.apex_price:.4f}")
-
-    for cz in result.consolidation_zones:
-        print(f"\n  Consolidation: bars {cz.start_idx}-{cz.end_idx} ({cz.duration} bars)")
-        print(f"    Range: {cz.price_low:.4f} - {cz.price_high:.4f} ({cz.channel_width_pct*100:.2f}%)")
-        print(f"    Avg slope: {cz.avg_slope:.6f}")
-
-    # Plot with dynamic title
     if replay_idx is not None:
         replay_time_str = str(df['open_time'][replay_idx])[:16]
-        title = f"{token} {interval} - S/R Patterns (Replay: {replay_time_str})"
+        title = f"{token} {display_interval} - S/R Patterns (Replay: {replay_time_str})"
     else:
-        title = f"{token} {interval} - Support/Resistance & Patterns"
-    plot_patterns(result, title)
+        title = f"{token} {display_interval} - Support/Resistance & Patterns"
+
+    plot_patterns(
+        result, title, params=params,
+        show_ema=show_ema,
+        show_trendlines=show_trendlines,
+        show_sr_zones=show_sr_zones,
+        show_triangles=show_triangles,
+        show_consolidation=show_consolidation,
+        show_local_extrema=show_local_extrema,
+        show_trend_segments=show_trend_segments,
+        save_path=save_path,
+    )
+
+
+def _process_one(args: tuple) -> tuple[str, Optional[str]]:
+    """
+    Worker function for parallel processing.
+    Returns (filepath, error_message) — error_message is None on success.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+
+    filepath, save_path, kwargs = args
+    try:
+        process_file(data_path=filepath, save_path=save_path, **kwargs)
+        plt.close("all")
+        return filepath, None
+    except Exception as e:
+        plt.close("all")
+        return filepath, str(e)
+
+
+def main(
+    data_dir: str = "data",
+    output_dir: str = "plots",
+    timeframe: Optional[str] = "1h",
+    start_date: Optional[str] = None,
+    replay_time: Optional[str] = None,
+    max_workers: Optional[int] = None,
+):
+    """
+    Process all CSV files in data_dir in parallel and save plots to output_dir.
+
+    Args:
+        data_dir: Directory containing CSV data files.
+        output_dir: Directory to save plots (created if it doesn't exist).
+        timeframe: Display timeframe to resample to (e.g. "1h", "4h", "1d").
+                   Set to None to use each file's native timeframe.
+        start_date: Optional start date filter ("YYYY-MM-DD").
+        replay_time: Optional replay time ("YYYY-MM-DD HH:MM").
+        max_workers: Max parallel processes (defaults to CPU count).
+    """
+    import glob
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    csv_files = sorted(glob.glob(os.path.join(data_dir, "*.csv")))
+    if not csv_files:
+        print(f"No CSV files found in {data_dir}/")
+        return
+
+    print(f"Found {len(csv_files)} CSV files in {data_dir}/")
+    print(f"Timeframe: {timeframe or 'native'}")
+    print(f"Output dir: {output_dir}/")
+
+    tf_label = timeframe if timeframe else "native"
+    shared_kwargs = dict(
+        display_timeframe=timeframe,
+        start_date=start_date,
+        replay_time=replay_time,
+        show_ema=SHOW_EMA,
+        show_trendlines=SHOW_TRENDLINES,
+        show_sr_zones=SHOW_SR_ZONES,
+        show_triangles=SHOW_TRIANGLES,
+        show_consolidation=SHOW_CONSOLIDATION,
+        show_local_extrema=SHOW_LOCAL_EXTREMA,
+        show_trend_segments=SHOW_TREND_SEGMENTS,
+    )
+
+    tasks = []
+    for filepath in csv_files:
+        token, _ = extract_token_and_interval(filepath)
+        filename = f"{token.lower()}_{tf_label}.png"
+        save_path = os.path.join(output_dir, filename)
+        tasks.append((filepath, save_path, shared_kwargs))
+
+    succeeded = []
+    failed = []
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_process_one, task): task[0] for task in tasks}
+        for future in as_completed(futures):
+            filepath, error = future.result()
+            basename = os.path.basename(filepath)
+            if error is None:
+                succeeded.append(basename)
+            else:
+                failed.append((basename, error))
+                print(f"  FAILED: {basename} — {error}")
+
+    print(f"\n{'='*50}")
+    print(f"Results: {len(succeeded)}/{len(csv_files)} succeeded")
+    if succeeded:
+        print(f"  OK: {', '.join(sorted(succeeded))}")
+    if failed:
+        print(f"  FAILED ({len(failed)}):")
+        for name, err in sorted(failed):
+            print(f"    - {name}: {err}")
+
+
+if __name__ == "__main__":
+    main()
