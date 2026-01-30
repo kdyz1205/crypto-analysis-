@@ -1,6 +1,7 @@
 import polars as pl
 import httpx
 import time
+from datetime import timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -26,8 +27,17 @@ RESAMPLE_MAP = {
 # How many days of base data to download per interval
 DOWNLOAD_DAYS = {
     "5m": 7,
-    "1h": 30,
+    "1h": 60,
 }
+
+# Interval durations in milliseconds (for staleness / gap detection)
+INTERVAL_MS = {
+    "5m": 5 * 60 * 1000,
+    "1h": 60 * 60 * 1000,
+}
+
+# When no 5m CSV exists, fetch this many days
+FRESH_DOWNLOAD_5M_DAYS = 10
 
 
 def load_symbols() -> list[str]:
@@ -128,6 +138,146 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
     return _load_csv(save_path)
 
 
+# ── Incremental update helpers ──
+
+def _get_last_timestamp_ms(df: pl.DataFrame) -> int:
+    """Get the last open_time as epoch milliseconds (UTC)."""
+    last_dt = df["open_time"].max()
+    # Binance data is UTC; naive datetimes must be tagged as UTC for correct epoch
+    return int(last_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+async def _fetch_candles_since(symbol: str, interval: str, start_ms: int) -> pl.DataFrame:
+    """Fetch candles from Binance from start_ms to now. Returns polars DataFrame."""
+    end_ms = int(time.time() * 1000)
+    all_data = []
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        cursor = start_ms
+        while cursor < end_ms:
+            params = {
+                "symbol": symbol,
+                "interval": interval,
+                "startTime": cursor,
+                "endTime": end_ms,
+                "limit": 1500,
+            }
+            resp = await client.get(BINANCE_FUTURES_URL, params=params)
+            data = resp.json()
+
+            if isinstance(data, dict) and "code" in data:
+                raise ValueError(f"Binance API error: {data}")
+            if not data:
+                break
+
+            all_data.extend(data)
+            cursor = data[-1][0] + 1
+            if len(data) < 1500:
+                break
+
+    if not all_data:
+        return pl.DataFrame()
+
+    import pandas as pd
+    pdf = pd.DataFrame(all_data, columns=CSV_COLUMNS)
+    pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
+    pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
+    for col in ["open", "high", "low", "close", "volume"]:
+        pdf[col] = pd.to_numeric(pdf[col])
+
+    result = pl.from_pandas(pdf)
+    # Match schema with CSVs loaded by _load_csv
+    casts = []
+    # open_time: pandas Datetime(ns) → Datetime(us) to match polars CSV loads
+    if result["open_time"].dtype == pl.Datetime("ns"):
+        casts.append(pl.col("open_time").cast(pl.Datetime("us")))
+    # close_time: convert to String to match how _load_csv leaves it
+    if "close_time" in result.columns and result["close_time"].dtype != pl.Utf8:
+        casts.append(pl.col("close_time").cast(pl.Utf8))
+    # Float64 columns to match _load_csv's casting
+    for col in ["open", "high", "low", "close", "volume", "quote_asset_volume",
+                "taker_buy_quote_asset_volume"]:
+        if col in result.columns and result[col].dtype != pl.Float64:
+            casts.append(pl.col(col).cast(pl.Float64))
+    if casts:
+        result = result.with_columns(casts)
+    return result.sort("open_time")
+
+
+def _merge_and_save(existing_df: pl.DataFrame, new_df: pl.DataFrame, symbol: str, interval: str) -> pl.DataFrame:
+    """Deduplicate, merge, sort, and save to CSV. Returns merged DataFrame."""
+    # Align new_df schema to match existing_df
+    casts = []
+    for col_name, col_type in existing_df.schema.items():
+        if col_name in new_df.columns and new_df[col_name].dtype != col_type:
+            casts.append(pl.col(col_name).cast(col_type))
+    if casts:
+        new_df = new_df.with_columns(casts)
+    combined = pl.concat([existing_df, new_df])
+    combined = combined.unique(subset=["open_time"], keep="last").sort("open_time")
+
+    # Save with open_time formatted as string for CSV consistency
+    DATA_DIR.mkdir(exist_ok=True)
+    save_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv"
+    df_out = combined.with_columns(
+        pl.col("open_time").dt.strftime("%Y-%m-%d %H:%M:%S")
+    )
+    if "close_time" in df_out.columns and df_out["close_time"].dtype != pl.Utf8:
+        df_out = df_out.with_columns(pl.col("close_time").cast(pl.Utf8))
+    df_out.write_csv(save_path)
+
+    return combined
+
+
+async def _incremental_update(symbol: str, base_interval: str) -> pl.DataFrame:
+    """
+    Load existing CSV, fetch missing candles, merge, save, return full DataFrame.
+    Fresh-downloads if no CSV exists or if a gap is detected.
+    """
+    csv_path = _find_csv(symbol, base_interval)
+
+    if csv_path is None:
+        # No existing data — fresh download
+        days = FRESH_DOWNLOAD_5M_DAYS if base_interval == "5m" else DOWNLOAD_DAYS.get(base_interval, 60)
+        return await download_ohlcv(symbol, base_interval, days=days)
+
+    try:
+        existing_df = _load_csv(csv_path)
+    except Exception:
+        # Corrupt CSV — re-download
+        csv_path.unlink(missing_ok=True)
+        days = FRESH_DOWNLOAD_5M_DAYS if base_interval == "5m" else DOWNLOAD_DAYS.get(base_interval, 60)
+        return await download_ohlcv(symbol, base_interval, days=days)
+
+    if existing_df.is_empty():
+        days = FRESH_DOWNLOAD_5M_DAYS if base_interval == "5m" else DOWNLOAD_DAYS.get(base_interval, 60)
+        return await download_ohlcv(symbol, base_interval, days=days)
+
+    last_ms = _get_last_timestamp_ms(existing_df)
+    now_ms = int(time.time() * 1000)
+    interval_ms = INTERVAL_MS[base_interval]
+
+    # Already current — skip API call
+    if (now_ms - last_ms) < interval_ms:
+        return existing_df
+
+    # Fetch from last known timestamp (overlap by 1 candle for dedup/validation)
+    new_df = await _fetch_candles_since(symbol, base_interval, start_ms=last_ms)
+
+    if new_df.is_empty():
+        return existing_df
+
+    # Gap detection: first new candle should be at most 1 interval after last existing
+    first_new_ms = int(new_df["open_time"].min().replace(tzinfo=timezone.utc).timestamp() * 1000)
+    expected_next_ms = last_ms + interval_ms
+    if first_new_ms > expected_next_ms:
+        # Gap detected — full re-download
+        days = FRESH_DOWNLOAD_5M_DAYS if base_interval == "5m" else DOWNLOAD_DAYS.get(base_interval, 60)
+        return await download_ohlcv(symbol, base_interval, days=days)
+
+    return _merge_and_save(existing_df, new_df, symbol, base_interval)
+
+
 async def get_ohlcv(
     symbol: str,
     interval: str,
@@ -140,31 +290,8 @@ async def get_ohlcv(
     """
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
 
-    # Try to load existing CSV for the base interval
-    csv_path = _find_csv(symbol, base_interval)
-
-    if csv_path is None:
-        # Try to find any usable base data we can resample from
-        # Priority: check 5m (finest available) then 1h
-        for fallback_interval in ["5m", "1h"]:
-            alt_path = _find_csv(symbol, fallback_interval)
-            if alt_path is not None:
-                csv_path = alt_path
-                # We'll resample from whatever we found to the target interval
-                resample_to = interval if interval != fallback_interval else None
-                break
-
-    if csv_path is None:
-        # Download from Binance — prefer 5m for finest granularity
-        download_interval = "5m" if interval in ("5m", "15m") else "1h"
-        download_days = DOWNLOAD_DAYS.get(download_interval, 30)
-        await download_ohlcv(symbol, download_interval, days=download_days)
-        csv_path = _find_csv(symbol, download_interval)
-        if csv_path is None:
-            raise ValueError(f"Failed to download data for {symbol}")
-        resample_to = interval if interval != download_interval else None
-
-    df = _load_csv(csv_path)
+    # Incrementally update base data (fetch missing candles, merge, save)
+    df = await _incremental_update(symbol, base_interval)
 
     # Resample if needed
     if resample_to:

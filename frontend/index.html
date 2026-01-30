@@ -38,13 +38,39 @@
 
         <div id="toolbar-spacer"></div>
 
+        <!-- S/R toggle -->
+        <label id="sr-label">
+            <input type="checkbox" id="sr-toggle" checked>
+            <span>S/R</span>
+        </label>
+
+        <!-- Max S/R lines -->
+        <div id="max-lines-control">
+            <span class="control-label">Max</span>
+            <select id="max-lines-select">
+                <option value="0" selected>All</option>
+                <option value="3">3</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+            </select>
+        </div>
+
         <!-- Replay controls -->
         <div id="replay-controls">
             <label id="replay-label">
                 <input type="checkbox" id="replay-toggle">
                 <span>Replay</span>
             </label>
-            <input type="datetime-local" id="replay-time" class="hidden" step="60">
+            <div id="replay-panel" class="hidden">
+                <input type="date" id="replay-date">
+                <select id="replay-hour"></select>
+                <div id="tz-group">
+                    <button type="button" class="tz-btn active" data-offset="8">Beijing <span class="tz-sub">UTC+8</span></button>
+                    <button type="button" class="tz-btn" data-offset="-8">SF <span class="tz-sub">UTC-8</span></button>
+                    <button type="button" class="tz-btn" data-offset="0">UTC <span class="tz-sub">±0</span></button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -53,6 +79,9 @@
 
     <!-- OHLC legend overlay -->
     <div id="ohlc-legend"></div>
+
+    <!-- Trend indicator (upper right) -->
+    <div id="trend-indicator" class="hidden"></div>
 
     <!-- Loading overlay -->
     <div id="loading" class="hidden">
