@@ -1,6 +1,6 @@
 # crypto-analysis
 
-TradingView 风格的加密货币技术分析网页版：K 线、多周期、多趋势线/形态识别、手绘线、回测。
+crypto-analysis multi trendline — TradingView 风格的加密货币技术分析网页版：K 线、多周期、多趋势线/形态识别、手绘线、回测。
 
 ## 运行
 
