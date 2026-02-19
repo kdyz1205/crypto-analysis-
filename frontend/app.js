@@ -776,8 +776,8 @@ function updateRecognizePanelContent() {
         el.innerHTML = '无识别形态（三角形、头肩、通道等）';
         return;
     }
-    const types = [...new Set(patterns.map(p => (p.pattern_type || p.type || '形态'))];
-    el.innerHTML = `识别到 <strong>${patterns.length}</strong> 个形态：${types.join('、')}`;
+    const types = [...new Set(patterns.map(function (p) { return p.pattern_type || p.type || '\u5f62\u6001'; }))];
+    el.innerHTML = '\u8bc6\u5224\u5230 <strong>' + patterns.length + '</strong> \u4e2a\u5f62\u6001\uff1a' + types.join('\u3001');
 }
 
 async function fetchPatternStats() {
