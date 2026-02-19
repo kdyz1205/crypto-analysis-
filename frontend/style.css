@@ -7,20 +7,20 @@
 body {
     background: #131722;
     color: #d1d4dc;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow: hidden;
     height: 100vh;
 }
 
-/* ── Toolbar ── */
+/* ── Toolbar (TradingView dark theme) ── */
 #toolbar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 0 16px;
+    gap: 12px;
+    padding: 0 12px 0 16px;
     background: #1e222d;
-    border-bottom: 1px solid #2a2e39;
-    height: 48px;
+    border-bottom: 1px solid #363a45;
+    height: 44px;
     z-index: 20;
     position: relative;
 }
@@ -29,13 +29,45 @@ body {
     flex: 1;
 }
 
-/* ── Ticker Selector ── */
-#ticker-selector {
+/* Symbol strip: ticker + price + change */
+#symbol-strip {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
+}
+
+#symbol-strip .toolbar-price {
+    font-size: 15px;
+    font-weight: 600;
+    color: #d1d4dc;
+    font-variant-numeric: tabular-nums;
+}
+
+#symbol-strip .toolbar-change {
+    font-size: 12px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+#symbol-strip .toolbar-change.change-up {
+    color: #26a69a;
+    background: rgba(38, 166, 154, 0.12);
+}
+
+#symbol-strip .toolbar-change.change-down {
+    color: #ef5350;
+    background: rgba(239, 83, 80, 0.12);
+}
+
+/* ── Ticker Selector (TV-style) ── */
+#ticker-selector.tv-selector {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 4px 6px;
     border-radius: 4px;
     position: relative;
     user-select: none;
@@ -45,11 +77,15 @@ body {
     background: #2a2e39;
 }
 
+#ticker-selector #ticker-arrow {
+    color: #787b86;
+}
+
 #current-ticker {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
     color: #fff;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
 }
 
 #ticker-dropdown {
@@ -58,7 +94,7 @@ body {
     left: 0;
     width: 300px;
     max-height: 440px;
-    background: #1e222d;
+    background: #252a32;
     border: 1px solid #363a45;
     border-radius: 6px;
     z-index: 100;
@@ -72,7 +108,7 @@ body {
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
-    border-bottom: 1px solid #2a2e39;
+    border-bottom: 1px solid #363a45;
 }
 
 #search-wrapper svg {
@@ -116,22 +152,51 @@ body {
     background: rgba(41, 98, 255, 0.08);
 }
 
-/* ── Timeframe Buttons ── */
+/* ── Timeframe bar (TradingView pills) ── */
 #timeframe-bar {
     display: flex;
     align-items: center;
-    gap: 2px;
-    margin-left: 8px;
+    gap: 0;
+    background: #131722;
+    border-radius: 6px;
+    padding: 2px;
+    border: 1px solid #363a45;
+}
+
+#view-tabs {
+    display: inline-flex;
+    border: 1px solid #363a45;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-left: 10px;
+}
+
+.view-tab {
+    border: none;
+    background: #1e222d;
+    color: #787b86;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.view-tab + .view-tab {
+    border-left: 1px solid #363a45;
+}
+
+.view-tab.active {
+    color: #d1d4dc;
+    background: #2a2e39;
 }
 
 .tf-btn {
     background: none;
     border: none;
     color: #787b86;
-    padding: 6px 12px;
+    padding: 5px 10px;
     cursor: pointer;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     font-family: inherit;
     transition: color 0.15s, background 0.15s;
@@ -142,8 +207,8 @@ body {
 }
 
 .tf-btn.active {
-    color: #2962ff;
-    background: rgba(41, 98, 255, 0.12);
+    color: #fff;
+    background: #2962ff;
 }
 
 /* ── S/R Toggle ── */
@@ -199,6 +264,136 @@ body {
 
 #max-lines-select:focus {
     border-color: #2962ff;
+}
+
+/* ── Backtest ── */
+.backtest-btn {
+    background: rgba(41, 98, 255, 0.15);
+    border: 1px solid #2962ff;
+    color: #2962ff;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s;
+}
+.backtest-btn:hover {
+    background: rgba(41, 98, 255, 0.25);
+}
+
+.optimize-btn {
+    background: rgba(38, 166, 154, 0.15);
+    border-color: #26a69a;
+    color: #26a69a;
+}
+.optimize-btn:hover {
+    background: rgba(38, 166, 154, 0.25);
+}
+
+.backtest-panel {
+    position: fixed;
+    top: 44px;
+    right: 0;
+    width: 320px;
+    max-height: calc(100vh - 44px);
+    background: #1e222d;
+    border-left: 1px solid #363a45;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.backtest-panel.hidden {
+    display: none;
+}
+.backtest-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #363a45;
+}
+.backtest-panel-header h3 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #d1d4dc;
+}
+.backtest-panel-header #backtest-close {
+    background: none;
+    border: none;
+    color: #787b86;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+.backtest-panel-header #backtest-close:hover {
+    color: #d1d4dc;
+}
+#backtest-content {
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+}
+.backtest-hint, .backtest-loading {
+    color: #787b86;
+}
+.backtest-error {
+    color: #ef5350;
+}
+.backtest-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.backtest-row {
+    display: flex;
+    justify-content: space-between;
+}
+.backtest-row span {
+    color: #787b86;
+}
+.backtest-row .pnl-pos { color: #26a69a; }
+.backtest-row .pnl-neg { color: #ef5350; }
+.backtest-strategy {
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 12px;
+    line-height: 1.4;
+}
+.backtest-trades ul {
+    list-style: none;
+    margin-top: 6px;
+}
+.backtest-trades li {
+    padding: 2px 0;
+    font-size: 12px;
+}
+
+.backtest-params-block {
+    margin-top: 12px;
+    padding: 8px 0;
+    border-top: 1px solid #2a2e39;
+    font-size: 12px;
+}
+.backtest-params-block strong {
+    display: block;
+    margin-bottom: 4px;
+}
+.backtest-params-json {
+    background: #131722;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    overflow-x: auto;
+    margin: 4px 0;
+}
+.backtest-optimization-meta {
+    color: #787b86;
+    font-size: 11px;
 }
 
 /* ── Replay Controls ── */
@@ -324,51 +519,397 @@ body {
     margin-left: 2px;
 }
 
-/* ── Chart ── */
-#chart-container {
+/* ── Chart area (TradingView-style: toolbar + chart) ── */
+#chart-area {
     position: absolute;
-    top: 48px;
+    top: 44px;
     left: 0;
     right: 0;
     bottom: 0;
+    display: flex;
+    flex-direction: row;
+    background: #131722;
 }
 
-/* ── OHLC Legend ── */
+/* 左侧独立栏：绘图工具 + 形态统计 */
+#chart-left {
+    width: 200px;
+    min-width: 180px;
+    background: #1e222d;
+    border-right: 1px solid #363a45;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+#drawing-toolbar {
+    flex-shrink: 0;
+    width: 100%;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    border-bottom: 1px solid #363a45;
+}
+
+.toolbar-title {
+    font-size: 10px;
+    color: #787b86;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.draw-btn {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 4px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #787b86;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.25;
+    transition: background 0.15s, color 0.15s;
+}
+
+.draw-btn:hover {
+    background: #2a2e39;
+    color: #d1d4dc;
+}
+
+.draw-btn.active {
+    background: rgba(41, 98, 255, 0.2);
+    color: #2962ff;
+}
+
+.draw-btn.draw-clear {
+    margin-top: 8px;
+    font-size: 10px;
+}
+
+.toolbar-hint {
+    font-size: 9px;
+    color: #363a45;
+    text-align: left;
+    padding: 4px 0;
+    line-height: 1.3;
+    margin-top: 4px;
+}
+
+/* 形态统计：左侧独立一块，形态线仍在图表上绘制 */
+.pattern-stats-panel {
+    flex: 1;
+    min-height: 120px;
+    padding: 12px;
+    font-size: 12px;
+    background: #1e222d;
+    color: #d1d4dc;
+    border-bottom: none;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+.pattern-stats-panel .pattern-stats-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #787b86;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+#pattern-stats-content {
+    line-height: 1.5;
+    flex-shrink: 0;
+}
+.pattern-stats-selected {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #363a45;
+    font-size: 11px;
+    color: #787b86;
+}
+.pattern-stats-selected.highlight {
+    color: #2962ff;
+}
+.pattern-stats-selected:not(.hidden) .line-stats {
+    color: #d1d4dc;
+}
+
+.similar-lines-list {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #363a45;
+    font-size: 11px;
+    color: #787b86;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.similar-lines-list.hidden {
+    display: none;
+}
+.similar-lines-title {
+    margin-bottom: 6px;
+    color: #787b86;
+}
+.similar-line-row {
+    padding: 4px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.similar-line-row:hover {
+    background: rgba(41, 98, 255, 0.1);
+}
+.similar-line-row.visible {
+    color: #ff9800;
+}
+.similar-line-num {
+    display: inline-block;
+    width: 18px;
+}
+
+.assist-btn {
+    margin-left: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: rgba(41, 98, 255, 0.2);
+    color: #2962ff;
+    border: 1px solid rgba(41, 98, 255, 0.4);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* ── Chart wrapper (contains header + chart) ── */
+#chart-wrapper {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* TradingView-style chart header overlay */
+#chart-header {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    pointer-events: none;
+    background: rgba(30, 34, 45, 0.95);
+    border: 1px solid #363a45;
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-width: 140px;
+}
+
+#chart-header-row1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+#chart-symbol {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+}
+
+#chart-interval {
+    font-size: 11px;
+    color: #787b86;
+    background: #131722;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+#chart-header-row2 {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+#chart-price {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+#chart-change {
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+#chart-change.change-up {
+    color: #26a69a;
+    background: rgba(38, 166, 154, 0.15);
+}
+
+#chart-change.change-down {
+    color: #ef5350;
+    background: rgba(239, 83, 80, 0.15);
+}
+
+/* ── Chart ── */
+#chart-container {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+}
+
+#chart-area.drawing-mode #chart-container {
+    cursor: crosshair;
+}
+
+/* ── Bottom-right Chart Controls (scale + magnet) ── */
+#chart-controls {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.control-group {
+    display: inline-flex;
+    background: rgba(30, 34, 45, 0.95);
+    border-radius: 4px;
+    border: 1px solid #363a45;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.scale-btn {
+    background: transparent;
+    border: none;
+    color: #787b86;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.scale-btn + .scale-btn {
+    border-left: 1px solid #363a45;
+}
+
+.scale-btn:hover {
+    color: #d1d4dc;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.scale-btn.active {
+    color: #2962ff;
+    background: rgba(41, 98, 255, 0.16);
+}
+
+.magnet-btn {
+    background: transparent;
+    border: none;
+    color: #787b86;
+    font-size: 11px;
+    font-family: inherit;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+}
+
+.magnet-btn + .magnet-btn {
+    border-left: 1px solid #363a45;
+}
+
+.magnet-btn:hover {
+    color: #d1d4dc;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.magnet-btn.active {
+    color: #ffa726;
+    background: rgba(255, 167, 38, 0.18);
+}
+
+/* ── OHLC Legend (TradingView-style floating panel) ── */
 #ohlc-legend {
     position: absolute;
-    top: 56px;
-    left: 16px;
+    top: 52px;
+    left: 82px;
     font-size: 12px;
-    font-family: 'SF Mono', 'Menlo', monospace;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
     z-index: 10;
     pointer-events: none;
     display: flex;
-    gap: 12px;
-    line-height: 1;
+    gap: 14px;
+    line-height: 1.4;
+    padding: 6px 12px;
+    background: rgba(30, 34, 45, 0.95);
+    border: 1px solid #363a45;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .ohlc-label {
     color: #787b86;
+    margin-right: 2px;
 }
 
 /* ── Loading ── */
 #loading {
     position: absolute;
-    top: 48px;
+    top: 44px;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(19, 23, 34, 0.7);
+    background: rgba(19, 23, 34, 0.92);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 50;
 }
 
+#loading.loading-hidden {
+    display: none !important;
+}
+
+.loading-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.loading-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: #d1d4dc;
+}
+
+.loading-hint {
+    font-size: 12px;
+    color: #787b86;
+}
+
 .spinner {
     width: 32px;
     height: 32px;
-    border: 3px solid #2a2e39;
+    border: 3px solid #363a45;
     border-top-color: #2962ff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
@@ -381,7 +922,7 @@ body {
 /* ── Trend Indicator ── */
 #trend-indicator {
     position: absolute;
-    top: 56px;
+    top: 52px;
     right: 16px;
     z-index: 10;
     padding: 6px 14px;

@@ -3,37 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div id="toolbar">
-        <!-- Ticker selector -->
-        <div id="ticker-selector">
-            <span id="current-ticker">HYPEUSDT</span>
-            <svg id="ticker-arrow" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 5L6 8L9 5" stroke="#787b86" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-            <div id="ticker-dropdown" class="hidden">
-                <div id="search-wrapper">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <circle cx="6" cy="6" r="4.5" stroke="#787b86" stroke-width="1.2"/>
-                        <path d="M9.5 9.5L13 13" stroke="#787b86" stroke-width="1.2" stroke-linecap="round"/>
-                    </svg>
-                    <input type="text" id="ticker-search" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+        <!-- Symbol + price strip (TradingView-style) -->
+        <div id="symbol-strip">
+            <div id="ticker-selector" class="tv-selector">
+                <span id="current-ticker">HYPE / USDT</span>
+                <svg id="ticker-arrow" width="10" height="10" viewBox="0 0 12 12" fill="none">
+                    <path d="M3 5L6 8L9 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                <div id="ticker-dropdown" class="hidden">
+                    <div id="search-wrapper">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <circle cx="6" cy="6" r="4.5" stroke="#787b86" stroke-width="1.2"/>
+                            <path d="M9.5 9.5L13 13" stroke="#787b86" stroke-width="1.2" stroke-linecap="round"/>
+                        </svg>
+                        <input type="text" id="ticker-search" placeholder="Search symbol..." autocomplete="off" spellcheck="false">
+                    </div>
+                    <div id="ticker-list"></div>
                 </div>
-                <div id="ticker-list"></div>
             </div>
+            <span id="toolbar-price" class="toolbar-price">—</span>
+            <span id="toolbar-change" class="toolbar-change">—</span>
         </div>
 
-        <!-- Timeframe bar -->
+        <!-- Timeframe bar (TradingView pills) -->
         <div id="timeframe-bar">
+            <button class="tf-btn" data-tf="1m">1m</button>
             <button class="tf-btn" data-tf="5m">5m</button>
             <button class="tf-btn" data-tf="15m">15m</button>
-            <button class="tf-btn active" data-tf="1h">1h</button>
-            <button class="tf-btn" data-tf="4h">4h</button>
+            <button class="tf-btn" data-tf="1h">1h</button>
+            <button class="tf-btn" data-tf="2h">2h</button>
+            <button class="tf-btn active" data-tf="4h">4h</button>
             <button class="tf-btn" data-tf="1d">1D</button>
+        </div>
+        <div id="view-tabs">
+            <button type="button" id="tab-recognizing" class="view-tab">Recognizing</button>
+            <button type="button" id="tab-draw" class="view-tab">Draw</button>
+            <button type="button" id="tab-assist" class="view-tab">Assist</button>
         </div>
 
         <div id="toolbar-spacer"></div>
@@ -56,6 +69,10 @@
             </select>
         </div>
 
+        <!-- Backtest & Optimize -->
+        <button type="button" id="backtest-btn" class="backtest-btn">Backtest</button>
+        <button type="button" id="optimize-btn" class="backtest-btn optimize-btn">Optimize</button>
+
         <!-- Replay controls -->
         <div id="replay-controls">
             <label id="replay-label">
@@ -74,8 +91,60 @@
         </div>
     </div>
 
-    <!-- Chart fills remaining viewport -->
-    <div id="chart-container"></div>
+    <!-- TradingView-style: left sidebar (绘图 + 形态) + chart -->
+    <div id="chart-area">
+        <div id="chart-left">
+            <div id="drawing-toolbar">
+                <span class="toolbar-title">绘图</span>
+                <button type="button" id="draw-trend" class="draw-btn" title="趋势线">趋势线</button>
+                <button type="button" id="draw-horizontal" class="draw-btn" title="水平线">水平线</button>
+                <button type="button" id="draw-clear" class="draw-btn draw-clear" title="清除手绘">清除</button>
+                <span class="toolbar-hint">趋势线：点两点；水平线：点一下</span>
+            </div>
+            <div id="pattern-stats-panel" class="pattern-stats-panel">
+                <div class="pattern-stats-title">形态统计</div>
+                <div id="pattern-stats-content">—</div>
+                <div id="pattern-stats-selected" class="pattern-stats-selected hidden">点击支撑/阻力线查看该线历史表现</div>
+                <div id="similar-lines-list" class="similar-lines-list hidden"></div>
+            </div>
+        </div>
+        <div id="chart-wrapper">
+            <div id="chart-header">
+                <div id="chart-header-row1">
+                    <span id="chart-symbol">—</span>
+                    <span id="chart-interval">—</span>
+                </div>
+                <div id="chart-header-row2">
+                    <span id="chart-price">—</span>
+                    <span id="chart-change">—</span>
+                </div>
+            </div>
+            <div id="chart-container"></div>
+        </div>
+    </div>
+
+    <!-- Bottom-right chart controls -->
+    <div id="chart-controls">
+        <div id="chart-scale-toggle" class="control-group">
+            <button type="button" class="scale-btn active" data-scale="linear">Linear</button>
+            <button type="button" class="scale-btn" data-scale="log">Log</button>
+        </div>
+        <div id="chart-magnet-toggle" class="control-group">
+            <button type="button" class="magnet-btn active" data-magnet="weak">Weak</button>
+            <button type="button" class="magnet-btn" data-magnet="strong">Strong</button>
+        </div>
+    </div>
+
+    <!-- Backtest panel (slide-out) -->
+    <div id="backtest-panel" class="backtest-panel hidden">
+        <div class="backtest-panel-header">
+            <h3>MFI/MA Backtest</h3>
+            <button type="button" id="backtest-close">&times;</button>
+        </div>
+        <div id="backtest-content">
+            <p class="backtest-hint">Click Backtest to run strategy on current symbol/interval</p>
+        </div>
+    </div>
 
     <!-- OHLC legend overlay -->
     <div id="ohlc-legend"></div>
@@ -83,9 +152,13 @@
     <!-- Trend indicator (upper right) -->
     <div id="trend-indicator" class="hidden"></div>
 
-    <!-- Loading overlay -->
-    <div id="loading" class="hidden">
-        <div class="spinner"></div>
+    <!-- Loading overlay: visible by default so page is not blank while scripts/API run -->
+    <div id="loading">
+        <div class="loading-inner">
+            <div class="spinner"></div>
+            <p class="loading-text">Loading…</p>
+            <p class="loading-hint">First load may take 30–60s when using API</p>
+        </div>
     </div>
 
     <script src="/static/app.js"></script>

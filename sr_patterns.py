@@ -11,8 +11,9 @@ Features:
 # =============================================================================
 # USER CONFIGURATION - Edit these values
 # =============================================================================
-# Data file path (e.g., "riverusdt_1h.csv", "data/btc_4h.csv")
-DATA_PATH = "data/riverusdt_1h.csv"
+# Data file path (e.g., "data/hypeusdt_4h.csv", "data/btcusdt_4h.csv")
+# Run: python tools/download_full_okx.py HYPEUSDT 4h  first
+DATA_PATH = "data/hypeusdt_4h.csv"
 
 # Start date filter (set to None to use all data)
 START_DATE = "2026-01-18"
@@ -229,6 +230,7 @@ class SRParams:
     window_left: int = 1       # Left lookback for local high/low detection (bars)
     window_right: int = 5      # Right lookback for local high/low detection (bars)
     window_short: int = 2      # Shortened window used on the trend side (asymmetric detection)
+    prominence_multiplier: float = 1.0  # Filter extrema by prominence (height relative to ATR)
 
     # --- Trend detection ---
     ema_span: int = 50         # EMA period; lower = more reactive, higher = smoother
@@ -239,6 +241,15 @@ class SRParams:
     atr_period: int = 14          # ATR lookback period
     atr_multiplier: float = 0.5   # eps = ATR * this. Controls how close a touch must be to a line
     line_break_factor: float = 0.3  # A line is "broken" if price exceeds eps * this beyond the line
+    
+    # --- Dynamic tolerance for strict pivot validation ---
+    tolerance_percent: float = 0.005  # Base tolerance percentage (0.5% default, more lenient)
+    k_atr: float = 0.5  # ATR multiplier for dynamic tolerance: max(fixed_pct * price, k_atr * ATR)
+    fixed_pct: float = 0.005  # Fixed percentage for dynamic tolerance (0.5% default, more lenient)
+    high_volatility_threshold: float = 0.02  # ATR/price ratio above which asset is considered high volatility
+    high_vol_tolerance_pct: float = 0.007  # Tolerance for high volatility assets (0.7% for high volatility)
+    # Strict non-crossing: line must sit on top of wicks (resistance) or below (support)
+    ceiling_tolerance: float = 0.001  # Resistance: High[i] <= LineValue[i] * (1 + ceiling_tolerance). Default 0.001 = 0.1%
 
     # --- Epsilon / tolerance (%-based, for horizontal S/R zones) ---
     sr_eps_pct: float = 0.01     # sr_eps = price * this (0.01 = 1%). Cluster width for S/R zones
@@ -312,6 +323,7 @@ class TrendLine:
     line_type: str  # 'support' or 'resistance'
     touches: int
     strength: float
+    tolerance: float = 0.0  # Tolerance used for validation (for zone display)
 
 
 @dataclass
@@ -762,7 +774,7 @@ def find_horizontal_zones(
 
 
 def is_valid_line(
-    prices: np.ndarray,  # lows for support, highs for resistance
+    prices: np.ndarray,
     x1: int, y1: float,
     slope: float,
     current_idx: int,
@@ -774,18 +786,14 @@ def is_valid_line(
     """
     Check if line is valid and count touches.
     Returns (is_valid, touch_count).
-
-    Validation: Price should not break through the line by more than
-    eps * break_factor (ATR-based tolerance).
-    - For support: all lows must be >= line - break_tolerance
-    - For resistance: all highs must be <= line + break_tolerance
-
-    Touch counting uses the larger eps for determining if price is "near" the line.
+    
+    This is the original validation function - more lenient than strict validation.
     """
     touches = 0
     break_tolerance = eps * break_factor
+    end_idx = x2 if x2 is not None else current_idx
 
-    for offset in range(current_idx - x1 + 1):
+    for offset in range(end_idx - x1 + 1):
         bar_idx = x1 + offset
         if bar_idx >= len(prices):
             break
@@ -794,20 +802,315 @@ def is_valid_line(
         price = prices[bar_idx]
 
         if line_type == 'support':
-            # Price should NOT go below support line (strict validation)
             if price < line_y - break_tolerance:
                 return False, 0
-            # Count touch if price is near the line (within eps above the line)
             if price >= line_y - break_tolerance and price <= line_y + eps:
                 touches += 1
         else:  # resistance
-            # Price should NOT go above resistance line (strict validation)
             if price > line_y + break_tolerance:
                 return False, 0
-            # Count touch if price is near the line (within eps below the line)
             if price <= line_y + break_tolerance and price >= line_y - eps:
                 touches += 1
 
+    return True, touches
+
+
+def is_valid_trendline_ceiling(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    x1: int, y1: float,
+    slope: float,
+    end_idx: int,
+    line_type: str,
+    tolerance: float = 0.001
+) -> tuple[bool, int]:
+    """
+    Strict non-crossing validation: line acts as ceiling (resistance) or floor (support).
+    Resistance: for every candle i in [x1, end_idx], High[i] <= LineValue[i] * (1 + tolerance).
+    Support: for every candle i in [x1, end_idx], Low[i] >= LineValue[i] * (1 - tolerance).
+    If any bar pierces the line beyond tolerance, the trendline is invalid.
+    Returns (is_valid, touch_count).
+    """
+    touches = 0
+    for bar_idx in range(x1, min(end_idx + 1, len(highs))):
+        line_val = y1 + slope * (bar_idx - x1)
+        if line_val <= 0:
+            continue
+        if line_type == 'resistance':
+            h = highs[bar_idx]
+            if h > line_val * (1 + tolerance):
+                return False, 0
+            if abs(h - line_val) <= line_val * tolerance:
+                touches += 1
+        else:
+            l = lows[bar_idx]
+            if l < line_val * (1 - tolerance):
+                return False, 0
+            if abs(l - line_val) <= line_val * tolerance:
+                touches += 1
+    return True, touches
+
+
+def find_extension_stop(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    x1: int, y1: float,
+    slope: float,
+    start_idx: int,
+    end_idx: int,
+    line_type: str,
+    tolerance: float = 0.001
+) -> int:
+    """
+    Find the last bar index where the line is still valid when extended.
+    Returns the index to stop the line (inclusive). If no violation, returns end_idx.
+    """
+    stop = start_idx - 1
+    for bar_idx in range(start_idx, min(end_idx + 1, len(highs))):
+        line_val = y1 + slope * (bar_idx - x1)
+        if line_val <= 0:
+            stop = bar_idx
+            continue
+        if line_type == 'resistance':
+            if highs[bar_idx] > line_val * (1 + tolerance):
+                return bar_idx - 1
+        else:
+            if lows[bar_idx] < line_val * (1 - tolerance):
+                return bar_idx - 1
+        stop = bar_idx
+    return stop
+
+
+def find_left_anchor(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    x1: int, y1: float,
+    slope: float,
+    line_type: str,
+    tolerance: float = 0.001
+) -> tuple[int, float]:
+    """
+    For resistance: extend anchor left so the line starts as far left as possible
+    without any bar piercing (no 毛刺). So the line "starts at the top" and goes right.
+    Returns (new_anchor_x, new_anchor_y).
+    """
+    new_anchor_x = x1
+    new_anchor_y = y1
+    for candidate in range(x1 - 1, -1, -1):
+        valid = True
+        for bar_idx in range(candidate, min(x1 + 1, len(highs))):
+            line_val = y1 + slope * (bar_idx - x1)
+            if line_val <= 0:
+                continue
+            if line_type == 'resistance':
+                if highs[bar_idx] > line_val * (1 + tolerance):
+                    valid = False
+                    break
+            else:
+                if lows[bar_idx] < line_val * (1 - tolerance):
+                    valid = False
+                    break
+        if valid:
+            new_anchor_x = candidate
+            new_anchor_y = y1 + slope * (candidate - x1)
+        else:
+            break
+    return new_anchor_x, new_anchor_y
+
+
+def find_horizontal_trendlines(
+    local_prices: np.ndarray,
+    local_indices: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    current_idx: int,
+    current_price: float,
+    line_type: str,
+    price_tolerance_pct: float = 0.008,
+    ceiling_tolerance: float = 0.001,
+    min_bars_span: int = 2,
+) -> list[TrendLine]:
+    """
+    Connect same-level highs (resistance) or lows (support) with horizontal lines.
+    E.g. 15 Feb 09:00 high and 15 Feb 14:00 high at similar price → one horizontal resistance line.
+    Clusters extrema by price (within price_tolerance_pct), then for each cluster with >= 2
+    points spanning at least min_bars_span bars, emits one horizontal line and validates ceiling/floor.
+    """
+    if len(local_prices) < 2:
+        return []
+
+    sort_order = np.argsort(local_indices)
+    pts_x = local_indices[sort_order].astype(float)
+    pts_y = local_prices[sort_order]
+    n_pts = len(pts_y)
+    avg_price = float(np.mean(pts_y))
+    if avg_price <= 0:
+        return []
+    merge_dist = avg_price * price_tolerance_pct
+
+    # Cluster by price: points within merge_dist of the cluster's range (so 09:00 and 14:00 highs connect)
+    clusters: list[list[int]] = []
+    used = np.zeros(n_pts, dtype=bool)
+
+    for i in range(n_pts):
+        if used[i]:
+            continue
+        cluster = [i]
+        used[i] = True
+        cluster_lo = pts_y[i] - merge_dist
+        cluster_hi = pts_y[i] + merge_dist
+        changed = True
+        while changed:
+            changed = False
+            for j in range(n_pts):
+                if used[j]:
+                    continue
+                if cluster_lo <= pts_y[j] <= cluster_hi:
+                    cluster.append(j)
+                    used[j] = True
+                    cluster_lo = min(cluster_lo, pts_y[j] - merge_dist)
+                    cluster_hi = max(cluster_hi, pts_y[j] + merge_dist)
+                    changed = True
+        if len(cluster) >= 2:
+            clusters.append(cluster)
+
+    lines = []
+    for cluster in clusters:
+        cluster_sorted = sorted(cluster, key=lambda k: pts_x[k])
+        gx = pts_x[cluster_sorted]
+        gy = pts_y[cluster_sorted]
+        if np.max(gx) - np.min(gx) < min_bars_span:
+            continue
+        anchor_x = int(np.min(gx))
+        last_anchor = int(np.max(gx))
+        if line_type == 'resistance':
+            anchor_y = float(np.max(gy))
+        else:
+            anchor_y = float(np.min(gy))
+        slope = 0.0
+
+        ceiling_valid, touches = is_valid_trendline_ceiling(
+            highs, lows, anchor_x, anchor_y, slope, last_anchor,
+            line_type, tolerance=ceiling_tolerance
+        )
+        if not ceiling_valid or touches < 2:
+            continue
+
+        anchor_x, anchor_y = find_left_anchor(
+            highs, lows, anchor_x, anchor_y, slope, line_type, tolerance=ceiling_tolerance
+        )
+        end_x = min(current_idx + 30, len(highs) - 1)
+        ext_stop = find_extension_stop(
+            highs, lows, anchor_x, anchor_y, slope,
+            last_anchor + 1, end_x, line_type, tolerance=ceiling_tolerance
+        )
+        end_x = ext_stop
+        end_y = anchor_y
+
+        span = last_anchor - anchor_x
+        span_score = span / current_idx if current_idx > 0 else 0
+        recency = last_anchor / current_idx if current_idx > 0 else 0
+        distance_pct = abs(anchor_y - current_price) / current_price if current_price > 0 else 0
+        proximity = 1.0 / (1.0 + distance_pct * 10)
+        strength = touches * (0.3 * span_score + 0.3 * recency + 0.4 * proximity)
+
+        lines.append(TrendLine(
+            x1=int(anchor_x), y1=anchor_y,
+            x2=end_x, y2=end_y,
+            slope=0.0,
+            line_type=line_type,
+            touches=touches,
+            strength=strength,
+            tolerance=ceiling_tolerance * anchor_y
+        ))
+
+    return lines
+
+
+def is_valid_line_strict(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    x1: int, y1: float,
+    slope: float,
+    current_idx: int,
+    tolerance_pct: float,
+    line_type: str,
+    x2: int = None,
+    atr_array: np.ndarray = None,
+    k_atr: float = 0.5,
+    fixed_pct: float = 0.003
+) -> tuple[bool, int]:
+    """
+    Strict Pivot Validation: Check that NO intermediate candle pierces the line.
+    
+    For resistance lines: ALL candles must have High <= Trendline Value + Tolerance
+    For support lines: ALL candles must have Low >= Trendline Value - Tolerance
+    
+    Uses dynamic tolerance: max(fixed_pct * price, k_atr * ATR)
+    
+    Args:
+        highs: Array of high prices for all bars
+        lows: Array of low prices for all bars
+        x1, y1: Starting point of the line
+        slope: Slope of the line (price change per bar)
+        current_idx: Current bar index (validation goes from x1 to current_idx)
+        tolerance_pct: Base tolerance percentage (e.g., 0.003 = 0.3%)
+        line_type: 'support' or 'resistance'
+        x2: Optional end point for validation (defaults to current_idx)
+        atr_array: Optional ATR array for dynamic tolerance
+        k_atr: ATR multiplier for dynamic tolerance
+        fixed_pct: Fixed percentage for dynamic tolerance (default 0.3%)
+    
+    Returns:
+        (is_valid, touch_count)
+    """
+    touches = 0
+    end_idx = x2 if x2 is not None else current_idx
+    
+    # Validate all bars between x1 and end_idx (and slightly after for safety)
+    check_end = min(end_idx + 3, len(highs), current_idx + 1)
+    
+    for bar_idx in range(x1, check_end):
+        if bar_idx >= len(highs):
+            break
+        
+        # Calculate line value at this bar
+        line_y = y1 + slope * (bar_idx - x1)
+        
+        # Dynamic tolerance: max(fixed_pct * price, k_atr * ATR)
+        # Use the line value at this bar for tolerance calculation (more accurate)
+        price_at_bar = abs(line_y)  # Use abs of line value for tolerance calculation
+        fixed_tolerance = fixed_pct * price_at_bar
+        
+        if atr_array is not None and bar_idx < len(atr_array) and not np.isnan(atr_array[bar_idx]):
+            atr_tolerance = k_atr * atr_array[bar_idx]
+            tolerance = max(fixed_tolerance, atr_tolerance)
+        else:
+            tolerance = fixed_tolerance
+        
+        # Ensure minimum tolerance to avoid rejecting all lines (at least 0.1% of price)
+        min_tolerance = price_at_bar * 0.001
+        tolerance = max(tolerance, min_tolerance)
+        
+        if line_type == 'support':
+            # For support: Low must be >= line - tolerance (strict ceiling)
+            low_at_bar = lows[bar_idx]
+            if low_at_bar < line_y - tolerance:
+                return False, 0  # Line pierced below - invalid
+            
+            # Count touch if low is near the line (within tolerance)
+            if low_at_bar >= line_y - tolerance and low_at_bar <= line_y + tolerance:
+                touches += 1
+        else:  # resistance
+            # For resistance: High must be <= line + tolerance (strict ceiling)
+            high_at_bar = highs[bar_idx]
+            if high_at_bar > line_y + tolerance:
+                return False, 0  # Line pierced above - invalid
+            
+            # Count touch if high is near the line (within tolerance)
+            if high_at_bar >= line_y - tolerance and high_at_bar <= line_y + tolerance:
+                touches += 1
+    
     return True, touches
 
 
@@ -822,7 +1125,15 @@ def find_trendlines(
     max_lines: int,
     slope_tolerance: float,
     required_slope_sign: Optional[int] = None,  # 1 for positive, -1 for negative, None for any
-    break_factor: float = 0.3
+    break_factor: float = 0.3,
+    highs: np.ndarray = None,  # Full high array for strict validation
+    lows: np.ndarray = None,   # Full low array for strict validation
+    atr_array: np.ndarray = None,  # ATR array for dynamic tolerance
+    tolerance_percent: float = 0.003,  # Base tolerance percentage
+    k_atr: float = 0.5,  # ATR multiplier
+    fixed_pct: float = 0.003,  # Fixed percentage
+    use_strict_validation: bool = True,  # Use strict pivot validation
+    ceiling_tolerance: float = 0.001  # Strict non-crossing: High <= line*(1+tol) for resistance
 ) -> list[TrendLine]:
     """
     Find valid trend lines with slope constraints.
@@ -898,25 +1209,54 @@ def find_trendlines(
             anchor_x = gx[0]
             anchor_y = gy[0]
 
+            intercept = None
             if len(group_sorted) >= 3:
                 # Least-squares fit through all collinear points
                 slope, intercept = np.polyfit(gx, gy, 1)
-                # Recompute anchor_y so line passes through the fit at anchor_x
                 anchor_y = intercept + slope * anchor_x
-            # else: keep the original 2-point slope, anchored at point i
+            # Resistance: anchor at the highest point in the group so line "starts at the top"
+            if line_type == 'resistance':
+                top_idx = int(np.argmax(gy))
+                anchor_x = gx[top_idx]
+                anchor_y = (intercept + slope * anchor_x) if intercept is not None else gy[top_idx]
 
-            # Validate: no bar breaks through the line from anchor_x to current_idx
+            # Primary gate: lenient is_valid_line (ensures lines render)
             valid, touches = is_valid_line(
                 all_prices, int(anchor_x), anchor_y, slope, current_idx, eps,
                 line_type, x2=int(gx[-1]), break_factor=break_factor
             )
-
             if not valid or touches < 2:
                 continue
 
-            # Extend line to current bar + some future
+            last_anchor = int(gx[-1])
             end_x = current_idx + 30
             end_y = anchor_y + slope * (end_x - anchor_x)
+
+            # Ceiling/floor rule: no 毛刺 (candles piercing the line).
+            # For resistance: require ceiling validation and trim extension so line never extends past a pierce.
+            if use_strict_validation and highs is not None and lows is not None:
+                ceiling_valid, ceiling_touches = is_valid_trendline_ceiling(
+                    highs, lows, int(anchor_x), anchor_y, slope, last_anchor,
+                    line_type, tolerance=ceiling_tolerance
+                )
+                # Resistance: only keep line if it passes ceiling (no candles sticking out above)
+                if line_type == 'resistance' and (not ceiling_valid or ceiling_touches < 2):
+                    continue
+                if line_type == 'resistance' and ceiling_valid and ceiling_touches >= 2:
+                    touches = ceiling_touches
+                    # Extend anchor left so line "starts at the top" without left-side 毛刺
+                    anchor_x, anchor_y = find_left_anchor(
+                        highs, lows, int(anchor_x), anchor_y, slope,
+                        line_type, tolerance=ceiling_tolerance
+                    )
+                # Always trim right extension at first pierce (so no 毛刺 on the right)
+                ext_stop = find_extension_stop(
+                    highs, lows, int(anchor_x), anchor_y, slope,
+                    last_anchor + 1, current_idx + 30, line_type, tolerance=ceiling_tolerance
+                )
+                if ext_stop < end_x:
+                    end_x = ext_stop
+                    end_y = anchor_y + slope * (end_x - anchor_x)
 
             # Line price at current bar
             line_at_current = anchor_y + slope * (current_idx - anchor_x)
@@ -941,13 +1281,27 @@ def find_trendlines(
 
             strength = touches * (0.2 * span_score + 0.2 * recency + 0.6 * proximity)
 
+            # Calculate average tolerance for this line (for zone display)
+            avg_tolerance = tolerance_percent * current_price
+            if atr_array is not None:
+                # Use average ATR in the line's range
+                start_atr = int(anchor_x)
+                end_atr = min(int(gx[-1]) + 1, len(atr_array))
+                if end_atr > start_atr:
+                    line_atr = atr_array[start_atr:end_atr]
+                    line_atr = line_atr[~np.isnan(line_atr)]
+                    if len(line_atr) > 0:
+                        avg_atr = np.mean(line_atr)
+                        avg_tolerance = max(fixed_pct * current_price, k_atr * avg_atr)
+            
             lines.append(TrendLine(
                 x1=int(anchor_x), y1=anchor_y,
                 x2=end_x, y2=end_y,
                 slope=slope,
                 line_type=line_type,
                 touches=touches,
-                strength=strength
+                strength=strength,
+                tolerance=avg_tolerance
             ))
 
     # ================================================================
@@ -1301,8 +1655,11 @@ def detect_patterns(
     # Calculate ATR-based eps (for trendlines)
     df_analysis = calculate_atr(df_analysis, params.atr_period)
     current_eps = df_analysis["atr"][-1] * params.atr_multiplier
-    if np.isnan(current_eps):
-        current_eps = df_analysis["atr"].drop_nulls()[-1] * params.atr_multiplier
+    if np.isnan(current_eps) or current_eps <= 0:
+        atr_dropped = df_analysis["atr"].drop_nulls()
+        current_eps = float(atr_dropped[-1] * params.atr_multiplier) if len(atr_dropped) > 0 else None
+    if current_eps is None or np.isnan(current_eps) or current_eps <= 0:
+        current_eps = float(df_analysis["close"][-1]) * 0.005  # 0.5% fallback so trendlines can still be found
 
     # Calculate percentage-based eps for S/R zones
     current_price = df_analysis["close"][-1]
@@ -1356,6 +1713,71 @@ def detect_patterns(
     local_high_indices = local_highs_df["bar_index"].to_numpy()
     local_low_prices = local_lows_df["low"].to_numpy()
     local_low_indices = local_lows_df["bar_index"].to_numpy()
+    
+    # Filter by prominence if ATR is available (optional, less aggressive)
+    # Only apply if we have enough extrema to filter
+    if (params.prominence_multiplier > 0 and 
+        "atr" in df_analysis.columns and 
+        len(local_high_prices) > 5 and len(local_low_prices) > 5):
+        try:
+            atr_values = df_analysis["atr"].to_numpy()
+            current_atr = atr_values[-1] if len(atr_values) > 0 else None
+            
+            if current_atr is not None and not np.isnan(current_atr):
+                prominence_threshold = params.prominence_multiplier * current_atr
+                
+                # Filter highs by prominence (height relative to neighboring lows)
+                filtered_highs = []
+                filtered_high_indices = []
+                for i, (price, idx) in enumerate(zip(local_high_prices, local_high_indices)):
+                    # Find nearest low before and after
+                    before_lows = local_low_prices[local_low_indices < idx]
+                    after_lows = local_low_prices[local_low_indices > idx]
+                    
+                    if len(before_lows) > 0 and len(after_lows) > 0:
+                        min_before = np.min(before_lows)
+                        min_after = np.min(after_lows)
+                        prominence = price - max(min_before, min_after)
+                        
+                        if prominence >= prominence_threshold:
+                            filtered_highs.append(price)
+                            filtered_high_indices.append(idx)
+                    else:
+                        # Keep if we can't calculate prominence (edge cases)
+                        filtered_highs.append(price)
+                        filtered_high_indices.append(idx)
+                
+                # Filter lows by prominence
+                filtered_lows = []
+                filtered_low_indices = []
+                for i, (price, idx) in enumerate(zip(local_low_prices, local_low_indices)):
+                    # Find nearest high before and after
+                    before_highs = local_high_prices[local_high_indices < idx]
+                    after_highs = local_high_prices[local_high_indices > idx]
+                    
+                    if len(before_highs) > 0 and len(after_highs) > 0:
+                        max_before = np.max(before_highs)
+                        max_after = np.max(after_highs)
+                        prominence = min(max_before, max_after) - price
+                        
+                        if prominence >= prominence_threshold:
+                            filtered_lows.append(price)
+                            filtered_low_indices.append(idx)
+                    else:
+                        # Keep if we can't calculate prominence (edge cases)
+                        filtered_lows.append(price)
+                        filtered_low_indices.append(idx)
+                
+                # Only apply filtering if we still have enough extrema
+                if len(filtered_highs) >= 2:
+                    local_high_prices = np.array(filtered_highs)
+                    local_high_indices = np.array(filtered_high_indices)
+                if len(filtered_lows) >= 2:
+                    local_low_prices = np.array(filtered_lows)
+                    local_low_indices = np.array(filtered_low_indices)
+        except Exception:
+            # If prominence filtering fails, keep original extrema
+            pass
 
     # Filter extrema in consolidation zones: cluster by price within sr_eps
     # For extrema outside consolidation zones, keep all of them
@@ -1443,18 +1865,59 @@ def detect_patterns(
     support_max = params.max_lines
     resistance_max = params.max_lines
 
+    # Detect volatility for tolerance adjustment
+    current_atr = None
+    atr_array = None
+    if "atr" in df_analysis.columns:
+        atr_values = df_analysis["atr"].to_numpy()
+        atr_array = atr_values
+        # Get last valid ATR
+        valid_atrs = atr_values[~np.isnan(atr_values)]
+        if len(valid_atrs) > 0:
+            current_atr = valid_atrs[-1]
+    
+    if current_atr is not None and current_price > 0:
+        atr_ratio = current_atr / current_price
+        is_high_vol = atr_ratio > params.high_volatility_threshold
+        tolerance_pct = params.high_vol_tolerance_pct if is_high_vol else params.tolerance_percent
+    else:
+        tolerance_pct = params.tolerance_percent
+    
+    ceiling_tol = getattr(params, 'ceiling_tolerance', 0.001)
     support_lines = find_trendlines(
         local_low_prices, local_low_indices, lows, current_eps,
         current_idx, current_price, "support", support_max, params.slope_tolerance,
         required_slope_sign=support_slope_sign,
-        break_factor=params.line_break_factor
+        break_factor=params.line_break_factor,
+        highs=highs, lows=lows, atr_array=atr_array,
+        tolerance_percent=tolerance_pct, k_atr=params.k_atr, fixed_pct=params.fixed_pct,
+        use_strict_validation=True, ceiling_tolerance=ceiling_tol
     )
     resistance_lines = find_trendlines(
         local_high_prices, local_high_indices, highs, current_eps,
         current_idx, current_price, "resistance", resistance_max, params.slope_tolerance,
         required_slope_sign=resistance_slope_sign,
-        break_factor=params.line_break_factor
+        break_factor=params.line_break_factor,
+        highs=highs, lows=lows, atr_array=atr_array,
+        tolerance_percent=tolerance_pct, k_atr=params.k_atr, fixed_pct=params.fixed_pct,
+        use_strict_validation=True, ceiling_tolerance=ceiling_tol
     )
+    # Horizontal lines: connect same-day / same-level highs (e.g. 15 Feb 09:00 and 14:00) into one line
+    horizontal_res = find_horizontal_trendlines(
+        local_high_prices, local_high_indices, highs, lows, current_idx, current_price,
+        "resistance", price_tolerance_pct=0.008, ceiling_tolerance=ceiling_tol, min_bars_span=2
+    )
+    resistance_lines = (horizontal_res + resistance_lines)
+    resistance_lines.sort(key=lambda x: x.strength, reverse=True)
+    resistance_lines = resistance_lines[:resistance_max]
+
+    horizontal_sup = find_horizontal_trendlines(
+        local_low_prices, local_low_indices, highs, lows, current_idx, current_price,
+        "support", price_tolerance_pct=0.008, ceiling_tolerance=ceiling_tol, min_bars_span=2
+    )
+    support_lines = (horizontal_sup + support_lines)
+    support_lines.sort(key=lambda x: x.strength, reverse=True)
+    support_lines = support_lines[:support_max]
 
     # Find triangles
     triangles = find_triangles(
