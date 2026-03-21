@@ -25,7 +25,7 @@ class BacktestParams:
     atr_period: int = 14
     atr_sl_mult: float = 1.5
     bb_period: int = 21
-    bb_std: float = 3.0
+    bb_std: float = 2.5
 
     def to_dict(self) -> dict[str, Any]:
         return {
