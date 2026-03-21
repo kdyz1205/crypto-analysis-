@@ -129,19 +129,32 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
     entry_idx = 0
     sl_price = 0.0
     tp_price = 0.0
+    peak_price = 0.0  # for trailing stop
+    entry_atr = 0.0
     start_idx = max(p.ma_slow, p.bb_period, p.atr_period)
 
     for i in range(start_idx, len(close)):
         if position is not None:
+            # Trailing stop: update peak and trail SL
+            if high[i] > peak_price:
+                peak_price = high[i]
+                # Once price moves 1×ATR in our favor, trail at peak - sl_mult×ATR
+                if peak_price > entry_price + entry_atr:
+                    new_sl = peak_price - p.atr_sl_mult * entry_atr
+                    sl_price = max(sl_price, new_sl)  # only ratchet up
+
+            # Check SL hit
             if low[i] <= sl_price:
-                pnl_pct = (sl_price - entry_price) / entry_price * 100
+                exit_price = sl_price
+                pnl_pct = (exit_price - entry_price) / entry_price * 100
                 trades.append({
                     "entry_idx": entry_idx, "exit_idx": i, "exit_reason": "SL", "pnl_pct": pnl_pct,
                     "entry_time": times_sec[entry_idx], "exit_time": times_sec[i],
-                    "entry_price": entry_price, "exit_price": sl_price,
+                    "entry_price": entry_price, "exit_price": exit_price,
                 })
                 position = None
                 continue
+            # Check TP hit
             if high[i] >= tp_price:
                 pnl_pct = (tp_price - entry_price) / entry_price * 100
                 trades.append({
@@ -151,20 +164,13 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
                 })
                 position = None
                 continue
-            if close[i] <= sl_price:
-                pnl_pct = (sl_price - entry_price) / entry_price * 100
+            # MA breakdown exit: if price drops below EMA, close
+            if close[i] < ema_arr[i] and not np.isnan(ema_arr[i]):
+                pnl_pct = (close[i] - entry_price) / entry_price * 100
                 trades.append({
-                    "entry_idx": entry_idx, "exit_idx": i, "exit_reason": "SL", "pnl_pct": pnl_pct,
+                    "entry_idx": entry_idx, "exit_idx": i, "exit_reason": "EMA_BREAK", "pnl_pct": pnl_pct,
                     "entry_time": times_sec[entry_idx], "exit_time": times_sec[i],
-                    "entry_price": entry_price, "exit_price": sl_price,
-                })
-                position = None
-            elif close[i] >= tp_price:
-                pnl_pct = (tp_price - entry_price) / entry_price * 100
-                trades.append({
-                    "entry_idx": entry_idx, "exit_idx": i, "exit_reason": "TP", "pnl_pct": pnl_pct,
-                    "entry_time": times_sec[entry_idx], "exit_time": times_sec[i],
-                    "entry_price": entry_price, "exit_price": tp_price,
+                    "entry_price": entry_price, "exit_price": close[i],
                 })
                 position = None
             continue
@@ -179,6 +185,8 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
             position = "long"
             entry_price = close[i]
             entry_idx = i
+            entry_atr = atr_arr[i]
+            peak_price = close[i]
             sl_price = ema_arr[i] - p.atr_sl_mult * atr_arr[i]
             tp_price = bb_upper[i]
 
