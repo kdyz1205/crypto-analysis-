@@ -96,6 +96,30 @@ def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14)
     return out
 
 
+def _rsi(close: np.ndarray, period: int = 14) -> np.ndarray:
+    """RSI (0-100) using Wilder's smoothing. Full-length array, NaN-padded."""
+    out = np.full(len(close), np.nan)
+    if len(close) < period + 1:
+        return out
+    deltas = np.diff(close)
+    gains = np.where(deltas > 0, deltas, 0.0)
+    losses = np.where(deltas < 0, -deltas, 0.0)
+    avg_gain = np.mean(gains[:period])
+    avg_loss = np.mean(losses[:period])
+    if avg_loss < 1e-12:
+        out[period] = 100.0
+    else:
+        out[period] = 100 - 100 / (1 + avg_gain / avg_loss)
+    for i in range(period, len(deltas)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss < 1e-12:
+            out[i + 1] = 100.0
+        else:
+            out[i + 1] = 100 - 100 / (1 + avg_gain / avg_loss)
+    return out
+
+
 def _bb_upper(close: np.ndarray, period: int = 21, num_std: float = 2.2) -> np.ndarray:
     out = np.full(len(close), np.nan)
     for i in range(period - 1, len(close)):
@@ -122,6 +146,7 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
     ma_slow = _sma(close, p.ma_slow)
     atr_arr = _atr(high, low, close, p.atr_period)
     bb_upper = _bb_upper(close, p.bb_period, p.bb_std)
+    rsi_arr = _rsi(close, 14)
 
     trades = []
     position = None
@@ -176,12 +201,13 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
             continue
 
         if (np.isnan(mfi_arr[i]) or np.isnan(ma_fast[i]) or np.isnan(ema_arr[i]) or np.isnan(ma_slow[i]) or
-                np.isnan(atr_arr[i]) or np.isnan(bb_upper[i])):
+                np.isnan(atr_arr[i]) or np.isnan(bb_upper[i]) or np.isnan(rsi_arr[i])):
             continue
 
-        # Entry: MA stacking (price > MA_fast > EMA > MA_slow) + MFI > 50 (bullish momentum)
+        # Entry: MA stacking + MFI > 50 + RSI between 40-70 (momentum but not overbought)
+        rsi_ok = 40 < rsi_arr[i] < 70
         if (close[i] > ma_fast[i] and ma_fast[i] > ema_arr[i] and ema_arr[i] > ma_slow[i]
-                and mfi_arr[i] > 50):
+                and mfi_arr[i] > 50 and rsi_ok):
             position = "long"
             entry_price = close[i]
             entry_idx = i
