@@ -23,9 +23,9 @@ class BacktestParams:
     ema_span: int = 21
     ma_slow: int = 55
     atr_period: int = 14
-    atr_sl_mult: float = 1.0
+    atr_sl_mult: float = 1.5
     bb_period: int = 21
-    bb_std: float = 2.2
+    bb_std: float = 3.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
