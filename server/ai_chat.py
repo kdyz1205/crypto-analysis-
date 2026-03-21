@@ -53,13 +53,34 @@ MODELS = {
 
 DEFAULT_MODEL = "claude-sonnet"
 
-SYSTEM_PROMPT = """你是 Crypto TA 内置的 AI 分析师，直接嵌入在交易分析平台里。
+SYSTEM_PROMPT = """你是 Crypto TA 内置的 AI 工程师 + 分析师，直接嵌入在交易分析平台里。
 
 你的能力：
-1. **市场分析**：你可以获取实时价格、K线数据、技术指标（MFI、RSI、MA、ATR、布林带）
-2. **形态识别**：你可以调用系统的形态识别引擎，分析支撑/阻力线、趋势
-3. **回测**：你可以运行策略回测，评估参数表现
-4. **交易 Agent**：你可以查看 Agent 状态、启动/停止 Agent
+## 市场分析
+1. **实时价格**：get_price — 获取任何币种实时价格
+2. **技术指标**：get_market_data — K线 + MFI/RSI/MA/ATR/BB
+3. **形态识别**：get_patterns — 支撑/阻力线、趋势分析
+4. **回测**：run_backtest — 策略回测，评估参数表现
+5. **交易 Agent**：get_agent_status / agent_action — 查看/控制 Agent
+
+## 代码进化（自我修复/强化）
+6. **读代码**：read_file — 读取项目中的任何源文件
+7. **写代码**：edit_file — 用 find/replace 修改代码。uvicorn --reload 会自动重启
+8. **看结构**：list_files — 查看项目文件列表
+9. **Git 快照**：git_snapshot — 修改前自动创建 git commit 保存点
+
+可修改的文件范围（白名单）：
+- server/*.py — 后端 Python
+- frontend/app.js — 前端 JS
+- frontend/index.html — 前端 HTML
+- frontend/style.css — 前端 CSS
+
+⚠️ 代码修改安全规则：
+- 修改前必须先 git_snapshot 保存
+- 用 read_file 确认当前内容再改
+- find 必须精确匹配原文
+- 每次只改一处，小步迭代
+- 不碰 .env、不碰密钥
 
 你的风格：
 - 直接、简洁、数据驱动
@@ -67,7 +88,8 @@ SYSTEM_PROMPT = """你是 Crypto TA 内置的 AI 分析师，直接嵌入在交�
 - 给出具体数字和判断，不要模糊
 - 如果不确定，说明原因而不是瞎猜
 
-当用户问到具体币种时，用工具获取最新数据再回答。"""
+当用户问到具体币种时，用工具获取最新数据再回答。
+当用户要求改代码/修bug/加功能时，先 read_file 看现状，再 git_snapshot，再 edit_file。"""
 
 
 class ChatSession:
@@ -199,6 +221,51 @@ class AIChatEngine:
                     "required": ["action"],
                 },
             },
+            # ── Code evolution tools ──
+            {
+                "name": "read_file",
+                "description": "Read a project source file. Path relative to project root, e.g. 'server/app.py' or 'frontend/app.js'.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path relative to project root"},
+                    },
+                    "required": ["path"],
+                },
+            },
+            {
+                "name": "edit_file",
+                "description": "Edit a project file by exact find/replace. The 'find' string must match exactly. Use read_file first to confirm current content.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path relative to project root"},
+                        "find": {"type": "string", "description": "Exact string to find in the file"},
+                        "replace": {"type": "string", "description": "Replacement string"},
+                    },
+                    "required": ["path", "find", "replace"],
+                },
+            },
+            {
+                "name": "list_files",
+                "description": "List project files. Optionally filter by directory (e.g. 'server', 'frontend').",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "directory": {"type": "string", "description": "Subdirectory to list (default: project root)", "default": ""},
+                    },
+                },
+            },
+            {
+                "name": "git_snapshot",
+                "description": "Create a git commit snapshot before making code changes. ALWAYS call this before edit_file.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "message": {"type": "string", "description": "Commit message describing why we're snapshotting", "default": "auto-snapshot before AI edit"},
+                    },
+                },
+            },
         ]
 
     # ── Tool execution ──
@@ -228,6 +295,14 @@ class AIChatEngine:
                 return self._tool_get_agent_status()
             elif tool_name == "agent_action":
                 return await self._tool_agent_action(tool_input["action"])
+            elif tool_name == "read_file":
+                return self._tool_read_file(tool_input["path"])
+            elif tool_name == "edit_file":
+                return self._tool_edit_file(tool_input["path"], tool_input["find"], tool_input["replace"])
+            elif tool_name == "list_files":
+                return self._tool_list_files(tool_input.get("directory", ""))
+            elif tool_name == "git_snapshot":
+                return self._tool_git_snapshot(tool_input.get("message", "auto-snapshot before AI edit"))
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
         except Exception as e:
@@ -407,6 +482,169 @@ class AIChatEngine:
             return json.dumps({"error": f"Unknown action: {action}"})
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    # ── Code evolution tools ──
+
+    # Whitelist of editable file patterns
+    EDITABLE_PATTERNS = [
+        "server/*.py",
+        "frontend/app.js",
+        "frontend/index.html",
+        "frontend/style.css",
+    ]
+
+    def _is_editable(self, rel_path: str) -> bool:
+        """Check if a file path is in the editable whitelist."""
+        import fnmatch
+        for pattern in self.EDITABLE_PATTERNS:
+            if fnmatch.fnmatch(rel_path, pattern):
+                return True
+        return False
+
+    def _safe_resolve(self, rel_path: str) -> Path | None:
+        """Resolve a relative path safely within project root. Returns None if outside."""
+        try:
+            full = (PROJECT_ROOT / rel_path).resolve()
+            if not str(full).startswith(str(PROJECT_ROOT.resolve())):
+                return None
+            return full
+        except Exception:
+            return None
+
+    def _tool_read_file(self, path: str) -> str:
+        """Read a project file."""
+        full_path = self._safe_resolve(path)
+        if full_path is None:
+            return json.dumps({"error": f"Path '{path}' is outside project root"})
+        if not full_path.exists():
+            return json.dumps({"error": f"File not found: {path}"})
+        if not full_path.is_file():
+            return json.dumps({"error": f"Not a file: {path}"})
+        try:
+            content = full_path.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            # Truncate very large files
+            if len(lines) > 500:
+                content = "\n".join(lines[:500])
+                return json.dumps({
+                    "path": path,
+                    "content": content,
+                    "truncated": True,
+                    "total_lines": len(lines),
+                    "shown_lines": 500,
+                })
+            return json.dumps({
+                "path": path,
+                "content": content,
+                "total_lines": len(lines),
+            })
+        except Exception as e:
+            return json.dumps({"error": f"Read failed: {e}"})
+
+    def _tool_edit_file(self, path: str, find: str, replace: str) -> str:
+        """Edit a project file by find/replace."""
+        if not self._is_editable(path):
+            return json.dumps({"error": f"File '{path}' is not in the editable whitelist. Allowed: {self.EDITABLE_PATTERNS}"})
+        full_path = self._safe_resolve(path)
+        if full_path is None:
+            return json.dumps({"error": f"Path '{path}' is outside project root"})
+        if not full_path.exists():
+            return json.dumps({"error": f"File not found: {path}"})
+        try:
+            content = full_path.read_text(encoding="utf-8")
+            if find not in content:
+                # Show a snippet around where it might be to help AI correct
+                return json.dumps({
+                    "error": "FIND string not found in file. Use read_file to check exact content.",
+                    "file_length": len(content),
+                    "hint": "Make sure the find string matches exactly including whitespace and newlines.",
+                })
+            count = content.count(find)
+            if count > 1:
+                return json.dumps({
+                    "error": f"FIND string appears {count} times. Make it more specific (include more context).",
+                })
+            new_content = content.replace(find, replace, 1)
+            full_path.write_text(new_content, encoding="utf-8")
+            print(f"[AI Chat] edit_file: {path} modified ({len(find)} chars -> {len(replace)} chars)")
+            return json.dumps({
+                "ok": True,
+                "path": path,
+                "chars_removed": len(find),
+                "chars_added": len(replace),
+                "message": f"File {path} updated. uvicorn --reload will auto-restart if it's a .py file.",
+            })
+        except Exception as e:
+            return json.dumps({"error": f"Edit failed: {e}"})
+
+    def _tool_list_files(self, directory: str = "") -> str:
+        """List project files."""
+        target = self._safe_resolve(directory) if directory else PROJECT_ROOT
+        if target is None:
+            return json.dumps({"error": f"Directory '{directory}' is outside project root"})
+        if not target.exists():
+            return json.dumps({"error": f"Directory not found: {directory}"})
+        try:
+            files = []
+            for item in sorted(target.iterdir()):
+                rel = str(item.relative_to(PROJECT_ROOT)).replace("\\", "/")
+                # Skip hidden dirs, __pycache__, node_modules, .git
+                if any(part.startswith(".") or part == "__pycache__" or part == "node_modules" for part in rel.split("/")):
+                    continue
+                if item.is_dir():
+                    files.append({"name": rel + "/", "type": "dir"})
+                elif item.is_file():
+                    size = item.stat().st_size
+                    files.append({"name": rel, "type": "file", "size": size})
+            return json.dumps({"directory": directory or ".", "files": files})
+        except Exception as e:
+            return json.dumps({"error": f"List failed: {e}"})
+
+    def _tool_git_snapshot(self, message: str = "auto-snapshot before AI edit") -> str:
+        """Create a git commit as safety snapshot."""
+        import subprocess
+        try:
+            # Stage all tracked changes
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                timeout=10,
+            )
+            # Check if there's anything to commit
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if not status.stdout.strip():
+                return json.dumps({"ok": True, "message": "Nothing to commit — working tree clean"})
+            # Commit
+            result = subprocess.run(
+                ["git", "commit", "-m", f"[AI snapshot] {message}"],
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                # Get commit hash
+                hash_result = subprocess.run(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=str(PROJECT_ROOT),
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                commit_hash = hash_result.stdout.strip()
+                print(f"[AI Chat] git_snapshot: {commit_hash} — {message}")
+                return json.dumps({"ok": True, "commit": commit_hash, "message": message})
+            else:
+                return json.dumps({"error": f"Git commit failed: {result.stderr}"})
+        except Exception as e:
+            return json.dumps({"error": f"Git snapshot failed: {e}"})
 
     # ── Chat with Claude ──
 

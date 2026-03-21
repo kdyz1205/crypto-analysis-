@@ -92,7 +92,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend static files
+# Serve frontend static files (both /static/ for legacy and root-level for Vercel-compatible paths)
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "frontend")), name="static")
 
 
@@ -845,3 +845,15 @@ async def api_healer_stop():
 async def api_healer_start():
     get_healer().start()
     return {"ok": True, "message": "Healer started"}
+
+
+# ── Serve frontend files at root level (Vercel-compatible relative paths) ──
+# This must come AFTER all /api/ routes so it doesn't shadow them
+@app.get("/style.css")
+async def serve_css():
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "style.css"), media_type="text/css")
+
+
+@app.get("/app.js")
+async def serve_js():
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "app.js"), media_type="application/javascript")

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="style.css">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -277,6 +277,11 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script>
+        // Set API base URL: empty for local dev (same-origin), or Railway URL for Vercel deployment
+        // To configure: set window.__API_BASE before app.js loads
+        // e.g. window.__API_BASE = 'https://your-app.railway.app';
+    </script>
+    <script src="app.js"></script>
 </body>
 </html>

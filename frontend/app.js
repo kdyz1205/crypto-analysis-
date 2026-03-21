@@ -1,3 +1,6 @@
+// ── API Base URL (empty = same origin, set for cross-origin deployment) ──
+const API_BASE = window.__API_BASE || '';
+
 // ── Global State ──
 let chart = null;
 let candleSeries = null;
@@ -407,7 +410,7 @@ async function fetchAssistSimilar(line) {
             x2: line.x2,
             y2: line.y2,
         });
-        const resp = await fetch(`/api/pattern-stats/line-similar?${params}`);
+        const resp = await fetch(`${API_BASE}/api/pattern-stats/line-similar?${params}`);
         if (!resp.ok) return { count: 0, lines: [] };
         const data = await resp.json();
         return { count: data.count ?? 0, lines: data.lines ?? [] };
@@ -607,7 +610,7 @@ async function loadData(isLiveUpdate = false) {
     }, LOAD_DATA_TIMEOUT_MS);
 
     try {
-        const resp = await fetch(`/api/ohlcv?${params}`, { signal });
+        const resp = await fetch(`${API_BASE}/api/ohlcv?${params}`, { signal });
         if (!resp.ok) {
             let errMsg = 'Unknown error';
             try {
@@ -618,7 +621,8 @@ async function loadData(isLiveUpdate = false) {
             }
             console.error('Chart fetch error:', errMsg, 'URL:', `/api/ohlcv?${params}`);
             if (!isLiveUpdate) {
-                alert(`Error loading data: ${errMsg}\n\nPlease check:\n1. Server is running (see terminal for URL)\n2. Symbol exists\n3. Network connection\n\nCheck browser console (F12) for details.`);
+                console.warn(`Data error: ${errMsg} — will retry in 3s`);
+                setTimeout(() => loadData(), 3000);
             }
             return;
         }
@@ -683,14 +687,24 @@ async function loadData(isLiveUpdate = false) {
         if (e.name === 'AbortError') {
             if (!isLiveUpdate) {
                 showLoading(false);
-                alert('加载超时（约 90 秒）。\n\n使用 API 拉取全年数据时可能较慢，请稍后重试或检查网络。');
+                console.warn('Load timeout — will retry in 3s');
+                setTimeout(() => loadData(), 3000);
             }
             return;
         }
         if (!isLiveUpdate) {
             console.error('Data load error:', e);
             showLoading(false);
-            alert(`Network error: ${e.message}\n\nPlease check:\n1. Server is running\n2. Symbol exists\n3. Network connection`);
+            // Auto-retry on network error (server may still be starting)
+            if (!window._loadRetryCount) window._loadRetryCount = 0;
+            window._loadRetryCount++;
+            if (window._loadRetryCount <= 5) {
+                console.warn(`Network error, retry ${window._loadRetryCount}/5 in 2s...`);
+                setTimeout(() => loadData(), 2000);
+            } else {
+                console.error('Max retries reached. Server may be down.');
+                window._loadRetryCount = 0;
+            }
         }
     } finally {
         clearTimeout(timeoutId);
@@ -750,7 +764,7 @@ async function loadPatterns(existingParams) {
             if (rawPatternData) drawAllPatterns();
             return;
         }
-        const resp = await fetch(`/api/patterns?${existingParams}`);
+        const resp = await fetch(`${API_BASE}/api/patterns?${existingParams}`);
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: 'Unknown error' }));
             console.error('Pattern API error:', err);
@@ -807,7 +821,7 @@ async function fetchPatternStats() {
             interval: currentInterval,
             days: getDaysForInterval(currentInterval),
         });
-        const resp = await fetch(`/api/pattern-stats/current-vs-history?${params}`);
+        const resp = await fetch(`${API_BASE}/api/pattern-stats/current-vs-history?${params}`);
         if (!resp.ok) {
             el.textContent = '—';
             return;
@@ -1236,7 +1250,7 @@ async function runBacktest() {
     const params = new URLSearchParams({ symbol: currentSymbol, interval: currentInterval, days });
 
     try {
-        const resp = await fetch(`/api/backtest?${params}`);
+        const resp = await fetch(`${API_BASE}/api/backtest?${params}`);
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || 'Backtest failed');
@@ -1310,7 +1324,7 @@ async function runOptimize() {
     });
 
     try {
-        const resp = await fetch(`/api/backtest/optimize?${params}`, { method: 'POST' });
+        const resp = await fetch(`${API_BASE}/api/backtest/optimize?${params}`, { method: 'POST' });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || 'Optimize failed');
@@ -1387,7 +1401,7 @@ async function loadSymbols() {
     const ac = new AbortController();
     const timeoutId = setTimeout(() => ac.abort(), SYMBOLS_FETCH_TIMEOUT_MS);
     try {
-        const resp = await fetch('/api/symbols', { signal: ac.signal });
+        const resp = await fetch(`${API_BASE}/api/symbols`, { signal: ac.signal });
         clearTimeout(timeoutId);
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -1733,7 +1747,7 @@ async function sendChatMessage(text) {
     const model = document.getElementById('chat-model-select')?.value || 'claude-sonnet';
 
     try {
-        const resp = await fetch('/api/chat', {
+        const resp = await fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1819,7 +1833,7 @@ document.getElementById('chat-messages')?.addEventListener('click', (e) => {
 
 // Clear chat
 document.getElementById('chat-clear-btn')?.addEventListener('click', async () => {
-    await fetch('/api/chat/clear?session_id=default', { method: 'POST' });
+    await fetch(`${API_BASE}/api/chat/clear?session_id=default`, { method: 'POST' });
     const messagesEl = document.getElementById('chat-messages');
     messagesEl.innerHTML = `
         <div class="chat-welcome">
@@ -1851,7 +1865,7 @@ function toggleAgentPanel() {
 
 async function refreshAgentStatus() {
     try {
-        const res = await fetch('/api/agent/status');
+        const res = await fetch(`${API_BASE}/api/agent/status`);
         if (!res.ok) return;
         const d = await res.json();
         const $ = id => document.getElementById(id);
@@ -1917,7 +1931,7 @@ async function refreshAgentStatus() {
 
         // Self-healer status
         try {
-            const hr = await fetch('/api/healer/status');
+            const hr = await fetch(`${API_BASE}/api/healer/status`);
             if (hr.ok) {
                 const hd = await hr.json();
                 const badge = $('healer-status-badge');
@@ -1938,19 +1952,19 @@ async function refreshAgentStatus() {
 document.getElementById('tab-agent')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-close')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-start-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/start', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('agent-stop-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/stop', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/revive', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('healer-trigger-btn')?.addEventListener('click', async () => {
-    await fetch('/api/healer/trigger', { method: 'POST' });
+    await fetch(`${API_BASE}/api/healer/trigger`, { method: 'POST' });
     setTimeout(refreshAgentStatus, 2000);
 });
 

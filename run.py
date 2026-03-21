@@ -99,7 +99,7 @@ if __name__ == "__main__":
             # reload=True: uvicorn watches .py files and auto-restarts on changes
             # This allows the self-healer to apply code fixes and have them take effect immediately
             uvicorn.run("server.app:app", host=host, port=port, reload=True,
-                        reload_dirs=[str(PROJECT_ROOT / "server"), str(PROJECT_ROOT / "frontend")])
+                        reload_dirs=[os.path.join(PROJECT_ROOT, "server"), os.path.join(PROJECT_ROOT, "frontend")])
             break
         if port < PORT + 4:
             print(f"\n  Port {port} in use, trying {port + 1} ...\n")
