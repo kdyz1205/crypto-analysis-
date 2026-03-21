@@ -1,1 +1,12 @@
 commit	score	sharpe	total_pnl_pct	win_rate	max_drawdown_pct	trades	status	description
+25eeb95	-0.623096	-0.3786	-16.67	47.6	16.02	44	keep	baseline: fix MFI entry + MA stacking + MFI>50
+014c48e	-0.946796	-0.4186	-23.16	47.6	21.80	44	discard	exp1: widen SL from 1.0x to 2.0x ATR
+90b52fe	-0.584286	-0.3941	-19.63	57.9	15.49	31	keep	exp2: SL=1.5xATR BB_std=3.0 wider TP target
+5857257	-0.548915	-0.4168	-13.48	46.4	13.30	39	keep	exp3: trailing stop + EMA breakdown exit
+0b60de7	-1.188623	-0.6024	-21.97	29.6	22.35	54	discard	exp4: faster MAs (5/13/34) too many false signals
+03002f2	-0.400436	-0.3467	-9.14	48.2	12.02	31	keep	exp5: add RSI filter (40-70) avoid overbought
+05e1acd	-0.388754	-0.3088	-9.02	45.0	11.79	38	keep	exp6: BB std 2.5 tighter TP target
+45ec069	-0.889067	-0.1401	-11.60	52.1	24.98	96	discard	exp7: short entries (high drawdown)
+f8aa25b	-0.263037	-0.2363	-7.28	47.4	10.05	38	keep	exp8: SL=2.0xATR with trailing stop
+a8c9caf	-0.261542	-0.2329	-7.32	47.4	10.05	38	keep	exp9: SL=2.5xATR marginal gain BEST
+246ee09	-0.340695	-0.3173	-9.31	40.7	10.35	37	discard	exp10: MACD filter too restrictive
