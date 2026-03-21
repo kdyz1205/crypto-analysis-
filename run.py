@@ -10,8 +10,12 @@ import uvicorn
 # Load .env file if it exists (for ANTHROPIC_API_KEY, OKX keys, etc.)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
-    print("[env] Loaded .env file")
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if os.path.exists(_env_path):
+        load_dotenv(_env_path, override=True)
+        print(f"[env] Loaded {_env_path}")
+    else:
+        load_dotenv()
 except ImportError:
     pass
 

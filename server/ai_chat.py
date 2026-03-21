@@ -22,24 +22,31 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MEMORY_DIR = PROJECT_ROOT / "autoresearch" / "chat_memory"
 
+# Auto-load .env so API key is available even when run from any directory
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 # ── Model configs ──
 MODELS = {
     "claude-haiku": {
         "provider": "anthropic",
-        "model_id": "claude-haiku-4-5-20250315",
+        "model_id": "claude-haiku-4-5",
         "label": "Claude Haiku 4.5 (fast)",
         "max_tokens": 2048,
     },
     "claude-sonnet": {
         "provider": "anthropic",
-        "model_id": "claude-sonnet-4-20250514",
-        "label": "Claude Sonnet 4",
+        "model_id": "claude-sonnet-4-5",
+        "label": "Claude Sonnet 4.5",
         "max_tokens": 4096,
     },
     "claude-opus": {
         "provider": "anthropic",
-        "model_id": "claude-opus-4-20250514",
-        "label": "Claude Opus 4 (deep thinking)",
+        "model_id": "claude-opus-4-5",
+        "label": "Claude Opus 4.5 (deep thinking)",
         "max_tokens": 4096,
     },
 }
