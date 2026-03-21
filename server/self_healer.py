@@ -99,7 +99,7 @@ class SelfHealer:
     def _init_anthropic(self):
         try:
             from dotenv import load_dotenv
-            load_dotenv(PROJECT_ROOT / ".env", override=False)
+            load_dotenv(PROJECT_ROOT / ".env", override=True)
         except ImportError:
             pass
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")

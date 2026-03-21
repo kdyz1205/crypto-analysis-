@@ -25,7 +25,7 @@ MEMORY_DIR = PROJECT_ROOT / "autoresearch" / "chat_memory"
 # Auto-load .env so API key is available even when run from any directory
 try:
     from dotenv import load_dotenv
-    load_dotenv(PROJECT_ROOT / ".env", override=False)
+    load_dotenv(PROJECT_ROOT / ".env", override=True)
 except ImportError:
     pass
 
