@@ -9,6 +9,7 @@ from .pattern_service import get_patterns, get_patterns_from_df, DEFAULT_PARAMS
 from .backtest_service import run_backtest, load_df_from_csv, BacktestParams, optimize_backtest
 from .ma_ribbon_service import get_current_ribbon, run_ribbon_backtest, RibbonBacktestConfig
 from .agent_brain import AgentBrain
+from .ai_chat import AIChatEngine
 from .pattern_features import (
     run_trendline_backtest,
     extract_features,
@@ -38,6 +39,7 @@ app = FastAPI(title="Crypto TA")
 
 # ── Agent singleton ──
 _agent: AgentBrain | None = None
+_chat: AIChatEngine | None = None
 
 
 def get_agent() -> AgentBrain:
@@ -47,10 +49,19 @@ def get_agent() -> AgentBrain:
     return _agent
 
 
+def get_chat() -> AIChatEngine:
+    global _chat
+    if _chat is None:
+        _chat = AIChatEngine()
+    return _chat
+
+
 @app.on_event("startup")
 async def _startup():
     agent = get_agent()
+    chat = get_chat()
     print(f"[Agent] Initialized. Mode={agent.trader.state.mode} Gen={agent.trader.state.generation}")
+    print(f"[AI Chat] Ready. API key={'set' if chat._anthropic_client else 'NOT set'}")
 
 
 @app.on_event("shutdown")
@@ -754,3 +765,42 @@ async def api_agent_signals():
         except Exception:
             pass
     return {"signals": signals}
+
+
+# ── AI Chat API endpoints ─────────────────────────────────────────────────────
+
+from pydantic import BaseModel
+
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str = "default"
+    model: str | None = None
+
+
+@app.post("/api/chat")
+async def api_chat(req: ChatRequest):
+    """Send a message to the AI and get a response."""
+    chat = get_chat()
+    result = await chat.chat(req.message, req.session_id, req.model)
+    return result
+
+
+@app.get("/api/chat/models")
+async def api_chat_models():
+    """List available AI models."""
+    return get_chat().list_models()
+
+
+@app.get("/api/chat/history")
+async def api_chat_history(session_id: str = Query("default")):
+    """Get chat history for a session."""
+    session = get_chat().get_session(session_id)
+    return {"messages": session.messages, "model": session.model}
+
+
+@app.post("/api/chat/clear")
+async def api_chat_clear(session_id: str = Query("default")):
+    """Clear chat history."""
+    get_chat().clear_session(session_id)
+    return {"ok": True}

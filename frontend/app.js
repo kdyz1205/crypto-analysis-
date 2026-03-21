@@ -1434,10 +1434,12 @@ function updateViewTabsUI() {
     const drawBtn = document.getElementById('tab-draw');
     const assistBtn = document.getElementById('tab-assist');
     const agentBtn = document.getElementById('tab-agent');
+    const chatBtn = document.getElementById('tab-chat');
     if (recognizingBtn) recognizingBtn.classList.toggle('active', toolMode === 'recognize');
     if (drawBtn) drawBtn.classList.toggle('active', toolMode === 'draw');
     if (assistBtn) assistBtn.classList.toggle('active', toolMode === 'assist');
     if (agentBtn) agentBtn.classList.toggle('active', agentPanelOpen);
+    if (chatBtn) chatBtn.classList.toggle('active', chatPanelOpen);
 }
 
 async function setToolMode(nextMode) {
@@ -1683,6 +1685,151 @@ document.getElementById('draw-clear').addEventListener('click', () => {
     drawingMode = null;
     updateDrawingModeUI();
     drawAllPatterns();
+});
+
+// ── AI Chat Panel ──
+let chatPanelOpen = false;
+let chatSending = false;
+
+function toggleChatPanel() {
+    chatPanelOpen = !chatPanelOpen;
+    const panel = document.getElementById('chat-panel');
+    if (panel) panel.classList.toggle('hidden', !chatPanelOpen);
+    updateViewTabsUI();
+    if (chatPanelOpen) {
+        document.getElementById('chat-input')?.focus();
+    }
+}
+
+async function sendChatMessage(text) {
+    if (!text?.trim() || chatSending) return;
+
+    chatSending = true;
+    const messagesEl = document.getElementById('chat-messages');
+    const sendBtn = document.getElementById('chat-send-btn');
+    const inputEl = document.getElementById('chat-input');
+
+    // Remove welcome message
+    const welcome = messagesEl.querySelector('.chat-welcome');
+    if (welcome) welcome.remove();
+
+    // Add user message
+    const userMsg = document.createElement('div');
+    userMsg.className = 'chat-msg user';
+    userMsg.textContent = text;
+    messagesEl.appendChild(userMsg);
+
+    // Add thinking indicator
+    const thinkMsg = document.createElement('div');
+    thinkMsg.className = 'chat-msg thinking';
+    thinkMsg.textContent = 'Thinking...';
+    messagesEl.appendChild(thinkMsg);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    sendBtn.disabled = true;
+
+    const model = document.getElementById('chat-model-select')?.value || 'claude-sonnet';
+
+    try {
+        const resp = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: text,
+                session_id: 'default',
+                model: model,
+            }),
+        });
+
+        thinkMsg.remove();
+
+        if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.detail || `HTTP ${resp.status}`);
+        }
+
+        const data = await resp.json();
+
+        // Add assistant message
+        const assistMsg = document.createElement('div');
+        assistMsg.className = 'chat-msg assistant';
+
+        // Show tool badges if tools were called
+        let toolBadgesHtml = '';
+        if (data.tool_calls?.length) {
+            toolBadgesHtml = data.tool_calls.map(tc =>
+                `<span class="tool-badge">${tc.tool}</span>`
+            ).join('') + '<br>';
+        }
+
+        // Simple markdown rendering (bold, code, pre)
+        let reply = data.reply || '';
+        reply = reply.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+        reply = reply.replace(/`([^`]+)`/g, '<code>$1</code>');
+        reply = reply.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+        assistMsg.innerHTML = toolBadgesHtml + reply;
+        messagesEl.appendChild(assistMsg);
+
+    } catch (e) {
+        thinkMsg.remove();
+        const errMsg = document.createElement('div');
+        errMsg.className = 'chat-msg assistant';
+        errMsg.style.color = '#ef5350';
+        errMsg.textContent = `Error: ${e.message}`;
+        messagesEl.appendChild(errMsg);
+    }
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    chatSending = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+}
+
+// Chat event handlers
+document.getElementById('tab-chat')?.addEventListener('click', () => toggleChatPanel());
+document.getElementById('chat-close')?.addEventListener('click', () => toggleChatPanel());
+
+document.getElementById('chat-send-btn')?.addEventListener('click', () => {
+    sendChatMessage(document.getElementById('chat-input')?.value);
+});
+
+document.getElementById('chat-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendChatMessage(e.target.value);
+    }
+});
+
+// Auto-resize textarea
+document.getElementById('chat-input')?.addEventListener('input', (e) => {
+    e.target.style.height = 'auto';
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
+});
+
+// Suggestion buttons
+document.getElementById('chat-messages')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chat-suggestion');
+    if (btn) {
+        sendChatMessage(btn.dataset.msg);
+    }
+});
+
+// Clear chat
+document.getElementById('chat-clear-btn')?.addEventListener('click', async () => {
+    await fetch('/api/chat/clear?session_id=default', { method: 'POST' });
+    const messagesEl = document.getElementById('chat-messages');
+    messagesEl.innerHTML = `
+        <div class="chat-welcome">
+            <p>Chat cleared. Ask me anything!</p>
+            <div class="chat-suggestions">
+                <button class="chat-suggestion" data-msg="分析一下 BTC 现在的走势">分析 BTC 走势</button>
+                <button class="chat-suggestion" data-msg="HYPE 的支撑阻力在哪里？">HYPE 支撑阻力</button>
+                <button class="chat-suggestion" data-msg="帮我跑一下 ETH 4h 的回测">ETH 回测</button>
+            </div>
+        </div>`;
 });
 
 // ── Agent Dashboard ──

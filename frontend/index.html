@@ -46,6 +46,7 @@
             <button type="button" id="tab-draw" class="view-tab">Draw</button>
             <button type="button" id="tab-assist" class="view-tab">Assist</button>
             <button type="button" id="tab-agent" class="view-tab">Agent</button>
+            <button type="button" id="tab-chat" class="view-tab chat-tab">AI Chat</button>
         </div>
 
         <div id="toolbar-spacer"></div>
@@ -157,6 +158,42 @@
             <div class="spinner"></div>
             <p class="loading-text">Loading…</p>
             <p class="loading-hint">First load may take 30–60s when using API</p>
+        </div>
+    </div>
+
+    <!-- AI Chat Panel -->
+    <div id="chat-panel" class="chat-panel hidden">
+        <div class="chat-panel-header">
+            <h3>AI Chat</h3>
+            <div class="chat-model-selector">
+                <select id="chat-model-select">
+                    <option value="claude-haiku">Haiku (fast)</option>
+                    <option value="claude-sonnet" selected>Sonnet</option>
+                    <option value="claude-opus">Opus (deep)</option>
+                </select>
+            </div>
+            <button type="button" id="chat-clear-btn" class="chat-clear-btn" title="Clear chat">Clear</button>
+            <button type="button" id="chat-close">&times;</button>
+        </div>
+        <div id="chat-messages" class="chat-messages">
+            <div class="chat-welcome">
+                <p>你好！我是内置 AI 分析师。</p>
+                <p>试试问我：</p>
+                <div class="chat-suggestions">
+                    <button class="chat-suggestion" data-msg="分析一下 BTC 现在的走势">分析 BTC 走势</button>
+                    <button class="chat-suggestion" data-msg="HYPE 的支撑阻力在哪里？">HYPE 支撑阻力</button>
+                    <button class="chat-suggestion" data-msg="帮我跑一下 ETH 4h 的回测">ETH 回测</button>
+                    <button class="chat-suggestion" data-msg="Agent 状态怎么样？">Agent 状态</button>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <textarea id="chat-input" placeholder="问我任何关于市场的问题..." rows="1"></textarea>
+            <button type="button" id="chat-send-btn" class="chat-send-btn">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M14 2L7 9M14 2L9.5 14L7 9M14 2L2 6.5L7 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
         </div>
     </div>
 
