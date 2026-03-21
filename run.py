@@ -7,6 +7,14 @@ import time
 import webbrowser
 import uvicorn
 
+# Load .env file if it exists (for ANTHROPIC_API_KEY, OKX keys, etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("[env] Loaded .env file")
+except ImportError:
+    pass
+
 # Default 8001 to avoid conflict with anything left on 8000 (TIME_WAIT or other app)
 PORT = int(os.environ.get("PORT", 8001))
 URL = f"http://127.0.0.1:{PORT}"
