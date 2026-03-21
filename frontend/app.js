@@ -1433,9 +1433,11 @@ function updateViewTabsUI() {
     const recognizingBtn = document.getElementById('tab-recognizing');
     const drawBtn = document.getElementById('tab-draw');
     const assistBtn = document.getElementById('tab-assist');
+    const agentBtn = document.getElementById('tab-agent');
     if (recognizingBtn) recognizingBtn.classList.toggle('active', toolMode === 'recognize');
     if (drawBtn) drawBtn.classList.toggle('active', toolMode === 'draw');
     if (assistBtn) assistBtn.classList.toggle('active', toolMode === 'assist');
+    if (agentBtn) agentBtn.classList.toggle('active', agentPanelOpen);
 }
 
 async function setToolMode(nextMode) {
@@ -1681,6 +1683,109 @@ document.getElementById('draw-clear').addEventListener('click', () => {
     drawingMode = null;
     updateDrawingModeUI();
     drawAllPatterns();
+});
+
+// ── Agent Dashboard ──
+let agentPanelOpen = false;
+let agentPollTimer = null;
+
+function toggleAgentPanel() {
+    agentPanelOpen = !agentPanelOpen;
+    const panel = document.getElementById('agent-panel');
+    if (panel) panel.classList.toggle('hidden', !agentPanelOpen);
+    updateViewTabsUI();
+    if (agentPanelOpen) {
+        refreshAgentStatus();
+        agentPollTimer = setInterval(refreshAgentStatus, 5000);
+    } else {
+        if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
+    }
+}
+
+async function refreshAgentStatus() {
+    try {
+        const res = await fetch('/api/agent/status');
+        if (!res.ok) return;
+        const d = await res.json();
+        const $ = id => document.getElementById(id);
+        $('agent-mode').textContent = (d.mode || '—').toUpperCase();
+        const statusEl = $('agent-status');
+        if (d.running) {
+            statusEl.textContent = 'RUNNING';
+            statusEl.className = 'agent-stat-value status-running';
+        } else if (d.emergency_shutdown) {
+            statusEl.textContent = 'SHUTDOWN';
+            statusEl.className = 'agent-stat-value status-shutdown';
+        } else {
+            statusEl.textContent = 'STOPPED';
+            statusEl.className = 'agent-stat-value status-stopped';
+        }
+        $('agent-gen').textContent = d.generation ?? '—';
+        $('agent-equity').textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
+        $('agent-cash').textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+
+        const pnl = d.total_pnl;
+        const pnlEl = $('agent-pnl');
+        if (pnl != null) {
+            pnlEl.textContent = `$${pnl.toFixed(2)}`;
+            pnlEl.className = `agent-stat-value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else { pnlEl.textContent = '—'; }
+
+        $('agent-winrate').textContent = d.win_rate != null ? `${d.win_rate.toFixed(1)}%` : '—';
+        $('agent-trades').textContent = d.total_trades ?? '—';
+
+        const dailyEl = $('agent-daily-pnl');
+        if (d.daily_pnl != null) {
+            dailyEl.textContent = `$${d.daily_pnl.toFixed(2)}`;
+            dailyEl.className = `agent-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else { dailyEl.textContent = '—'; }
+
+        // Positions
+        const posEl = $('agent-positions');
+        if (d.positions && d.positions.length > 0) {
+            posEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>SL</th></tr>` +
+                d.positions.map(p => `<tr><td>${p.symbol}</td><td>${p.side}</td><td>${p.size}</td><td>${p.entry_price?.toFixed(2) ?? '—'}</td><td>${p.sl_price?.toFixed(2) ?? '—'}</td></tr>`).join('') +
+                `</table>`;
+        } else { posEl.textContent = 'None'; }
+
+        // Recent trades
+        const trEl = $('agent-recent-trades');
+        if (d.recent_trades && d.recent_trades.length > 0) {
+            trEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>PnL</th><th>Time</th></tr>` +
+                d.recent_trades.slice(-10).reverse().map(t => {
+                    const pnlCls = (t.pnl ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    const time = t.exit_time ? new Date(t.exit_time * 1000).toLocaleString() : '—';
+                    return `<tr><td>${t.symbol}</td><td>${t.side}</td><td class="${pnlCls}">$${(t.pnl ?? 0).toFixed(2)}</td><td>${time}</td></tr>`;
+                }).join('') + `</table>`;
+        } else { trEl.textContent = 'None'; }
+
+        // Strategy params
+        $('agent-params-gen').textContent = d.generation ?? '0';
+        const paramsEl = $('agent-params');
+        if (d.strategy_params && typeof d.strategy_params === 'object') {
+            paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) =>
+                `<div class="agent-param-item"><span class="agent-param-key">${k}</span><span class="agent-param-val">${typeof v === 'number' ? v.toFixed(2) : v}</span></div>`
+            ).join('');
+        }
+    } catch (e) {
+        console.warn('Agent status fetch failed:', e);
+    }
+}
+
+// Agent button handlers
+document.getElementById('tab-agent')?.addEventListener('click', () => toggleAgentPanel());
+document.getElementById('agent-close')?.addEventListener('click', () => toggleAgentPanel());
+document.getElementById('agent-start-btn')?.addEventListener('click', async () => {
+    await fetch('/api/agent/start', { method: 'POST' });
+    refreshAgentStatus();
+});
+document.getElementById('agent-stop-btn')?.addEventListener('click', async () => {
+    await fetch('/api/agent/stop', { method: 'POST' });
+    refreshAgentStatus();
+});
+document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
+    await fetch('/api/agent/revive', { method: 'POST' });
+    refreshAgentStatus();
 });
 
 // ── Initialize ──

@@ -45,6 +45,7 @@
             <button type="button" id="tab-recognizing" class="view-tab">Recognizing</button>
             <button type="button" id="tab-draw" class="view-tab">Draw</button>
             <button type="button" id="tab-assist" class="view-tab">Assist</button>
+            <button type="button" id="tab-agent" class="view-tab">Agent</button>
         </div>
 
         <div id="toolbar-spacer"></div>
@@ -156,6 +157,75 @@
             <div class="spinner"></div>
             <p class="loading-text">Loading…</p>
             <p class="loading-hint">First load may take 30–60s when using API</p>
+        </div>
+    </div>
+
+    <!-- Agent Dashboard (overlay panel) -->
+    <div id="agent-panel" class="agent-panel hidden">
+        <div class="agent-panel-header">
+            <h3>Agent Dashboard</h3>
+            <div class="agent-controls">
+                <button type="button" id="agent-start-btn" class="agent-btn agent-start">Start</button>
+                <button type="button" id="agent-stop-btn" class="agent-btn agent-stop">Stop</button>
+                <button type="button" id="agent-revive-btn" class="agent-btn agent-revive">Revive</button>
+            </div>
+            <button type="button" id="agent-close">&times;</button>
+        </div>
+        <div class="agent-body">
+            <div class="agent-stats">
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Mode</span>
+                    <span id="agent-mode" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Status</span>
+                    <span id="agent-status" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Generation</span>
+                    <span id="agent-gen" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Equity</span>
+                    <span id="agent-equity" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Cash</span>
+                    <span id="agent-cash" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Total PnL</span>
+                    <span id="agent-pnl" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Win Rate</span>
+                    <span id="agent-winrate" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Trades</span>
+                    <span id="agent-trades" class="agent-stat-value">—</span>
+                </div>
+                <div class="agent-stat">
+                    <span class="agent-stat-label">Daily PnL</span>
+                    <span id="agent-daily-pnl" class="agent-stat-value">—</span>
+                </div>
+            </div>
+            <div class="agent-section">
+                <h4>Open Positions</h4>
+                <div id="agent-positions" class="agent-table-wrap">None</div>
+            </div>
+            <div class="agent-section">
+                <h4>Recent Trades</h4>
+                <div id="agent-recent-trades" class="agent-table-wrap">None</div>
+            </div>
+            <div class="agent-section">
+                <h4>Current Signals</h4>
+                <div id="agent-signals" class="agent-table-wrap">Waiting...</div>
+            </div>
+            <div class="agent-section">
+                <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
+                <div id="agent-params" class="agent-params-grid">—</div>
+            </div>
         </div>
     </div>
 

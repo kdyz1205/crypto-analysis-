@@ -8,6 +8,7 @@ from .data_service import load_symbols, load_okx_swap_symbols, get_ohlcv, get_oh
 from .pattern_service import get_patterns, get_patterns_from_df, DEFAULT_PARAMS
 from .backtest_service import run_backtest, load_df_from_csv, BacktestParams, optimize_backtest
 from .ma_ribbon_service import get_current_ribbon, run_ribbon_backtest, RibbonBacktestConfig
+from .agent_brain import AgentBrain
 from .pattern_features import (
     run_trendline_backtest,
     extract_features,
@@ -34,6 +35,28 @@ async def _load_df_for_analysis(symbol: str, interval: str, end_time=None, days:
 
 
 app = FastAPI(title="Crypto TA")
+
+# ── Agent singleton ──
+_agent: AgentBrain | None = None
+
+
+def get_agent() -> AgentBrain:
+    global _agent
+    if _agent is None:
+        _agent = AgentBrain()
+    return _agent
+
+
+@app.on_event("startup")
+async def _startup():
+    agent = get_agent()
+    print(f"[Agent] Initialized. Mode={agent.trader.state.mode} Gen={agent.trader.state.generation}")
+
+
+@app.on_event("shutdown")
+async def _shutdown():
+    if _agent is not None:
+        _agent.stop()
 
 # Add CORS middleware to allow frontend to access API
 app.add_middleware(
@@ -660,3 +683,74 @@ async def api_ma_ribbon_backtest(
         import traceback
         print(f"MA ribbon backtest error: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, str(e))
+
+
+# ── Agent API endpoints ────────────────────────────────────────────────────────
+
+@app.get("/api/agent/status")
+async def api_agent_status():
+    """Get current agent status: equity, positions, trades, generation, etc."""
+    return get_agent().get_status()
+
+
+@app.post("/api/agent/start")
+async def api_agent_start():
+    """Start the agent background loop."""
+    agent = get_agent()
+    if agent._running:
+        return {"ok": True, "message": "Agent already running"}
+    agent.start()
+    return {"ok": True, "message": "Agent started"}
+
+
+@app.post("/api/agent/stop")
+async def api_agent_stop():
+    """Stop the agent background loop."""
+    agent = get_agent()
+    agent.stop()
+    return {"ok": True, "message": "Agent stopped"}
+
+
+@app.post("/api/agent/revive")
+async def api_agent_revive():
+    """Revive the agent after emergency shutdown."""
+    agent = get_agent()
+    agent.trader.revive()
+    agent._save_state()
+    return {"ok": True, "message": "Agent revived", "equity": agent.trader.state.equity}
+
+
+@app.post("/api/agent/config")
+async def api_agent_config(
+    mode: str | None = Query(None, description="paper or live"),
+    equity: float | None = Query(None, description="Set paper equity"),
+):
+    """Update agent config (mode, equity)."""
+    agent = get_agent()
+    if mode and mode in ("paper", "live"):
+        agent.trader.state.mode = mode
+    if equity is not None and equity > 0:
+        agent.trader.state.equity = equity
+        agent.trader.state.peak_equity = max(agent.trader.state.peak_equity, equity)
+        agent.trader.state.cash = equity
+    agent._save_state()
+    return {"ok": True, "state": agent.get_status()}
+
+
+@app.get("/api/agent/signals")
+async def api_agent_signals():
+    """Run signal check on all watched symbols and return current signals."""
+    agent = get_agent()
+    signals = {}
+    for symbol in agent._last_signals:
+        signals[symbol] = agent._last_signals[symbol]
+    # Also generate fresh signals
+    from .agent_brain import WATCH_SYMBOLS
+    for symbol in WATCH_SYMBOLS:
+        try:
+            sig = await agent.generate_signal(symbol)
+            if sig:
+                signals[symbol] = sig
+        except Exception:
+            pass
+    return {"signals": signals}
