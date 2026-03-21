@@ -1137,6 +1137,17 @@ body {
 .status-stopped { color: #787b86; }
 .status-shutdown { color: #ef5350; }
 
+/* ── Self-Healer section ── */
+.healer-section { border-top: 1px solid #363a45; padding-top: 10px; margin-top: 6px; }
+.healer-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    background: #7e57c2; color: #fff; margin-left: 6px; vertical-align: middle;
+}
+.healer-badge.inactive { background: #363a45; color: #787b86; }
+.healer-stats { display: flex; gap: 12px; margin-bottom: 6px; font-size: 11px; color: #787b86; }
+.healer-stat strong { color: #d1d4dc; }
+.healer-controls { margin-top: 6px; }
+
 /* ── AI Chat Panel ── */
 .chat-tab { color: #42a5f5 !important; font-weight: 600; }
 .chat-panel {

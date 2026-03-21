@@ -19,6 +19,8 @@ try:
 except ImportError:
     pass
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 # Default 8001 to avoid conflict with anything left on 8000 (TIME_WAIT or other app)
 PORT = int(os.environ.get("PORT", 8001))
 URL = f"http://127.0.0.1:{PORT}"
@@ -94,7 +96,10 @@ if __name__ == "__main__":
             url_holder = [f"http://127.0.0.1:{port}"]
             threading.Thread(target=open_browser, args=(url_holder,), daemon=True).start()
             print(f"\n  Crypto TA: {url_holder[0]}\n  Open in browser if not auto-opened.\n")
-            uvicorn.run("server.app:app", host=host, port=port, reload=False)
+            # reload=True: uvicorn watches .py files and auto-restarts on changes
+            # This allows the self-healer to apply code fixes and have them take effect immediately
+            uvicorn.run("server.app:app", host=host, port=port, reload=True,
+                        reload_dirs=[str(PROJECT_ROOT / "server"), str(PROJECT_ROOT / "frontend")])
             break
         if port < PORT + 4:
             print(f"\n  Port {port} in use, trying {port + 1} ...\n")

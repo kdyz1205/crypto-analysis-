@@ -10,6 +10,7 @@ from .backtest_service import run_backtest, load_df_from_csv, BacktestParams, op
 from .ma_ribbon_service import get_current_ribbon, run_ribbon_backtest, RibbonBacktestConfig
 from .agent_brain import AgentBrain
 from .ai_chat import AIChatEngine
+from .self_healer import SelfHealer
 from .pattern_features import (
     run_trendline_backtest,
     extract_features,
@@ -40,6 +41,7 @@ app = FastAPI(title="Crypto TA")
 # ── Agent singleton ──
 _agent: AgentBrain | None = None
 _chat: AIChatEngine | None = None
+_healer: SelfHealer | None = None
 
 
 def get_agent() -> AgentBrain:
@@ -56,18 +58,30 @@ def get_chat() -> AIChatEngine:
     return _chat
 
 
+def get_healer() -> SelfHealer:
+    global _healer
+    if _healer is None:
+        _healer = SelfHealer()
+    return _healer
+
+
 @app.on_event("startup")
 async def _startup():
     agent = get_agent()
     chat = get_chat()
+    healer = get_healer()
+    healer.start()  # auto-start self-healer
     print(f"[Agent] Initialized. Mode={agent.trader.state.mode} Gen={agent.trader.state.generation}")
     print(f"[AI Chat] Ready. API key={'set' if chat._anthropic_client else 'NOT set'}")
+    print(f"[Healer] Self-healing active. AI={'enabled' if healer._client else 'disabled'}")
 
 
 @app.on_event("shutdown")
 async def _shutdown():
     if _agent is not None:
         _agent.stop()
+    if _healer is not None:
+        _healer.stop()
 
 # Add CORS middleware to allow frontend to access API
 app.add_middleware(
@@ -804,3 +818,30 @@ async def api_chat_clear(session_id: str = Query("default")):
     """Clear chat history."""
     get_chat().clear_session(session_id)
     return {"ok": True}
+
+
+# ── Self-Healer API ────────────────────────────────────────────────────────────
+
+@app.get("/api/healer/status")
+async def api_healer_status():
+    """Get self-healer status: fix count, recent errors, last fix time."""
+    return get_healer().get_status()
+
+
+@app.post("/api/healer/trigger")
+async def api_healer_trigger():
+    """Manually trigger a heal attempt right now."""
+    asyncio.create_task(get_healer().try_heal())
+    return {"ok": True, "message": "Heal attempt triggered"}
+
+
+@app.post("/api/healer/stop")
+async def api_healer_stop():
+    get_healer().stop()
+    return {"ok": True, "message": "Healer stopped"}
+
+
+@app.post("/api/healer/start")
+async def api_healer_start():
+    get_healer().start()
+    return {"ok": True, "message": "Healer started"}

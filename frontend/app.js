@@ -1914,6 +1914,21 @@ async function refreshAgentStatus() {
                 `<div class="agent-param-item"><span class="agent-param-key">${k}</span><span class="agent-param-val">${typeof v === 'number' ? v.toFixed(2) : v}</span></div>`
             ).join('');
         }
+
+        // Self-healer status
+        try {
+            const hr = await fetch('/api/healer/status');
+            if (hr.ok) {
+                const hd = await hr.json();
+                const badge = $('healer-status-badge');
+                if (badge) { badge.textContent = hd.running ? 'ACTIVE' : 'OFF'; badge.className = `healer-badge${hd.running ? '' : ' inactive'}`; }
+                const fc = $('healer-fix-count'); if (fc) fc.textContent = hd.fix_count ?? 0;
+                const ai = $('healer-ai-status');
+                if (ai) { ai.textContent = hd.has_ai ? 'ON' : 'NO KEY'; ai.style.color = hd.has_ai ? '#26a69a' : '#ef5350'; }
+                const errEl = $('healer-recent-errors');
+                if (errEl) errEl.textContent = (hd.recent_errors || '(no errors)').slice(-400);
+            }
+        } catch (_) {}
     } catch (e) {
         console.warn('Agent status fetch failed:', e);
     }
@@ -1933,6 +1948,10 @@ document.getElementById('agent-stop-btn')?.addEventListener('click', async () =>
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
     await fetch('/api/agent/revive', { method: 'POST' });
     refreshAgentStatus();
+});
+document.getElementById('healer-trigger-btn')?.addEventListener('click', async () => {
+    await fetch('/api/healer/trigger', { method: 'POST' });
+    setTimeout(refreshAgentStatus, 2000);
 });
 
 // ── Initialize ──
