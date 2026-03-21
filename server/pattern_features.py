@@ -94,10 +94,12 @@ def extract_features(
         seg = seg[~np.isnan(seg)]
         if len(seg) > 0:
             avg_atr = float(np.mean(seg))
-    if avg_atr is not None and not np.isnan(avg_atr) and avg_atr > 1e-12:
+    if not np.isnan(avg_atr) and avg_atr > 1e-12:
         volatility_norm = slope / avg_atr
+    elif abs(y1) > 1e-12:
+        volatility_norm = slope / (abs(y1) * 0.01)
     else:
-        volatility_norm = slope / (abs(y1) * 0.01) if abs(y1) > 1e-12 else 0.0
+        volatility_norm = 0.0
 
     direction = 1 if slope > 0 else (-1 if slope < 0 else 0)
     start_time = bar_times[x1]

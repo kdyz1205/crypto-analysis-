@@ -29,6 +29,7 @@ let srLineSegments = [];     // { t1, v1, t2, v2, indexInCurrent, lineType } for
 let srSeriesRefs = [];       // LineSeries refs by indexInCurrent (for style-only updates)
 let srSeriesTypes = [];      // 'support' | 'resistance' by indexInCurrent
 let patternResponseCache = new Map(); // key=params string, value=pattern response
+const PATTERN_CACHE_MAX_SIZE = 50; // Evict oldest entries beyond this limit
 let toolMode = null; // null | 'recognize' | 'draw' | 'assist'
 const N_FUTURE_BARS = 4; // Trendline extends into future per spec
 
@@ -152,13 +153,19 @@ function distanceToSegment(time, value, t1, v1, t2, v2) {
 /** Return index into srLineSegments of line hit by (time, value), or null. */
 function hitTestSRLine(time, value) {
     if (!srLineSegments.length) return null;
-    const threshold = 0.05;
+    // Dynamic threshold: use 0.5% of current price so hit-test works across all price scales
+    const priceThreshold = value > 0 ? value * 0.005 : 0.05;
     let best = null;
-    let bestDist = threshold;
+    let bestDist = Infinity;
     for (const seg of srLineSegments) {
-        const d = distanceToSegment(time, value, seg.t1, seg.v1, seg.t2, seg.v2);
-        if (d < bestDist) {
-            bestDist = d;
+        // Compute price distance at the given time
+        const dt = seg.t2 - seg.t1;
+        const extend = dt ? Math.max(0, dt * 0.2) : 0;
+        if (time < seg.t1 - extend || time > seg.t2 + extend) continue;
+        const priceAt = dt ? seg.v1 + (seg.v2 - seg.v1) * (time - seg.t1) / dt : seg.v1;
+        const dist = Math.abs(value - priceAt);
+        if (dist < priceThreshold && dist < bestDist) {
+            bestDist = dist;
             best = seg.indexInCurrent;
         }
     }
@@ -752,6 +759,11 @@ async function loadPatterns(existingParams) {
         }
 
         rawPatternData = await resp.json();
+        // Evict oldest cache entries to prevent memory leak
+        if (patternResponseCache.size >= PATTERN_CACHE_MAX_SIZE) {
+            const firstKey = patternResponseCache.keys().next().value;
+            patternResponseCache.delete(firstKey);
+        }
         patternResponseCache.set(existingParams, rawPatternData);
         console.log('Pattern data received:', {
             hasSupport: !!rawPatternData?.supportLines,

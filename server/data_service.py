@@ -342,7 +342,10 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
     if use_pagination:
         # Paginate: request 300 at a time, stop when we have enough days or hit OKX_START_TS_MS
         after_ts = None  # first request gets latest
-        while True:
+        prev_after_ts = None  # guard against infinite loop on duplicate timestamps
+        max_pages = 2000  # safety limit (~600k candles max)
+        page_count = 0
+        while page_count < max_pages:
             params = {"instId": inst_id, "bar": bar, "limit": str(OKX_CANDLES_PAGE_LIMIT)}
             if after_ts is not None:
                 params["after"] = str(after_ts)
@@ -369,7 +372,12 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
             oldest_ts = int(rows_oldest_first[0][0])
             if oldest_ts <= OKX_START_TS_MS or oldest_ts <= target_oldest_ms:
                 break
+            # Guard: if oldest_ts didn't advance, we'd loop forever on duplicate data
+            if oldest_ts == prev_after_ts:
+                break
+            prev_after_ts = after_ts
             after_ts = oldest_ts  # next page: records earlier than this ts
+            page_count += 1
             await asyncio.sleep(0.06)  # ~40/2s rate limit → ~50ms between requests
 
         if not all_records:

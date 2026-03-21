@@ -86,10 +86,14 @@ def _sma(x: np.ndarray, period: int) -> np.ndarray:
 
 
 def _atr(high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
+    """ATR using simple moving average of true range. Returns full-length array (NaN-padded)."""
     prev_close = np.roll(close, 1)
     prev_close[0] = close[0]
     tr = np.maximum(high - low, np.maximum(np.abs(high - prev_close), np.abs(low - prev_close)))
-    return np.convolve(tr, np.ones(period) / period, mode="valid")
+    atr_conv = np.convolve(tr, np.ones(period) / period, mode="valid")
+    out = np.full(len(close), np.nan)
+    out[period - 1 : period - 1 + len(atr_conv)] = atr_conv
+    return out
 
 
 def _bb_upper(close: np.ndarray, period: int = 21, num_std: float = 2.2) -> np.ndarray:
@@ -116,9 +120,7 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
     ma_fast = _sma(close, p.ma_fast)
     ema_arr = _ema(close, p.ema_span)
     ma_slow = _sma(close, p.ma_slow)
-    atr_conv = _atr(high, low, close, p.atr_period)
-    atr_arr = np.full(len(close), np.nan)
-    atr_arr[p.atr_period - 1 : p.atr_period - 1 + len(atr_conv)] = atr_conv
+    atr_arr = _atr(high, low, close, p.atr_period)
     bb_upper = _bb_upper(close, p.bb_period, p.bb_std)
 
     trades = []
@@ -171,7 +173,9 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
                 np.isnan(atr_arr[i]) or np.isnan(bb_upper[i])):
             continue
 
-        if close[i] > mfi_arr[i] and mfi_arr[i] > ma_fast[i] and ma_fast[i] > ema_arr[i] and ema_arr[i] > ma_slow[i]:
+        # Entry: MA stacking (price > MA_fast > EMA > MA_slow) + MFI > 50 (bullish momentum)
+        if (close[i] > ma_fast[i] and ma_fast[i] > ema_arr[i] and ema_arr[i] > ma_slow[i]
+                and mfi_arr[i] > 50):
             position = "long"
             entry_price = close[i]
             entry_idx = i
@@ -189,6 +193,35 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
     wins = [t for t in trades if t["pnl_pct"] > 0]
     losses = [t for t in trades if t["pnl_pct"] <= 0]
     total_pnl = sum(t["pnl_pct"] for t in trades)
+
+    # Sharpe ratio (mean / std of trade PnL%)
+    sharpe = 0.0
+    if len(trades) >= 2:
+        pnls = np.array([t["pnl_pct"] for t in trades])
+        std_pnl = np.std(pnls)
+        if std_pnl > 1e-8:
+            sharpe = round(float(np.mean(pnls) / std_pnl), 4)
+
+    # Max drawdown (from cumulative PnL curve)
+    max_drawdown_pct = 0.0
+    if trades:
+        cum = np.cumsum([t["pnl_pct"] for t in trades])
+        peak = np.maximum.accumulate(cum)
+        dd = peak - cum
+        max_drawdown_pct = round(float(np.max(dd)), 2) if len(dd) > 0 else 0.0
+
+    # Profit factor
+    gross_win = sum(t["pnl_pct"] for t in wins) if wins else 0.0
+    gross_loss = abs(sum(t["pnl_pct"] for t in losses)) if losses else 0.0
+    profit_factor = round(gross_win / max(gross_loss, 1e-8), 2)
+
+    # Composite score (autoresearch metric: higher is better)
+    # score = sharpe * sqrt(trade_factor) - drawdown_penalty
+    import math
+    trade_factor = min(len(trades) / 20.0, 1.0)
+    dd_penalty = max(0, max_drawdown_pct - 10.0) * 0.05
+    score = round(sharpe * math.sqrt(trade_factor) - dd_penalty, 4) if len(trades) >= 3 else -999.0
+
     strategy_desc = (
         f"MFI/MA: Price>MFI>MA{p.ma_fast}>EMA{p.ema_span}>MA{p.ma_slow} | "
         f"SL: EMA{p.ema_span}-{p.atr_sl_mult}*ATR | TP: BB({p.bb_period},{p.bb_std})"
@@ -201,6 +234,10 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
         "total_pnl_pct": round(total_pnl, 2),
         "avg_win": round(float(np.mean([t["pnl_pct"] for t in wins])), 2) if wins else 0,
         "avg_loss": round(float(np.mean([t["pnl_pct"] for t in losses])), 2) if losses else 0,
+        "sharpe": sharpe,
+        "max_drawdown_pct": max_drawdown_pct,
+        "profit_factor": profit_factor,
+        "score": score,
         "trades": trades,
         "strategy": strategy_desc,
         "params": p.to_dict(),
