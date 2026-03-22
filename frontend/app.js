@@ -560,7 +560,7 @@ function buildParams() {
     });
 
     const replayToggle = document.getElementById('replay-toggle');
-    if (replayToggle.checked) {
+    if (replayToggle?.checked) {
         const endTime = getReplayEndTime();
         if (endTime) {
             params.set('end_time', endTime);
@@ -629,7 +629,8 @@ async function loadData(isLiveUpdate = false) {
         if (signal.aborted) return;
 
         const data = await resp.json();
-        
+        window._loadRetryCount = 0; // reset retry counter on success
+
         if (data.pricePrecision !== undefined) {
             pricePrecision = data.pricePrecision;
         }
@@ -744,7 +745,7 @@ function stopLiveUpdates() {
 // ── Pattern Overlay ──
 function clearPatterns() {
     for (const series of patternLineSeries) {
-        chart.removeSeries(series);
+        if (chart) chart.removeSeries(series);
     }
     patternLineSeries = [];
     srSeriesRefs = [];
@@ -1208,15 +1209,18 @@ function updateTrendIndicator(label, slope) {
 
     box.classList.remove('hidden', 'trend-up', 'trend-down', 'trend-sideways');
 
+    const slopeVal = (typeof slope === 'number' && !isNaN(slope)) ? slope : 0;
+    const slopeStr = `${slopeVal > 0 ? '+' : ''}${slopeVal.toFixed(2)}%`;
+
     if (label === 'UPTREND') {
         box.classList.add('trend-up');
-        box.textContent = `UPTREND (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `UPTREND (${slopeStr})`;
     } else if (label === 'DOWNTREND') {
         box.classList.add('trend-down');
-        box.textContent = `DOWNTREND (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `DOWNTREND (${slopeStr})`;
     } else {
         box.classList.add('trend-sideways');
-        box.textContent = `SIDEWAYS (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `SIDEWAYS (${slopeStr})`;
     }
 }
 
@@ -1456,7 +1460,9 @@ function updateViewTabsUI() {
     if (chatBtn) chatBtn.classList.toggle('active', chatPanelOpen);
 }
 
+let _setToolModeVersion = 0;
 async function setToolMode(nextMode) {
+    const myVersion = ++_setToolModeVersion;
     // clicking the same tab toggles mode off
     toolMode = (toolMode === nextMode) ? null : nextMode;
     updateViewTabsUI();
@@ -1494,6 +1500,7 @@ async function setToolMode(nextMode) {
         rawPatternData = null;
         drawAllPatterns();
         await loadPatterns(buildPatternParams().toString());
+        if (myVersion !== _setToolModeVersion) return; // stale
         drawAllPatterns();
         if (contentEl && rawPatternData) {
             const s = rawPatternData.supportLines?.length || 0;
@@ -1504,6 +1511,7 @@ async function setToolMode(nextMode) {
     }
     if (contentEl) contentEl.textContent = 'Recognizing: loading patterns...';
     await loadPatterns(buildPatternParams().toString());
+    if (myVersion !== _setToolModeVersion) return; // stale
     if (toolMode === 'recognize') updateRecognizePanelContent();
     await fetchPatternStats();
 }
@@ -1885,7 +1893,10 @@ function toggleAgentPanel() {
     }
 }
 
+let _agentPollInFlight = false;
 async function refreshAgentStatus() {
+    if (_agentPollInFlight) return;
+    _agentPollInFlight = true;
     try {
         const res = await fetch(`${API_BASE}/api/agent/status`);
         if (!res.ok) return;
@@ -1967,6 +1978,8 @@ async function refreshAgentStatus() {
         } catch (_) {}
     } catch (e) {
         console.warn('Agent status fetch failed:', e);
+    } finally {
+        _agentPollInFlight = false;
     }
 }
 
