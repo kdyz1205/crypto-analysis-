@@ -529,6 +529,7 @@ body {
     display: flex;
     flex-direction: row;
     background: #131722;
+    transition: right 0.2s ease;
 }
 
 /* 左侧独立栏：绘图工具 + 形态统计 */

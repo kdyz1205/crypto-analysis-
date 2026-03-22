@@ -1705,11 +1705,29 @@ document.getElementById('draw-clear').addEventListener('click', () => {
 let chatPanelOpen = false;
 let chatSending = false;
 
+function _adjustChartForPanels() {
+    // Shrink chart area when side panels are open so they don't overlap
+    const chartArea = document.getElementById('chart-area');
+    if (!chartArea) return;
+    const CHAT_W = 440, AGENT_W = 420;
+    let rightOffset = 0;
+    if (chatPanelOpen) rightOffset = CHAT_W;
+    else if (agentPanelOpen) rightOffset = AGENT_W;
+    chartArea.style.right = rightOffset + 'px';
+    // Let TradingView chart know to resize
+    if (chart) setTimeout(() => chart.resize(chartArea.clientWidth, chartArea.clientHeight), 250);
+}
+
 function toggleChatPanel() {
     chatPanelOpen = !chatPanelOpen;
+    if (chatPanelOpen) agentPanelOpen = false; // close agent when chat opens
     const panel = document.getElementById('chat-panel');
+    const agentPanel = document.getElementById('agent-panel');
     if (panel) panel.classList.toggle('hidden', !chatPanelOpen);
+    if (agentPanel) agentPanel.classList.toggle('hidden', !agentPanelOpen);
+    if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
     updateViewTabsUI();
+    _adjustChartForPanels();
     if (chatPanelOpen) {
         document.getElementById('chat-input')?.focus();
     }
@@ -1852,9 +1870,13 @@ let agentPollTimer = null;
 
 function toggleAgentPanel() {
     agentPanelOpen = !agentPanelOpen;
+    if (agentPanelOpen) chatPanelOpen = false; // close chat when agent opens
     const panel = document.getElementById('agent-panel');
+    const chatPanel = document.getElementById('chat-panel');
     if (panel) panel.classList.toggle('hidden', !agentPanelOpen);
+    if (chatPanel) chatPanel.classList.toggle('hidden', !chatPanelOpen);
     updateViewTabsUI();
+    _adjustChartForPanels();
     if (agentPanelOpen) {
         refreshAgentStatus();
         agentPollTimer = setInterval(refreshAgentStatus, 5000);
