@@ -150,7 +150,7 @@ class SelfHealer:
             try:
                 rel = path.relative_to(PROJECT_ROOT)
                 rel_str = str(rel).replace("\\", "/")
-                if any(rel_str.startswith(p.split("/")[0]) for p in PATCHABLE_FILES):
+                if rel_str in PATCHABLE_FILES or any(rel_str.startswith(d + "/") for d in {"server", "frontend"}):
                     if path.exists() and len(files) < 3:
                         content = path.read_text(encoding="utf-8", errors="replace")
                         files[rel_str] = content[:8000]  # limit size

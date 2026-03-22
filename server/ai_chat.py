@@ -327,7 +327,7 @@ class AIChatEngine:
                     "24h_high": float(d.get("high24h", 0)),
                     "24h_low": float(d.get("low24h", 0)),
                     "24h_vol": float(d.get("vol24h", 0)),
-                    "24h_change_pct": round((float(d["last"]) - float(d.get("open24h", d["last"]))) / float(d.get("open24h", d["last"])) * 100, 2) if float(d.get("open24h", 0)) > 0 else 0,
+                    "24h_change_pct": round((float(d["last"]) - float(d.get("open24h", 0))) / float(d.get("open24h", 1)) * 100, 2) if float(d.get("open24h", 0)) > 0 else 0,
                 })
         except Exception as e:
             return json.dumps({"error": str(e)})

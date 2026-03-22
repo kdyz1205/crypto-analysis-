@@ -1983,4 +1983,10 @@ document.addEventListener('DOMContentLoaded', () => {
     loadData();
     // startLiveUpdates(); // 关闭自动定时刷新，避免「一直刷新」；需要时可再开启
     document.title = `${formatTicker(currentSymbol)} - Crypto TA`;
+
+    // Cleanup intervals on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', () => {
+        if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
+        if (liveUpdateInterval) { clearInterval(liveUpdateInterval); liveUpdateInterval = null; }
+    });
 });

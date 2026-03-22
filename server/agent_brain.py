@@ -192,9 +192,10 @@ class AgentBrain:
             return {"ready": False}
 
         pnls = [t.pnl_pct for t in trades]
-        win_rate = sum(1 for p in pnls if p > 0) / len(pnls) * 100
-        avg_pnl = np.mean(pnls)
-        sharpe = np.mean(pnls) / max(np.std(pnls), 1e-8)
+        win_rate = (sum(1 for p in pnls if p > 0) / len(pnls) * 100) if len(pnls) > 0 else 0.0
+        avg_pnl = float(np.mean(pnls)) if len(pnls) > 0 else 0.0
+        std_pnl = float(np.std(pnls)) if len(pnls) > 1 else 0.0
+        sharpe = avg_pnl / max(std_pnl, 1e-8) if not np.isnan(std_pnl) else 0.0
 
         return {
             "ready": True,
