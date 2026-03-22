@@ -330,7 +330,7 @@ async def api_backtest_optimize(
         raise HTTPException(400, f"No data for {symbol} {interval}")
 
     try:
-        out = optimize_backtest(df, objective=objective, maxiter=maxiter, method=method)
+        out = await asyncio.to_thread(optimize_backtest, df, objective, maxiter, method)
         out["symbol"] = symbol
         out["interval"] = interval
         return out
@@ -425,7 +425,7 @@ async def api_pattern_stats_backtest(
             return None
 
     try:
-        result = run_trendline_backtest(df, interval, get_patterns_at_t)
+        result = await asyncio.to_thread(run_trendline_backtest, df, interval, get_patterns_at_t)
         result["symbol"] = symbol
         return result
     except Exception as e:
@@ -532,7 +532,7 @@ async def api_pattern_stats_current_vs_history(
         except Exception:
             return None
 
-    backtest_result = run_trendline_backtest(df, interval, get_patterns_at_t)
+    backtest_result = await asyncio.to_thread(run_trendline_backtest, df, interval, get_patterns_at_t)
     historical_signals = backtest_result.get("signals") or []
 
     vs = current_vs_history(current_features, historical_signals, interval, epsilon=epsilon)
@@ -771,15 +771,19 @@ async def api_agent_signals():
     signals = {}
     for symbol in agent._last_signals:
         signals[symbol] = agent._last_signals[symbol]
-    # Also generate fresh signals
+    # Also generate fresh signals in parallel
     from .agent_brain import WATCH_SYMBOLS
-    for symbol in WATCH_SYMBOLS:
+
+    async def _gen(sym: str):
         try:
-            sig = await agent.generate_signal(symbol)
-            if sig:
-                signals[symbol] = sig
+            return sym, await agent.generate_signal(sym)
         except Exception:
-            pass
+            return sym, None
+
+    results = await asyncio.gather(*[_gen(sym) for sym in WATCH_SYMBOLS])
+    for sym, sig in results:
+        if sig:
+            signals[sym] = sig
     return {"signals": signals}
 
 

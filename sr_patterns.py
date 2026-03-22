@@ -40,9 +40,6 @@ SHOW_TREND_SEGMENTS = True   # Show trend segment bar at x-axis (green/yellow/re
 
 import polars as pl
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.patches import Rectangle
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
@@ -1988,6 +1985,10 @@ def plot_patterns(
     - Hollow (outline only) for bullish candles (close >= open)
     - Filled for bearish candles (close < open)
     """
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.patches import Rectangle
+
     df = result.df
     replay_idx = result.replay_idx
 
@@ -2415,6 +2416,7 @@ def _process_one(args: tuple) -> tuple[str, Optional[str]]:
     """
     import matplotlib
     matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     filepath, save_path, kwargs = args
     try:

@@ -119,16 +119,22 @@ function getTimePriceFromEvent(event) {
     return { time, value: price, barIndex };
 }
 
-/** Chart-native: time -> bar_index (integer). Uses lastCandles. */
+/** Chart-native: time -> bar_index (integer). Uses lastCandles. Binary search for O(log n). */
 function timeToBarIndex(time) {
     if (!lastCandles?.length) return 0;
-    let best = 0;
-    let bestDiff = Infinity;
-    for (let i = 0; i < lastCandles.length; i++) {
-        const d = Math.abs(Number(lastCandles[i].time) - Number(time));
-        if (d < bestDiff) { bestDiff = d; best = i; }
+    const t = Number(time);
+    let lo = 0, hi = lastCandles.length - 1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const midTime = Number(lastCandles[mid].time);
+        if (midTime === t) return mid;
+        if (midTime < t) lo = mid + 1;
+        else hi = mid - 1;
     }
-    return best;
+    // Return nearest
+    if (lo >= lastCandles.length) return lastCandles.length - 1;
+    if (lo === 0) return 0;
+    return (t - Number(lastCandles[lo - 1].time)) < (Number(lastCandles[lo].time) - t) ? lo - 1 : lo;
 }
 
 /** Chart-native: bar_index -> time for rendering. */
@@ -286,33 +292,38 @@ function removePreviewLine() {
     }
 }
 
+let _mouseMoveRAF = null;
 function onChartMouseMove(event) {
-    if (!chart || !candleSeries) return;
-    const tp = getTimePriceFromEvent(event);
-    if (!tp) return;
+    if (_mouseMoveRAF) return;
+    _mouseMoveRAF = requestAnimationFrame(() => {
+        _mouseMoveRAF = null;
+        if (!chart || !candleSeries) return;
+        const tp = getTimePriceFromEvent(event);
+        if (!tp) return;
 
-    // DRAW mode: preview line from P1 to cursor (chart pan disabled during draw per spec)
-    if (!drawingMode) return;
+        // DRAW mode: preview line from P1 to cursor (chart pan disabled during draw per spec)
+        if (!drawingMode) return;
 
-    if (drawingMode === 'trend' && pendingDrawPoint) {
-        if (!previewLineSeries) {
-            previewLineSeries = chart.addLineSeries({
-                color: 'rgba(41, 98, 255, 0.6)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
+        if (drawingMode === 'trend' && pendingDrawPoint) {
+            if (!previewLineSeries) {
+                previewLineSeries = chart.addLineSeries({
+                    color: 'rgba(41, 98, 255, 0.6)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                });
+            }
+            previewLineSeries.setData([
+                { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
+                { time: tp.time, value: tp.value },
+            ]);
+            return;
         }
-        previewLineSeries.setData([
-            { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
-            { time: tp.time, value: tp.value },
-        ]);
-        return;
-    }
 
-    // No mousemove preview for horizontal (single-click only)
+        // No mousemove preview for horizontal (single-click only)
+    });
 }
 
 function onDrawLineFinalized(line) {
@@ -356,7 +367,7 @@ function showSimilarPatterns() {
     similarLinesAssistLayer = assistSimilarData.lines;
     visibleSimilarIndices = new Set(similarLinesAssistLayer.map((_, i) => i));
     renderSimilarLinesList();
-    drawAllPatterns();
+    scheduleDrawPatterns();
 }
 
 function toggleSimilarLineVisibility(index) {
@@ -365,7 +376,7 @@ function toggleSimilarLineVisibility(index) {
     } else {
         visibleSimilarIndices.add(index);
     }
-    drawAllPatterns();
+    scheduleDrawPatterns();
 }
 
 function renderSimilarLinesList() {
@@ -680,7 +691,6 @@ async function loadData(isLiveUpdate = false) {
         if (isRecognitionOverlayMode() && !isLiveUpdate) {
             loadPatterns(buildPatternParams().toString()).then(() => {
                 drawAllPatterns();
-                setTimeout(() => fetchPatternStats(), 0);
             });
         }
         drawAllPatterns();
@@ -879,6 +889,15 @@ function updatePatternStatsSelectedUI() {
     }
     selEl.innerHTML = html;
     selEl.classList.add('highlight');
+}
+
+let _drawPatternsRAF = null;
+function scheduleDrawPatterns() {
+    if (_drawPatternsRAF) return;
+    _drawPatternsRAF = requestAnimationFrame(() => {
+        _drawPatternsRAF = null;
+        drawAllPatterns();
+    });
 }
 
 function drawAllPatterns() {
@@ -1475,7 +1494,7 @@ async function setToolMode(nextMode) {
     if (toolMode === 'draw') {
         if (contentEl) contentEl.textContent = 'Draw mode: click two points for trendline, one for horizontal';
         updateAssistPanelNotification();
-        drawAllPatterns();
+        scheduleDrawPatterns();
         return;
     }
 
@@ -1490,7 +1509,7 @@ async function setToolMode(nextMode) {
         if (listEl) { listEl.innerHTML = ''; listEl.classList.add('hidden'); }
         if (contentEl) contentEl.textContent = 'Choose Recognizing or Assist mode to load patterns';
         if (selectedEl) selectedEl.classList.add('hidden');
-        drawAllPatterns();
+        scheduleDrawPatterns();
         return;
     }
 
@@ -1498,10 +1517,10 @@ async function setToolMode(nextMode) {
         if (contentEl) contentEl.textContent = 'Assist: 趋势线（延伸）. 与 Recognizing 分离，仅显示辅助线.';
         updateAssistPanelNotification();
         rawPatternData = null;
-        drawAllPatterns();
+        scheduleDrawPatterns();
         await loadPatterns(buildPatternParams().toString());
         if (myVersion !== _setToolModeVersion) return; // stale
-        drawAllPatterns();
+        scheduleDrawPatterns();
         if (contentEl && rawPatternData) {
             const s = rawPatternData.supportLines?.length || 0;
             const r = rawPatternData.resistanceLines?.length || 0;
@@ -1553,13 +1572,17 @@ document.getElementById('ticker-dropdown').addEventListener('click', (e) => {
     e.stopPropagation();
 });
 
-// Ticker search
+// Ticker search (debounced)
+let _tickerSearchTimer = null;
 document.getElementById('ticker-search').addEventListener('input', (e) => {
-    const query = e.target.value.toUpperCase().trim();
-    const filtered = query
-        ? allSymbols.filter(s => s.includes(query))
-        : allSymbols;
-    renderTickerList(filtered);
+    clearTimeout(_tickerSearchTimer);
+    _tickerSearchTimer = setTimeout(() => {
+        const query = e.target.value.toUpperCase().trim();
+        const filtered = query
+            ? allSymbols.filter(s => s.includes(query))
+            : allSymbols;
+        renderTickerList(filtered);
+    }, 150);
 });
 
 // Ticker item click (delegated)
@@ -1599,13 +1622,13 @@ document.getElementById('tab-assist').addEventListener('click', async () => {
 // ── S/R Toggle ──
 document.getElementById('sr-toggle').addEventListener('change', (e) => {
     srVisible = e.target.checked;
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Max Lines ──
 document.getElementById('max-lines-select').addEventListener('change', (e) => {
     maxSRLines = parseInt(e.target.value);
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Replay Controls ──
@@ -1676,7 +1699,7 @@ document.getElementById('chart-magnet-toggle').addEventListener('click', (e) => 
     }
 
     // 重新按当前磁铁模式绘制所有趋势线
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Drawing toolbar ──
@@ -1706,7 +1729,7 @@ document.getElementById('draw-clear').addEventListener('click', () => {
     pendingDrawPoint = null;
     drawingMode = null;
     updateDrawingModeUI();
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── AI Chat Panel ──

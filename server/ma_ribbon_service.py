@@ -7,6 +7,7 @@ Multi-timeframe MA Ribbon / Golden Cross: state, weighted score, and success-rat
 - Designed for integration with Open Claw / screeners: API returns current score and tier.
 """
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -96,18 +97,23 @@ async def get_current_ribbon(symbol: str, get_ohlcv_with_df) -> dict[str, Any]:
     tf_states: dict[str, dict[str, Any]] = {}
     score = 0
 
-    for interval in TF_ORDER:
+    empty_state = {"in_ribbon": False, "ma9": None, "ma21": None, "ma55": None, "close": None}
+
+    async def _fetch_one(interval: str):
         try:
             df, _ = await get_ohlcv_with_df(symbol, interval, end_time=None, days=90)
             if df is None or df.is_empty():
-                tf_states[interval] = {"in_ribbon": False, "ma9": None, "ma21": None, "ma55": None, "close": None}
-                continue
+                return interval, dict(empty_state)
             state = ribbon_state_last_row(df)
-            tf_states[interval] = state
-            if state["in_ribbon"]:
-                score += TF_WEIGHTS[interval]
+            return interval, state
         except Exception:
-            tf_states[interval] = {"in_ribbon": False, "ma9": None, "ma21": None, "ma55": None, "close": None}
+            return interval, dict(empty_state)
+
+    results = await asyncio.gather(*[_fetch_one(tf) for tf in TF_ORDER])
+    for interval, state in results:
+        tf_states[interval] = state
+        if state["in_ribbon"]:
+            score += TF_WEIGHTS[interval]
 
     return {
         "symbol": symbol,
