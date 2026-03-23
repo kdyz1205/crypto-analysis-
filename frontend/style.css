@@ -883,10 +883,14 @@ body {
     align-items: center;
     justify-content: center;
     z-index: 50;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+    pointer-events: auto;
 }
 
 #loading.loading-hidden {
-    display: none !important;
+    opacity: 0;
+    pointer-events: none;
 }
 
 .loading-inner {

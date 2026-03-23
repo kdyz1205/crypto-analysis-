@@ -901,6 +901,7 @@ function scheduleDrawPatterns() {
 }
 
 function drawAllPatterns() {
+    if (!chart) return;
     const visibleRange = chart.timeScale().getVisibleLogicalRange();
 
     clearPatterns();
@@ -989,17 +990,9 @@ function drawAssistSimilarLayer() {
 // ── Magnet Helpers ──
 function findNearestCandle(time) {
     if (!lastCandles || lastCandles.length === 0) return null;
-    let nearest = lastCandles[0];
-    let minDt = Math.abs(time - nearest.time);
-    for (let i = 1; i < lastCandles.length; i++) {
-        const c = lastCandles[i];
-        const dt = Math.abs(time - c.time);
-        if (dt < minDt) {
-            minDt = dt;
-            nearest = c;
-        }
-    }
-    return nearest;
+    // Binary search for O(log n) instead of O(n)
+    const idx = timeToBarIndex(time);
+    return lastCandles[idx] || lastCandles[lastCandles.length - 1];
 }
 
 function snapPriceToCandle(time, price, mode) {
@@ -1246,7 +1239,11 @@ function updateTrendIndicator(label, slope) {
 function showLoading(show) {
     const el = document.getElementById('loading');
     if (!el) return;
-    el.classList.toggle('loading-hidden', !show);
+    if (show) {
+        el.classList.remove('loading-hidden');
+    } else {
+        el.classList.add('loading-hidden');
+    }
 }
 
 // ── Backtest ──
@@ -1538,6 +1535,7 @@ async function setToolMode(nextMode) {
 function selectTicker(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
+    patternResponseCache.clear(); // Clear cache on symbol change to prevent stale data
     document.getElementById('current-ticker').textContent = formatTicker(symbol);
     document.getElementById('ticker-dropdown').classList.add('hidden');
     updateChartHeader();
@@ -1546,7 +1544,7 @@ function selectTicker(symbol) {
     document.title = `${formatTicker(symbol)} - Crypto TA`;
     stopLiveUpdates();
     loadData();
-    // startLiveUpdates();
+    startLiveUpdates();
 }
 
 // Ticker dropdown toggle
@@ -1602,7 +1600,7 @@ document.querySelectorAll('.tf-btn').forEach(btn => {
         updateChartHeader();
         stopLiveUpdates();
         patternResponseCache.clear();
-        loadData();
+        loadData().then(() => startLiveUpdates());
     });
 });
 
@@ -1745,8 +1743,7 @@ function _adjustChartForPanels() {
     if (chatPanelOpen) rightOffset = CHAT_W;
     else if (agentPanelOpen) rightOffset = AGENT_W;
     chartArea.style.right = rightOffset + 'px';
-    // Let TradingView chart know to resize
-    if (chart) setTimeout(() => chart.resize(chartArea.clientWidth, chartArea.clientHeight), 250);
+    // ResizeObserver on #chart-container handles chart.resize automatically
 }
 
 function toggleChatPanel() {
@@ -2038,8 +2035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const contentEl = document.getElementById('pattern-stats-content');
     if (contentEl) contentEl.textContent = '选择 Recognizing / Assist 模式后显示形态';
     loadSymbols();
-    loadData();
-    // startLiveUpdates(); // 关闭自动定时刷新，避免「一直刷新」；需要时可再开启
+    loadData().then(() => startLiveUpdates());
     document.title = `${formatTicker(currentSymbol)} - Crypto TA`;
 
     // Cleanup intervals on page unload to prevent memory leaks
