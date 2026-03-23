@@ -239,6 +239,46 @@ body {
     user-select: none;
 }
 
+#layout-presets {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#strategy-presets {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#quick-command-wrap {
+    min-width: 280px;
+    max-width: 420px;
+    width: 34vw;
+}
+
+#quick-command {
+    width: 100%;
+    background: #131722;
+    border: 1px solid #363a45;
+    border-radius: 4px;
+    color: #d1d4dc;
+    padding: 6px 10px;
+    font-size: 12px;
+}
+
+#layout-select,
+#data-priority-select,
+#strategy-select {
+    background: #131722;
+    border: 1px solid #363a45;
+    border-radius: 4px;
+    color: #d1d4dc;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-family: inherit;
+}
+
 #max-lines-select {
     background: #131722;
     border: 1px solid #363a45;
@@ -619,6 +659,92 @@ body {
     flex-direction: column;
     overflow-y: auto;
 }
+
+.trader-console {
+    border-top: 1px solid #363a45;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.console-block {
+    border: 1px solid #363a45;
+    border-radius: 6px;
+    padding: 8px;
+    background: #131722;
+}
+
+.console-subtitle {
+    font-size: 11px;
+    color: #787b86;
+    margin-bottom: 6px;
+}
+
+#ai-coach-summary {
+    font-size: 11px;
+    color: #d1d4dc;
+    line-height: 1.45;
+    white-space: pre-line;
+}
+
+.check-row {
+    display: block;
+    font-size: 11px;
+    color: #d1d4dc;
+    margin-bottom: 4px;
+}
+
+#check-progress,
+#risk-output {
+    font-size: 11px;
+    color: #d1d4dc;
+    margin-top: 6px;
+}
+
+.risk-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.risk-grid input {
+    background: #1e222d;
+    border: 1px solid #363a45;
+    border-radius: 4px;
+    padding: 5px 6px;
+    color: #d1d4dc;
+    font-size: 11px;
+}
+
+.journal-list {
+    max-height: 130px;
+    overflow-y: auto;
+    font-size: 11px;
+    color: #d1d4dc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.journal-row {
+    padding: 4px 5px;
+    border-radius: 4px;
+    border: 1px solid #2a2e39;
+    cursor: pointer;
+}
+
+.journal-row.active {
+    border-color: #2962ff;
+    background: rgba(41, 98, 255, 0.12);
+}
+
+.journal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 6px;
+}
 .pattern-stats-panel .pattern-stats-title {
     font-weight: 600;
     margin-bottom: 8px;
@@ -695,6 +821,33 @@ body {
     position: relative;
     display: flex;
     flex-direction: column;
+}
+
+.status-banner {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    z-index: 12;
+    min-width: 220px;
+    max-width: 460px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.35;
+    border: 1px solid #363a45;
+    background: rgba(30, 34, 45, 0.96);
+    color: #d1d4dc;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.status-banner.status-error {
+    border-color: rgba(239, 83, 80, 0.45);
+    color: #ff8a80;
+}
+
+.status-banner.status-success {
+    border-color: rgba(38, 166, 154, 0.45);
+    color: #5fe2d7;
 }
 
 /* TradingView-style chart header overlay */

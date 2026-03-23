@@ -8,6 +8,7 @@ let allSymbols = [];
 let currentScale = 'linear'; // 'linear' or 'log'
 let magnetMode = 'weak';     // 'weak' or 'strong'
 let lastCandles = [];        // full candle array for magnet snapping
+let lastVolumeBars = [];
 let pricePrecision = null;   // Price precision from exchange
 let liveUpdateInterval = null; // Interval ID for live updates
 
@@ -32,6 +33,15 @@ let patternResponseCache = new Map(); // key=params string, value=pattern respon
 const PATTERN_CACHE_MAX_SIZE = 50; // Evict oldest entries beyond this limit
 let toolMode = null; // null | 'recognize' | 'draw' | 'assist'
 const N_FUTURE_BARS = 4; // Trendline extends into future per spec
+let dataPriorityMode = 'fast'; // fast | balanced | deep
+let tradeJournal = [];
+let activeJournalIndex = -1;
+const ohlcvResponseCache = new Map(); // key: query string => { ts, data }
+const OHLCV_CACHE_MAX = 30;
+let selectedUserLineIndex = null;
+const prefetchInFlight = new Set();
+let _previewFramePending = false;
+let _lastFitContentKey = null;
 
 // ── Chart Initialization ──
 function initChart() {
@@ -64,6 +74,9 @@ function initChart() {
         rightPriceScale: {
             borderColor: '#363a45',
             mode: LightweightCharts.PriceScaleMode.Normal,
+            visible: true,
+            minimumWidth: 72,
+            scaleMargins: { top: 0.08, bottom: 0.12 },
         },
     });
 
@@ -116,16 +129,34 @@ function getTimePriceFromEvent(event) {
     return { time, value: price, barIndex };
 }
 
+function getTimePriceFromCoords(clientX, clientY) {
+    if (!chart || !candleSeries) return null;
+    const container = document.getElementById('chart-container');
+    const rect = container.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const time = chart.timeScale().coordinateToTime(x);
+    if (time === null) return null;
+    const price = candleSeries.coordinateToPrice(y);
+    if (price === undefined || price === null) return null;
+    const barIndex = timeToBarIndex(time);
+    return { time, value: price, barIndex };
+}
+
 /** Chart-native: time -> bar_index (integer). Uses lastCandles. */
 function timeToBarIndex(time) {
     if (!lastCandles?.length) return 0;
-    let best = 0;
-    let bestDiff = Infinity;
-    for (let i = 0; i < lastCandles.length; i++) {
-        const d = Math.abs(Number(lastCandles[i].time) - Number(time));
-        if (d < bestDiff) { bestDiff = d; best = i; }
+    const t = Number(time);
+    let lo = 0;
+    let hi = lastCandles.length - 1;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (Number(lastCandles[mid].time) < t) lo = mid + 1;
+        else hi = mid;
     }
-    return best;
+    const right = lo;
+    const left = Math.max(0, right - 1);
+    return Math.abs(Number(lastCandles[right]?.time ?? t) - t) < Math.abs(Number(lastCandles[left]?.time ?? t) - t) ? right : left;
 }
 
 /** Chart-native: bar_index -> time for rendering. */
@@ -172,6 +203,30 @@ function hitTestSRLine(time, value) {
     return best;
 }
 
+function hitTestUserLine(time, value) {
+    if (!userDrawnLines.length) return null;
+    const priceThreshold = value > 0 ? value * 0.004 : 0.05;
+    let best = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < userDrawnLines.length; i++) {
+        const line = userDrawnLines[i];
+        const x1 = line.t1 ?? barIndexToTime(line.x1);
+        const x2 = line.t2 ?? barIndexToTime(line.x2);
+        const y1 = line.y1;
+        const y2 = line.type === 'horizontal' ? line.y1 : line.y2;
+        const dt = x2 - x1;
+        const extend = dt ? Math.max(0, Math.abs(dt) * 0.2) : 0;
+        if (time < Math.min(x1, x2) - extend || time > Math.max(x1, x2) + extend) continue;
+        const priceAt = dt ? y1 + (y2 - y1) * (time - x1) / dt : y1;
+        const dist = Math.abs(value - priceAt);
+        if (dist < priceThreshold && dist < bestDist) {
+            best = i;
+            bestDist = dist;
+        }
+    }
+    return best;
+}
+
 function isRecognitionOverlayMode() {
     return toolMode === 'recognize' || toolMode === 'assist';
 }
@@ -199,16 +254,19 @@ function onChartClick(event) {
                 removePreviewLine();
                 return;
             }
-            const dPrice = y2 - y1;
-            const slope = dPrice / dBar;
             const t1 = barIndexToTime(x1);
             const t2 = barIndexToTime(x2);
             const xEnd = Math.min(Math.max(x1, x2) + N_FUTURE_BARS, (lastCandles?.length ?? 1) - 1);
             const tEnd = barIndexToTime(xEnd);
-            const line = { type: 'trend', x1, y1, x2, y2, t1, t2, dBar, dPrice, slope };
+            const snapped = applyMagnetToLine({ x1, y1, x2, y2, t1, t2 });
+            const dPrice = snapped.y2 - snapped.y1;
+            const slope = dPrice / dBar;
+            const line = { type: 'trend', x1, y1: snapped.y1, x2, y2: snapped.y2, t1, t2, dBar, dPrice, slope };
             userDrawnLines.push(line);
+            selectedUserLineIndex = userDrawnLines.length - 1;
             const series = chart.addLineSeries({
                 color: 'rgba(41, 98, 255, 0.9)',
+                priceScaleId: '',
                 lineWidth: 2,
                 lineStyle: LightweightCharts.LineStyle.Solid,
                 crosshairMarkerVisible: false,
@@ -216,8 +274,8 @@ function onChartClick(event) {
                 priceLineVisible: false,
             });
             series.setData([
-                { time: t1, value: y1 },
-                { time: tEnd, value: y1 + slope * (xEnd - x1) },
+                { time: t1, value: line.y1 },
+                { time: tEnd, value: line.y1 + line.slope * (xEnd - x1) },
             ]);
             patternLineSeries.push(series);
             removePreviewLine();
@@ -234,23 +292,37 @@ function onChartClick(event) {
             const xEnd = Math.min(barIdx + N_FUTURE_BARS, (lastCandles?.length ?? 1) - 1);
             const t1 = barIndexToTime(barIdx);
             const t2 = barIndexToTime(xEnd);
-            const line = { type: 'horizontal', x1: barIdx, y1: tp.value, x2: xEnd, t1, t2, dBar: xEnd - barIdx, dPrice: 0, slope: 0 };
+            const snapped = applyMagnetToLine({ x1: barIdx, y1: tp.value, x2: xEnd, y2: tp.value, t1, t2 });
+            const line = { type: 'horizontal', x1: barIdx, y1: snapped.y1, x2: xEnd, t1, t2, dBar: xEnd - barIdx, dPrice: 0, slope: 0 };
             userDrawnLines.push(line);
+            selectedUserLineIndex = userDrawnLines.length - 1;
             const series = chart.addLineSeries({
                 color: 'rgba(255, 193, 7, 0.9)',
+                priceScaleId: '',
                 lineWidth: 2,
                 lineStyle: LightweightCharts.LineStyle.Dashed,
                 crosshairMarkerVisible: false,
                 lastValueVisible: false,
                 priceLineVisible: false,
             });
-            series.setData([{ time: t1, value: tp.value }, { time: t2, value: tp.value }]);
+            series.setData([{ time: t1, value: line.y1 }, { time: t2, value: line.y1 }]);
             patternLineSeries.push(series);
             removePreviewLine();
             pendingDrawPoint = null;
             onDrawLineFinalized(line);
             return;
         }
+    }
+
+    // RECOGNIZE mode: click on recognition line to select (legacy)
+    if (toolMode === 'draw' && !drawingMode) {
+        const hitUser = hitTestUserLine(tp.time, tp.value);
+        selectedUserLineIndex = hitUser;
+        drawAllPatterns();
+        if (hitUser !== null) {
+            showStatus(`已选中第 ${hitUser + 1} 条手绘线，按 Delete 删除`, 'success', 1300);
+        }
+        return;
     }
 
     // RECOGNIZE mode: click on recognition line to select (legacy)
@@ -292,24 +364,64 @@ function onChartMouseMove(event) {
     if (!drawingMode) return;
 
     if (drawingMode === 'trend' && pendingDrawPoint) {
-        if (!previewLineSeries) {
-            previewLineSeries = chart.addLineSeries({
-                color: 'rgba(41, 98, 255, 0.6)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
-        }
-        previewLineSeries.setData([
-            { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
-            { time: tp.time, value: tp.value },
-        ]);
+        const { clientX, clientY } = event;
+        if (_previewFramePending) return;
+        _previewFramePending = true;
+        requestAnimationFrame(() => {
+            _previewFramePending = false;
+            const latest = getTimePriceFromCoords(clientX, clientY);
+            if (!latest || !pendingDrawPoint) return;
+            const snappedY = snapPriceToCandle(latest.time, latest.value, magnetMode);
+            if (!previewLineSeries) {
+                previewLineSeries = chart.addLineSeries({
+                    color: 'rgba(41, 98, 255, 0.6)',
+                    priceScaleId: '',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                });
+            }
+            previewLineSeries.setData([
+                { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
+                { time: latest.time, value: snappedY },
+            ]);
+        });
         return;
     }
 
     // No mousemove preview for horizontal (single-click only)
+}
+
+function sanitizeCandles(candles) {
+    if (!Array.isArray(candles)) return [];
+    const out = candles.filter((c) =>
+        c && Number.isFinite(Number(c.time)) &&
+        Number.isFinite(Number(c.open)) &&
+        Number.isFinite(Number(c.high)) &&
+        Number.isFinite(Number(c.low)) &&
+        Number.isFinite(Number(c.close))
+    ).map((c) => ({
+        time: Number(c.time),
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+    }));
+    out.sort((a, b) => a.time - b.time);
+    return out;
+}
+
+function sanitizeVolume(volume) {
+    if (!Array.isArray(volume)) return [];
+    return volume.filter((v) =>
+        v && Number.isFinite(Number(v.time)) && Number.isFinite(Number(v.value))
+    ).map((v) => ({
+        time: Number(v.time),
+        value: Number(v.value),
+        color: v.color,
+    }));
 }
 
 function onDrawLineFinalized(line) {
@@ -395,6 +507,148 @@ function renderSimilarLinesList() {
 let similarLinesAssistLayer = [];
 /** Indices into similarLinesAssistLayer that are currently shown on chart; click list item to toggle */
 let visibleSimilarIndices = new Set();
+let statusBannerTimer = null;
+
+function normalizeSymbolEntry(entry) {
+    if (typeof entry === 'string') return entry.toUpperCase().replace('/', '');
+    if (entry && typeof entry === 'object') {
+        const raw = entry.symbol || entry.instId || entry.id || '';
+        return String(raw).toUpperCase().replace('/', '');
+    }
+    return '';
+}
+
+function showStatus(message, type = 'info', timeoutMs = 3500) {
+    const el = document.getElementById('status-banner');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove('hidden', 'status-error', 'status-success');
+    if (type === 'error') el.classList.add('status-error');
+    if (type === 'success') el.classList.add('status-success');
+    if (statusBannerTimer) clearTimeout(statusBannerTimer);
+    if (timeoutMs > 0) {
+        statusBannerTimer = setTimeout(() => {
+            el.classList.add('hidden');
+        }, timeoutMs);
+    }
+}
+
+function updateChecklistProgress() {
+    const ids = ['check-trend', 'check-level', 'check-risk'];
+    const done = ids.filter((id) => document.getElementById(id)?.checked).length;
+    const el = document.getElementById('check-progress');
+    if (el) el.textContent = `${done}/3 complete`;
+    updateAICoachSummary();
+}
+
+function computeRiskPosition() {
+    const balance = parseFloat(document.getElementById('risk-balance')?.value);
+    const riskPct = parseFloat(document.getElementById('risk-percent')?.value);
+    const entry = parseFloat(document.getElementById('risk-entry')?.value);
+    const stop = parseFloat(document.getElementById('risk-stop')?.value);
+    const out = document.getElementById('risk-output');
+    if (!out) return;
+    if (![balance, riskPct, entry, stop].every((v) => Number.isFinite(v) && v > 0)) {
+        out.textContent = '建议仓位：—';
+        updateAICoachSummary();
+        return;
+    }
+    const perUnitRisk = Math.abs(entry - stop);
+    if (perUnitRisk <= 0) {
+        out.textContent = '建议仓位：止损不能等于入场价';
+        updateAICoachSummary();
+        return;
+    }
+    const riskAmount = balance * (riskPct / 100);
+    const qty = riskAmount / perUnitRisk;
+    const notional = qty * entry;
+    out.textContent = `建议仓位：${qty.toFixed(4)} (${notional.toFixed(2)} USDT 名义仓位)`;
+    updateAICoachSummary();
+}
+
+function persistJournal() {
+    localStorage.setItem('tradeJournal', JSON.stringify(tradeJournal.slice(0, 300)));
+}
+
+function renderJournal() {
+    const list = document.getElementById('journal-list');
+    if (!list) return;
+    if (!tradeJournal.length) {
+        list.textContent = '暂无记录';
+        return;
+    }
+    list.innerHTML = '';
+    tradeJournal.forEach((t, i) => {
+        const row = document.createElement('div');
+        row.className = 'journal-row' + (i === activeJournalIndex ? ' active' : '');
+        row.textContent = `${new Date(t.ts).toLocaleString()} ${t.symbol} ${t.interval} E:${t.entry} S:${t.stop}`;
+        row.addEventListener('click', () => replayJournalAt(i));
+        list.appendChild(row);
+    });
+}
+
+function replayJournalAt(index) {
+    if (index < 0 || index >= tradeJournal.length) return;
+    activeJournalIndex = index;
+    const t = tradeJournal[index];
+    currentInterval = t.interval;
+    selectTicker(t.symbol);
+    document.querySelectorAll('.tf-btn').forEach((b) => b.classList.toggle('active', b.dataset.tf === currentInterval));
+    document.getElementById('risk-entry').value = t.entry;
+    document.getElementById('risk-stop').value = t.stop;
+    computeRiskPosition();
+    renderJournal();
+    showStatus(`已回放第 ${index + 1} 条交易记录`, 'success', 1300);
+}
+
+function saveCurrentTradeToJournal() {
+    const entry = parseFloat(document.getElementById('risk-entry')?.value);
+    const stop = parseFloat(document.getElementById('risk-stop')?.value);
+    if (!Number.isFinite(entry) || !Number.isFinite(stop) || entry <= 0 || stop <= 0) {
+        showStatus('保存失败：请先输入有效的入场价和止损价。', 'error', 2200);
+        return;
+    }
+    tradeJournal.unshift({
+        ts: Date.now(),
+        symbol: currentSymbol,
+        interval: currentInterval,
+        entry,
+        stop,
+        lastClose: lastCandle?.close ?? null,
+    });
+    if (tradeJournal.length > 300) tradeJournal = tradeJournal.slice(0, 300);
+    activeJournalIndex = 0;
+    persistJournal();
+    renderJournal();
+    showStatus('已保存到交易日志。', 'success', 1200);
+}
+
+async function applyLayoutPreset(preset) {
+    if (preset === 'scalper') {
+        currentInterval = '5m';
+        maxSRLines = 3;
+        dataPriorityMode = 'fast';
+        await setToolMode('assist');
+    } else if (preset === 'swing') {
+        currentInterval = '4h';
+        maxSRLines = 5;
+        dataPriorityMode = 'balanced';
+        await setToolMode('recognize');
+    } else if (preset === 'position') {
+        currentInterval = '1d';
+        maxSRLines = 10;
+        dataPriorityMode = 'deep';
+        await setToolMode('recognize');
+    } else {
+        return;
+    }
+    document.getElementById('data-priority-select').value = dataPriorityMode;
+    document.getElementById('max-lines-select').value = String(maxSRLines);
+    document.querySelectorAll('.tf-btn').forEach((b) => b.classList.toggle('active', b.dataset.tf === currentInterval));
+    showStatus(`已应用 ${preset} 布局`, 'success', 1400);
+    patternResponseCache.clear();
+    scheduleLoadData();
+}
 
 async function fetchAssistSimilar(line) {
     try {
@@ -542,11 +796,13 @@ function updateOHLCLegend(param) {
 
 // ── Helpers ──
 function getDaysForInterval(interval) {
-    if (interval === '1m') return 2;
-    if (['5m', '15m'].includes(interval)) return 90;
-    if (interval === '2h') return 120;
-    if (interval === '1d') return 90;   // fewer days = faster 4h<->1d switch
-    return 180;  // 1h, 4h: balance between history and speed
+    const profiles = {
+        fast: { '1m': 1, '5m': 30, '15m': 45, '1h': 90, '4h': 120, '1d': 60 },
+        balanced: { '1m': 2, '5m': 90, '15m': 90, '1h': 180, '4h': 180, '1d': 120 },
+        deep: { '1m': 3, '5m': 180, '15m': 240, '1h': 365, '4h': 365, '1d': 365 },
+    };
+    const profile = profiles[dataPriorityMode] || profiles.fast;
+    return profile[interval] || profile['1h'];
 }
 
 function buildParams() {
@@ -565,6 +821,131 @@ function buildParams() {
     }
 
     return params;
+}
+
+function setCachedOHLCV(key, value) {
+    if (!key || !value) return;
+    if (ohlcvResponseCache.size >= OHLCV_CACHE_MAX) {
+        const firstKey = ohlcvResponseCache.keys().next().value;
+        ohlcvResponseCache.delete(firstKey);
+    }
+    ohlcvResponseCache.set(key, { ts: Date.now(), data: value });
+}
+
+function getCacheTTLms(interval) {
+    const ttl = {
+        '5m': 45 * 1000,
+        '15m': 90 * 1000,
+        '1h': 3 * 60 * 1000,
+        '4h': 10 * 60 * 1000,
+        '1d': 30 * 60 * 1000,
+    };
+    return ttl[interval] || 60 * 1000;
+}
+
+function getCachedOHLCV(key, interval) {
+    const item = ohlcvResponseCache.get(key);
+    if (!item?.data || !item?.ts) return null;
+    if (Date.now() - item.ts > getCacheTTLms(interval)) {
+        ohlcvResponseCache.delete(key);
+        return null;
+    }
+    return item.data;
+}
+
+function prefetchAdjacentIntervals() {
+    const order = ['5m', '15m', '1h', '4h', '1d'];
+    const idx = order.indexOf(currentInterval);
+    if (idx < 0) return;
+    const targets = [order[idx - 1], order[idx + 1]].filter(Boolean);
+    targets.forEach((tf) => {
+        const params = new URLSearchParams({
+            symbol: currentSymbol,
+            interval: tf,
+            days: getDaysForInterval(tf),
+        });
+        const key = params.toString();
+        if (getCachedOHLCV(key, tf)) return;
+        if (prefetchInFlight.has(key)) return;
+        prefetchInFlight.add(key);
+        fetch(`/api/ohlcv?${params}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                if (d) setCachedOHLCV(key, d);
+            })
+            .catch(() => {})
+            .finally(() => prefetchInFlight.delete(key));
+    });
+}
+
+function updateAICoachSummary() {
+    const el = document.getElementById('ai-coach-summary');
+    if (!el) return;
+    const checks = ['check-trend', 'check-level', 'check-risk'].map((id) => !!document.getElementById(id)?.checked);
+    const checksDone = checks.filter(Boolean).length;
+    const trend = rawPatternData?.trendLabel || 'UNKNOWN';
+    const patterns = rawPatternData?.patterns?.length || 0;
+    const statsRate = patternStatsData?.overall_success_rate_pct;
+    const riskText = document.getElementById('risk-output')?.textContent || '建议仓位：—';
+    const bias = trend === 'UPTREND' ? '偏多' : (trend === 'DOWNTREND' ? '偏空' : '震荡');
+    const conviction = checksDone >= 3 && (statsRate ?? 0) >= 55 ? '高' : (checksDone >= 2 ? '中' : '低');
+    el.textContent =
+        `Bias: ${bias} | Conviction: ${conviction}\n` +
+        `Trend: ${trend}, Patterns: ${patterns}, 历史同类胜率: ${statsRate ?? '—'}%\n` +
+        `Checklist: ${checksDone}/3\n${riskText}`;
+}
+
+async function applyQuickCommand(rawCmd) {
+    const cmd = (rawCmd || '').trim().toLowerCase();
+    if (!cmd) return;
+    if (cmd === 'help') {
+        showStatus('示例: btc 5m assist / swing / replay on / priority deep', 'info', 3200);
+        return;
+    }
+    if (cmd === 'refresh' || cmd === 'reload') {
+        loadData(false, true);
+        showStatus('已强制刷新数据。', 'success', 1200);
+        return;
+    }
+    if (cmd === 'swing' || cmd === 'scalper' || cmd === 'position') {
+        document.getElementById('layout-select').value = cmd;
+        await applyLayoutPreset(cmd);
+        return;
+    }
+    if (cmd.startsWith('priority ')) {
+        const mode = cmd.split(' ')[1];
+        if (['fast', 'balanced', 'deep'].includes(mode)) {
+            dataPriorityMode = mode;
+            document.getElementById('data-priority-select').value = mode;
+            scheduleLoadData();
+            return;
+        }
+    }
+    if (cmd === 'replay on' || cmd === 'replay off') {
+        const on = cmd.endsWith('on');
+        const toggle = document.getElementById('replay-toggle');
+        toggle.checked = on;
+        document.getElementById('replay-panel').classList.toggle('hidden', !on);
+        scheduleLoadData();
+        return;
+    }
+    const parts = cmd.split(/\s+/);
+    const reserved = new Set([
+        'assist', 'recognize', 'draw', 'replay', 'on', 'off',
+        'priority', 'fast', 'balanced', 'deep', 'swing', 'scalper', 'position', 'help',
+    ]);
+    const maybeSymbol = parts.find((p) => (/^[a-z0-9]{2,14}$/.test(p) || /^[a-z0-9]{2,14}usdt$/.test(p)) && !reserved.has(p));
+    const maybeTf = parts.find((p) => ['5m', '15m', '1h', '4h', '1d'].includes(p));
+    const maybeMode = parts.find((p) => ['assist', 'recognize', 'draw'].includes(p));
+    if (maybeSymbol) {
+        const sym = maybeSymbol.toUpperCase().endsWith('USDT') ? maybeSymbol.toUpperCase() : `${maybeSymbol.toUpperCase()}USDT`;
+        const changed = selectTicker(sym, true);
+        if (!changed) return;
+    }
+    if (maybeTf) currentInterval = maybeTf;
+    if (maybeMode) await setToolMode(maybeMode === 'recognize' ? 'recognize' : maybeMode);
+    document.querySelectorAll('.tf-btn').forEach((b) => b.classList.toggle('active', b.dataset.tf === currentInterval));
+    scheduleLoadData();
 }
 
 /** Params for /api/patterns including mode: recognizing (patterns only) | assist (trendlines only) | full */
@@ -593,7 +974,17 @@ function getReplayEndTime() {
 const LOAD_DATA_TIMEOUT_MS = 90000; // 90s for API-only first load (OKX pagination can be slow)
 let _loadDataInFlight = false;
 let _loadDataAbortController = null;
-async function loadData(isLiveUpdate = false) {
+let _loadDataDebounceTimer = null;
+
+function scheduleLoadData(forceRefresh = false, delayMs = 120) {
+    if (_loadDataDebounceTimer) clearTimeout(_loadDataDebounceTimer);
+    _loadDataDebounceTimer = setTimeout(() => {
+        loadData(false, forceRefresh);
+        _loadDataDebounceTimer = null;
+    }, delayMs);
+}
+
+async function loadData(isLiveUpdate = false, forceRefresh = false) {
     if (_loadDataInFlight && isLiveUpdate) return;
     if (_loadDataAbortController) _loadDataAbortController.abort();
     _loadDataAbortController = new AbortController();
@@ -607,25 +998,32 @@ async function loadData(isLiveUpdate = false) {
     }, LOAD_DATA_TIMEOUT_MS);
 
     try {
-        const resp = await fetch(`/api/ohlcv?${params}`, { signal });
-        if (!resp.ok) {
-            let errMsg = 'Unknown error';
-            try {
-                const err = await resp.json();
-                errMsg = err.detail || err.message || `HTTP ${resp.status}: ${resp.statusText}`;
-            } catch {
-                errMsg = `HTTP ${resp.status}: ${resp.statusText}`;
+        const cacheKey = params.toString();
+        if (forceRefresh) ohlcvResponseCache.delete(cacheKey);
+        let data = getCachedOHLCV(cacheKey, currentInterval);
+        if (!data) {
+            const resp = await fetch(`/api/ohlcv?${params}`, { signal });
+            if (!resp.ok) {
+                let errMsg = 'Unknown error';
+                try {
+                    const err = await resp.json();
+                    errMsg = err.detail || err.message || `HTTP ${resp.status}: ${resp.statusText}`;
+                } catch {
+                    errMsg = `HTTP ${resp.status}: ${resp.statusText}`;
+                }
+                console.error('Chart fetch error:', errMsg, 'URL:', `/api/ohlcv?${params}`);
+                if (!isLiveUpdate) {
+                    showStatus(`加载失败：${errMsg}`, 'error', 7000);
+                }
+                return;
             }
-            console.error('Chart fetch error:', errMsg, 'URL:', `/api/ohlcv?${params}`);
-            if (!isLiveUpdate) {
-                alert(`Error loading data: ${errMsg}\n\nPlease check:\n1. Server is running (see terminal for URL)\n2. Symbol exists\n3. Network connection\n\nCheck browser console (F12) for details.`);
-            }
-            return;
+            if (signal.aborted) return;
+            data = await resp.json();
+            setCachedOHLCV(cacheKey, data);
         }
+        if (!data) return;
         if (signal.aborted) return;
 
-        const data = await resp.json();
-        
         if (data.pricePrecision !== undefined) {
             pricePrecision = data.pricePrecision;
         }
@@ -642,9 +1040,17 @@ async function loadData(isLiveUpdate = false) {
             },
         });
         
-        lastCandles = data.candles || [];
-        candleSeries.setData(lastCandles);
-        volumeSeries.setData(data.volume || []);
+        const incomingCandles = sanitizeCandles(data.candles || []);
+        const incomingVolume = sanitizeVolume(data.volume || []);
+        if (incomingCandles.length === 0 && lastCandles.length > 0 && !forceRefresh) {
+            showStatus(`未返回K线数据，保留上次图表（${currentSymbol} ${currentInterval}）`, 'error', 2600);
+            if (lastVolumeBars.length > 0) volumeSeries.setData(lastVolumeBars);
+        } else {
+            lastCandles = incomingCandles;
+            lastVolumeBars = incomingVolume;
+            candleSeries.setData(lastCandles);
+            volumeSeries.setData(lastVolumeBars);
+        }
         if (backtestMarkers.length > 0) candleSeries.setMarkers(backtestMarkers);
 
         if (lastCandles.length > 0) {
@@ -669,7 +1075,11 @@ async function loadData(isLiveUpdate = false) {
             similarLineIndices = [];
         }
         if (!isLiveUpdate) {
-            chart.timeScale().fitContent();
+            const fitKey = `${currentSymbol}|${currentInterval}|${document.getElementById('replay-toggle')?.checked ? 'replay' : 'live'}`;
+            if (fitKey !== _lastFitContentKey || forceRefresh) {
+                chart.timeScale().fitContent();
+                _lastFitContentKey = fitKey;
+            }
         }
         // Patterns load in background so timeframe switch shows candles immediately
         if (isRecognitionOverlayMode() && !isLiveUpdate) {
@@ -679,18 +1089,20 @@ async function loadData(isLiveUpdate = false) {
             });
         }
         drawAllPatterns();
+        prefetchAdjacentIntervals();
+        updateAICoachSummary();
     } catch (e) {
         if (e.name === 'AbortError') {
             if (!isLiveUpdate) {
                 showLoading(false);
-                alert('加载超时（约 90 秒）。\n\n使用 API 拉取全年数据时可能较慢，请稍后重试或检查网络。');
+                showStatus('加载超时（约 90 秒）。API 拉取较慢，可稍后重试。', 'error', 7000);
             }
             return;
         }
         if (!isLiveUpdate) {
             console.error('Data load error:', e);
             showLoading(false);
-            alert(`Network error: ${e.message}\n\nPlease check:\n1. Server is running\n2. Symbol exists\n3. Network connection`);
+            showStatus(`网络错误：${e.message}`, 'error', 7000);
         }
     } finally {
         clearTimeout(timeoutId);
@@ -822,6 +1234,7 @@ async function fetchPatternStats() {
         if (nLines === 0) {
             el.textContent = '当前无趋势线';
             if (selEl) selEl.classList.add('hidden');
+            updateAICoachSummary();
             return;
         }
         const supportCount = current.filter(c => (c.feature && c.feature.line_type === 'support')).length;
@@ -835,9 +1248,11 @@ async function fetchPatternStats() {
         }
         el.innerHTML = html;
         if (selEl) selEl.classList.remove('hidden');
+        updateAICoachSummary();
     } catch (e) {
         console.error('Pattern stats fetch failed:', e);
         el.textContent = '—';
+        updateAICoachSummary();
     }
 }
 
@@ -907,6 +1322,7 @@ function drawStructuredPatterns(patterns) {
         if (p.high_points?.length >= 2) {
             const series = chart.addLineSeries({
                 color: color,
+                priceScaleId: '',
                 lineWidth: 2,
                 lineStyle: LightweightCharts.LineStyle.Solid,
                 crosshairMarkerVisible: false,
@@ -919,6 +1335,7 @@ function drawStructuredPatterns(patterns) {
         if (p.low_points?.length >= 2) {
             const series = chart.addLineSeries({
                 color: color,
+                priceScaleId: '',
                 lineWidth: 2,
                 lineStyle: LightweightCharts.LineStyle.Solid,
                 crosshairMarkerVisible: false,
@@ -941,6 +1358,7 @@ function drawAssistSimilarLayer() {
         const v2 = seg.v2 ?? seg.y2;
         const series = chart.addLineSeries({
             color: 'rgba(255, 152, 0, 0.6)',
+            priceScaleId: '',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dashed,
             crosshairMarkerVisible: false,
@@ -955,17 +1373,7 @@ function drawAssistSimilarLayer() {
 // ── Magnet Helpers ──
 function findNearestCandle(time) {
     if (!lastCandles || lastCandles.length === 0) return null;
-    let nearest = lastCandles[0];
-    let minDt = Math.abs(time - nearest.time);
-    for (let i = 1; i < lastCandles.length; i++) {
-        const c = lastCandles[i];
-        const dt = Math.abs(time - c.time);
-        if (dt < minDt) {
-            minDt = dt;
-            nearest = c;
-        }
-    }
-    return nearest;
+    return lastCandles[timeToBarIndex(time)] || lastCandles[lastCandles.length - 1];
 }
 
 function snapPriceToCandle(time, price, mode) {
@@ -997,8 +1405,10 @@ function snapPriceToCandle(time, price, mode) {
 
 function applyMagnetToLine(line) {
     if (!lastCandles.length) return line;
-    const y1 = snapPriceToCandle(line.x1, line.y1, magnetMode);
-    const y2 = snapPriceToCandle(line.x2, line.y2, magnetMode);
+    const t1 = line.t1 ?? barIndexToTime(line.x1);
+    const t2 = line.t2 ?? barIndexToTime(line.x2);
+    const y1 = snapPriceToCandle(t1, line.y1, magnetMode);
+    const y2 = snapPriceToCandle(t2, line.y2, magnetMode);
     return { ...line, y1, y2 };
 }
 
@@ -1057,6 +1467,7 @@ function drawTrendlines(supportLines, resistanceLines) {
             else if (isSimilar(indexInCurrent)) color = 'rgba(255, 193, 7, 0.95)';
             const series = chart.addLineSeries({
                 color,
+                priceScaleId: '',
                 lineWidth: isSelected(indexInCurrent) ? 3 : 2,
                 lineStyle: LightweightCharts.LineStyle.Solid,
                 crosshairMarkerVisible: false,
@@ -1087,6 +1498,7 @@ function drawTrendlines(supportLines, resistanceLines) {
             else if (isSimilar(indexInCurrent)) color = 'rgba(255, 193, 7, 0.95)';
             const series = chart.addLineSeries({
                 color,
+                priceScaleId: '',
                 lineWidth: isSelected(indexInCurrent) ? 3 : 2,
                 lineStyle: LightweightCharts.LineStyle.Solid,
                 crosshairMarkerVisible: false,
@@ -1128,6 +1540,7 @@ function drawConsolidationZones(zones) {
         // Top boundary
         const topSeries = chart.addLineSeries({
             color: 'rgba(255, 152, 0, 0.35)',
+            priceScaleId: '',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dotted,
             crosshairMarkerVisible: false,
@@ -1143,6 +1556,7 @@ function drawConsolidationZones(zones) {
         // Bottom boundary
         const botSeries = chart.addLineSeries({
             color: 'rgba(255, 152, 0, 0.35)',
+            priceScaleId: '',
             lineWidth: 1,
             lineStyle: LightweightCharts.LineStyle.Dotted,
             crosshairMarkerVisible: false,
@@ -1159,10 +1573,13 @@ function drawConsolidationZones(zones) {
 
 function drawUserDrawnLines() {
     if (!chart || !candleSeries) return;
-    for (const line of userDrawnLines) {
+    for (let idx = 0; idx < userDrawnLines.length; idx++) {
+        const line = userDrawnLines[idx];
+        const isSelected = idx === selectedUserLineIndex;
         const opts = {
-            color: line.type === 'horizontal' ? 'rgba(255, 193, 7, 0.9)' : 'rgba(41, 98, 255, 0.9)',
-            lineWidth: 2,
+            color: isSelected ? 'rgba(255, 87, 34, 0.95)' : (line.type === 'horizontal' ? 'rgba(255, 193, 7, 0.9)' : 'rgba(41, 98, 255, 0.9)'),
+            priceScaleId: '',
+            lineWidth: isSelected ? 3 : 2,
             lineStyle: line.type === 'horizontal' ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
             crosshairMarkerVisible: false,
             lastValueVisible: false,
@@ -1212,6 +1629,20 @@ function showLoading(show) {
     el.classList.toggle('loading-hidden', !show);
 }
 
+function getStrategyParamsByPreset() {
+    const preset = document.getElementById('strategy-select')?.value || 'default';
+    if (preset === 'momentum') {
+        return { mfi_period: 14, ma_fast: 9, ma_slow: 34, atr_sl_mult: 2.2, bb_period: 20, bb_std: 2.0 };
+    }
+    if (preset === 'mean_revert') {
+        return { mfi_period: 21, ma_fast: 20, ma_slow: 55, atr_sl_mult: 1.4, bb_period: 26, bb_std: 2.4 };
+    }
+    if (preset === 'defensive') {
+        return { mfi_period: 10, ma_fast: 12, ma_slow: 55, atr_sl_mult: 1.1, bb_period: 18, bb_std: 1.8 };
+    }
+    return {};
+}
+
 // ── Backtest ──
 function isBacktestPanelOpen() {
     return document.getElementById('backtest-panel') && !document.getElementById('backtest-panel').classList.contains('hidden');
@@ -1234,6 +1665,8 @@ async function runBacktest() {
     content.innerHTML = '<div class="backtest-loading">Running backtest...</div>';
     const days = getDaysForInterval(currentInterval);
     const params = new URLSearchParams({ symbol: currentSymbol, interval: currentInterval, days });
+    const strategyParams = getStrategyParamsByPreset();
+    Object.entries(strategyParams).forEach(([k, v]) => params.set(k, String(v)));
 
     try {
         const resp = await fetch(`/api/backtest?${params}`);
@@ -1308,6 +1741,8 @@ async function runOptimize() {
         maxiter: '80',
         method: 'L-BFGS-B',
     });
+    const strategyParams = getStrategyParamsByPreset();
+    Object.entries(strategyParams).forEach(([k, v]) => params.set(k, String(v)));
 
     try {
         const resp = await fetch(`/api/backtest/optimize?${params}`, { method: 'POST' });
@@ -1376,6 +1811,10 @@ async function runOptimize() {
 
 document.getElementById('backtest-btn')?.addEventListener('click', runBacktest);
 document.getElementById('optimize-btn')?.addEventListener('click', runOptimize);
+document.getElementById('data-refresh-btn')?.addEventListener('click', () => {
+    loadData(false, true);
+    showStatus('已强制刷新数据。', 'success', 1200);
+});
 document.getElementById('backtest-close')?.addEventListener('click', (e) => {
     e.preventDefault();
     closeBacktestPanel();
@@ -1387,13 +1826,16 @@ async function loadSymbols() {
     const ac = new AbortController();
     const timeoutId = setTimeout(() => ac.abort(), SYMBOLS_FETCH_TIMEOUT_MS);
     try {
-        const resp = await fetch('/api/symbols', { signal: ac.signal });
+        const resp = await fetch('/api/symbols?include_extended=false', { signal: ac.signal });
         clearTimeout(timeoutId);
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
         }
-        allSymbols = await resp.json();
-        if (!Array.isArray(allSymbols) || allSymbols.length === 0) {
+        const rawSymbols = await resp.json();
+        allSymbols = Array.isArray(rawSymbols)
+            ? rawSymbols.map(normalizeSymbolEntry).filter(Boolean)
+            : [];
+        if (allSymbols.length === 0) {
             console.warn('No symbols returned from API');
             allSymbols = ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'];
         }
@@ -1411,11 +1853,7 @@ function renderTickerList(symbols) {
     if (!list) return;
     
     // Handle both string arrays and object arrays (for OKX with metadata)
-    const symbolList = symbols.map(s => {
-        if (typeof s === 'string') return s;
-        if (typeof s === 'object' && s.symbol) return s.symbol;
-        return String(s);
-    });
+    const symbolList = symbols.map(normalizeSymbolEntry).filter(Boolean);
     
     list.innerHTML = symbolList.map(s =>
         `<div class="ticker-item${s === currentSymbol ? ' active' : ''}" data-symbol="${s}">${formatTicker(s)}</div>`
@@ -1490,7 +1928,11 @@ async function setToolMode(nextMode) {
     await fetchPatternStats();
 }
 
-function selectTicker(symbol) {
+function selectTicker(symbol, skipLoad = false) {
+    if (Array.isArray(allSymbols) && allSymbols.length > 0 && !allSymbols.includes(symbol)) {
+        showStatus(`未找到交易对 ${symbol}`, 'error', 2200);
+        return false;
+    }
     currentSymbol = symbol;
     lastCandle = null;
     document.getElementById('current-ticker').textContent = formatTicker(symbol);
@@ -1500,8 +1942,9 @@ function selectTicker(symbol) {
     document.getElementById('ticker-search').value = '';
     document.title = `${formatTicker(symbol)} - Crypto TA`;
     stopLiveUpdates();
-    loadData();
+    if (!skipLoad) scheduleLoadData();
     // startLiveUpdates();
+    return true;
 }
 
 // Ticker dropdown toggle
@@ -1531,7 +1974,7 @@ document.getElementById('ticker-dropdown').addEventListener('click', (e) => {
 document.getElementById('ticker-search').addEventListener('input', (e) => {
     const query = e.target.value.toUpperCase().trim();
     const filtered = query
-        ? allSymbols.filter(s => s.includes(query))
+        ? allSymbols.filter(s => normalizeSymbolEntry(s).includes(query))
         : allSymbols;
     renderTickerList(filtered);
 });
@@ -1553,7 +1996,7 @@ document.querySelectorAll('.tf-btn').forEach(btn => {
         updateChartHeader();
         stopLiveUpdates();
         patternResponseCache.clear();
-        loadData();
+        scheduleLoadData();
     });
 });
 
@@ -1582,6 +2025,21 @@ document.getElementById('max-lines-select').addEventListener('change', (e) => {
     drawAllPatterns();
 });
 
+document.getElementById('layout-select').addEventListener('change', async (e) => {
+    await applyLayoutPreset(e.target.value);
+});
+
+document.getElementById('data-priority-select').addEventListener('change', (e) => {
+    dataPriorityMode = e.target.value || 'fast';
+    patternResponseCache.clear();
+    showStatus(`数据策略切换为 ${dataPriorityMode}`, 'success', 1200);
+    scheduleLoadData();
+});
+
+document.getElementById('strategy-select').addEventListener('change', () => {
+    showStatus(`策略模板切换为 ${document.getElementById('strategy-select').value}`, 'success', 1200);
+});
+
 // ── Replay Controls ──
 function initReplayPanel() {
     // Populate hour dropdown (00:00 – 23:00)
@@ -1601,15 +2059,15 @@ function initReplayPanel() {
 document.getElementById('replay-toggle').addEventListener('change', (e) => {
     const panel = document.getElementById('replay-panel');
     panel.classList.toggle('hidden', !e.target.checked);
-    loadData();
+    scheduleLoadData();
 });
 
 document.getElementById('replay-date').addEventListener('change', () => {
-    if (document.getElementById('replay-toggle').checked) loadData();
+    if (document.getElementById('replay-toggle').checked) scheduleLoadData();
 });
 
 document.getElementById('replay-hour').addEventListener('change', () => {
-    if (document.getElementById('replay-toggle').checked) loadData();
+    if (document.getElementById('replay-toggle').checked) scheduleLoadData();
 });
 
 // Timezone toggle buttons
@@ -1618,13 +2076,64 @@ document.getElementById('tz-group').addEventListener('click', (e) => {
     if (!btn) return;
     document.querySelectorAll('#tz-group .tz-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    if (document.getElementById('replay-toggle').checked) loadData();
+    if (document.getElementById('replay-toggle').checked) scheduleLoadData();
 });
 
 // ── Keyboard Shortcuts ──
 document.addEventListener('keydown', (e) => {
+    const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+    const isTyping = activeTag === 'input' || activeTag === 'textarea';
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        undoLastDrawnLine();
+        return;
+    }
+
     if (e.key === 'Escape') {
         document.getElementById('ticker-dropdown').classList.add('hidden');
+        cancelCurrentDrawing();
+        return;
+    }
+    if (isTyping) return;
+
+    if (e.key === 'Delete' && selectedUserLineIndex != null) {
+        userDrawnLines.splice(selectedUserLineIndex, 1);
+        selectedUserLineIndex = null;
+        drawAllPatterns();
+        showStatus('已删除选中的手绘线。', 'success', 1200);
+        return;
+    }
+
+    if (e.key === '/') {
+        e.preventDefault();
+        document.getElementById('quick-command')?.focus();
+        return;
+    }
+
+    if (e.shiftKey && e.key.toLowerCase() === 'r') {
+        loadData(false, true);
+        showStatus('已强制刷新数据。', 'success', 1100);
+        return;
+    }
+
+    if (e.key.toLowerCase() === 'r') {
+        setToolMode('recognize');
+        showStatus('切换到 Recognizing 模式。', 'success', 1100);
+    } else if (e.key.toLowerCase() === 'a') {
+        setToolMode('assist');
+        showStatus('切换到 Assist 模式。', 'success', 1100);
+    } else if (e.key.toLowerCase() === 'd') {
+        setToolMode('draw');
+        showStatus('切换到 Draw 模式。', 'success', 1100);
+    } else if (e.key.toLowerCase() === 't' && toolMode === 'draw') {
+        drawingMode = 'trend';
+        updateDrawingModeUI();
+        showStatus('绘图工具：趋势线。', 'success', 1000);
+    } else if (e.key.toLowerCase() === 'h' && toolMode === 'draw') {
+        drawingMode = 'horizontal';
+        updateDrawingModeUI();
+        showStatus('绘图工具：水平线。', 'success', 1000);
     }
 });
 
@@ -1663,6 +2172,26 @@ function updateDrawingModeUI() {
     document.getElementById('draw-horizontal').classList.toggle('active', drawingMode === 'horizontal');
 }
 
+function cancelCurrentDrawing() {
+    pendingDrawPoint = null;
+    removePreviewLine();
+    if (chart) chart.applyOptions({ handleScroll: true });
+}
+
+function undoLastDrawnLine() {
+    if (!userDrawnLines.length) {
+        showStatus('没有可撤销的手绘线。', 'info', 1800);
+        return;
+    }
+    userDrawnLines.pop();
+    if (selectedUserLineIndex != null && selectedUserLineIndex >= userDrawnLines.length) {
+        selectedUserLineIndex = null;
+    }
+    cancelCurrentDrawing();
+    drawAllPatterns();
+    showStatus('已撤销上一条手绘线。', 'success', 1200);
+}
+
 document.getElementById('draw-trend').addEventListener('click', () => {
     drawingMode = drawingMode === 'trend' ? null : 'trend';
     pendingDrawPoint = null;
@@ -1675,12 +2204,18 @@ document.getElementById('draw-horizontal').addEventListener('click', () => {
     updateDrawingModeUI();
 });
 
+document.getElementById('draw-undo').addEventListener('click', () => {
+    undoLastDrawnLine();
+});
+
 document.getElementById('draw-clear').addEventListener('click', () => {
     userDrawnLines = [];
-    pendingDrawPoint = null;
+    selectedUserLineIndex = null;
+    cancelCurrentDrawing();
     drawingMode = null;
     updateDrawingModeUI();
     drawAllPatterns();
+    showStatus('已清除全部手绘线。', 'success', 1400);
 });
 
 // ── Initialize ──
@@ -1693,9 +2228,44 @@ document.addEventListener('DOMContentLoaded', () => {
     initReplayPanel();
     updateViewTabsUI();
     const contentEl = document.getElementById('pattern-stats-content');
-    if (contentEl) contentEl.textContent = '选择 Recognizing / Assist 模式后显示形态';
+    if (contentEl) contentEl.textContent = 'Recognizing 模式已默认开启，正在加载形态…';
+    const savedJournal = localStorage.getItem('tradeJournal');
+    try {
+        tradeJournal = savedJournal ? JSON.parse(savedJournal) : [];
+        if (!Array.isArray(tradeJournal)) tradeJournal = [];
+    } catch {
+        tradeJournal = [];
+    }
+    renderJournal();
+    updateChecklistProgress();
+    computeRiskPosition();
+    ['check-trend', 'check-level', 'check-risk'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('change', updateChecklistProgress);
+    });
+    ['risk-balance', 'risk-percent', 'risk-entry', 'risk-stop'].forEach((id) => {
+        document.getElementById(id)?.addEventListener('input', computeRiskPosition);
+    });
+    document.getElementById('save-journal')?.addEventListener('click', saveCurrentTradeToJournal);
+    document.getElementById('journal-prev')?.addEventListener('click', () => replayJournalAt(Math.max(0, activeJournalIndex - 1)));
+    document.getElementById('journal-next')?.addEventListener('click', () => replayJournalAt(Math.min(tradeJournal.length - 1, activeJournalIndex + 1)));
+    document.getElementById('journal-clear')?.addEventListener('click', () => {
+        tradeJournal = [];
+        activeJournalIndex = -1;
+        persistJournal();
+        renderJournal();
+        showStatus('交易日志已清空。', 'success', 1200);
+    });
+    document.getElementById('ai-refresh')?.addEventListener('click', updateAICoachSummary);
+    const quickInput = document.getElementById('quick-command');
+    quickInput?.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+            await applyQuickCommand(quickInput.value);
+            quickInput.value = '';
+            quickInput.blur();
+        }
+    });
     loadSymbols();
-    loadData();
+    setToolMode('recognize').then(() => loadData());
     // startLiveUpdates(); // 关闭自动定时刷新，避免「一直刷新」；需要时可再开启
     document.title = `${formatTicker(currentSymbol)} - Crypto TA`;
 });

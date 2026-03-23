@@ -17,7 +17,10 @@ OKX_INSTRUMENTS_URL = "https://www.okx.com/api/v5/public/instruments"
 # - api_only: when True (and not offline_only), never read from CSV; always fetch latest from API for fullest data
 EXCHANGE = "okx"
 OFFLINE_ONLY = False
-API_ONLY = True
+# Default to hybrid mode so app remains usable when exchange APIs are blocked/rate-limited.
+# - False: prefer local CSV + incremental API tail when available
+# - True: always call API for latest/fullest data
+API_ONLY = False
 
 CSV_COLUMNS = [
     "open_time", "open", "high", "low", "close", "volume",

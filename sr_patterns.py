@@ -40,14 +40,23 @@ SHOW_TREND_SEGMENTS = True   # Show trend segment bar at x-axis (green/yellow/re
 
 import polars as pl
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from matplotlib.patches import Rectangle
+import importlib.util
 from dataclasses import dataclass, field
 from typing import Optional
 from datetime import datetime
 import os
 import re
+
+_HAS_MATPLOTLIB = importlib.util.find_spec("matplotlib") is not None
+
+if _HAS_MATPLOTLIB:
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from matplotlib.patches import Rectangle
+else:
+    plt = None
+    mdates = None
+    Rectangle = None
 
 
 def extract_token_and_interval(filepath: str) -> tuple[str, str]:
@@ -1988,6 +1997,11 @@ def plot_patterns(
     - Hollow (outline only) for bullish candles (close >= open)
     - Filled for bearish candles (close < open)
     """
+    if not _HAS_MATPLOTLIB:
+        raise RuntimeError(
+            "matplotlib is required for plotting. Install it via: pip install matplotlib"
+        )
+
     df = result.df
     replay_idx = result.replay_idx
 
@@ -2413,8 +2427,11 @@ def _process_one(args: tuple) -> tuple[str, Optional[str]]:
     Worker function for parallel processing.
     Returns (filepath, error_message) — error_message is None on success.
     """
-    import matplotlib
-    matplotlib.use("Agg")
+    if _HAS_MATPLOTLIB:
+        import matplotlib
+        matplotlib.use("Agg")
+    else:
+        return args[0], "matplotlib not installed"
 
     filepath, save_path, kwargs = args
     try:
