@@ -1907,6 +1907,7 @@ function toggleAgentPanel() {
     _adjustChartForPanels();
     if (agentPanelOpen) {
         refreshAgentStatus();
+        refreshOKXStatus();
         agentPollTimer = setInterval(refreshAgentStatus, 5000);
     } else {
         if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
@@ -2022,6 +2023,84 @@ document.getElementById('healer-trigger-btn')?.addEventListener('click', async (
     await fetch(`${API_BASE}/api/healer/trigger`, { method: 'POST' });
     setTimeout(refreshAgentStatus, 2000);
 });
+
+// ── OKX Trading Config ──
+document.getElementById('okx-save-keys-btn')?.addEventListener('click', async () => {
+    const apiKey = document.getElementById('okx-api-key')?.value?.trim();
+    const secret = document.getElementById('okx-secret')?.value?.trim();
+    const passphrase = document.getElementById('okx-passphrase')?.value?.trim();
+    const msgEl = document.getElementById('okx-status-msg');
+    if (!apiKey || !secret || !passphrase) {
+        if (msgEl) msgEl.textContent = 'Please fill all 3 fields';
+        return;
+    }
+    if (msgEl) msgEl.textContent = 'Verifying keys...';
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/okx-keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, secret, passphrase }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Keys verified! Balance: $' + (data.balance?.total_equity?.toFixed(2) ?? '—') + '</span>';
+            const liveBtn = document.getElementById('okx-go-live-btn');
+            if (liveBtn) liveBtn.disabled = false;
+        } else {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">Failed: ' + (data.reason || 'unknown') + '</span>';
+        }
+    } catch (e) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">Error: ' + e.message + '</span>';
+    }
+    refreshOKXStatus();
+});
+
+document.getElementById('okx-go-live-btn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('okx-status-msg');
+    if (msgEl) msgEl.textContent = 'Switching to LIVE mode...';
+    const resp = await fetch(`${API_BASE}/api/agent/config?mode=live`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350;font-weight:bold">LIVE MODE — Real money at risk!</span>';
+    } else {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">' + (data.reason || 'Failed') + '</span>';
+    }
+    refreshAgentStatus();
+});
+
+document.getElementById('okx-go-paper-btn')?.addEventListener('click', async () => {
+    await fetch(`${API_BASE}/api/agent/config?mode=paper`, { method: 'POST' });
+    const msgEl = document.getElementById('okx-status-msg');
+    if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Paper mode (simulated)</span>';
+    refreshAgentStatus();
+});
+
+async function refreshOKXStatus() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/okx-status`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const badge = document.getElementById('okx-status-badge');
+        const balInfo = document.getElementById('okx-balance-info');
+        const liveBtn = document.getElementById('okx-go-live-btn');
+        if (badge) {
+            if (data.has_keys && data.balance) {
+                badge.textContent = data.mode === 'live' ? 'LIVE' : 'READY';
+                badge.style.background = data.mode === 'live' ? '#ef5350' : '#26a69a';
+            } else if (data.has_keys) {
+                badge.textContent = 'KEY ERR';
+                badge.style.background = '#ff9800';
+            } else {
+                badge.textContent = 'NO KEY';
+                badge.style.background = '#787b86';
+            }
+        }
+        if (balInfo && data.balance) {
+            balInfo.textContent = 'Equity: $' + (data.balance.total_equity?.toFixed(2) || '—') + ' | USDT: $' + (data.balance.usdt_available?.toFixed(2) || '—');
+        }
+        if (liveBtn) liveBtn.disabled = !data.has_keys;
+    } catch (_) {}
+}
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {

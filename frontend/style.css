@@ -1142,6 +1142,16 @@ body {
 .status-stopped { color: #787b86; }
 .status-shutdown { color: #ef5350; }
 
+/* ── OKX Trading section ── */
+.okx-section { border-top: 1px solid #363a45; padding-top: 10px; margin-top: 6px; }
+.okx-input {
+    display: block; width: 100%; padding: 5px 8px; margin-bottom: 4px;
+    background: #1e222d; border: 1px solid #363a45; border-radius: 4px;
+    color: #d1d4dc; font-size: 11px; font-family: inherit;
+}
+.okx-input:focus { border-color: #2962ff; outline: none; }
+.okx-btn-row { display: flex; gap: 6px; margin-top: 6px; }
+
 /* ── Self-Healer section ── */
 .healer-section { border-top: 1px solid #363a45; padding-top: 10px; margin-top: 6px; }
 .healer-badge {

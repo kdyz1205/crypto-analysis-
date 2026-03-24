@@ -4,6 +4,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from pathlib import Path
 
 from .data_service import load_symbols, load_okx_swap_symbols, get_ohlcv, get_ohlcv_with_df, API_ONLY
@@ -106,7 +107,7 @@ async def health_check():
 
 @app.get("/")
 async def index():
-    return FileResponse(str(PROJECT_ROOT / "frontend" / "index.html"))
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "index.html"), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 def _symbols_from_data_folder() -> list[str]:
@@ -755,6 +756,8 @@ async def api_agent_config(
     """Update agent config (mode, equity)."""
     agent = get_agent()
     if mode and mode in ("paper", "live"):
+        if mode == "live" and not agent.trader.has_api_keys():
+            return {"ok": False, "reason": "Cannot switch to live: OKX API keys not configured. Set keys first via /api/agent/okx-keys"}
         agent.trader.state.mode = mode
     if equity is not None and equity > 0:
         agent.trader.state.equity = equity
@@ -762,6 +765,50 @@ async def api_agent_config(
         agent.trader.state.cash = equity
     agent._save_state()
     return {"ok": True, "state": agent.get_status()}
+
+
+class OKXKeysRequest(BaseModel):
+    api_key: str
+    secret: str
+    passphrase: str
+
+
+@app.post("/api/agent/okx-keys")
+async def api_agent_okx_keys(req: OKXKeysRequest):
+    """Set OKX API keys for live trading. Keys are stored in memory only (not persisted to disk for security)."""
+    agent = get_agent()
+    agent.trader.set_api_keys(req.api_key, req.secret, req.passphrase)
+    # Verify keys by checking account balance
+    balance = await agent.trader.get_account_balance()
+    if balance.get("ok"):
+        return {
+            "ok": True,
+            "message": "OKX API keys verified successfully",
+            "balance": balance,
+            "has_keys": True,
+        }
+    return {
+        "ok": False,
+        "reason": f"Keys set but verification failed: {balance.get('reason', 'unknown')}",
+        "has_keys": True,
+    }
+
+
+@app.get("/api/agent/okx-status")
+async def api_agent_okx_status():
+    """Check OKX connection status and account balance."""
+    agent = get_agent()
+    has_keys = agent.trader.has_api_keys()
+    if not has_keys:
+        return {"ok": True, "has_keys": False, "mode": agent.trader.state.mode}
+    balance = await agent.trader.get_account_balance()
+    return {
+        "ok": True,
+        "has_keys": True,
+        "mode": agent.trader.state.mode,
+        "balance": balance if balance.get("ok") else None,
+        "error": balance.get("reason") if not balance.get("ok") else None,
+    }
 
 
 @app.get("/api/agent/signals")
@@ -788,9 +835,6 @@ async def api_agent_signals():
 
 
 # ── AI Chat API endpoints ─────────────────────────────────────────────────────
-
-from pydantic import BaseModel
-
 
 class ChatRequest(BaseModel):
     message: str
@@ -857,9 +901,11 @@ async def api_healer_start():
 # This must come AFTER all /api/ routes so it doesn't shadow them
 @app.get("/style.css")
 async def serve_css():
-    return FileResponse(str(PROJECT_ROOT / "frontend" / "style.css"), media_type="text/css")
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "style.css"), media_type="text/css",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
 
 
 @app.get("/app.js")
 async def serve_js():
-    return FileResponse(str(PROJECT_ROOT / "frontend" / "app.js"), media_type="application/javascript")
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "app.js"), media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
