@@ -1,29 +1,52 @@
 """
-Agent Brain — The autonomous trading intelligence.
+Agent Brain — V6 四层过滤趋势跟踪策略 (4-Layer Filtered Trend Following).
 
-Responsibilities:
-1. Generate signals from OHLCV data (using the optimized strategy)
-2. Manage positions (trailing stops, EMA exits)
-3. Self-evolve: after every N trades, evaluate performance and mutate strategy params
-4. Stay alive: hard risk limits, conservative sizing
+Layers:
+1. Trend ordering: P > MA5 > MA8 > EMA21 > MA55 (long) or mirror (short)
+2. Fanning distance: adjacent MA gaps within thresholds (not too spread)
+3. Slope momentum: all MAs sloping in trend direction
+4. BB position: price < BB_upper (long) or price > BB_lower (short)
 
-The brain runs as a background loop inside the FastAPI app.
+Exit:
+- Long SL: price breaks below MA55
+- Long TP: price touches BB_upper
+- Short SL: price breaks above MA55
+- Short TP: price touches BB_lower
 """
 
 import time
 import asyncio
 import random
-import math
 import json
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
 from .okx_trader import OKXTrader, AgentState, RiskLimits, Position
-from .backtest_service import (
-    _mfi, _sma, _ema, _atr, _rsi, _bb_upper, BacktestParams, run_backtest,
-)
+from .backtest_service import _sma, _ema, _atr, _bb_upper
+
+
+def _bb_lower(close, period, std_mult):
+    """Bollinger Band lower."""
+    sma = _sma(close, period)
+    n = len(close)
+    bb = np.full(n, np.nan)
+    for i in range(period - 1, n):
+        window = close[i - period + 1 : i + 1]
+        std = np.std(window)
+        bb[i] = sma[i] - std_mult * std
+    return bb
+
+
+def _slope(arr, length, i):
+    """Percentage slope of arr over `length` bars ending at index i."""
+    if i < length or np.isnan(arr[i]) or np.isnan(arr[i - length]):
+        return 0.0
+    prev = arr[i - length]
+    if prev == 0:
+        return 0.0
+    return (arr[i] - prev) / prev * 100
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AGENT_STATE_FILE = PROJECT_ROOT / "autoresearch" / "agent_state.json"
@@ -31,28 +54,27 @@ EVOLUTION_LOG = PROJECT_ROOT / "autoresearch" / "evolution_log.tsv"
 
 # Symbols to monitor
 WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "HYPEUSDT"]
-SIGNAL_INTERVAL = "4h"  # timeframe for signal generation
-TICK_INTERVAL_SEC = 60  # check every 60 seconds
+SIGNAL_INTERVAL = "4h"
+TICK_INTERVAL_SEC = 60
 
-# Evolution: mutate params after this many trades
+# Evolution
 EVOLVE_EVERY_N_TRADES = 10
 MIN_TRADES_FOR_EVAL = 5
 
 
 class AgentBrain:
-    """The autonomous trading agent."""
+    """The autonomous trading agent — V6 strategy."""
 
     def __init__(self, trader: OKXTrader | None = None):
         self.trader = trader or OKXTrader()
         self._running = False
         self._task: asyncio.Task | None = None
-        self._last_signals: dict[str, dict] = {}  # symbol -> signal info
+        self._last_signals: dict[str, dict] = {}
         self._load_state()
 
     # ── State persistence ─────────────────────────────────────────────────
 
     def _load_state(self):
-        """Load agent state from disk."""
         if AGENT_STATE_FILE.exists():
             try:
                 data = json.loads(AGENT_STATE_FILE.read_text())
@@ -75,7 +97,6 @@ class AgentBrain:
                 print(f"[Agent] Failed to load state: {e}")
 
     def _save_state(self):
-        """Save agent state to disk."""
         try:
             AGENT_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
             data = {
@@ -96,11 +117,11 @@ class AgentBrain:
         except Exception as e:
             print(f"[Agent] Failed to save state: {e}")
 
-    # ── Signal generation ─────────────────────────────────────────────────
+    # ── V6 Signal generation ──────────────────────────────────────────────
 
     async def generate_signal(self, symbol: str) -> dict | None:
         """
-        Analyze current market data for a symbol and return a signal.
+        V6 four-layer filtered trend following signal.
         Returns: {'action': 'long'|'short'|'close'|None, 'confidence': float, 'reason': str}
         """
         try:
@@ -112,69 +133,133 @@ class AgentBrain:
             print(f"[Agent] Data error for {symbol}: {e}")
             return None
 
-        params = self.trader.state.strategy_params
+        p = self.trader.state.strategy_params
         close = df["close"].to_numpy().astype(float)
         high = df["high"].to_numpy().astype(float)
         low = df["low"].to_numpy().astype(float)
-        volume = df["volume"].to_numpy().astype(float)
 
-        mfi = _mfi(high, low, close, volume, params["mfi_period"])
-        ma_fast = _sma(close, params["ma_fast"])
-        ema = _ema(close, params["ema_span"])
-        ma_slow = _sma(close, params["ma_slow"])
-        atr = _atr(high, low, close, params["atr_period"])
-        rsi = _rsi(close, 14)
-        bb_up = _bb_upper(close, params["bb_period"], params["bb_std"])
+        # Compute indicators
+        ma5 = _sma(close, p["ma5_len"])
+        ma8 = _sma(close, p["ma8_len"])
+        ema21 = _ema(close, p["ema21_len"])
+        ma55 = _sma(close, p["ma55_len"])
+        bb_up = _bb_upper(close, p["bb_length"], p["bb_std_dev"])
+        bb_lo = _bb_lower(close, p["bb_length"], p["bb_std_dev"])
+        atr = _atr(high, low, close, p["atr_period"])
 
         i = len(close) - 1  # latest bar
-        if any(np.isnan(x[i]) for x in [mfi, ma_fast, ema, ma_slow, atr, rsi, bb_up]):
+        indicators = [ma5, ma8, ema21, ma55, bb_up, bb_lo, atr]
+        if any(np.isnan(x[i]) for x in indicators):
             return None
 
         price = close[i]
+        slope_len = p["slope_len"]
+        slope_thresh = p["slope_threshold"]
 
-        # Check if we have an existing position
+        # ── Check existing position exits ──
         if symbol in self.trader.state.positions:
             pos = self.trader.state.positions[symbol]
-            # Check trailing stop / EMA breakdown
             if pos.side == "long":
-                if close[i] < ema[i]:
-                    return {"action": "close", "confidence": 0.8, "reason": "EMA breakdown"}
-                if pos.unrealized_pnl < -3.0:  # -3% hard stop
-                    return {"action": "close", "confidence": 1.0, "reason": "Hard stop -3%"}
-            return None  # hold position
+                # Long SL: price < MA55
+                if price < ma55[i]:
+                    return {"action": "close", "confidence": 1.0, "reason": "Long SL: price < MA55"}
+                # Long TP: price >= BB_upper
+                if price >= bb_up[i]:
+                    return {"action": "close", "confidence": 0.9, "reason": "Long TP: price hit BB_upper"}
+            elif pos.side == "short":
+                # Short SL: price > MA55
+                if price > ma55[i]:
+                    return {"action": "close", "confidence": 1.0, "reason": "Short SL: price > MA55"}
+                # Short TP: price <= BB_lower
+                if price <= bb_lo[i]:
+                    return {"action": "close", "confidence": 0.9, "reason": "Short TP: price hit BB_lower"}
+            return None  # hold
 
-        # Entry signals
-        rsi_ok = params["rsi_low"] < rsi[i] < params["rsi_high"]
-        ma_stack_long = (price > ma_fast[i] and ma_fast[i] > ema[i] and ema[i] > ma_slow[i])
-        mfi_bull = mfi[i] > params["mfi_threshold"]
+        # ── Layer 1: Trend ordering ──
+        long_order = (price > ma5[i] > ma8[i] > ema21[i] > ma55[i])
+        short_order = (price < ma5[i] < ma8[i] < ema21[i] < ma55[i])
 
-        # Confidence: how many bars of MA stacking (lookback 5)
+        if not long_order and not short_order:
+            return None
+
+        # ── Layer 2: Fanning distance (MAs not too spread apart) ──
+        def pct_dist(a, b):
+            return abs(a - b) / max(abs(b), 1e-10) * 100
+
+        dist_5_8 = pct_dist(ma5[i], ma8[i])
+        dist_8_21 = pct_dist(ma8[i], ema21[i])
+        dist_21_55 = pct_dist(ema21[i], ma55[i])
+
+        fan_ok = (
+            dist_5_8 < p["dist_ma5_ma8"]
+            and dist_8_21 < p["dist_ma8_ema21"]
+            and dist_21_55 < p["dist_ema21_ma55"]
+        )
+        if not fan_ok:
+            return None
+
+        # ── Layer 3: Slope momentum (all MAs trending in the right direction) ──
+        s_ma5 = _slope(ma5, slope_len, i)
+        s_ma8 = _slope(ma8, slope_len, i)
+        s_ema21 = _slope(ema21, slope_len, i)
+        s_ma55 = _slope(ma55, slope_len, i)
+
+        if long_order:
+            slopes_ok = all(s > slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
+        else:
+            slopes_ok = all(s < -slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
+
+        if not slopes_ok:
+            return None
+
+        # ── Layer 4: BB position filter ──
+        if long_order and price >= bb_up[i]:
+            return None  # already at upper band, too late
+        if short_order and price <= bb_lo[i]:
+            return None  # already at lower band, too late
+
+        # ── Confidence: how many bars of consistent ordering (lookback 5) ──
         stack_count = 0
         for j in range(max(0, i - 5), i + 1):
-            if (not np.isnan(ma_fast[j]) and not np.isnan(ema[j]) and not np.isnan(ma_slow[j])
-                    and close[j] > ma_fast[j] > ema[j] > ma_slow[j]):
+            if any(np.isnan(x[j]) for x in [ma5, ma8, ema21, ma55]):
+                continue
+            if long_order and close[j] > ma5[j] > ma8[j] > ema21[j] > ma55[j]:
+                stack_count += 1
+            elif short_order and close[j] < ma5[j] < ma8[j] < ema21[j] < ma55[j]:
                 stack_count += 1
         confidence = min(stack_count / 5.0, 1.0)
 
-        # Volume confirmation: current vol > average vol
-        vol_avg = np.mean(volume[max(0, i-20):i]) if i > 20 else volume[i]
-        vol_confirm = volume[i] > vol_avg * 0.8
+        if confidence < 0.4:
+            return None
 
-        if ma_stack_long and mfi_bull and rsi_ok and vol_confirm and confidence >= 0.4:
+        # Build signal
+        if long_order:
             return {
                 "action": "long",
                 "confidence": round(confidence, 2),
-                "reason": f"MA stacking ({stack_count}/5) + MFI={mfi[i]:.0f} RSI={rsi[i]:.0f}",
-                "sl": ema[i] - params["atr_sl_mult"] * atr[i],
+                "reason": (
+                    f"V6 Long: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
+                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
+                ),
+                "sl": ma55[i],
                 "tp": bb_up[i],
             }
-
-        return None
+        else:
+            return {
+                "action": "short",
+                "confidence": round(confidence, 2),
+                "reason": (
+                    f"V6 Short: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
+                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
+                ),
+                "sl": ma55[i],
+                "tp": bb_lo[i],
+            }
 
     # ── Position management ───────────────────────────────────────────────
 
     async def manage_positions(self):
-        """Check all open positions for exits."""
+        """Check all open positions for V6 exits."""
         for symbol in list(self.trader.state.positions.keys()):
             signal = await self.generate_signal(symbol)
             if signal and signal["action"] == "close":
@@ -183,18 +268,18 @@ class AgentBrain:
                     print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={result['pnl_pct']}%")
                     self._save_state()
 
-    # ── Evolution: self-improving strategy ─────────────────────────────────
+    # ── Evolution: self-improving V6 params ───────────────────────────────
 
     def _evaluate_recent_performance(self) -> dict:
-        """Evaluate recent trade performance for evolution decisions."""
         trades = self.trader.state.trade_history[-EVOLVE_EVERY_N_TRADES:]
         if len(trades) < MIN_TRADES_FOR_EVAL:
             return {"ready": False}
 
         pnls = [t.pnl_pct for t in trades]
         win_rate = sum(1 for p in pnls if p > 0) / len(pnls) * 100
-        avg_pnl = np.mean(pnls)
-        sharpe = np.mean(pnls) / max(np.std(pnls), 1e-8)
+        avg_pnl = float(np.mean(pnls))
+        std_pnl = float(np.std(pnls)) if len(pnls) > 1 else 0.0
+        sharpe = avg_pnl / max(std_pnl, 1e-8)
 
         return {
             "ready": True,
@@ -205,10 +290,7 @@ class AgentBrain:
         }
 
     def evolve(self):
-        """
-        Mutate strategy parameters based on recent performance.
-        Conservative mutations: small % changes to avoid catastrophic shifts.
-        """
+        """Mutate V6 strategy parameters based on recent performance."""
         perf = self._evaluate_recent_performance()
         if not perf["ready"]:
             return
@@ -216,34 +298,28 @@ class AgentBrain:
         params = self.trader.state.strategy_params
         old_params = dict(params)
 
-        # Mutation strength: smaller when performing well, larger when performing poorly
-        if perf["sharpe"] > 0:
-            mutation_rate = 0.05  # 5% mutation when profitable
-        else:
-            mutation_rate = 0.10  # 10% mutation when losing
+        mutation_rate = 0.05 if perf["sharpe"] > 0 else 0.10
 
-        # Mutate numeric params
-        int_params = ["mfi_period", "ma_fast", "ema_span", "ma_slow", "atr_period", "bb_period"]
-        float_params = ["atr_sl_mult", "bb_std", "rsi_low", "rsi_high", "mfi_threshold", "trailing_trigger_atr"]
+        int_params = ["ma5_len", "ma8_len", "ema21_len", "ma55_len", "bb_length", "atr_period", "slope_len"]
+        float_params = ["bb_std_dev", "dist_ma5_ma8", "dist_ma8_ema21", "dist_ema21_ma55", "slope_threshold"]
 
-        # Pick 1-2 params to mutate (not everything at once)
         all_params = int_params + float_params
         n_mutations = random.randint(1, 2)
         to_mutate = random.sample(all_params, min(n_mutations, len(all_params)))
+
+        bounds = {
+            "ma5_len": (3, 8), "ma8_len": (6, 12), "ema21_len": (15, 30),
+            "ma55_len": (40, 80), "bb_length": (15, 30), "bb_std_dev": (1.5, 4.0),
+            "dist_ma5_ma8": (0.5, 3.0), "dist_ma8_ema21": (1.0, 5.0),
+            "dist_ema21_ma55": (2.0, 8.0), "slope_len": (2, 5),
+            "slope_threshold": (0.02, 0.5), "atr_period": (7, 21),
+        }
 
         for key in to_mutate:
             val = params[key]
             delta = val * mutation_rate * random.choice([-1, 1])
             new_val = val + delta
 
-            # Enforce bounds
-            bounds = {
-                "mfi_period": (5, 30), "ma_fast": (3, 20), "ema_span": (10, 40),
-                "ma_slow": (30, 90), "atr_period": (5, 25), "bb_period": (10, 35),
-                "atr_sl_mult": (0.5, 5.0), "bb_std": (1.5, 4.0),
-                "rsi_low": (20, 50), "rsi_high": (55, 85),
-                "mfi_threshold": (30, 70), "trailing_trigger_atr": (0.5, 3.0),
-            }
             lo, hi = bounds.get(key, (0, 100))
             new_val = max(lo, min(hi, new_val))
 
@@ -252,15 +328,16 @@ class AgentBrain:
 
             params[key] = new_val
 
-        # Enforce MA ordering: ma_fast < ema_span < ma_slow
-        if params["ma_fast"] >= params["ema_span"]:
-            params["ema_span"] = params["ma_fast"] + 5
-        if params["ema_span"] >= params["ma_slow"]:
-            params["ma_slow"] = params["ema_span"] + 10
+        # Enforce MA ordering: ma5 < ma8 < ema21 < ma55
+        if params["ma5_len"] >= params["ma8_len"]:
+            params["ma8_len"] = params["ma5_len"] + 2
+        if params["ma8_len"] >= params["ema21_len"]:
+            params["ema21_len"] = params["ma8_len"] + 5
+        if params["ema21_len"] >= params["ma55_len"]:
+            params["ma55_len"] = params["ema21_len"] + 15
 
         self.trader.state.generation += 1
 
-        # Log evolution
         try:
             EVOLUTION_LOG.parent.mkdir(parents=True, exist_ok=True)
             if not EVOLUTION_LOG.exists():
@@ -279,43 +356,37 @@ class AgentBrain:
     # ── Main loop ─────────────────────────────────────────────────────────
 
     async def tick(self):
-        """One iteration of the agent loop."""
         if not self.trader.state.is_alive:
             return
 
         self.trader.check_daily_reset()
 
-        # Update existing positions
         await self.trader.update_positions()
         await self.manage_positions()
 
-        # Look for new entry signals
         for symbol in WATCH_SYMBOLS:
             if symbol in self.trader.state.positions:
-                continue  # already have a position
-
-            signal = await self.generate_signal(symbol)
-            if signal is None or signal["action"] is None:
                 continue
 
-            if signal["action"] == "long" and signal["confidence"] >= 0.6:
-                # Size: confidence × max_position_pct × equity
+            signal = await self.generate_signal(symbol)
+            if signal is None or signal.get("action") not in ("long", "short"):
+                continue
+
+            if signal["confidence"] >= 0.6:
                 size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
-                result = await self.trader.open_position(symbol, "long", size)
+                result = await self.trader.open_position(symbol, signal["action"], size)
                 if result["ok"]:
-                    print(f"[Agent] Opened LONG {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
+                    print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
                     self._last_signals[symbol] = signal
                     self._save_state()
 
-        # Check if it's time to evolve
         if (self.trader.state.total_trades > 0 and
                 self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0):
             self.evolve()
 
     async def run_loop(self):
-        """Background loop: tick every TICK_INTERVAL_SEC."""
         self._running = True
-        print(f"[Agent] Started. Mode={self.trader.state.mode} Equity=${self.trader.state.equity:.2f} Gen={self.trader.state.generation}")
+        print(f"[Agent] Started V6 strategy. Mode={self.trader.state.mode} Equity=${self.trader.state.equity:.2f} Gen={self.trader.state.generation}")
 
         while self._running:
             try:
@@ -325,13 +396,11 @@ class AgentBrain:
             await asyncio.sleep(TICK_INTERVAL_SEC)
 
     def start(self):
-        """Start the agent background loop."""
         if self._task and not self._task.done():
-            return  # already running
+            return
         self._task = asyncio.create_task(self.run_loop())
 
     def stop(self):
-        """Stop the agent."""
         self._running = False
         if self._task:
             self._task.cancel()
@@ -340,7 +409,6 @@ class AgentBrain:
         print("[Agent] Stopped.")
 
     def get_status(self) -> dict:
-        """Get current agent status for the UI."""
         return {
             **self.trader.state.to_dict(),
             "running": self._running,

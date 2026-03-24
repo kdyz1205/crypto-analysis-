@@ -4,6 +4,10 @@ import time
 from datetime import timezone
 from pathlib import Path
 
+# In-memory TTL cache for download_ohlcv results
+_ohlcv_cache: dict[tuple, tuple[float, pl.DataFrame]] = {}
+OHLCV_CACHE_TTL = 60  # seconds
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 SYMBOLS_FILE = PROJECT_ROOT / "binance_futures_usdt.txt"
@@ -228,11 +232,23 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
     For EXCHANGE == 'okx', this uses the public OKX candles endpoint.
     For EXCHANGE == 'binance', it uses the Binance Futures klines endpoint
     (original behaviour).
+
+    Results are cached in memory with a TTL to avoid redundant API calls.
     """
+    cache_key = (symbol.upper(), interval, days)
+    cached = _ohlcv_cache.get(cache_key)
+    if cached is not None:
+        cached_time, cached_result = cached
+        if (time.time() - cached_time) < OHLCV_CACHE_TTL:
+            return cached_result
+
     if EXCHANGE.lower() == "okx":
-        return await _download_ohlcv_okx(symbol, interval, days)
+        result = await _download_ohlcv_okx(symbol, interval, days)
     else:
-        return await _download_ohlcv_binance(symbol, interval, days)
+        result = await _download_ohlcv_binance(symbol, interval, days)
+
+    _ohlcv_cache[cache_key] = (time.time(), result)
+    return result
 
 
 async def _download_ohlcv_binance(symbol: str, interval: str, days: int = 30) -> pl.DataFrame:

@@ -1,3 +1,6 @@
+// ── API Base URL (empty = same origin, set for cross-origin deployment) ──
+const API_BASE = window.__API_BASE || '';
+
 // ── Global State ──
 let chart = null;
 let candleSeries = null;
@@ -116,16 +119,22 @@ function getTimePriceFromEvent(event) {
     return { time, value: price, barIndex };
 }
 
-/** Chart-native: time -> bar_index (integer). Uses lastCandles. */
+/** Chart-native: time -> bar_index (integer). Uses lastCandles. Binary search for O(log n). */
 function timeToBarIndex(time) {
     if (!lastCandles?.length) return 0;
-    let best = 0;
-    let bestDiff = Infinity;
-    for (let i = 0; i < lastCandles.length; i++) {
-        const d = Math.abs(Number(lastCandles[i].time) - Number(time));
-        if (d < bestDiff) { bestDiff = d; best = i; }
+    const t = Number(time);
+    let lo = 0, hi = lastCandles.length - 1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const midTime = Number(lastCandles[mid].time);
+        if (midTime === t) return mid;
+        if (midTime < t) lo = mid + 1;
+        else hi = mid - 1;
     }
-    return best;
+    // Return nearest
+    if (lo >= lastCandles.length) return lastCandles.length - 1;
+    if (lo === 0) return 0;
+    return (t - Number(lastCandles[lo - 1].time)) < (Number(lastCandles[lo].time) - t) ? lo - 1 : lo;
 }
 
 /** Chart-native: bar_index -> time for rendering. */
@@ -283,33 +292,38 @@ function removePreviewLine() {
     }
 }
 
+let _mouseMoveRAF = null;
 function onChartMouseMove(event) {
-    if (!chart || !candleSeries) return;
-    const tp = getTimePriceFromEvent(event);
-    if (!tp) return;
+    if (_mouseMoveRAF) return;
+    _mouseMoveRAF = requestAnimationFrame(() => {
+        _mouseMoveRAF = null;
+        if (!chart || !candleSeries) return;
+        const tp = getTimePriceFromEvent(event);
+        if (!tp) return;
 
-    // DRAW mode: preview line from P1 to cursor (chart pan disabled during draw per spec)
-    if (!drawingMode) return;
+        // DRAW mode: preview line from P1 to cursor (chart pan disabled during draw per spec)
+        if (!drawingMode) return;
 
-    if (drawingMode === 'trend' && pendingDrawPoint) {
-        if (!previewLineSeries) {
-            previewLineSeries = chart.addLineSeries({
-                color: 'rgba(41, 98, 255, 0.6)',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Solid,
-                crosshairMarkerVisible: false,
-                lastValueVisible: false,
-                priceLineVisible: false,
-            });
+        if (drawingMode === 'trend' && pendingDrawPoint) {
+            if (!previewLineSeries) {
+                previewLineSeries = chart.addLineSeries({
+                    color: 'rgba(41, 98, 255, 0.6)',
+                    lineWidth: 2,
+                    lineStyle: LightweightCharts.LineStyle.Solid,
+                    crosshairMarkerVisible: false,
+                    lastValueVisible: false,
+                    priceLineVisible: false,
+                });
+            }
+            previewLineSeries.setData([
+                { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
+                { time: tp.time, value: tp.value },
+            ]);
+            return;
         }
-        previewLineSeries.setData([
-            { time: pendingDrawPoint.time, value: pendingDrawPoint.value },
-            { time: tp.time, value: tp.value },
-        ]);
-        return;
-    }
 
-    // No mousemove preview for horizontal (single-click only)
+        // No mousemove preview for horizontal (single-click only)
+    });
 }
 
 function onDrawLineFinalized(line) {
@@ -353,7 +367,7 @@ function showSimilarPatterns() {
     similarLinesAssistLayer = assistSimilarData.lines;
     visibleSimilarIndices = new Set(similarLinesAssistLayer.map((_, i) => i));
     renderSimilarLinesList();
-    drawAllPatterns();
+    scheduleDrawPatterns();
 }
 
 function toggleSimilarLineVisibility(index) {
@@ -362,7 +376,7 @@ function toggleSimilarLineVisibility(index) {
     } else {
         visibleSimilarIndices.add(index);
     }
-    drawAllPatterns();
+    scheduleDrawPatterns();
 }
 
 function renderSimilarLinesList() {
@@ -407,7 +421,7 @@ async function fetchAssistSimilar(line) {
             x2: line.x2,
             y2: line.y2,
         });
-        const resp = await fetch(`/api/pattern-stats/line-similar?${params}`);
+        const resp = await fetch(`${API_BASE}/api/pattern-stats/line-similar?${params}`);
         if (!resp.ok) return { count: 0, lines: [] };
         const data = await resp.json();
         return { count: data.count ?? 0, lines: data.lines ?? [] };
@@ -557,7 +571,7 @@ function buildParams() {
     });
 
     const replayToggle = document.getElementById('replay-toggle');
-    if (replayToggle.checked) {
+    if (replayToggle?.checked) {
         const endTime = getReplayEndTime();
         if (endTime) {
             params.set('end_time', endTime);
@@ -607,7 +621,7 @@ async function loadData(isLiveUpdate = false) {
     }, LOAD_DATA_TIMEOUT_MS);
 
     try {
-        const resp = await fetch(`/api/ohlcv?${params}`, { signal });
+        const resp = await fetch(`${API_BASE}/api/ohlcv?${params}`, { signal });
         if (!resp.ok) {
             let errMsg = 'Unknown error';
             try {
@@ -618,14 +632,16 @@ async function loadData(isLiveUpdate = false) {
             }
             console.error('Chart fetch error:', errMsg, 'URL:', `/api/ohlcv?${params}`);
             if (!isLiveUpdate) {
-                alert(`Error loading data: ${errMsg}\n\nPlease check:\n1. Server is running (see terminal for URL)\n2. Symbol exists\n3. Network connection\n\nCheck browser console (F12) for details.`);
+                console.warn(`Data error: ${errMsg} — will retry in 3s`);
+                setTimeout(() => loadData(), 3000);
             }
             return;
         }
         if (signal.aborted) return;
 
         const data = await resp.json();
-        
+        window._loadRetryCount = 0; // reset retry counter on success
+
         if (data.pricePrecision !== undefined) {
             pricePrecision = data.pricePrecision;
         }
@@ -675,7 +691,6 @@ async function loadData(isLiveUpdate = false) {
         if (isRecognitionOverlayMode() && !isLiveUpdate) {
             loadPatterns(buildPatternParams().toString()).then(() => {
                 drawAllPatterns();
-                setTimeout(() => fetchPatternStats(), 0);
             });
         }
         drawAllPatterns();
@@ -683,14 +698,24 @@ async function loadData(isLiveUpdate = false) {
         if (e.name === 'AbortError') {
             if (!isLiveUpdate) {
                 showLoading(false);
-                alert('加载超时（约 90 秒）。\n\n使用 API 拉取全年数据时可能较慢，请稍后重试或检查网络。');
+                console.warn('Load timeout — will retry in 3s');
+                setTimeout(() => loadData(), 3000);
             }
             return;
         }
         if (!isLiveUpdate) {
             console.error('Data load error:', e);
             showLoading(false);
-            alert(`Network error: ${e.message}\n\nPlease check:\n1. Server is running\n2. Symbol exists\n3. Network connection`);
+            // Auto-retry on network error (server may still be starting)
+            if (!window._loadRetryCount) window._loadRetryCount = 0;
+            window._loadRetryCount++;
+            if (window._loadRetryCount <= 5) {
+                console.warn(`Network error, retry ${window._loadRetryCount}/5 in 2s...`);
+                setTimeout(() => loadData(), 2000);
+            } else {
+                console.error('Max retries reached. Server may be down.');
+                window._loadRetryCount = 0;
+            }
         }
     } finally {
         clearTimeout(timeoutId);
@@ -730,7 +755,7 @@ function stopLiveUpdates() {
 // ── Pattern Overlay ──
 function clearPatterns() {
     for (const series of patternLineSeries) {
-        chart.removeSeries(series);
+        if (chart) chart.removeSeries(series);
     }
     patternLineSeries = [];
     srSeriesRefs = [];
@@ -750,7 +775,7 @@ async function loadPatterns(existingParams) {
             if (rawPatternData) drawAllPatterns();
             return;
         }
-        const resp = await fetch(`/api/patterns?${existingParams}`);
+        const resp = await fetch(`${API_BASE}/api/patterns?${existingParams}`);
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: 'Unknown error' }));
             console.error('Pattern API error:', err);
@@ -807,7 +832,7 @@ async function fetchPatternStats() {
             interval: currentInterval,
             days: getDaysForInterval(currentInterval),
         });
-        const resp = await fetch(`/api/pattern-stats/current-vs-history?${params}`);
+        const resp = await fetch(`${API_BASE}/api/pattern-stats/current-vs-history?${params}`);
         if (!resp.ok) {
             el.textContent = '—';
             return;
@@ -866,7 +891,17 @@ function updatePatternStatsSelectedUI() {
     selEl.classList.add('highlight');
 }
 
+let _drawPatternsRAF = null;
+function scheduleDrawPatterns() {
+    if (_drawPatternsRAF) return;
+    _drawPatternsRAF = requestAnimationFrame(() => {
+        _drawPatternsRAF = null;
+        drawAllPatterns();
+    });
+}
+
 function drawAllPatterns() {
+    if (!chart) return;
     const visibleRange = chart.timeScale().getVisibleLogicalRange();
 
     clearPatterns();
@@ -955,17 +990,9 @@ function drawAssistSimilarLayer() {
 // ── Magnet Helpers ──
 function findNearestCandle(time) {
     if (!lastCandles || lastCandles.length === 0) return null;
-    let nearest = lastCandles[0];
-    let minDt = Math.abs(time - nearest.time);
-    for (let i = 1; i < lastCandles.length; i++) {
-        const c = lastCandles[i];
-        const dt = Math.abs(time - c.time);
-        if (dt < minDt) {
-            minDt = dt;
-            nearest = c;
-        }
-    }
-    return nearest;
+    // Binary search for O(log n) instead of O(n)
+    const idx = timeToBarIndex(time);
+    return lastCandles[idx] || lastCandles[lastCandles.length - 1];
 }
 
 function snapPriceToCandle(time, price, mode) {
@@ -1194,22 +1221,29 @@ function updateTrendIndicator(label, slope) {
 
     box.classList.remove('hidden', 'trend-up', 'trend-down', 'trend-sideways');
 
+    const slopeVal = (typeof slope === 'number' && !isNaN(slope)) ? slope : 0;
+    const slopeStr = `${slopeVal > 0 ? '+' : ''}${slopeVal.toFixed(2)}%`;
+
     if (label === 'UPTREND') {
         box.classList.add('trend-up');
-        box.textContent = `UPTREND (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `UPTREND (${slopeStr})`;
     } else if (label === 'DOWNTREND') {
         box.classList.add('trend-down');
-        box.textContent = `DOWNTREND (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `DOWNTREND (${slopeStr})`;
     } else {
         box.classList.add('trend-sideways');
-        box.textContent = `SIDEWAYS (${slope > 0 ? '+' : ''}${slope.toFixed(2)}%)`;
+        box.textContent = `SIDEWAYS (${slopeStr})`;
     }
 }
 
 function showLoading(show) {
     const el = document.getElementById('loading');
     if (!el) return;
-    el.classList.toggle('loading-hidden', !show);
+    if (show) {
+        el.classList.remove('loading-hidden');
+    } else {
+        el.classList.add('loading-hidden');
+    }
 }
 
 // ── Backtest ──
@@ -1236,7 +1270,7 @@ async function runBacktest() {
     const params = new URLSearchParams({ symbol: currentSymbol, interval: currentInterval, days });
 
     try {
-        const resp = await fetch(`/api/backtest?${params}`);
+        const resp = await fetch(`${API_BASE}/api/backtest?${params}`);
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || 'Backtest failed');
@@ -1310,7 +1344,7 @@ async function runOptimize() {
     });
 
     try {
-        const resp = await fetch(`/api/backtest/optimize?${params}`, { method: 'POST' });
+        const resp = await fetch(`${API_BASE}/api/backtest/optimize?${params}`, { method: 'POST' });
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: resp.statusText }));
             throw new Error(err.detail || 'Optimize failed');
@@ -1387,7 +1421,7 @@ async function loadSymbols() {
     const ac = new AbortController();
     const timeoutId = setTimeout(() => ac.abort(), SYMBOLS_FETCH_TIMEOUT_MS);
     try {
-        const resp = await fetch('/api/symbols', { signal: ac.signal });
+        const resp = await fetch(`${API_BASE}/api/symbols`, { signal: ac.signal });
         clearTimeout(timeoutId);
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
@@ -1442,7 +1476,9 @@ function updateViewTabsUI() {
     if (chatBtn) chatBtn.classList.toggle('active', chatPanelOpen);
 }
 
+let _setToolModeVersion = 0;
 async function setToolMode(nextMode) {
+    const myVersion = ++_setToolModeVersion;
     // clicking the same tab toggles mode off
     toolMode = (toolMode === nextMode) ? null : nextMode;
     updateViewTabsUI();
@@ -1455,7 +1491,7 @@ async function setToolMode(nextMode) {
     if (toolMode === 'draw') {
         if (contentEl) contentEl.textContent = 'Draw mode: click two points for trendline, one for horizontal';
         updateAssistPanelNotification();
-        drawAllPatterns();
+        scheduleDrawPatterns();
         return;
     }
 
@@ -1470,7 +1506,7 @@ async function setToolMode(nextMode) {
         if (listEl) { listEl.innerHTML = ''; listEl.classList.add('hidden'); }
         if (contentEl) contentEl.textContent = 'Choose Recognizing or Assist mode to load patterns';
         if (selectedEl) selectedEl.classList.add('hidden');
-        drawAllPatterns();
+        scheduleDrawPatterns();
         return;
     }
 
@@ -1478,9 +1514,10 @@ async function setToolMode(nextMode) {
         if (contentEl) contentEl.textContent = 'Assist: 趋势线（延伸）. 与 Recognizing 分离，仅显示辅助线.';
         updateAssistPanelNotification();
         rawPatternData = null;
-        drawAllPatterns();
+        scheduleDrawPatterns();
         await loadPatterns(buildPatternParams().toString());
-        drawAllPatterns();
+        if (myVersion !== _setToolModeVersion) return; // stale
+        scheduleDrawPatterns();
         if (contentEl && rawPatternData) {
             const s = rawPatternData.supportLines?.length || 0;
             const r = rawPatternData.resistanceLines?.length || 0;
@@ -1490,6 +1527,7 @@ async function setToolMode(nextMode) {
     }
     if (contentEl) contentEl.textContent = 'Recognizing: loading patterns...';
     await loadPatterns(buildPatternParams().toString());
+    if (myVersion !== _setToolModeVersion) return; // stale
     if (toolMode === 'recognize') updateRecognizePanelContent();
     await fetchPatternStats();
 }
@@ -1497,6 +1535,7 @@ async function setToolMode(nextMode) {
 function selectTicker(symbol) {
     currentSymbol = symbol;
     lastCandle = null;
+    patternResponseCache.clear(); // Clear cache on symbol change to prevent stale data
     document.getElementById('current-ticker').textContent = formatTicker(symbol);
     document.getElementById('ticker-dropdown').classList.add('hidden');
     updateChartHeader();
@@ -1505,7 +1544,7 @@ function selectTicker(symbol) {
     document.title = `${formatTicker(symbol)} - Crypto TA`;
     stopLiveUpdates();
     loadData();
-    // startLiveUpdates();
+    startLiveUpdates();
 }
 
 // Ticker dropdown toggle
@@ -1531,13 +1570,17 @@ document.getElementById('ticker-dropdown').addEventListener('click', (e) => {
     e.stopPropagation();
 });
 
-// Ticker search
+// Ticker search (debounced)
+let _tickerSearchTimer = null;
 document.getElementById('ticker-search').addEventListener('input', (e) => {
-    const query = e.target.value.toUpperCase().trim();
-    const filtered = query
-        ? allSymbols.filter(s => s.includes(query))
-        : allSymbols;
-    renderTickerList(filtered);
+    clearTimeout(_tickerSearchTimer);
+    _tickerSearchTimer = setTimeout(() => {
+        const query = e.target.value.toUpperCase().trim();
+        const filtered = query
+            ? allSymbols.filter(s => s.includes(query))
+            : allSymbols;
+        renderTickerList(filtered);
+    }, 150);
 });
 
 // Ticker item click (delegated)
@@ -1557,7 +1600,7 @@ document.querySelectorAll('.tf-btn').forEach(btn => {
         updateChartHeader();
         stopLiveUpdates();
         patternResponseCache.clear();
-        loadData();
+        loadData().then(() => startLiveUpdates());
     });
 });
 
@@ -1577,13 +1620,13 @@ document.getElementById('tab-assist').addEventListener('click', async () => {
 // ── S/R Toggle ──
 document.getElementById('sr-toggle').addEventListener('change', (e) => {
     srVisible = e.target.checked;
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Max Lines ──
 document.getElementById('max-lines-select').addEventListener('change', (e) => {
     maxSRLines = parseInt(e.target.value);
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Replay Controls ──
@@ -1654,7 +1697,7 @@ document.getElementById('chart-magnet-toggle').addEventListener('click', (e) => 
     }
 
     // 重新按当前磁铁模式绘制所有趋势线
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── Drawing toolbar ──
@@ -1684,18 +1727,35 @@ document.getElementById('draw-clear').addEventListener('click', () => {
     pendingDrawPoint = null;
     drawingMode = null;
     updateDrawingModeUI();
-    drawAllPatterns();
+    scheduleDrawPatterns();
 });
 
 // ── AI Chat Panel ──
 let chatPanelOpen = false;
 let chatSending = false;
 
+function _adjustChartForPanels() {
+    // Shrink chart area when side panels are open so they don't overlap
+    const chartArea = document.getElementById('chart-area');
+    if (!chartArea) return;
+    const CHAT_W = 440, AGENT_W = 420;
+    let rightOffset = 0;
+    if (chatPanelOpen) rightOffset = CHAT_W;
+    else if (agentPanelOpen) rightOffset = AGENT_W;
+    chartArea.style.right = rightOffset + 'px';
+    // ResizeObserver on #chart-container handles chart.resize automatically
+}
+
 function toggleChatPanel() {
     chatPanelOpen = !chatPanelOpen;
+    if (chatPanelOpen) agentPanelOpen = false; // close agent when chat opens
     const panel = document.getElementById('chat-panel');
+    const agentPanel = document.getElementById('agent-panel');
     if (panel) panel.classList.toggle('hidden', !chatPanelOpen);
+    if (agentPanel) agentPanel.classList.toggle('hidden', !agentPanelOpen);
+    if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
     updateViewTabsUI();
+    _adjustChartForPanels();
     if (chatPanelOpen) {
         document.getElementById('chat-input')?.focus();
     }
@@ -1733,7 +1793,7 @@ async function sendChatMessage(text) {
     const model = document.getElementById('chat-model-select')?.value || 'claude-sonnet';
 
     try {
-        const resp = await fetch('/api/chat', {
+        const resp = await fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1819,7 +1879,7 @@ document.getElementById('chat-messages')?.addEventListener('click', (e) => {
 
 // Clear chat
 document.getElementById('chat-clear-btn')?.addEventListener('click', async () => {
-    await fetch('/api/chat/clear?session_id=default', { method: 'POST' });
+    await fetch(`${API_BASE}/api/chat/clear?session_id=default`, { method: 'POST' });
     const messagesEl = document.getElementById('chat-messages');
     messagesEl.innerHTML = `
         <div class="chat-welcome">
@@ -1838,20 +1898,28 @@ let agentPollTimer = null;
 
 function toggleAgentPanel() {
     agentPanelOpen = !agentPanelOpen;
+    if (agentPanelOpen) chatPanelOpen = false; // close chat when agent opens
     const panel = document.getElementById('agent-panel');
+    const chatPanel = document.getElementById('chat-panel');
     if (panel) panel.classList.toggle('hidden', !agentPanelOpen);
+    if (chatPanel) chatPanel.classList.toggle('hidden', !chatPanelOpen);
     updateViewTabsUI();
+    _adjustChartForPanels();
     if (agentPanelOpen) {
         refreshAgentStatus();
+        refreshOKXStatus();
         agentPollTimer = setInterval(refreshAgentStatus, 5000);
     } else {
         if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
     }
 }
 
+let _agentPollInFlight = false;
 async function refreshAgentStatus() {
+    if (_agentPollInFlight) return;
+    _agentPollInFlight = true;
     try {
-        const res = await fetch('/api/agent/status');
+        const res = await fetch(`${API_BASE}/api/agent/status`);
         if (!res.ok) return;
         const d = await res.json();
         const $ = id => document.getElementById(id);
@@ -1917,7 +1985,7 @@ async function refreshAgentStatus() {
 
         // Self-healer status
         try {
-            const hr = await fetch('/api/healer/status');
+            const hr = await fetch(`${API_BASE}/api/healer/status`);
             if (hr.ok) {
                 const hd = await hr.json();
                 const badge = $('healer-status-badge');
@@ -1931,6 +1999,8 @@ async function refreshAgentStatus() {
         } catch (_) {}
     } catch (e) {
         console.warn('Agent status fetch failed:', e);
+    } finally {
+        _agentPollInFlight = false;
     }
 }
 
@@ -1938,21 +2008,99 @@ async function refreshAgentStatus() {
 document.getElementById('tab-agent')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-close')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-start-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/start', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('agent-stop-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/stop', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
-    await fetch('/api/agent/revive', { method: 'POST' });
+    await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
     refreshAgentStatus();
 });
 document.getElementById('healer-trigger-btn')?.addEventListener('click', async () => {
-    await fetch('/api/healer/trigger', { method: 'POST' });
+    await fetch(`${API_BASE}/api/healer/trigger`, { method: 'POST' });
     setTimeout(refreshAgentStatus, 2000);
 });
+
+// ── OKX Trading Config ──
+document.getElementById('okx-save-keys-btn')?.addEventListener('click', async () => {
+    const apiKey = document.getElementById('okx-api-key')?.value?.trim();
+    const secret = document.getElementById('okx-secret')?.value?.trim();
+    const passphrase = document.getElementById('okx-passphrase')?.value?.trim();
+    const msgEl = document.getElementById('okx-status-msg');
+    if (!apiKey || !secret || !passphrase) {
+        if (msgEl) msgEl.textContent = 'Please fill all 3 fields';
+        return;
+    }
+    if (msgEl) msgEl.textContent = 'Verifying keys...';
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/okx-keys`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey, secret, passphrase }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Keys verified! Balance: $' + (data.balance?.total_equity?.toFixed(2) ?? '—') + '</span>';
+            const liveBtn = document.getElementById('okx-go-live-btn');
+            if (liveBtn) liveBtn.disabled = false;
+        } else {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">Failed: ' + (data.reason || 'unknown') + '</span>';
+        }
+    } catch (e) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">Error: ' + e.message + '</span>';
+    }
+    refreshOKXStatus();
+});
+
+document.getElementById('okx-go-live-btn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('okx-status-msg');
+    if (msgEl) msgEl.textContent = 'Switching to LIVE mode...';
+    const resp = await fetch(`${API_BASE}/api/agent/config?mode=live`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.ok) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350;font-weight:bold">LIVE MODE — Real money at risk!</span>';
+    } else {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">' + (data.reason || 'Failed') + '</span>';
+    }
+    refreshAgentStatus();
+});
+
+document.getElementById('okx-go-paper-btn')?.addEventListener('click', async () => {
+    await fetch(`${API_BASE}/api/agent/config?mode=paper`, { method: 'POST' });
+    const msgEl = document.getElementById('okx-status-msg');
+    if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Paper mode (simulated)</span>';
+    refreshAgentStatus();
+});
+
+async function refreshOKXStatus() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/okx-status`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const badge = document.getElementById('okx-status-badge');
+        const balInfo = document.getElementById('okx-balance-info');
+        const liveBtn = document.getElementById('okx-go-live-btn');
+        if (badge) {
+            if (data.has_keys && data.balance) {
+                badge.textContent = data.mode === 'live' ? 'LIVE' : 'READY';
+                badge.style.background = data.mode === 'live' ? '#ef5350' : '#26a69a';
+            } else if (data.has_keys) {
+                badge.textContent = 'KEY ERR';
+                badge.style.background = '#ff9800';
+            } else {
+                badge.textContent = 'NO KEY';
+                badge.style.background = '#787b86';
+            }
+        }
+        if (balInfo && data.balance) {
+            balInfo.textContent = 'Equity: $' + (data.balance.total_equity?.toFixed(2) || '—') + ' | USDT: $' + (data.balance.usdt_available?.toFixed(2) || '—');
+        }
+        if (liveBtn) liveBtn.disabled = !data.has_keys;
+    } catch (_) {}
+}
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -1966,7 +2114,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const contentEl = document.getElementById('pattern-stats-content');
     if (contentEl) contentEl.textContent = '选择 Recognizing / Assist 模式后显示形态';
     loadSymbols();
-    loadData();
-    // startLiveUpdates(); // 关闭自动定时刷新，避免「一直刷新」；需要时可再开启
+    loadData().then(() => startLiveUpdates());
     document.title = `${formatTicker(currentSymbol)} - Crypto TA`;
+
+    // Cleanup intervals on page unload to prevent memory leaks
+    window.addEventListener('beforeunload', () => {
+        if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
+        if (liveUpdateInterval) { clearInterval(liveUpdateInterval); liveUpdateInterval = null; }
+    });
 });

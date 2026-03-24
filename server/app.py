@@ -1,7 +1,10 @@
+import asyncio
+
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from pathlib import Path
 
 from .data_service import load_symbols, load_okx_swap_symbols, get_ohlcv, get_ohlcv_with_df, API_ONLY
@@ -92,7 +95,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve frontend static files
+# Serve frontend static files (both /static/ for legacy and root-level for Vercel-compatible paths)
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "frontend")), name="static")
 
 
@@ -104,7 +107,7 @@ async def health_check():
 
 @app.get("/")
 async def index():
-    return FileResponse(str(PROJECT_ROOT / "frontend" / "index.html"))
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "index.html"), headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 def _symbols_from_data_folder() -> list[str]:
@@ -328,7 +331,7 @@ async def api_backtest_optimize(
         raise HTTPException(400, f"No data for {symbol} {interval}")
 
     try:
-        out = optimize_backtest(df, objective=objective, maxiter=maxiter, method=method)
+        out = await asyncio.to_thread(optimize_backtest, df, objective, maxiter, method)
         out["symbol"] = symbol
         out["interval"] = interval
         return out
@@ -423,7 +426,7 @@ async def api_pattern_stats_backtest(
             return None
 
     try:
-        result = run_trendline_backtest(df, interval, get_patterns_at_t)
+        result = await asyncio.to_thread(run_trendline_backtest, df, interval, get_patterns_at_t)
         result["symbol"] = symbol
         return result
     except Exception as e:
@@ -530,7 +533,7 @@ async def api_pattern_stats_current_vs_history(
         except Exception:
             return None
 
-    backtest_result = run_trendline_backtest(df, interval, get_patterns_at_t)
+    backtest_result = await asyncio.to_thread(run_trendline_backtest, df, interval, get_patterns_at_t)
     historical_signals = backtest_result.get("signals") or []
 
     vs = current_vs_history(current_features, historical_signals, interval, epsilon=epsilon)
@@ -753,6 +756,8 @@ async def api_agent_config(
     """Update agent config (mode, equity)."""
     agent = get_agent()
     if mode and mode in ("paper", "live"):
+        if mode == "live" and not agent.trader.has_api_keys():
+            return {"ok": False, "reason": "Cannot switch to live: OKX API keys not configured. Set keys first via /api/agent/okx-keys"}
         agent.trader.state.mode = mode
     if equity is not None and equity > 0:
         agent.trader.state.equity = equity
@@ -762,6 +767,50 @@ async def api_agent_config(
     return {"ok": True, "state": agent.get_status()}
 
 
+class OKXKeysRequest(BaseModel):
+    api_key: str
+    secret: str
+    passphrase: str
+
+
+@app.post("/api/agent/okx-keys")
+async def api_agent_okx_keys(req: OKXKeysRequest):
+    """Set OKX API keys for live trading. Keys are stored in memory only (not persisted to disk for security)."""
+    agent = get_agent()
+    agent.trader.set_api_keys(req.api_key, req.secret, req.passphrase)
+    # Verify keys by checking account balance
+    balance = await agent.trader.get_account_balance()
+    if balance.get("ok"):
+        return {
+            "ok": True,
+            "message": "OKX API keys verified successfully",
+            "balance": balance,
+            "has_keys": True,
+        }
+    return {
+        "ok": False,
+        "reason": f"Keys set but verification failed: {balance.get('reason', 'unknown')}",
+        "has_keys": True,
+    }
+
+
+@app.get("/api/agent/okx-status")
+async def api_agent_okx_status():
+    """Check OKX connection status and account balance."""
+    agent = get_agent()
+    has_keys = agent.trader.has_api_keys()
+    if not has_keys:
+        return {"ok": True, "has_keys": False, "mode": agent.trader.state.mode}
+    balance = await agent.trader.get_account_balance()
+    return {
+        "ok": True,
+        "has_keys": True,
+        "mode": agent.trader.state.mode,
+        "balance": balance if balance.get("ok") else None,
+        "error": balance.get("reason") if not balance.get("ok") else None,
+    }
+
+
 @app.get("/api/agent/signals")
 async def api_agent_signals():
     """Run signal check on all watched symbols and return current signals."""
@@ -769,22 +818,23 @@ async def api_agent_signals():
     signals = {}
     for symbol in agent._last_signals:
         signals[symbol] = agent._last_signals[symbol]
-    # Also generate fresh signals
+    # Also generate fresh signals in parallel
     from .agent_brain import WATCH_SYMBOLS
-    for symbol in WATCH_SYMBOLS:
+
+    async def _gen(sym: str):
         try:
-            sig = await agent.generate_signal(symbol)
-            if sig:
-                signals[symbol] = sig
+            return sym, await agent.generate_signal(sym)
         except Exception:
-            pass
+            return sym, None
+
+    results = await asyncio.gather(*[_gen(sym) for sym in WATCH_SYMBOLS])
+    for sym, sig in results:
+        if sig:
+            signals[sym] = sig
     return {"signals": signals}
 
 
 # ── AI Chat API endpoints ─────────────────────────────────────────────────────
-
-from pydantic import BaseModel
-
 
 class ChatRequest(BaseModel):
     message: str
@@ -845,3 +895,17 @@ async def api_healer_stop():
 async def api_healer_start():
     get_healer().start()
     return {"ok": True, "message": "Healer started"}
+
+
+# ── Serve frontend files at root level (Vercel-compatible relative paths) ──
+# This must come AFTER all /api/ routes so it doesn't shadow them
+@app.get("/style.css")
+async def serve_css():
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "style.css"), media_type="text/css",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
+@app.get("/app.js")
+async def serve_js():
+    return FileResponse(str(PROJECT_ROOT / "frontend" / "app.js"), media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache, must-revalidate"})

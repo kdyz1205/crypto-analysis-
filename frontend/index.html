@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="style.css?v=5">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -157,7 +157,7 @@
         <div class="loading-inner">
             <div class="spinner"></div>
             <p class="loading-text">Loading…</p>
-            <p class="loading-hint">First load may take 30–60s when using API</p>
+            <p class="loading-hint">Fetching market data…</p>
         </div>
     </div>
 
@@ -263,6 +263,21 @@
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
                 <div id="agent-params" class="agent-params-grid">—</div>
             </div>
+            <div class="agent-section okx-section">
+                <h4>OKX Trading <span id="okx-status-badge" class="healer-badge">—</span></h4>
+                <div class="okx-config">
+                    <div id="okx-balance-info" style="font-size:11px;color:#787b86;margin-bottom:6px;"></div>
+                    <input type="text" id="okx-api-key" placeholder="API Key" class="okx-input" autocomplete="off">
+                    <input type="password" id="okx-secret" placeholder="Secret Key" class="okx-input" autocomplete="off">
+                    <input type="password" id="okx-passphrase" placeholder="Passphrase" class="okx-input" autocomplete="off">
+                    <div class="okx-btn-row">
+                        <button type="button" id="okx-save-keys-btn" class="agent-btn" style="background:#2962ff;border-color:#2962ff;font-size:11px;">Save & Verify</button>
+                        <button type="button" id="okx-go-live-btn" class="agent-btn" style="background:#ef5350;border-color:#ef5350;font-size:11px;" disabled>Go Live</button>
+                        <button type="button" id="okx-go-paper-btn" class="agent-btn" style="background:#26a69a;border-color:#26a69a;font-size:11px;">Paper Mode</button>
+                    </div>
+                    <div id="okx-status-msg" style="font-size:10px;color:#787b86;margin-top:4px;"></div>
+                </div>
+            </div>
             <div class="agent-section healer-section">
                 <h4>Self-Healer <span id="healer-status-badge" class="healer-badge">—</span></h4>
                 <div class="healer-stats">
@@ -277,6 +292,11 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script>
+        // Set API base URL: empty for local dev (same-origin), or Railway URL for Vercel deployment
+        // To configure: set window.__API_BASE before app.js loads
+        // e.g. window.__API_BASE = 'https://your-app.railway.app';
+    </script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>

@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 note*
+.env
+.env.*
+autoresearch/chat_memory/
