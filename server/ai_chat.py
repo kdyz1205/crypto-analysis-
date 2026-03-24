@@ -29,6 +29,39 @@ try:
 except ImportError:
     pass
 
+# Claude Code CLI mode (compatible with your `claude tg bot` idea)
+# When BRIDGE_MODE=true, we call `claude-code` CLI instead of Anthropic SDK tool-calling.
+CLAUDE_CODE_CLI_MODE = os.environ.get("BRIDGE_MODE", "false").lower() == "true"
+# Debug: confirm env propagation inside the running server process.
+print(f"[AI Chat] CLAUDE_CODE_CLI_MODE={CLAUDE_CODE_CLI_MODE} BRIDGE_MODE={os.environ.get('BRIDGE_MODE')!r}")
+CLAUDE_CODE_CMD = os.environ.get(
+    "CLAUDE_CODE_CMD",
+    os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "npm", "claude.cmd"),
+)
+CLAUDE_CODE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_CODE_TIMEOUT_SECONDS", "300"))
+CLAUDE_CODE_DANGEROUSLY_SKIP_PERMISSIONS = (
+    os.environ.get("CLAUDE_CODE_DANGEROUSLY_SKIP_PERMISSIONS", "true").lower() == "true"
+)
+
+# Keep system prompt compact (token saver). Claude Code CLI has its own tool abilities.
+CLAUDE_CODE_SYSTEM_PROMPT = """You are a coding assistant inside a local project.
+User asks you to change or debug the crypto web app.
+Rules:
+- Only modify files within this project root.
+- Prefer small, safe patches; then verify by running the app or checking outputs.
+- Allowed areas: server/*.py, frontend/app.js, frontend/index.html, frontend/style.css.
+- Do not touch .env or any API keys.
+Return: what you changed + what to verify next.
+If you are unsure, explain why briefly and propose a minimal next experiment.
+"""
+
+# Reuse your `claude tg bot` environment (especially API keys) for better compatibility.
+CLAUDE_TG_BOT_ENV = (
+    Path("C:/Users/alexl/Desktop/claude tg bot/.env")
+    if os.name == "nt"
+    else Path(os.path.expanduser("~/Desktop/claude tg bot/.env"))
+)
+
 # ── Model configs ──
 MODELS = {
     "claude-haiku": {
@@ -99,6 +132,8 @@ class ChatSession:
         self.session_id = session_id
         self.messages: list[dict] = []
         self.model: str = DEFAULT_MODEL
+        # Session id used by Claude Code CLI resume (when BRIDGE_MODE=true).
+        self.claude_code_session_id: str | None = None
         self.created_at: float = time.time()
 
     def add_user(self, content: str):
@@ -112,6 +147,7 @@ class ChatSession:
             "session_id": self.session_id,
             "model": self.model,
             "messages": self.messages,
+            "claude_code_session_id": self.claude_code_session_id,
             "created_at": self.created_at,
         }
 
@@ -125,6 +161,263 @@ class AIChatEngine:
         self.sessions: dict[str, ChatSession] = {}
         self._anthropic_client = None
         self._init_anthropic()
+
+    async def _chat_with_claude_code_cli(
+        self, user_message: str, session: ChatSession
+    ) -> tuple[str, str | None]:
+        """
+        Use Claude Code CLI (same idea as your `claude tg bot`):
+        - stdin: user message
+        - resume: keeps conversation state per chat session
+        - stdout: JSON {result, session_id}
+        """
+        import asyncio
+        import json as _json
+
+        session_id = session.claude_code_session_id
+        args = [
+            CLAUDE_CODE_CMD,
+            "-p",
+            "--output-format",
+            "json",
+        ]
+        if CLAUDE_CODE_DANGEROUSLY_SKIP_PERMISSIONS:
+            args.append("--dangerously-skip-permissions")
+        if session_id:
+            args.extend(["--resume", session_id])
+        else:
+            args.extend(["--append-system-prompt", CLAUDE_CODE_SYSTEM_PROMPT])
+
+        # NOTE: On Windows, `asyncio.create_subprocess_exec` may raise NotImplementedError.
+        # So we run the Claude Code CLI in a worker thread instead.
+        import subprocess as _subprocess
+
+        def _run_cli_sync() -> tuple[bytes, bytes]:
+            env = os.environ.copy()
+            # Load provider keys for claude-code CLI from your Telegram bot env.
+            if CLAUDE_TG_BOT_ENV and CLAUDE_TG_BOT_ENV.exists():
+                try:
+                    from dotenv import dotenv_values
+
+                    updates = dotenv_values(str(CLAUDE_TG_BOT_ENV))
+                    for k, v in (updates or {}).items():
+                        if v:
+                            env[k] = v
+                except Exception:
+                    pass
+
+            completed = _subprocess.run(
+                args,
+                input=user_message.encode("utf-8"),
+                stdout=_subprocess.PIPE,
+                stderr=_subprocess.PIPE,
+                cwd=str(PROJECT_ROOT),
+                timeout=CLAUDE_CODE_TIMEOUT_SECONDS,
+                env=env,
+            )
+            return completed.stdout or b"", completed.stderr or b""
+
+        try:
+            stdout_data, stderr_data = await asyncio.to_thread(_run_cli_sync)
+        except _subprocess.TimeoutExpired:
+            raise asyncio.TimeoutError()
+
+        raw = stdout_data.decode("utf-8", errors="replace").strip()
+        new_session_id = None
+        response_text = ""
+
+        if raw:
+            try:
+                data = _json.loads(raw)
+                response_text = (data.get("result") or "").strip()
+                new_session_id = data.get("session_id")
+                if not response_text and data.get("is_error"):
+                    response_text = f"Error: {data.get('error', 'Unknown error')}"
+            except Exception:
+                # CLI might output non-JSON; fallback to raw stdout
+                response_text = raw
+
+        if not response_text:
+            err = stderr_data.decode("utf-8", errors="replace").strip()
+            if err:
+                response_text = f"Error: {err[:1200]}"
+            else:
+                response_text = "(No response)"
+
+        return response_text, new_session_id
+
+    def _looks_like_billing_or_credit_error(self, text: str) -> bool:
+        t = (text or "").lower()
+        # Common patterns from Anthropic/Gemini billing messages.
+        return (
+            ("credit balance is too low" in t)
+            or ("credit balance" in t)
+            or ("plans & billing" in t)
+            or ("your credit balance" in t)
+            or ("余额不足" in t)
+            or ("billing" in t and "credit" in t)
+        )
+
+    def _load_gemini_api_key_from_env(self) -> str:
+        # Prefer currently loaded env first
+        key = os.environ.get("GEMINI_API_KEY", "") or ""
+        if key:
+            return key
+        # Then try claude tg bot env file
+        try:
+            if CLAUDE_TG_BOT_ENV and CLAUDE_TG_BOT_ENV.exists():
+                from dotenv import dotenv_values
+
+                updates = dotenv_values(str(CLAUDE_TG_BOT_ENV))
+                key = (updates or {}).get("GEMINI_API_KEY", "") or ""
+                return key
+        except Exception:
+            pass
+        return ""
+
+    def _tools_to_gemini(self, tool_defs: list[dict]) -> list[Any]:
+        """Convert OpenAI-style tool defs to google-genai function tools."""
+        from google.genai import types as gtypes
+
+        TYPE_MAP = {
+            "string": "STRING",
+            "integer": "INTEGER",
+            "number": "NUMBER",
+            "boolean": "BOOLEAN",
+        }
+
+        declarations = []
+        for t in tool_defs:
+            schema = t.get("input_schema") or {}
+            props = {}
+            for name, prop in (schema.get("properties") or {}).items():
+                ptype = TYPE_MAP.get(prop.get("type", "string"), "STRING")
+                p = {"type": ptype}
+                if "description" in prop:
+                    p["description"] = prop["description"]
+                if "enum" in prop:
+                    p["enum"] = prop["enum"]
+                # Arrays
+                if ptype == "ARRAY":
+                    item_type = TYPE_MAP.get(
+                        (prop.get("items") or {}).get("type", "string"),
+                        "STRING",
+                    )
+                    p["items"] = gtypes.Schema(type=item_type)
+                props[name] = gtypes.Schema(**p)
+
+            declarations.append(
+                gtypes.FunctionDeclaration(
+                    name=t["name"],
+                    description=t.get("description", ""),
+                    parameters=gtypes.Schema(
+                        type="OBJECT",
+                        properties=props,
+                        required=schema.get("required", []),
+                    ),
+                )
+            )
+
+        return [gtypes.Tool(function_declarations=declarations)]
+
+    async def _chat_with_gemini_tool_call(self, session: ChatSession, model_key: str) -> dict:
+        """
+        Gemini tool calling loop.
+        Returns: {"reply": str, "backend": "gemini"}.
+        """
+        gemini_key = self._load_gemini_api_key_from_env()
+        if not gemini_key:
+            raise RuntimeError("GEMINI_API_KEY not set (neither env nor claude tg bot/.env)")
+
+        from google import genai as google_genai
+        from google.genai import types as gtypes
+
+        gemini_model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        client = google_genai.Client(api_key=gemini_key)
+
+        # Short instruction (Gemini + tools)
+        system_instruction = (
+            "你是 Crypto TA 的工程师。遇到任务请直接使用工具执行并返回结果，"
+            "尽量简短，必要时先给诊断再给补丁方案。"
+        )
+
+        tool_defs = self._get_tools()
+        tools = self._tools_to_gemini(tool_defs)
+
+        # Convert conversation history to Gemini contents
+        contents = []
+        for m in session.messages:
+            content = m.get("content")
+            if isinstance(content, str):
+                text = content
+            else:
+                # tool_result lists/dicts: keep as compact JSON text
+                try:
+                    text = json.dumps(content, ensure_ascii=False)
+                except Exception:
+                    text = str(content)
+            role = "user" if m.get("role") == "user" else "model"
+            contents.append(gtypes.Content(role=role, parts=[gtypes.Part(text=text)]))
+
+        cfg = gtypes.GenerateContentConfig(system_instruction=system_instruction, tools=tools)
+
+        loop = asyncio.get_running_loop()
+        for _ in range(6):  # tool iterations
+            response = await loop.run_in_executor(
+                None,
+                lambda: client.models.generate_content(
+                    model=gemini_model,
+                    contents=contents,
+                    config=cfg,
+                ),
+            )
+
+            candidate = (response.candidates or [None])[0]
+            parts = []
+            if candidate and getattr(candidate, "content", None) and getattr(candidate.content, "parts", None):
+                parts = candidate.content.parts or []
+
+            fn_parts = [
+                p
+                for p in parts
+                if getattr(p, "function_call", None) and getattr(p.function_call, "name", None)
+            ]
+
+            if fn_parts:
+                # Append function call(s) from model
+                contents.append(gtypes.Content(role="model", parts=fn_parts))
+
+                response_parts = []
+                for fn_part in fn_parts:
+                    fc = fn_part.function_call
+                    tool_name = fc.name
+                    tool_input = dict(fc.args) if getattr(fc, "args", None) else {}
+                    result = await self._execute_tool(tool_name, tool_input)
+                    response_parts.append(
+                        gtypes.Part(
+                            function_response=gtypes.FunctionResponse(
+                                name=tool_name,
+                                response={"result": result},
+                            )
+                        )
+                    )
+
+                contents.append(gtypes.Content(role="user", parts=response_parts))
+                continue
+
+            # No tool calls: return text
+            try:
+                text = response.text or ""
+            except Exception:
+                text = ""
+            if not text:
+                text = "\n".join(
+                    [getattr(p, "text") for p in parts if getattr(p, "text", None)]
+                )
+            return {"reply": (text or "(Gemini returned empty response)").strip(), "backend": "gemini"}
+
+        # If all iterations used up, return a best-effort
+        return {"reply": "(Gemini tool loop hit iteration limit)", "backend": "gemini"}
 
     def _init_anthropic(self):
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -661,6 +954,57 @@ class AIChatEngine:
 
         model_key = session.model or DEFAULT_MODEL
         model_cfg = MODELS.get(model_key, MODELS[DEFAULT_MODEL])
+
+        # 1) Optional Claude Code CLI path (BRIDGE_MODE=true)
+        if CLAUDE_CODE_CLI_MODE:
+            try:
+                reply_text, new_session_id = await self._chat_with_claude_code_cli(message, session)
+                if new_session_id:
+                    session.claude_code_session_id = new_session_id
+                cli_billing = self._looks_like_billing_or_credit_error(reply_text)
+                backend = "claude_code_cli"
+
+                # If the CLI fails due to billing/credit issues, automatically fall back to Gemini.
+                if cli_billing:
+                    try:
+                        gemini_out = await self._chat_with_gemini_tool_call(session, model_key)
+                        reply_text = gemini_out.get("reply", reply_text)
+                        backend = gemini_out.get("backend", "gemini")
+                    except Exception as ge:
+                        # Keep CLI text if Gemini isn't available.
+                        backend = "claude_code_cli"
+                        print(f"[Gemini fallback failed] {type(ge).__name__}: {repr(ge)}")
+
+                session.add_assistant(reply_text)
+                self._save_memory(session)
+                return {
+                    "reply": reply_text,
+                    "model": model_key,
+                    "tool_calls": [],
+                    "backend": backend,
+                }
+            except Exception as e:
+                # Fallback to Anthropic SDK tool-calling if CLI fails.
+                err_msg = (
+                    "[Claude Code CLI failed, fallback to Anthropic SDK] "
+                    f"{type(e).__name__}: {repr(e)}"
+                )
+                print(err_msg)
+                # Optional: try Gemini before Anthropic (Anthropic may be billing-blocked too).
+                try:
+                    gemini_out = await self._chat_with_gemini_tool_call(session, model_key)
+                    reply_text = gemini_out.get("reply", "Gemini returned empty")
+                    session.add_assistant(reply_text)
+                    self._save_memory(session)
+                    return {
+                        "reply": reply_text,
+                        "model": model_key,
+                        "tool_calls": [],
+                        "backend": gemini_out.get("backend", "gemini"),
+                    }
+                except Exception:
+                    pass
+                # Do NOT add assistant message here; fallback path will do it.
 
         if not self._anthropic_client:
             # Mock mode: return a helpful message about setting up API key

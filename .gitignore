@@ -4,4 +4,5 @@ __pycache__/
 *.pyc
 note*
 .env
-.openclaw/
+.env.*
+autoresearch/chat_memory/

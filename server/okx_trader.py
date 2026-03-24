@@ -87,20 +87,25 @@ class AgentState:
     is_alive: bool = True  # False = emergency shutdown
     shutdown_reason: str = ""
     last_trade_time: dict = field(default_factory=dict)  # symbol -> unix ts
-    # Strategy params that evolve
+    # V6 strategy params (4-layer filtered trend following)
     strategy_params: dict = field(default_factory=lambda: {
-        "mfi_period": 14,
-        "ma_fast": 8,
-        "ema_span": 21,
-        "ma_slow": 55,
+        # Moving average lengths
+        "ma5_len": 5,
+        "ma8_len": 8,
+        "ema21_len": 21,
+        "ma55_len": 55,
+        # Bollinger Bands
+        "bb_length": 21,
+        "bb_std_dev": 2.5,
+        # Layer 2: fanning distance thresholds (max % gap between adjacent MAs)
+        "dist_ma5_ma8": 1.5,
+        "dist_ma8_ema21": 2.5,
+        "dist_ema21_ma55": 4.0,
+        # Layer 3: slope momentum (min absolute slope over N bars, in %)
+        "slope_len": 3,
+        "slope_threshold": 0.1,
+        # ATR for sizing
         "atr_period": 14,
-        "atr_sl_mult": 2.5,
-        "bb_period": 21,
-        "bb_std": 2.5,
-        "rsi_low": 40,
-        "rsi_high": 70,
-        "mfi_threshold": 50,
-        "trailing_trigger_atr": 1.0,  # activate trailing after 1×ATR profit
     })
 
     def to_dict(self) -> dict:
