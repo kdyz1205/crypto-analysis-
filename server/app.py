@@ -1,4 +1,7 @@
 import asyncio
+import time
+import logging
+from collections import deque
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +9,49 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
+
+
+# ── Centralized Log Buffer ────────────────────────────────────────────────────
+# Captures all print-style logs from agent/trader/healer into a ring buffer
+# so the frontend can display them via /api/agent/logs
+_LOG_BUFFER: deque[dict] = deque(maxlen=200)
+
+
+class _AgentLogHandler(logging.Handler):
+    """Captures log records into the shared ring buffer."""
+    def emit(self, record):
+        try:
+            _LOG_BUFFER.append({
+                "ts": record.created,
+                "time": time.strftime("%H:%M:%S", time.localtime(record.created)),
+                "level": record.levelname,
+                "msg": self.format(record),
+            })
+        except Exception:
+            pass
+
+
+# Install handler on root logger so all print→logging and direct logging calls are captured
+_agent_handler = _AgentLogHandler()
+_agent_handler.setFormatter(logging.Formatter("%(message)s"))
+logging.getLogger().addHandler(_agent_handler)
+logging.getLogger().setLevel(logging.INFO)
+
+# Also monkey-patch builtins.print to capture print() calls from agent/trader modules
+import builtins
+_original_print = builtins.print
+
+def _capturing_print(*args, **kwargs):
+    msg = " ".join(str(a) for a in args)
+    _LOG_BUFFER.append({
+        "ts": time.time(),
+        "time": time.strftime("%H:%M:%S"),
+        "level": "INFO",
+        "msg": msg,
+    })
+    _original_print(*args, **kwargs)
+
+builtins.print = _capturing_print
 
 from .data_service import load_symbols, load_okx_swap_symbols, get_ohlcv, get_ohlcv_with_df, API_ONLY
 from .pattern_service import get_patterns, get_patterns_from_df, DEFAULT_PARAMS
@@ -832,6 +878,13 @@ async def api_agent_signals():
         if sig:
             signals[sym] = sig
     return {"signals": signals}
+
+
+@app.get("/api/agent/logs")
+async def api_agent_logs(limit: int = Query(50, ge=1, le=200)):
+    """Get recent agent logs from the ring buffer."""
+    logs = list(_LOG_BUFFER)[-limit:]
+    return {"logs": logs}
 
 
 # ── AI Chat API endpoints ─────────────────────────────────────────────────────

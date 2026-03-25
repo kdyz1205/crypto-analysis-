@@ -1152,6 +1152,25 @@ body {
 .okx-input:focus { border-color: #2962ff; outline: none; }
 .okx-btn-row { display: flex; gap: 6px; margin-top: 6px; }
 
+/* ── Agent Logs section ── */
+.agent-logs-wrap {
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    line-height: 1.5;
+    background: #0d1017;
+    border-radius: 4px;
+    padding: 6px 8px;
+    border: 1px solid #2a2e39;
+}
+.log-line { white-space: pre-wrap; word-break: break-all; padding: 1px 0; }
+.log-time { color: #565a68; margin-right: 6px; }
+.log-agent { color: #42a5f5; }
+.log-okx { color: #7e57c2; }
+.log-error { color: #ef5350; }
+.log-info { color: #787b86; }
+
 /* ── Self-Healer section ── */
 .healer-section { border-top: 1px solid #363a45; padding-top: 10px; margin-top: 6px; }
 .healer-badge {
