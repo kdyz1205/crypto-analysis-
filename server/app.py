@@ -857,6 +857,49 @@ async def api_agent_okx_status():
     }
 
 
+class StrategyConfigRequest(BaseModel):
+    timeframe: str | None = None
+    symbols: list[str] | None = None
+    tick_interval: int | None = None
+    max_position_pct: float | None = None
+    max_positions: int | None = None
+
+
+@app.post("/api/agent/strategy-config")
+async def api_agent_strategy_config(req: StrategyConfigRequest):
+    """Update strategy runtime config (timeframe, symbols, tick interval, risk)."""
+    from . import agent_brain
+    agent = get_agent()
+    changes = []
+
+    if req.timeframe and req.timeframe in ("5m", "15m", "1h", "4h", "1d"):
+        agent_brain.SIGNAL_INTERVAL = req.timeframe
+        changes.append(f"timeframe={req.timeframe}")
+
+    if req.symbols and len(req.symbols) > 0:
+        clean = [s.upper().replace("/", "").strip() for s in req.symbols if s.strip()]
+        if clean:
+            agent_brain.WATCH_SYMBOLS = clean
+            changes.append(f"symbols={clean}")
+
+    if req.tick_interval and 10 <= req.tick_interval <= 600:
+        agent_brain.TICK_INTERVAL_SEC = req.tick_interval
+        changes.append(f"tick={req.tick_interval}s")
+
+    if req.max_position_pct and 0.5 <= req.max_position_pct <= 25:
+        agent.trader.risk.max_position_pct = req.max_position_pct / 100.0
+        changes.append(f"pos_pct={req.max_position_pct}%")
+
+    if req.max_positions and 1 <= req.max_positions <= 10:
+        agent.trader.risk.max_positions = req.max_positions
+        changes.append(f"max_pos={req.max_positions}")
+
+    if changes:
+        print(f"[Agent] Config updated: {', '.join(changes)}")
+        return {"ok": True, "changes": changes}
+    return {"ok": True, "changes": [], "message": "No changes"}
+
+
 @app.get("/api/agent/signals")
 async def api_agent_signals():
     """Run signal check on all watched symbols and return current signals."""

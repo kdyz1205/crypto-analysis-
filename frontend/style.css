@@ -1152,6 +1152,23 @@ body {
 .okx-input:focus { border-color: #2962ff; outline: none; }
 .okx-btn-row { display: flex; gap: 6px; margin-top: 6px; }
 
+/* ── Strategy Config section ── */
+.config-section { border-top: 1px solid #363a45; padding-top: 10px; margin-top: 6px; }
+.config-grid { display: flex; flex-direction: column; gap: 6px; }
+.config-row { display: flex; align-items: center; gap: 8px; }
+.config-row label { font-size: 11px; color: #787b86; min-width: 100px; }
+.config-select, .config-input {
+    flex: 1;
+    background: #1e222d;
+    border: 1px solid #363a45;
+    color: #d1d4dc;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    outline: none;
+}
+.config-select:focus, .config-input:focus { border-color: #2962ff; }
+
 /* ── Agent Logs section ── */
 .agent-logs-wrap {
     max-height: 160px;
