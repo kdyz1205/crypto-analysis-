@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -273,7 +273,16 @@
                         </select>
                     </div>
                     <div class="config-row">
-                        <label>Watch Symbols</label>
+                        <label>Watch Mode</label>
+                        <select id="cfg-watch-mode" class="config-select">
+                            <option value="manual">Manual</option>
+                            <option value="top5">Top 5 Volume</option>
+                            <option value="top10">Top 10 Volume</option>
+                            <option value="top20">Top 20 Volume</option>
+                        </select>
+                    </div>
+                    <div class="config-row" id="cfg-symbols-row">
+                        <label>Symbols</label>
                         <input type="text" id="cfg-symbols" class="config-input" value="BTCUSDT,ETHUSDT,SOLUSDT,HYPEUSDT" placeholder="e.g. BTCUSDT,ETHUSDT">
                     </div>
                     <div class="config-row">
@@ -339,6 +348,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
 </body>
 </html>

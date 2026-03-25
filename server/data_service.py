@@ -119,6 +119,60 @@ async def load_okx_swap_symbols() -> dict[str, dict]:
         return {}
 
 
+_top_vol_cache: tuple[float, list[str]] | None = None
+TOP_VOL_CACHE_TTL = 600  # 10 minutes
+
+
+async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
+    """
+    Fetch top N USDT perpetual swap symbols by 24h trading volume from OKX.
+    Returns list like ['BTCUSDT', 'ETHUSDT', ...] sorted by volume descending.
+    Cached for 10 minutes.
+    """
+    global _top_vol_cache
+    if _top_vol_cache is not None:
+        cached_time, cached_list = _top_vol_cache
+        if time.time() - cached_time < TOP_VOL_CACHE_TTL:
+            return cached_list[:top_n]
+
+    try:
+        # OKX tickers endpoint returns 24h volume for all instruments
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://www.okx.com/api/v5/market/tickers",
+                params={"instType": "SWAP"}
+            )
+            data = resp.json()
+
+        if data.get("code") != "0" or not data.get("data"):
+            print(f"[Data] Failed to fetch OKX tickers: {data.get('msg', 'unknown')}")
+            return []
+
+        # Filter USDT swaps and sort by 24h USD notional volume
+        # volCcy24h = volume in base currency, multiply by last price for USD value
+        pairs = []
+        for t in data["data"]:
+            inst_id = t.get("instId", "")
+            if not inst_id.endswith("-USDT-SWAP"):
+                continue
+            vol_base = float(t.get("volCcy24h", 0))
+            last_price = float(t.get("last", 0))
+            vol_usd = vol_base * last_price  # approximate USD notional
+            base = inst_id.replace("-USDT-SWAP", "")
+            symbol = f"{base}USDT"
+            pairs.append((symbol, vol_usd))
+
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        result = [p[0] for p in pairs[:max(top_n, 50)]]  # cache more than needed
+        _top_vol_cache = (time.time(), result)
+        print(f"[Data] Top {top_n} by volume: {', '.join(result[:top_n])}")
+        return result[:top_n]
+
+    except Exception as e:
+        print(f"[Data] Error fetching top volume symbols: {e}")
+        return []
+
+
 def load_symbols() -> list[str]:
     """
     Load available symbols based on EXCHANGE setting.
