@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=6">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -278,6 +278,10 @@
                     <div id="okx-status-msg" style="font-size:10px;color:#787b86;margin-top:4px;"></div>
                 </div>
             </div>
+            <div class="agent-section">
+                <h4>Agent Logs</h4>
+                <div id="agent-logs" class="agent-logs-wrap"></div>
+            </div>
             <div class="agent-section healer-section">
                 <h4>Self-Healer <span id="healer-status-badge" class="healer-badge">—</span></h4>
                 <div class="healer-stats">
@@ -297,6 +301,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=5"></script>
+    <script src="app.js?v=6"></script>
 </body>
 </html>

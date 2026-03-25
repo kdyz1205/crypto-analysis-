@@ -1939,7 +1939,7 @@ async function refreshAgentStatus() {
         $('agent-equity').textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
         $('agent-cash').textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
 
-        const pnl = d.total_pnl;
+        const pnl = d.total_pnl_usd ?? d.total_pnl;
         const pnlEl = $('agent-pnl');
         if (pnl != null) {
             pnlEl.textContent = `$${pnl.toFixed(2)}`;
@@ -1955,33 +1955,78 @@ async function refreshAgentStatus() {
             dailyEl.className = `agent-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
         } else { dailyEl.textContent = '—'; }
 
-        // Positions
+        // Positions (API returns {symbol: {side, size, entry_price, unrealized_pnl}})
         const posEl = $('agent-positions');
-        if (d.positions && d.positions.length > 0) {
-            posEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>SL</th></tr>` +
-                d.positions.map(p => `<tr><td>${p.symbol}</td><td>${p.side}</td><td>${p.size}</td><td>${p.entry_price?.toFixed(2) ?? '—'}</td><td>${p.sl_price?.toFixed(2) ?? '—'}</td></tr>`).join('') +
-                `</table>`;
+        const posArr = d.positions ? (Array.isArray(d.positions) ? d.positions : Object.values(d.positions)) : [];
+        if (posArr.length > 0) {
+            posEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL%</th></tr>` +
+                posArr.map(p => {
+                    const pnlCls = (p.unrealized_pnl ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    return `<tr><td>${p.symbol}</td><td class="${p.side === 'long' ? 'pnl-positive' : 'pnl-negative'}">${(p.side || '—').toUpperCase()}</td><td>$${p.size}</td><td>${p.entry_price?.toFixed?.(2) ?? p.entry_price ?? '—'}</td><td class="${pnlCls}">${(p.unrealized_pnl ?? 0).toFixed(2)}%</td></tr>`;
+                }).join('') + `</table>`;
         } else { posEl.textContent = 'None'; }
 
         // Recent trades
         const trEl = $('agent-recent-trades');
         if (d.recent_trades && d.recent_trades.length > 0) {
-            trEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>PnL</th><th>Time</th></tr>` +
+            trEl.innerHTML = `<table><tr><th>Symbol</th><th>Side</th><th>PnL%</th><th>PnL$</th><th>Reason</th></tr>` +
                 d.recent_trades.slice(-10).reverse().map(t => {
-                    const pnlCls = (t.pnl ?? 0) >= 0 ? 'pnl-positive' : 'pnl-negative';
-                    const time = t.exit_time ? new Date(t.exit_time * 1000).toLocaleString() : '—';
-                    return `<tr><td>${t.symbol}</td><td>${t.side}</td><td class="${pnlCls}">$${(t.pnl ?? 0).toFixed(2)}</td><td>${time}</td></tr>`;
+                    const pnlVal = t.pnl_usd ?? t.pnl ?? 0;
+                    const pnlPct = t.pnl_pct ?? 0;
+                    const pnlCls = pnlVal >= 0 ? 'pnl-positive' : 'pnl-negative';
+                    return `<tr><td>${t.symbol}</td><td>${t.side}</td><td class="${pnlCls}">${pnlPct.toFixed(2)}%</td><td class="${pnlCls}">$${pnlVal.toFixed(2)}</td><td>${t.reason || '—'}</td></tr>`;
                 }).join('') + `</table>`;
         } else { trEl.textContent = 'None'; }
 
-        // Strategy params
+        // Current signals (from status.last_signals)
+        const sigEl = $('agent-signals');
+        const sigs = d.last_signals || {};
+        const sigEntries = Object.entries(sigs).filter(([, v]) => v && v.action);
+        if (sigEntries.length > 0) {
+            sigEl.innerHTML = `<table><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Reason</th></tr>` +
+                sigEntries.map(([sym, s]) => {
+                    const cls = s.action === 'long' ? 'pnl-positive' : s.action === 'short' ? 'pnl-negative' : '';
+                    return `<tr><td>${sym}</td><td class="${cls}">${(s.action || '—').toUpperCase()}</td><td>${(s.confidence ?? 0).toFixed(2)}</td><td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${s.reason || '—'}</td></tr>`;
+                }).join('') + `</table>`;
+        } else {
+            sigEl.textContent = d.running ? 'Scanning...' : 'Agent stopped — no signals';
+        }
+
+        // Strategy params (V6)
         $('agent-params-gen').textContent = d.generation ?? '0';
         const paramsEl = $('agent-params');
         if (d.strategy_params && typeof d.strategy_params === 'object') {
-            paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) =>
-                `<div class="agent-param-item"><span class="agent-param-key">${k}</span><span class="agent-param-val">${typeof v === 'number' ? v.toFixed(2) : v}</span></div>`
-            ).join('');
+            // Group params for nicer display
+            const paramLabels = {
+                'ma5_len': 'MA5', 'ma8_len': 'MA8', 'ema21_len': 'EMA21', 'ma55_len': 'MA55',
+                'bb_length': 'BB Len', 'bb_std_dev': 'BB Std',
+                'dist_ma5_ma8': 'Dist 5-8', 'dist_ma8_ema21': 'Dist 8-21', 'dist_ema21_ma55': 'Dist 21-55',
+                'slope_len': 'Slope Len', 'slope_threshold': 'Slope Thr', 'atr_period': 'ATR',
+            };
+            paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) => {
+                const label = paramLabels[k] || k;
+                const val = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
+                return `<div class="agent-param-item"><span class="agent-param-key">${label}</span><span class="agent-param-val">${val}</span></div>`;
+            }).join('');
         }
+
+        // Fetch & display logs
+        try {
+            const logRes = await fetch(`${API_BASE}/api/agent/logs?limit=30`);
+            if (logRes.ok) {
+                const logData = await logRes.json();
+                const logEl = $('agent-logs');
+                if (logEl && logData.logs) {
+                    logEl.innerHTML = logData.logs.slice(-30).reverse().map(l => {
+                        const cls = l.msg.includes('Error') || l.msg.includes('error') || l.msg.includes('FAIL') ? 'log-error' :
+                                    l.msg.includes('[Agent]') ? 'log-agent' :
+                                    l.msg.includes('[OKX]') ? 'log-okx' : 'log-info';
+                        return `<div class="log-line ${cls}"><span class="log-time">${l.time}</span> ${l.msg}</div>`;
+                    }).join('');
+                    logEl.scrollTop = 0;
+                }
+            }
+        } catch (_) {}
 
         // Self-healer status
         try {
