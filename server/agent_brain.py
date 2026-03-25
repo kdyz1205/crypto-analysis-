@@ -126,8 +126,9 @@ class AgentBrain:
         """
         try:
             from .data_service import get_ohlcv_with_df
-            df, _ = await get_ohlcv_with_df(symbol, SIGNAL_INTERVAL, days=90)
+            df, _ = await get_ohlcv_with_df(symbol, SIGNAL_INTERVAL, days=30)
             if df is None or df.is_empty() or len(df) < 60:
+                print(f"[Agent] {symbol}: insufficient data ({len(df) if df is not None else 0} bars)")
                 return None
         except Exception as e:
             print(f"[Agent] Data error for {symbol}: {e}")
@@ -150,6 +151,7 @@ class AgentBrain:
         i = len(close) - 1  # latest bar
         indicators = [ma5, ma8, ema21, ma55, bb_up, bb_lo, atr]
         if any(np.isnan(x[i]) for x in indicators):
+            print(f"[Agent] {symbol}: NaN indicators at bar {i}")
             return None
 
         price = close[i]
@@ -180,6 +182,7 @@ class AgentBrain:
         short_order = (price < ma5[i] < ma8[i] < ema21[i] < ma55[i])
 
         if not long_order and not short_order:
+            print(f"[Agent] {symbol}: L1 fail — P={price:.2f} MA5={ma5[i]:.2f} MA8={ma8[i]:.2f} EMA21={ema21[i]:.2f} MA55={ma55[i]:.2f}")
             return None
 
         # ── Layer 2: Fanning distance (MAs not too spread apart) ──

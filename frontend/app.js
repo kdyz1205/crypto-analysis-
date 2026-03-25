@@ -1992,6 +1992,12 @@ async function refreshAgentStatus() {
             sigEl.textContent = d.running ? 'Scanning...' : 'Agent stopped — no signals';
         }
 
+        // Sync config fields from server state
+        const cfgTf = $('cfg-timeframe');
+        if (cfgTf && d.signal_interval) cfgTf.value = d.signal_interval;
+        const cfgSym = $('cfg-symbols');
+        if (cfgSym && d.watch_symbols) cfgSym.value = d.watch_symbols.join(',');
+
         // Strategy params (V6)
         $('agent-params-gen').textContent = d.generation ?? '0';
         const paramsEl = $('agent-params');
@@ -2117,6 +2123,42 @@ document.getElementById('okx-go-paper-btn')?.addEventListener('click', async () 
     await fetch(`${API_BASE}/api/agent/config?mode=paper`, { method: 'POST' });
     const msgEl = document.getElementById('okx-status-msg');
     if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Paper mode (simulated)</span>';
+    refreshAgentStatus();
+});
+
+// ── Strategy Config ──
+document.getElementById('cfg-apply-btn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('cfg-status-msg');
+    const timeframe = document.getElementById('cfg-timeframe')?.value;
+    const symbolsRaw = document.getElementById('cfg-symbols')?.value?.trim();
+    const tick = parseInt(document.getElementById('cfg-tick')?.value || '60');
+    const posPct = parseFloat(document.getElementById('cfg-pos-pct')?.value || '5');
+    const maxPos = parseInt(document.getElementById('cfg-max-pos')?.value || '3');
+
+    const symbols = symbolsRaw ? symbolsRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+
+    try {
+        if (msgEl) msgEl.textContent = 'Applying...';
+        const resp = await fetch(`${API_BASE}/api/agent/strategy-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                timeframe,
+                symbols,
+                tick_interval: tick,
+                max_position_pct: posPct,
+                max_positions: maxPos,
+            }),
+        });
+        const data = await resp.json();
+        if (data.ok && data.changes?.length > 0) {
+            if (msgEl) msgEl.innerHTML = `<span style="color:#26a69a">Applied: ${data.changes.join(', ')}</span>`;
+        } else {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#787b86">No changes</span>';
+        }
+    } catch (e) {
+        if (msgEl) msgEl.innerHTML = `<span style="color:#ef5350">Error: ${e.message}</span>`;
+    }
     refreshAgentStatus();
 });
 

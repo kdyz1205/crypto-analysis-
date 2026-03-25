@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=6">
+    <link rel="stylesheet" href="style.css?v=7">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -259,6 +259,44 @@
                 <h4>Current Signals</h4>
                 <div id="agent-signals" class="agent-table-wrap">Waiting...</div>
             </div>
+            <div class="agent-section config-section">
+                <h4>Strategy Config</h4>
+                <div class="config-grid">
+                    <div class="config-row">
+                        <label>Timeframe</label>
+                        <select id="cfg-timeframe" class="config-select">
+                            <option value="5m">5m</option>
+                            <option value="15m">15m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h" selected>4h</option>
+                            <option value="1d">1D</option>
+                        </select>
+                    </div>
+                    <div class="config-row">
+                        <label>Watch Symbols</label>
+                        <input type="text" id="cfg-symbols" class="config-input" value="BTCUSDT,ETHUSDT,SOLUSDT,HYPEUSDT" placeholder="e.g. BTCUSDT,ETHUSDT">
+                    </div>
+                    <div class="config-row">
+                        <label>Tick Interval</label>
+                        <select id="cfg-tick" class="config-select">
+                            <option value="30">30s</option>
+                            <option value="60" selected>1min</option>
+                            <option value="120">2min</option>
+                            <option value="300">5min</option>
+                        </select>
+                    </div>
+                    <div class="config-row">
+                        <label>Position Size %</label>
+                        <input type="number" id="cfg-pos-pct" class="config-input" value="5" min="1" max="20" step="1">
+                    </div>
+                    <div class="config-row">
+                        <label>Max Positions</label>
+                        <input type="number" id="cfg-max-pos" class="config-input" value="3" min="1" max="10" step="1">
+                    </div>
+                </div>
+                <button type="button" id="cfg-apply-btn" class="agent-btn" style="background:#2962ff;border-color:#2962ff;font-size:11px;margin-top:6px;">Apply Config</button>
+                <span id="cfg-status-msg" style="font-size:10px;color:#787b86;margin-left:8px;"></span>
+            </div>
             <div class="agent-section">
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
                 <div id="agent-params" class="agent-params-grid">—</div>
@@ -301,6 +339,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 </html>
