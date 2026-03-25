@@ -6,7 +6,7 @@ from pathlib import Path
 
 # In-memory TTL cache for download_ohlcv results
 _ohlcv_cache: dict[tuple, tuple[float, pl.DataFrame]] = {}
-OHLCV_CACHE_TTL = 60  # seconds
+OHLCV_CACHE_TTL = 300  # 5 minutes — avoid redundant API calls
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
@@ -34,7 +34,7 @@ RESAMPLE_MAP = {
     "5m": ("5m", None),
     "15m": ("5m", "15m"),
     "1h": ("1h", None),
-    "4h": ("1h", "4h"),
+    "4h": ("4h", None),   # OKX supports 4H natively — no resample needed
     "1d": ("1d", None),
 }
 
@@ -42,6 +42,7 @@ RESAMPLE_MAP = {
 DOWNLOAD_DAYS = {
     "5m": 7,
     "1h": 60,
+    "4h": 120,
     "1d": 365,
 }
 
