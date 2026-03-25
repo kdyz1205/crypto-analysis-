@@ -2127,32 +2127,45 @@ document.getElementById('okx-go-paper-btn')?.addEventListener('click', async () 
 });
 
 // ── Strategy Config ──
+// Toggle symbols input visibility based on watch mode
+document.getElementById('cfg-watch-mode')?.addEventListener('change', (e) => {
+    const row = document.getElementById('cfg-symbols-row');
+    if (row) row.style.display = e.target.value === 'manual' ? 'flex' : 'none';
+});
+
 document.getElementById('cfg-apply-btn')?.addEventListener('click', async () => {
     const msgEl = document.getElementById('cfg-status-msg');
     const timeframe = document.getElementById('cfg-timeframe')?.value;
+    const watchMode = document.getElementById('cfg-watch-mode')?.value || 'manual';
     const symbolsRaw = document.getElementById('cfg-symbols')?.value?.trim();
     const tick = parseInt(document.getElementById('cfg-tick')?.value || '60');
     const posPct = parseFloat(document.getElementById('cfg-pos-pct')?.value || '5');
     const maxPos = parseInt(document.getElementById('cfg-max-pos')?.value || '3');
 
-    const symbols = symbolsRaw ? symbolsRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+    const body = { timeframe, tick_interval: tick, max_position_pct: posPct, max_positions: maxPos };
+
+    if (watchMode === 'manual') {
+        body.symbols = symbolsRaw ? symbolsRaw.split(',').map(s => s.trim()).filter(Boolean) : null;
+    } else {
+        // top5, top10, top20
+        body.top_volume = parseInt(watchMode.replace('top', ''));
+    }
 
     try {
         if (msgEl) msgEl.textContent = 'Applying...';
         const resp = await fetch(`${API_BASE}/api/agent/strategy-config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                timeframe,
-                symbols,
-                tick_interval: tick,
-                max_position_pct: posPct,
-                max_positions: maxPos,
-            }),
+            body: JSON.stringify(body),
         });
         const data = await resp.json();
         if (data.ok && data.changes?.length > 0) {
             if (msgEl) msgEl.innerHTML = `<span style="color:#26a69a">Applied: ${data.changes.join(', ')}</span>`;
+            // Update symbols field with server's actual watch list
+            if (data.watch_symbols) {
+                const symEl = document.getElementById('cfg-symbols');
+                if (symEl) symEl.value = data.watch_symbols.join(',');
+            }
         } else {
             if (msgEl) msgEl.innerHTML = '<span style="color:#787b86">No changes</span>';
         }

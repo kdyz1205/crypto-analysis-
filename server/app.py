@@ -860,6 +860,7 @@ async def api_agent_okx_status():
 class StrategyConfigRequest(BaseModel):
     timeframe: str | None = None
     symbols: list[str] | None = None
+    top_volume: int | None = None  # auto-select top N by 24h volume
     tick_interval: int | None = None
     max_position_pct: float | None = None
     max_positions: int | None = None
@@ -876,7 +877,13 @@ async def api_agent_strategy_config(req: StrategyConfigRequest):
         agent_brain.SIGNAL_INTERVAL = req.timeframe
         changes.append(f"timeframe={req.timeframe}")
 
-    if req.symbols and len(req.symbols) > 0:
+    if req.top_volume and 1 <= req.top_volume <= 50:
+        from .data_service import get_top_volume_symbols
+        top_syms = await get_top_volume_symbols(req.top_volume)
+        if top_syms:
+            agent_brain.WATCH_SYMBOLS = top_syms
+            changes.append(f"top_{req.top_volume}_vol={top_syms[:5]}...")
+    elif req.symbols and len(req.symbols) > 0:
         clean = [s.upper().replace("/", "").strip() for s in req.symbols if s.strip()]
         if clean:
             agent_brain.WATCH_SYMBOLS = clean
@@ -896,8 +903,16 @@ async def api_agent_strategy_config(req: StrategyConfigRequest):
 
     if changes:
         print(f"[Agent] Config updated: {', '.join(changes)}")
-        return {"ok": True, "changes": changes}
+        return {"ok": True, "changes": changes, "watch_symbols": agent_brain.WATCH_SYMBOLS}
     return {"ok": True, "changes": [], "message": "No changes"}
+
+
+@app.get("/api/top-volume")
+async def api_top_volume(n: int = Query(20, ge=1, le=50)):
+    """Get top N symbols by 24h trading volume."""
+    from .data_service import get_top_volume_symbols
+    symbols = await get_top_volume_symbols(n)
+    return {"symbols": symbols, "count": len(symbols)}
 
 
 @app.get("/api/agent/signals")
