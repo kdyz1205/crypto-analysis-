@@ -158,15 +158,18 @@ async def index():
 
 
 def _symbols_from_data_folder() -> list[str]:
-    """Collect unique symbols from data/*.csv (standard and OKX-style names)."""
+    """Collect unique symbols from data/*.csv and data/*.csv.gz (standard and OKX-style names)."""
     from .data_service import DATA_DIR, _scan_okx_csv_files
     symbols = set()
     if not DATA_DIR.exists():
         return []
     for p in DATA_DIR.iterdir():
-        if p.suffix.lower() != ".csv":
+        is_csv = p.suffix.lower() == ".csv" or p.name.lower().endswith(".csv.gz")
+        if not is_csv:
             continue
         name = p.stem.lower()
+        if name.endswith('.csv'):
+            name = name[:-4]  # strip .csv from .csv.gz (stem gives "foo.csv")
         if name.startswith("okx_"):
             okx = _scan_okx_csv_files()
             for (sym, _), _ in okx.items():

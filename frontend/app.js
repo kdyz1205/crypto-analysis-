@@ -625,14 +625,14 @@ function updateOHLCLegend(param) {
 
 // ── Helpers ──
 function getDaysForInterval(interval) {
-    // Fetch maximum history for best strategy accuracy
-    if (interval === '1m') return 2;
-    if (interval === '5m') return 7;
-    if (interval === '15m') return 21;
-    if (interval === '1h') return 90;
-    if (interval === '4h') return 365;    // ~1 year of 4h = ~2190 candles
-    if (interval === '1d') return 365 * 5; // ~5 years of daily
-    return 180;
+    // Data priority: fast (less data, quick load), balanced, deep (full history)
+    const priority = document.getElementById('data-priority-select')?.value || 'balanced';
+    const profiles = {
+        fast:     { '1m': 1, '5m': 3,  '15m': 7,  '1h': 30,  '4h': 90,   '1d': 365 },
+        balanced: { '1m': 2, '5m': 7,  '15m': 21, '1h': 90,  '4h': 365,  '1d': 365 * 3 },
+        deep:     { '1m': 2, '5m': 7,  '15m': 21, '1h': 180, '4h': 365 * 2, '1d': 365 * 5 },
+    };
+    return (profiles[priority] || profiles.balanced)[interval] || 180;
 }
 
 function buildParams() {
@@ -2382,6 +2382,154 @@ async function refreshOKXStatus() {
         if (liveBtn) liveBtn.disabled = !data.has_keys;
     } catch (_) {}
 }
+
+// ── Data priority selector: reload on change ──
+document.getElementById('data-priority-select')?.addEventListener('change', () => {
+    loadData();
+});
+
+// ── Refresh button ──
+document.getElementById('data-refresh-btn')?.addEventListener('click', () => {
+    loadData();
+});
+
+// ── Quick command ──
+document.getElementById('quick-command')?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const cmd = e.target.value.trim().toLowerCase();
+    if (!cmd) return;
+    e.target.value = '';
+    // Parse: "btc 5m" → switch to BTCUSDT 5m
+    const parts = cmd.split(/\s+/);
+    if (parts.length >= 1) {
+        let sym = parts[0].toUpperCase();
+        if (!sym.endsWith('USDT')) sym += 'USDT';
+        currentSymbol = sym;
+        document.getElementById('current-ticker')?.replaceChildren(document.createTextNode(formatTicker(sym)));
+    }
+    if (parts.length >= 2 && ['1m','5m','15m','1h','4h','1d'].includes(parts[1])) {
+        currentInterval = parts[1];
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === currentInterval));
+    }
+    if (parts.includes('replay') && parts.includes('on')) {
+        const toggle = document.getElementById('replay-toggle');
+        if (toggle) toggle.checked = true;
+    }
+    loadData();
+});
+
+// ── Layout presets ──
+document.getElementById('layout-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === 'scalper') { currentInterval = '5m'; }
+    else if (val === 'swing') { currentInterval = '4h'; }
+    else if (val === 'position') { currentInterval = '1d'; }
+    document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === currentInterval));
+    loadData();
+});
+
+// ── Strategy presets ──
+document.getElementById('strategy-select')?.addEventListener('change', async (e) => {
+    const presets = {
+        default:     { dist_ma5_ma8: 1.5, dist_ma8_ema21: 2.5, dist_ema21_ma55: 4.0, slope_threshold: 0.1, bb_std_dev: 2.5 },
+        momentum:    { dist_ma5_ma8: 2.0, dist_ma8_ema21: 3.5, dist_ema21_ma55: 5.0, slope_threshold: 0.05, bb_std_dev: 2.0 },
+        mean_revert: { dist_ma5_ma8: 1.0, dist_ma8_ema21: 1.5, dist_ema21_ma55: 3.0, slope_threshold: 0.15, bb_std_dev: 3.0 },
+        defensive:   { dist_ma5_ma8: 1.0, dist_ma8_ema21: 2.0, dist_ema21_ma55: 3.5, slope_threshold: 0.2, bb_std_dev: 2.5 },
+    };
+    const params = presets[e.target.value];
+    if (!params) return;
+    try {
+        await fetch(`${API_BASE}/api/agent/strategy-params`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(params)
+        });
+    } catch (_) {}
+});
+
+// ── Trader Console: Pre-trade checklist ──
+document.querySelectorAll('#check-trend, #check-level, #check-risk').forEach(cb => {
+    cb?.addEventListener('change', () => {
+        const checks = ['check-trend', 'check-level', 'check-risk'];
+        const done = checks.filter(id => document.getElementById(id)?.checked).length;
+        const el = document.getElementById('check-progress');
+        if (el) el.textContent = `${done}/3 complete`;
+    });
+});
+
+// ── Trader Console: Risk calculator ──
+function calcRisk() {
+    const balance = parseFloat(document.getElementById('risk-balance')?.value);
+    const pct = parseFloat(document.getElementById('risk-percent')?.value);
+    const entry = parseFloat(document.getElementById('risk-entry')?.value);
+    const stop = parseFloat(document.getElementById('risk-stop')?.value);
+    const out = document.getElementById('risk-output');
+    if (!out || isNaN(balance) || isNaN(pct) || isNaN(entry) || isNaN(stop) || entry === stop) {
+        if (out) out.textContent = '建议仓位：—';
+        return;
+    }
+    const riskUsd = balance * pct / 100;
+    const distPct = Math.abs(entry - stop) / entry * 100;
+    const posSize = riskUsd / (Math.abs(entry - stop) / entry);
+    const contracts = posSize / entry;
+    out.textContent = `建议仓位：$${posSize.toFixed(2)} (${contracts.toFixed(4)} 张) | 风险 $${riskUsd.toFixed(2)} (${distPct.toFixed(2)}%)`;
+}
+['risk-balance', 'risk-percent', 'risk-entry', 'risk-stop'].forEach(id => {
+    document.getElementById(id)?.addEventListener('input', calcRisk);
+});
+
+// ── Trader Console: Trade journal ──
+const _journal = JSON.parse(localStorage.getItem('tradeJournal') || '[]');
+let _journalIdx = _journal.length - 1;
+function renderJournal() {
+    const el = document.getElementById('journal-list');
+    if (!el) return;
+    if (_journal.length === 0) { el.textContent = '暂无记录'; return; }
+    const j = _journal[_journalIdx] || _journal[_journal.length - 1];
+    el.textContent = `#${_journalIdx + 1} ${j.symbol} ${j.side} @ ${j.entry} SL:${j.stop} (${j.time})`;
+}
+document.getElementById('save-journal')?.addEventListener('click', () => {
+    const entry = document.getElementById('risk-entry')?.value;
+    const stop = document.getElementById('risk-stop')?.value;
+    if (!entry || !stop) return;
+    _journal.push({
+        symbol: currentSymbol, side: '—', entry, stop,
+        time: new Date().toLocaleString(),
+    });
+    _journalIdx = _journal.length - 1;
+    localStorage.setItem('tradeJournal', JSON.stringify(_journal));
+    renderJournal();
+});
+document.getElementById('journal-prev')?.addEventListener('click', () => {
+    if (_journalIdx > 0) _journalIdx--;
+    renderJournal();
+});
+document.getElementById('journal-next')?.addEventListener('click', () => {
+    if (_journalIdx < _journal.length - 1) _journalIdx++;
+    renderJournal();
+});
+document.getElementById('journal-clear')?.addEventListener('click', () => {
+    _journal.length = 0; _journalIdx = -1;
+    localStorage.removeItem('tradeJournal');
+    renderJournal();
+});
+
+// ── Trader Console: AI Coach ──
+document.getElementById('ai-refresh')?.addEventListener('click', async () => {
+    const el = document.getElementById('ai-coach-summary');
+    if (el) el.textContent = '分析中...';
+    try {
+        const resp = await fetch(`${API_BASE}/api/chat`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                message: `简要分析 ${currentSymbol} ${currentInterval} 的当前走势，给出交易建议（2-3句话）`,
+                model: 'claude-haiku'
+            })
+        });
+        const data = await resp.json();
+        if (el) el.textContent = data.reply || data.error || '无法获取建议';
+    } catch (e) {
+        if (el) el.textContent = 'AI 服务不可用（检查 ANTHROPIC_API_KEY）';
+    }
+});
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {

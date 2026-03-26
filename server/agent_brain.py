@@ -160,6 +160,23 @@ class AgentBrain:
         slope_len = p["slope_len"]
         slope_thresh = p["slope_threshold"]
 
+        # ── ATR-normalized adaptive thresholds ──
+        atr_pct = atr[i] / price * 100  # ATR as percentage of price
+        atr_dist_scale = max(1.0, atr_pct / 2.0)
+        atr_slope_scale = max(1.0, atr_pct / 1.5)
+
+        adapted_dist_5_8 = p["dist_ma5_ma8"] * atr_dist_scale
+        adapted_dist_8_21 = p["dist_ma8_ema21"] * atr_dist_scale
+        adapted_dist_21_55 = p["dist_ema21_ma55"] * atr_dist_scale
+        adapted_slope_thresh = slope_thresh * atr_slope_scale
+
+        if atr_pct < 1.5:
+            volatility_regime = "low"
+        elif atr_pct < 4.0:
+            volatility_regime = "normal"
+        else:
+            volatility_regime = "high"
+
         # ── Check existing position exits ──
         if symbol in self.trader.state.positions:
             pos = self.trader.state.positions[symbol]
@@ -196,9 +213,9 @@ class AgentBrain:
         dist_21_55 = pct_dist(ema21[i], ma55[i])
 
         fan_ok = (
-            dist_5_8 < p["dist_ma5_ma8"]
-            and dist_8_21 < p["dist_ma8_ema21"]
-            and dist_21_55 < p["dist_ema21_ma55"]
+            dist_5_8 < adapted_dist_5_8
+            and dist_8_21 < adapted_dist_8_21
+            and dist_21_55 < adapted_dist_21_55
         )
         if not fan_ok:
             return None
@@ -210,9 +227,9 @@ class AgentBrain:
         s_ma55 = _slope(ma55, slope_len, i)
 
         if long_order:
-            slopes_ok = all(s > slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
+            slopes_ok = all(s > adapted_slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
         else:
-            slopes_ok = all(s < -slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
+            slopes_ok = all(s < -adapted_slope_thresh for s in [s_ma5, s_ma8, s_ema21, s_ma55])
 
         if not slopes_ok:
             return None
@@ -234,6 +251,10 @@ class AgentBrain:
                 stack_count += 1
         confidence = min(stack_count / 5.0, 1.0)
 
+        # Boost confidence when expanding volatility aligns with trending entry
+        if volatility_regime in ("normal", "high"):
+            confidence = min(confidence + 0.1, 1.0)
+
         if confidence < 0.4:
             return None
 
@@ -244,11 +265,13 @@ class AgentBrain:
                 "confidence": round(confidence, 2),
                 "reason": (
                     f"V6 Long: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
-                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
+                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%, "
+                    f"vol={volatility_regime} atr={atr_pct:.2f}%"
                 ),
                 "sl": round(float(ma55[i]), 6),
                 "tp": round(float(bb_up[i]), 6),
                 "price": round(float(price), 6),
+                "volatility_regime": volatility_regime,
             }
         else:
             return {
@@ -256,11 +279,13 @@ class AgentBrain:
                 "confidence": round(confidence, 2),
                 "reason": (
                     f"V6 Short: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
-                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
+                    f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%, "
+                    f"vol={volatility_regime} atr={atr_pct:.2f}%"
                 ),
                 "sl": round(float(ma55[i]), 6),
                 "tp": round(float(bb_lo[i]), 6),
                 "price": round(float(price), 6),
+                "volatility_regime": volatility_regime,
             }
 
     # ── Position management ───────────────────────────────────────────────

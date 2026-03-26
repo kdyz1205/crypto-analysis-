@@ -1,61 +1,83 @@
-# crypto-analysis
+# Crypto Analysis & Autonomous Trading
 
-crypto-analysis multi trendline — TradingView 风格的加密货币技术分析网页版：K 线、多周期、多趋势线/形态识别、手绘线、回测。
+TradingView-style crypto technical analysis dashboard with V6 autonomous trading strategy and OKX live/paper trading.
 
-## 运行
+## Quick Start
 
-1. **安装依赖**：
+1. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **启动服务**：
+2. **Configure environment** (optional, for live trading & AI chat):
+   ```bash
+   cp .env.example .env
+   # Edit .env with your OKX API keys and Anthropic API key
+   ```
+
+3. **Start server**:
    ```bash
    python run.py
    ```
+   Opens `http://127.0.0.1:8001` automatically.
 
-3. **打开浏览器**：  
-   会自动打开 `http://127.0.0.1:8001`（若 8001 被占用会尝试 8002、8003…）。未自动打开时请手动输入终端里显示的地址。
+## Features
 
+### Chart & Analysis
+- **Candlestick chart** with volume — multi-symbol, multi-timeframe (5m / 15m / 1h / 4h / 1D)
+- **OKX data** — live API, paginated history back to 2021, gzip-compressed disk cache
+- **MA overlays** — MA5, MA8, EMA21, MA55, Bollinger Bands (toggle on/off)
+- **Support/Resistance** — auto-detected horizontal zones + pattern recognition
+- **Hand-drawn tools** — trend lines, horizontal lines
+- **Replay mode** — scroll back to any date and replay price action
+- **Backtest** — MFI/MA strategy backtesting with parameter optimization
 
-### Windows 一键启动
+### Autonomous Trading Agent (V6 Strategy)
+- **4-layer filtered trend following**:
+  1. Trend ordering (P > MA5 > MA8 > EMA21 > MA55)
+  2. Fanning distance (ATR-normalized MA gap thresholds)
+  3. Slope momentum (all MAs trending in same direction)
+  4. Bollinger Band position filter
+- **Self-evolving** — mutates strategy parameters based on performance metrics
+- **Paper & Live mode** — switch with safety confirmation
+- **OKX live trading** — automated order placement via OKX REST API
+- **Risk management** — max drawdown, position limits, consecutive loss circuit breaker
 
-在 Windows 上可直接双击运行：
+### Dashboard Panels
+- **Agent Dashboard** — equity, PnL, positions, trades, signals, strategy params
+- **Trader Console** — pre-trade checklist, risk calculator, trade journal
+- **AI Chat** — built-in Claude-powered market analysis assistant
+- **Self-Healer** — automatic error detection and recovery
 
-```bat
-scripts\start_windows.bat
+### Toolbar
+- Quick command bar (`btc 5m`, `eth 1h`)
+- Layout presets (Scalper / Swing / Position)
+- Strategy presets (Default / Momentum / Mean Revert / Defensive)
+- Data priority (Fast / Balanced / Deep history)
+
+## Tech Stack
+
+- **Frontend**: HTML / CSS / JavaScript, TradingView Lightweight Charts
+- **Backend**: FastAPI, Python (Polars, NumPy)
+- **Data**: OKX REST API v5 (candles + history-candles)
+- **Trading**: OKX perpetual swaps (HMAC-SHA256 signed requests)
+- **AI**: Anthropic Claude API (chat + analysis)
+
+## Project Structure
+
 ```
-
-这个脚本会切到项目根目录并执行 `python run.py`。服务启动后会自动打开浏览器，地址默认是 `http://127.0.0.1:8001`（端口占用会自动递增）。
-
-### 生成公网访问链接（可选）
-
-如果你需要把本机服务临时分享给别人，可用内网穿透工具把本机端口映射到公网：
-
-```bash
-ngrok http 8001
+├── frontend/          # Single-page app (HTML/CSS/JS)
+│   ├── index.html     # Main page with all panels
+│   ├── app.js         # Chart, agent, trading logic
+│   └── style.css      # Dark theme styles
+├── server/            # FastAPI backend
+│   ├── app.py         # API routes
+│   ├── data_service.py    # OKX data fetching + caching
+│   ├── agent_brain.py     # V6 strategy + autonomous agent
+│   ├── okx_trader.py      # OKX order execution
+│   ├── backtest_service.py # Backtesting engine
+│   └── ...
+├── sr_patterns.py     # Support/resistance detection
+├── run.py             # Entry point
+└── requirements.txt
 ```
-
-如果 run.py 最终使用的是 `8002/8003...`，请把命令里的端口改成终端实际打印的端口。
-
-4. **快速可用性自检（推荐）**：
-   ```bash
-   ./scripts/smoke_test.sh
-   ```
-   这个脚本会自动启动服务并检查 health / symbols / ohlcv 三个关键路径，确保“服务真实可跑可用”。
-
-## 功能概览
-
-- **K 线 + 成交量**：多交易对、多周期（5m / 15m / 1h / 4h / 1D）
-- **数据**：OKX API 直连，最新数据，无需本地 CSV（可配置为 API-only）
-- **数据模式**：默认混合模式（本地 CSV + API 增量），API 被限制时仍可用；可配置为 API-only
-- **Recognizing**：自动识别形态（三角形、头肩、通道等）并绘制
-- **Assist**：支撑/阻力趋势线（延伸）
-- **手绘线**：趋势线、水平线
-- **Backtest**：MFI/MA 策略回测、参数优化
-- **形态统计**：当前形态 vs 历史同类成功率、线相似度
-
-## 技术栈
-
-- 前端：HTML / CSS / JavaScript，LightweightCharts
-- 后端：FastAPI，Python（形态识别、回测、OKX 数据）

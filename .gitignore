@@ -1,8 +1,53 @@
-.history/
-.claude/
+# Python
 __pycache__/
 *.pyc
-note*
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environment / secrets
 .env
 .env.*
+
+# IDE / editor
+.history/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Project-specific
 autoresearch/chat_memory/
+autoresearch/agent_state.json
+autoresearch/evolution_log.tsv
+autoresearch/results.tsv
+autoresearch/autoresearch.py
+autoresearch/program.md
+support_resistance.py
+note*
+data/*.csv
+data/*.csv.gz
+
+# Legacy / junk (should be deleted from repo)
+.openclaw/
+OPENCLAW_HERE.txt
+package-lock.json
+binance.ipynb
+binance_api/
+binance_api_documentation.md
+binance_futures_ticker_info.csv
+binance_futures_usdt.txt
+plot_helpers.py
+plots/
+sr_patterns_plot.png
+sr_patterns_replay.ipynb
+
+# OS
+.DS_Store
+Thumbs.db

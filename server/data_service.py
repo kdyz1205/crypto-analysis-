@@ -6,15 +6,35 @@ from datetime import timezone
 from pathlib import Path
 
 # In-memory TTL cache for download_ohlcv results
-_ohlcv_cache: dict[tuple, tuple[float, pl.DataFrame]] = {}
-OHLCV_CACHE_TTL = 300  # 5 minutes — avoid redundant API calls
+# Key: (symbol, interval) — days are handled by slicing/invalidation
+_ohlcv_cache: dict[tuple, tuple[float, int, pl.DataFrame]] = {}  # (ts, days, df)
+OHLCV_CACHE_TTL_SHORT = 300   # 5 minutes — for short intervals (5m, 15m, 1h)
+OHLCV_CACHE_TTL_HEAVY = 600   # 10 minutes — for heavy intervals (4h, 1d)
+
+def _cache_ttl(interval: str) -> int:
+    """Return cache TTL in seconds based on interval."""
+    return OHLCV_CACHE_TTL_HEAVY if interval in ("4h", "1d") else OHLCV_CACHE_TTL_SHORT
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 SYMBOLS_FILE = PROJECT_ROOT / "binance_futures_usdt.txt"
 BINANCE_FUTURES_URL = "https://fapi.binance.com/fapi/v1/klines"
 OKX_CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
+OKX_HISTORY_CANDLES_URL = "https://www.okx.com/api/v5/market/history-candles"
 OKX_INSTRUMENTS_URL = "https://www.okx.com/api/v5/public/instruments"
+
+# Shared httpx client — reused across all requests to leverage connection pooling
+_http_client: httpx.AsyncClient | None = None
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Return (and lazily create) a shared httpx.AsyncClient."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=30.0,
+            limits=httpx.Limits(max_connections=10),
+        )
+    return _http_client
 
 # Data source configuration
 # - exchange: 'binance' or 'okx'
@@ -86,10 +106,10 @@ async def load_okx_swap_symbols() -> dict[str, dict]:
         return _okx_swap_cache
     
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(OKX_INSTRUMENTS_URL, params={"instType": "SWAP"})
-            data = resp.json()
-        
+        client = _get_http_client()
+        resp = await client.get(OKX_INSTRUMENTS_URL, params={"instType": "SWAP"})
+        data = resp.json()
+
         if not isinstance(data, dict) or data.get("code") != "0":
             # If API fails, return empty dict instead of raising
             print(f"Warning: OKX instruments API error: {data}")
@@ -143,12 +163,12 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
 
     try:
         # OKX tickers endpoint returns 24h volume for all instruments
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                "https://www.okx.com/api/v5/market/tickers",
-                params={"instType": "SWAP"}
-            )
-            data = resp.json()
+        client = _get_http_client()
+        resp = await client.get(
+            "https://www.okx.com/api/v5/market/tickers",
+            params={"instType": "SWAP"}
+        )
+        data = resp.json()
 
         if data.get("code") != "0" or not data.get("data"):
             print(f"[Data] Failed to fetch OKX tickers: {data.get('msg', 'unknown')}")
@@ -205,10 +225,12 @@ def _scan_okx_csv_files() -> dict[tuple[str, str], Path]:
     if not DATA_DIR.exists():
         return result
     for p in DATA_DIR.iterdir():
-        if not p.suffix.lower() == ".csv" or not p.name.upper().startswith("OKX_"):
+        if not (p.suffix.lower() == ".csv" or p.name.lower().endswith(".csv.gz")) or not p.name.upper().startswith("OKX_"):
             continue
         # e.g. "OKX_BTCUSDT.P, 1D (4).csv" or "OKX_TRUMPUSDT.P, 1D.csv"
         name = p.stem  # "OKX_BTCUSDT.P, 1D (4)" or "OKX_TRUMPUSDT.P, 1D"
+        if name.lower().endswith(".csv"):
+            name = name[:-4]  # strip .csv from .csv.gz files (stem gives "foo.csv")
         m = re.match(r"OKX_([A-Z0-9]+)\.P\s*,\s*(\d+[mhdD])", name, re.IGNORECASE)
         if not m:
             continue
@@ -229,21 +251,23 @@ def _scan_okx_csv_files() -> dict[tuple[str, str], Path]:
 
 
 def _find_csv(symbol: str, interval: str) -> Path | None:
-    """Find CSV file in data/ directory. Supports standard name and OKX_*.csv names."""
+    """Find CSV file in data/ directory. Supports .csv, .csv.gz, and OKX_*.csv names."""
     symbol_lower = symbol.lower()
-    filename = f"{symbol_lower}_{interval}.csv"
-    path = DATA_DIR / filename
-    if path.exists():
-        return path
-    root_path = PROJECT_ROOT / filename
-    if root_path.exists():
-        return root_path
+    # Check gzip first (preferred), then plain CSV
+    for ext in [".csv.gz", ".csv"]:
+        filename = f"{symbol_lower}_{interval}{ext}"
+        path = DATA_DIR / filename
+        if path.exists():
+            return path
+        root_path = PROJECT_ROOT / filename
+        if root_path.exists():
+            return root_path
     okx_map = _scan_okx_csv_files()
     return okx_map.get((symbol_lower, interval))
 
 
 def _load_csv(path: Path) -> pl.DataFrame:
-    """Load a CSV and parse open_time as datetime. Handles OKX export (time=unix, Volume)."""
+    """Load a CSV (or .csv.gz) and parse open_time as datetime. Handles OKX export (time=unix, Volume)."""
     df = pl.read_csv(path)
 
     # OKX export: "time" (unix sec), "Volume" (capital V), optional extra columns
@@ -296,19 +320,28 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
 
     Results are cached in memory with a TTL to avoid redundant API calls.
     """
-    cache_key = (symbol.upper(), interval, days)
+    cache_key = (symbol.upper(), interval)
     cached = _ohlcv_cache.get(cache_key)
+    ttl = _cache_ttl(interval)
     if cached is not None:
-        cached_time, cached_result = cached
-        if (time.time() - cached_time) < OHLCV_CACHE_TTL:
-            return cached_result
+        cached_time, cached_days, cached_result = cached
+        if (time.time() - cached_time) < ttl:
+            if days <= cached_days:
+                # Slice cached data to requested days
+                if days < cached_days and not cached_result.is_empty():
+                    import datetime as _dt
+                    cutoff = cached_result["open_time"].max() - _dt.timedelta(days=days)
+                    sliced = cached_result.filter(pl.col("open_time") >= cutoff)
+                    return sliced
+                return cached_result
+            # More days requested than cached — invalidate and re-fetch below
 
     if EXCHANGE.lower() == "okx":
         result = await _download_ohlcv_okx(symbol, interval, days)
     else:
         result = await _download_ohlcv_binance(symbol, interval, days)
 
-    _ohlcv_cache[cache_key] = (time.time(), result)
+    _ohlcv_cache[cache_key] = (time.time(), days, result)
     return result
 
 
@@ -320,27 +353,27 @@ async def _download_ohlcv_binance(symbol: str, interval: str, days: int = 30) ->
     start_ms = end_ms - days * 24 * 60 * 60 * 1000
     all_data = []
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        while start_ms < end_ms:
-            params = {
-                "symbol": symbol,
-                "interval": interval,
-                "startTime": start_ms,
-                "endTime": end_ms,
-                "limit": 1500,
-            }
-            resp = await client.get(BINANCE_FUTURES_URL, params=params)
-            data = resp.json()
+    client = _get_http_client()
+    while start_ms < end_ms:
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": start_ms,
+            "endTime": end_ms,
+            "limit": 1500,
+        }
+        resp = await client.get(BINANCE_FUTURES_URL, params=params)
+        data = resp.json()
 
-            if isinstance(data, dict) and "code" in data:
-                raise ValueError(f"Binance API error: {data}")
-            if not data:
-                break
+        if isinstance(data, dict) and "code" in data:
+            raise ValueError(f"Binance API error: {data}")
+        if not data:
+            break
 
-            all_data.extend(data)
-            start_ms = data[-1][0] + 1
-            if len(data) < 1500:
-                break
+        all_data.extend(data)
+        start_ms = data[-1][0] + 1
+        if len(data) < 1500:
+            break
 
     if not all_data:
         raise ValueError(f"No data returned for {symbol} {interval}")
@@ -360,9 +393,9 @@ async def _download_ohlcv_binance(symbol: str, interval: str, days: int = 30) ->
         return result.sort("open_time")
 
     DATA_DIR.mkdir(exist_ok=True)
-    filename = f"{symbol.lower()}_{interval}.csv"
+    filename = f"{symbol.lower()}_{interval}.csv.gz"
     save_path = DATA_DIR / filename
-    pdf.to_csv(save_path, index=False)
+    pdf.to_csv(save_path, index=False, compression="gzip")
     return _load_csv(save_path)
 
 
@@ -416,21 +449,24 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
     use_pagination = approx_candles > OKX_CANDLES_PAGE_LIMIT
     target_oldest_ms = int(time.time() * 1000) - days * 24 * 3600 * 1000  # stop when we have this much history
 
+    client = _get_http_client()
+
     if use_pagination:
-        # Paginate: request 300 at a time, stop when we have enough days or hit OKX_START_TS_MS
+        # Paginate: first page from /market/candles (recent), then /market/history-candles (older)
         after_ts = None  # first request gets latest
         prev_after_ts = None  # guard against infinite loop on duplicate timestamps
         max_pages = 2000  # safety limit (~600k candles max)
         page_count = 0
+        use_history_endpoint = False  # start with recent candles endpoint
         while page_count < max_pages:
+            url = OKX_HISTORY_CANDLES_URL if use_history_endpoint else OKX_CANDLES_URL
             params = {"instId": inst_id, "bar": bar, "limit": str(OKX_CANDLES_PAGE_LIMIT)}
             if after_ts is not None:
                 params["after"] = str(after_ts)
             try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    resp = await client.get(OKX_CANDLES_URL, params=params)
-                    resp.raise_for_status()
-                    data = resp.json()
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
             except httpx.TimeoutException:
                 raise ValueError(f"OKX API timeout for {symbol} {interval}. Please try again.")
             except httpx.RequestError as e:
@@ -442,6 +478,10 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
 
             rows = data.get("data") or []
             if not rows:
+                if not use_history_endpoint:
+                    # Recent endpoint exhausted, switch to history endpoint
+                    use_history_endpoint = True
+                    continue
                 break
             # OKX returns newest first; we want oldest first at the end, so we reverse and append
             rows_oldest_first = list(reversed(rows))
@@ -451,10 +491,17 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
                 break
             # Guard: if oldest_ts didn't advance, we'd loop forever on duplicate data
             if oldest_ts == prev_after_ts:
+                if not use_history_endpoint:
+                    # Switch to history endpoint and retry
+                    use_history_endpoint = True
+                    continue
                 break
             prev_after_ts = after_ts
             after_ts = oldest_ts  # next page: records earlier than this ts
             page_count += 1
+            # After first page from /candles, switch to /history-candles for deeper history
+            if not use_history_endpoint:
+                use_history_endpoint = True
             await asyncio.sleep(0.06)  # ~40/2s rate limit → ~50ms between requests
 
         if not all_records:
@@ -464,10 +511,9 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
 
         params = {"instId": inst_id, "bar": bar, "limit": str(limit)}
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(OKX_CANDLES_URL, params=params)
-                resp.raise_for_status()
-                data = resp.json()
+            resp = await client.get(OKX_CANDLES_URL, params=params)
+            resp.raise_for_status()
+            data = resp.json()
         except httpx.TimeoutException:
             raise ValueError(f"OKX API timeout for {symbol} {interval}. Please try again.")
         except httpx.RequestError as e:
@@ -497,9 +543,9 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
         return result.sort("open_time")
 
     DATA_DIR.mkdir(exist_ok=True)
-    filename = f"{symbol.lower()}_{interval}.csv"
+    filename = f"{symbol.lower()}_{interval}.csv.gz"
     save_path = DATA_DIR / filename
-    pdf.to_csv(save_path, index=False)
+    pdf.to_csv(save_path, index=False, compression="gzip")
     return _load_csv(save_path)
 
 
@@ -546,13 +592,13 @@ async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) ->
         "limit": "200",  # Get last 200 candles, filter by timestamp
     }
     
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(OKX_CANDLES_URL, params=params)
-        data = resp.json()
-    
+    client = _get_http_client()
+    resp = await client.get(OKX_CANDLES_URL, params=params)
+    data = resp.json()
+
     if not isinstance(data, dict) or data.get("code") != "0":
         return pl.DataFrame()
-    
+
     rows = data.get("data") or []
     if not rows:
         return pl.DataFrame()
@@ -613,28 +659,28 @@ async def _fetch_candles_since(symbol: str, interval: str, start_ms: int) -> pl.
     end_ms = int(time.time() * 1000)
     all_data = []
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        cursor = start_ms
-        while cursor < end_ms:
-            params = {
-                "symbol": symbol,
-                "interval": interval,
-                "startTime": cursor,
-                "endTime": end_ms,
-                "limit": 1500,
-            }
-            resp = await client.get(BINANCE_FUTURES_URL, params=params)
-            data = resp.json()
+    client = _get_http_client()
+    cursor = start_ms
+    while cursor < end_ms:
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": cursor,
+            "endTime": end_ms,
+            "limit": 1500,
+        }
+        resp = await client.get(BINANCE_FUTURES_URL, params=params)
+        data = resp.json()
 
-            if isinstance(data, dict) and "code" in data:
-                raise ValueError(f"Binance API error: {data}")
-            if not data:
-                break
+        if isinstance(data, dict) and "code" in data:
+            raise ValueError(f"Binance API error: {data}")
+        if not data:
+            break
 
-            all_data.extend(data)
-            cursor = data[-1][0] + 1
-            if len(data) < 1500:
-                break
+        all_data.extend(data)
+        cursor = data[-1][0] + 1
+        if len(data) < 1500:
+            break
 
     if not all_data:
         return pl.DataFrame()
@@ -677,9 +723,9 @@ def _merge_and_save(existing_df: pl.DataFrame, new_df: pl.DataFrame, symbol: str
     combined = pl.concat([existing_df, new_df])
     combined = combined.unique(subset=["open_time"], keep="last").sort("open_time")
 
-    # Save with open_time formatted as string for CSV consistency
+    # Save with open_time formatted as string for CSV consistency (gzip compressed)
     DATA_DIR.mkdir(exist_ok=True)
-    save_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv"
+    save_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv.gz"
     df_out = combined.with_columns(
         pl.col("open_time").dt.strftime("%Y-%m-%d %H:%M:%S")
     )
@@ -888,7 +934,15 @@ async def get_ohlcv(
 
     # Compute V6 MA overlays
     from .backtest_service import _sma, _ema, _bb_upper
-    from .agent_brain import _bb_lower
+
+    def _bb_lower(close, period, std_mult):
+        sma = _sma(close, period)
+        n = len(close)
+        bb = np.full(n, np.nan)
+        for i in range(period - 1, n):
+            window = close[i - period + 1 : i + 1]
+            bb[i] = sma[i] - std_mult * np.std(window)
+        return bb
     close_arr = np.array([c["close"] for c in candles], dtype=float)
     overlays = {}
     if len(close_arr) >= 55:
