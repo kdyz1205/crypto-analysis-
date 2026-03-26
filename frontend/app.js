@@ -14,6 +14,10 @@ let lastCandles = [];        // full candle array for magnet snapping
 let pricePrecision = null;   // Price precision from exchange
 let liveUpdateInterval = null; // Interval ID for live updates
 
+// V6 MA overlay series
+let maOverlaySeries = {};    // { ma5, ma8, ema21, ma55, bb_upper, bb_lower }
+let maOverlayVisible = true; // toggle MA visibility
+
 // Pattern overlay state
 let patternLineSeries = [];  // LineSeries objects for trendlines + zones
 let userDrawnLines = [];    // { type: 'trend'|'horizontal', t1, v1, t2, v2 } for re-draw after API refresh
@@ -35,6 +39,71 @@ let patternResponseCache = new Map(); // key=params string, value=pattern respon
 const PATTERN_CACHE_MAX_SIZE = 50; // Evict oldest entries beyond this limit
 let toolMode = null; // null | 'recognize' | 'draw' | 'assist'
 const N_FUTURE_BARS = 4; // Trendline extends into future per spec
+
+// ── MA Overlay Drawing ──
+const MA_COLORS = {
+    ma5:      { color: '#ffeb3b', width: 1 },   // yellow, thin
+    ma8:      { color: '#ff9800', width: 1 },   // orange, thin
+    ema21:    { color: '#2196f3', width: 2 },   // blue, medium
+    ma55:     { color: '#e91e63', width: 2 },   // pink, medium
+    bb_upper: { color: 'rgba(156,39,176,0.5)', width: 1, dash: true },  // purple dashed
+    bb_lower: { color: 'rgba(156,39,176,0.5)', width: 1, dash: true },  // purple dashed
+};
+
+function drawMAOverlays(overlays) {
+    if (!chart || !maOverlayVisible) return;
+
+    // Remove old series
+    for (const key of Object.keys(maOverlaySeries)) {
+        try { chart.removeSeries(maOverlaySeries[key]); } catch (e) {}
+    }
+    maOverlaySeries = {};
+
+    if (!overlays || Object.keys(overlays).length === 0) return;
+
+    // Update MA legend text
+    const legendEl = document.getElementById('ma-legend');
+    if (legendEl) {
+        const labels = { ma5: 'MA5', ma8: 'MA8', ema21: 'EMA21', ma55: 'MA55', bb_upper: 'BB↑', bb_lower: 'BB↓' };
+        let html = '';
+        for (const [key, arr] of Object.entries(overlays)) {
+            if (!arr || arr.length === 0) continue;
+            const last = arr[arr.length - 1];
+            const style = MA_COLORS[key] || { color: '#888' };
+            const lbl = labels[key] || key;
+            html += `<span style="color:${style.color};margin-right:8px;">${lbl} ${last.value.toFixed(2)}</span> `;
+        }
+        legendEl.innerHTML = html;
+    }
+
+    for (const [key, data] of Object.entries(overlays)) {
+        if (!data || data.length === 0) continue;
+        const style = MA_COLORS[key] || { color: '#888', width: 1 };
+        const series = chart.addLineSeries({
+            color: style.color,
+            lineWidth: style.width,
+            lineStyle: style.dash ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+            crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
+        });
+        series.setData(data);
+        maOverlaySeries[key] = series;
+    }
+}
+
+function toggleMAOverlays() {
+    maOverlayVisible = !maOverlayVisible;
+    if (!maOverlayVisible) {
+        for (const key of Object.keys(maOverlaySeries)) {
+            try { chart.removeSeries(maOverlaySeries[key]); } catch (e) {}
+        }
+        maOverlaySeries = {};
+    }
+    // Will redraw on next data load or call loadData()
+    const btn = document.getElementById('ma-toggle-btn');
+    if (btn) btn.textContent = maOverlayVisible ? 'MA ✓' : 'MA ✗';
+}
 
 // ── Chart Initialization ──
 function initChart() {
@@ -556,11 +625,14 @@ function updateOHLCLegend(param) {
 
 // ── Helpers ──
 function getDaysForInterval(interval) {
+    // Fetch maximum history for best strategy accuracy
     if (interval === '1m') return 2;
-    if (['5m', '15m'].includes(interval)) return 90;
-    if (interval === '2h') return 120;
-    if (interval === '1d') return 90;   // fewer days = faster 4h<->1d switch
-    return 180;  // 1h, 4h: balance between history and speed
+    if (interval === '5m') return 7;
+    if (interval === '15m') return 21;
+    if (interval === '1h') return 90;
+    if (interval === '4h') return 365;    // ~1 year of 4h = ~2190 candles
+    if (interval === '1d') return 365 * 5; // ~5 years of daily
+    return 180;
 }
 
 function buildParams() {
@@ -662,6 +734,9 @@ async function loadData(isLiveUpdate = false) {
         candleSeries.setData(lastCandles);
         volumeSeries.setData(data.volume || []);
         if (backtestMarkers.length > 0) candleSeries.setMarkers(backtestMarkers);
+
+        // Draw V6 MA overlays
+        drawMAOverlays(data.overlays || {});
 
         if (lastCandles.length > 0) {
             lastCandle = lastCandles[lastCandles.length - 1];
@@ -1605,15 +1680,15 @@ document.querySelectorAll('.tf-btn').forEach(btn => {
 });
 
 // ── View Tabs (mode tabs; click again to deactivate) ──
-document.getElementById('tab-recognizing').addEventListener('click', async () => {
+document.getElementById('tab-recognizing')?.addEventListener('click', async () => {
     await setToolMode('recognize');
 });
 
-document.getElementById('tab-draw').addEventListener('click', async () => {
+document.getElementById('tab-draw')?.addEventListener('click', async () => {
     await setToolMode('draw');
 });
 
-document.getElementById('tab-assist').addEventListener('click', async () => {
+document.getElementById('tab-assist')?.addEventListener('click', async () => {
     await setToolMode('assist');
 });
 
@@ -1998,22 +2073,56 @@ async function refreshAgentStatus() {
         const cfgSym = $('cfg-symbols');
         if (cfgSym && d.watch_symbols) cfgSym.value = d.watch_symbols.join(',');
 
-        // Strategy params (V6)
+        // Strategy params (V6) — editable
         $('agent-params-gen').textContent = d.generation ?? '0';
         const paramsEl = $('agent-params');
         if (d.strategy_params && typeof d.strategy_params === 'object') {
-            // Group params for nicer display
             const paramLabels = {
                 'ma5_len': 'MA5', 'ma8_len': 'MA8', 'ema21_len': 'EMA21', 'ma55_len': 'MA55',
                 'bb_length': 'BB Len', 'bb_std_dev': 'BB Std',
                 'dist_ma5_ma8': 'Dist 5-8', 'dist_ma8_ema21': 'Dist 8-21', 'dist_ema21_ma55': 'Dist 21-55',
                 'slope_len': 'Slope Len', 'slope_threshold': 'Slope Thr', 'atr_period': 'ATR',
             };
+            const paramStep = {
+                'ma5_len': 1, 'ma8_len': 1, 'ema21_len': 1, 'ma55_len': 1,
+                'bb_length': 1, 'bb_std_dev': 0.1,
+                'dist_ma5_ma8': 0.1, 'dist_ma8_ema21': 0.1, 'dist_ema21_ma55': 0.1,
+                'slope_len': 1, 'slope_threshold': 0.01, 'atr_period': 1,
+            };
             paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) => {
                 const label = paramLabels[k] || k;
                 const val = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
-                return `<div class="agent-param-item"><span class="agent-param-key">${label}</span><span class="agent-param-val">${val}</span></div>`;
-            }).join('');
+                const step = paramStep[k] || 0.1;
+                return `<div class="agent-param-item">
+                    <span class="agent-param-key">${label}</span>
+                    <input type="number" class="agent-param-input" data-param="${k}" value="${val}" step="${step}" style="width:60px;background:#252a32;color:#d1d4dc;border:1px solid #363a45;border-radius:3px;text-align:right;font-size:11px;padding:1px 4px;">
+                </div>`;
+            }).join('') + '<button id="save-params-btn" style="margin-top:6px;padding:3px 12px;background:#2962ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Params</button>';
+
+            // Attach save handler
+            setTimeout(() => {
+                document.getElementById('save-params-btn')?.addEventListener('click', async () => {
+                    const inputs = paramsEl.querySelectorAll('.agent-param-input');
+                    const updates = {};
+                    inputs.forEach(inp => {
+                        updates[inp.dataset.param] = parseFloat(inp.value);
+                    });
+                    try {
+                        const resp = await fetch(`${API_BASE}/api/agent/strategy-params`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updates),
+                        });
+                        const data = await resp.json();
+                        if (data.ok && data.changes?.length > 0) {
+                            const btn = document.getElementById('save-params-btn');
+                            if (btn) { btn.textContent = 'Saved ✓'; btn.style.background = '#26a69a'; setTimeout(() => { btn.textContent = 'Save Params'; btn.style.background = '#2962ff'; }, 2000); }
+                        }
+                    } catch (e) {
+                        console.error('Save params error:', e);
+                    }
+                });
+            }, 50);
         }
 
         // Fetch & display logs
@@ -2023,12 +2132,21 @@ async function refreshAgentStatus() {
                 const logData = await logRes.json();
                 const logEl = $('agent-logs');
                 if (logEl && logData.logs) {
-                    logEl.innerHTML = logData.logs.slice(-30).reverse().map(l => {
-                        const cls = l.msg.includes('Error') || l.msg.includes('error') || l.msg.includes('FAIL') ? 'log-error' :
-                                    l.msg.includes('[Agent]') ? 'log-agent' :
-                                    l.msg.includes('[OKX]') ? 'log-okx' : 'log-info';
-                        return `<div class="log-line ${cls}"><span class="log-time">${l.time}</span> ${l.msg}</div>`;
-                    }).join('');
+                    if (logData.logs.length === 0) {
+                        logEl.innerHTML = '<div class="log-line log-info" style="opacity:0.5">Agent not started — click Start to begin V6 strategy</div>';
+                    } else {
+                        logEl.innerHTML = logData.logs.slice(-30).reverse().map(l => {
+                            const msg = l.msg || '';
+                            const cls = msg.includes('Error') || msg.includes('error') || msg.includes('FAIL') || msg.includes('SL:') ? 'log-error' :
+                                        msg.includes('Opened') || msg.includes('TP:') ? 'log-success' :
+                                        msg.includes('[Agent]') ? 'log-agent' :
+                                        msg.includes('[OKX]') ? 'log-okx' :
+                                        msg.includes('[Data]') ? 'log-data' : 'log-info';
+                            // Clean up message for readability
+                            const clean = msg.replace(/^\[Agent\]\s*/, '🤖 ').replace(/^\[OKX\]\s*/, '📡 ').replace(/^\[Data\]\s*/, '📊 ');
+                            return `<div class="log-line ${cls}"><span class="log-time">${l.time}</span> ${clean}</div>`;
+                        }).join('');
+                    }
                     logEl.scrollTop = 0;
                 }
             }
@@ -2069,6 +2187,31 @@ document.getElementById('agent-stop-btn')?.addEventListener('click', async () =>
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
     await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
     refreshAgentStatus();
+});
+
+// Scan Now button — trigger fresh signal scan
+document.getElementById('scan-now-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('scan-now-btn');
+    const sigEl = document.getElementById('agent-signals');
+    if (btn) { btn.textContent = 'Scanning...'; btn.disabled = true; }
+    if (sigEl) sigEl.innerHTML = '<div style="color:#787b86">Scanning all symbols...</div>';
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/signals`);
+        const data = await resp.json();
+        const entries = Object.entries(data.signals || {}).filter(([, v]) => v && v.action);
+        if (entries.length > 0) {
+            sigEl.innerHTML = `<table><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Reason</th></tr>` +
+                entries.map(([sym, s]) => {
+                    const cls = s.action === 'long' ? 'pnl-positive' : s.action === 'short' ? 'pnl-negative' : '';
+                    return `<tr><td>${sym}</td><td class="${cls}">${(s.action || '—').toUpperCase()}</td><td>${(s.confidence ?? 0).toFixed(2)}</td><td style="font-size:10px;max-width:200px">${s.reason || '—'}</td></tr>`;
+                }).join('') + `</table>`;
+        } else {
+            sigEl.textContent = 'No signals detected across watched symbols';
+        }
+    } catch (e) {
+        if (sigEl) sigEl.textContent = 'Scan failed: ' + e.message;
+    }
+    if (btn) { btn.textContent = 'Scan Now'; btn.disabled = false; }
 });
 document.getElementById('healer-trigger-btn')?.addEventListener('click', async () => {
     await fetch(`${API_BASE}/api/healer/trigger`, { method: 'POST' });

@@ -126,7 +126,9 @@ class AgentBrain:
         """
         try:
             from .data_service import get_ohlcv_with_df
-            df, _ = await get_ohlcv_with_df(symbol, SIGNAL_INTERVAL, days=30)
+            # Need at least 55+ bars for MA55; fetch 365 days for 4h = ~2190 bars
+            fetch_days = {"5m": 7, "15m": 21, "1h": 90, "4h": 365, "1d": 365 * 3}.get(SIGNAL_INTERVAL, 90)
+            df, _ = await get_ohlcv_with_df(symbol, SIGNAL_INTERVAL, days=fetch_days)
             if df is None or df.is_empty() or len(df) < 60:
                 print(f"[Agent] {symbol}: insufficient data ({len(df) if df is not None else 0} bars)")
                 return None
@@ -244,8 +246,9 @@ class AgentBrain:
                     f"V6 Long: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
                     f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
                 ),
-                "sl": ma55[i],
-                "tp": bb_up[i],
+                "sl": round(float(ma55[i]), 6),
+                "tp": round(float(bb_up[i]), 6),
+                "price": round(float(price), 6),
             }
         else:
             return {
@@ -255,8 +258,9 @@ class AgentBrain:
                     f"V6 Short: ordering OK, dist={dist_5_8:.1f}/{dist_8_21:.1f}/{dist_21_55:.1f}%, "
                     f"slopes={s_ma5:.2f}/{s_ma8:.2f}/{s_ema21:.2f}/{s_ma55:.2f}%"
                 ),
-                "sl": ma55[i],
-                "tp": bb_lo[i],
+                "sl": round(float(ma55[i]), 6),
+                "tp": round(float(bb_lo[i]), 6),
+                "price": round(float(price), 6),
             }
 
     # ── Position management ───────────────────────────────────────────────

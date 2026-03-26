@@ -907,6 +907,32 @@ async def api_agent_strategy_config(req: StrategyConfigRequest):
     return {"ok": True, "changes": [], "message": "No changes"}
 
 
+@app.post("/api/agent/strategy-params")
+async def api_agent_strategy_params(req: dict = {}):
+    """Update V6 strategy parameters. Accepts partial dict of param key:value."""
+    agent = get_agent()
+    params = agent.trader.state.strategy_params
+    changes = []
+    valid_keys = set(params.keys())
+
+    for key, value in req.items():
+        if key not in valid_keys:
+            continue
+        try:
+            if isinstance(params[key], int):
+                params[key] = int(value)
+            else:
+                params[key] = float(value)
+            changes.append(f"{key}={params[key]}")
+        except (ValueError, TypeError):
+            pass
+
+    if changes:
+        agent._save_state()
+        print(f"[Agent] Strategy params updated: {', '.join(changes)}")
+    return {"ok": True, "changes": changes, "params": params}
+
+
 @app.get("/api/top-volume")
 async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     """Get top N symbols by 24h trading volume."""
@@ -939,9 +965,14 @@ async def api_agent_signals():
 
 
 @app.get("/api/agent/logs")
-async def api_agent_logs(limit: int = Query(50, ge=1, le=200)):
+async def api_agent_logs(limit: int = Query(50, ge=1, le=200), filter: str = Query("agent", description="Filter: 'agent' for agent-only, 'all' for everything")):
     """Get recent agent logs from the ring buffer."""
-    logs = list(_LOG_BUFFER)[-limit:]
+    all_logs = list(_LOG_BUFFER)
+    if filter == "agent":
+        # Only show agent/trader/strategy relevant logs, not HTTP access logs
+        keywords = ["[Agent]", "[OKX]", "[Healer]", "[Data]", "V6", "Layer", "signal", "position", "trade", "Evolution", "SL:", "TP:"]
+        all_logs = [l for l in all_logs if any(kw in l.get("msg", "") for kw in keywords)]
+    logs = all_logs[-limit:]
     return {"logs": logs}
 
 

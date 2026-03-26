@@ -1186,6 +1186,8 @@ body {
 .log-agent { color: #42a5f5; }
 .log-okx { color: #7e57c2; }
 .log-error { color: #ef5350; }
+.log-success { color: #26a69a; font-weight: 600; }
+.log-data { color: #78909c; }
 .log-info { color: #787b86; }
 
 /* ── Self-Healer section ── */

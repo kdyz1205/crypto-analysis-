@@ -1,6 +1,7 @@
 import polars as pl
 import httpx
 import time
+import numpy as np
 from datetime import timezone
 from pathlib import Path
 
@@ -39,11 +40,13 @@ RESAMPLE_MAP = {
 }
 
 # How many days of base data to download per interval
+# Maximized: fetch as much history as OKX provides (~2000 candles per timeframe)
 DOWNLOAD_DAYS = {
-    "5m": 7,
-    "1h": 60,
-    "4h": 120,
-    "1d": 365,
+    "5m": 7,       # 5m × 2000 = ~7 days
+    "15m": 21,     # 15m × 2000 = ~21 days
+    "1h": 90,      # 1h × 2000 = ~83 days
+    "4h": 365,     # 4h × 2000 = ~333 days → fetch 1 year
+    "1d": 365 * 5, # 1d × 2000 = ~5.5 years → fetch max
 }
 
 # Interval durations in milliseconds (for staleness / gap detection)
@@ -870,6 +873,7 @@ async def get_ohlcv(
     # Convert to lightweight-charts format
     candles = []
     volume = []
+    timestamps = []
     for row in df.iter_rows(named=True):
         ts = int(row["open_time"].timestamp())
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
@@ -877,8 +881,34 @@ async def get_ohlcv(
         candles.append({"time": ts, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a80" if c >= o else "#ef535080"
         volume.append({"time": ts, "value": v, "color": color})
+        timestamps.append(ts)
 
-    result = {"candles": candles, "volume": volume}
+    # Compute V6 MA overlays
+    from .backtest_service import _sma, _ema, _bb_upper
+    from .agent_brain import _bb_lower
+    close_arr = np.array([c["close"] for c in candles], dtype=float)
+    overlays = {}
+    if len(close_arr) >= 55:
+        ma5 = _sma(close_arr, 5)
+        ma8 = _sma(close_arr, 8)
+        ema21 = _ema(close_arr, 21)
+        ma55 = _sma(close_arr, 55)
+        bb_up = _bb_upper(close_arr, 21, 2.5)
+        bb_lo = _bb_lower(close_arr, 21, 2.5)
+
+        def _to_line(arr, ts_list):
+            return [{"time": t, "value": round(float(v), 6)} for t, v in zip(ts_list, arr) if not np.isnan(v)]
+
+        overlays = {
+            "ma5": _to_line(ma5, timestamps),
+            "ma8": _to_line(ma8, timestamps),
+            "ema21": _to_line(ema21, timestamps),
+            "ma55": _to_line(ma55, timestamps),
+            "bb_upper": _to_line(bb_up, timestamps),
+            "bb_lower": _to_line(bb_lo, timestamps),
+        }
+
+    result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
     return result

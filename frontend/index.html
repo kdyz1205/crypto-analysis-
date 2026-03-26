@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=10">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -42,9 +42,7 @@
             <button class="tf-btn" data-tf="1d">1D</button>
         </div>
         <div id="view-tabs">
-            <button type="button" id="tab-recognizing" class="view-tab">Recognizing</button>
             <button type="button" id="tab-draw" class="view-tab">Draw</button>
-            <button type="button" id="tab-assist" class="view-tab">Assist</button>
             <button type="button" id="tab-agent" class="view-tab">Agent</button>
             <button type="button" id="tab-chat" class="view-tab chat-tab">AI Chat</button>
         </div>
@@ -68,6 +66,9 @@
                 <option value="15">15</option>
             </select>
         </div>
+
+        <!-- MA Overlay toggle -->
+        <button type="button" id="ma-toggle-btn" class="backtest-btn" onclick="toggleMAOverlays()" style="background:#333;color:#ffeb3b;border:1px solid #ffeb3b55;">MA ✓</button>
 
         <!-- Backtest & Optimize -->
         <button type="button" id="backtest-btn" class="backtest-btn">Backtest</button>
@@ -101,7 +102,7 @@
                 <button type="button" id="draw-clear" class="draw-btn draw-clear" title="清除手绘">清除</button>
                 <span class="toolbar-hint">趋势线：点两点；水平线：点一下</span>
             </div>
-            <div id="pattern-stats-panel" class="pattern-stats-panel">
+            <div id="pattern-stats-panel" class="pattern-stats-panel" style="display:none;">
                 <div class="pattern-stats-title">形态统计</div>
                 <div id="pattern-stats-content">—</div>
                 <div id="pattern-stats-selected" class="pattern-stats-selected hidden">点击支撑/阻力线查看该线历史表现</div>
@@ -148,6 +149,7 @@
 
     <!-- OHLC legend overlay -->
     <div id="ohlc-legend"></div>
+    <div id="ma-legend" style="position:absolute;top:48px;left:12px;z-index:10;font-size:11px;pointer-events:none;line-height:1.4;"></div>
 
     <!-- Trend indicator (upper right) -->
     <div id="trend-indicator" class="hidden"></div>
@@ -256,7 +258,7 @@
                 <div id="agent-recent-trades" class="agent-table-wrap">None</div>
             </div>
             <div class="agent-section">
-                <h4>Current Signals</h4>
+                <h4>Current Signals <button id="scan-now-btn" style="margin-left:8px;padding:2px 10px;background:#2962ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Scan Now</button></h4>
                 <div id="agent-signals" class="agent-table-wrap">Waiting...</div>
             </div>
             <div class="agent-section config-section">
@@ -348,6 +350,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=8"></script>
+    <script src="app.js?v=10"></script>
 </body>
 </html>
