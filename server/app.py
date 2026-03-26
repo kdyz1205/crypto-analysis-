@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
+import csv
 
 
 # ── Centralized Log Buffer ────────────────────────────────────────────────────
@@ -178,12 +179,31 @@ def _symbols_from_data_folder() -> list[str]:
     return sorted(symbols)
 
 
+def _symbols_from_ticker_info_csv() -> list[str]:
+    """Fallback: parse symbols from binance_futures_ticker_info.csv when exchange API is unavailable."""
+    path = PROJECT_ROOT / "binance_futures_ticker_info.csv"
+    if not path.exists():
+        return []
+    out = set()
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                sym = (row.get("symbol") or row.get("Symbol") or row.get("ticker") or row.get("Ticker") or "").strip().upper()
+                if sym and sym.endswith("USDT"):
+                    out.add(sym)
+    except Exception:
+        return []
+    return sorted(out)
+
+
 @app.get("/api/symbols")
-async def get_symbols():
+async def get_symbols(include_extended: bool = Query(False, description="Include extended fallback universe from ticker info CSV")):
     """Return all available ticker symbols: API + symbols from data/*.csv."""
     from .data_service import EXCHANGE
 
     from_data = _symbols_from_data_folder()
+    from_info_csv = _symbols_from_ticker_info_csv() if include_extended else []
 
     if EXCHANGE.lower() == "okx":
         try:
@@ -196,16 +216,25 @@ async def get_symbols():
             print(f"Warning: Failed to load OKX symbols: {e}")
             api_symbols = []
         # Merge API + local CSV symbols so OKX_*.csv coins appear without API
-        combined = sorted(set(api_symbols) | set(s.upper() for s in from_data))
-        return combined if combined else (from_data or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
+        combined = sorted(set(api_symbols) | set(s.upper() for s in from_data) | set(from_info_csv))
+        # If regular sources are empty, fallback to extended universe automatically.
+        if not combined and not include_extended:
+            fallback = _symbols_from_ticker_info_csv()
+            if fallback:
+                return fallback
+        return combined if combined else (from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
     else:
         try:
             file_symbols = load_symbols()
-            combined = sorted(set(file_symbols or []) | set(s.upper() for s in from_data))
-            return combined if combined else (from_data or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
+            combined = sorted(set(file_symbols or []) | set(s.upper() for s in from_data) | set(from_info_csv))
+            if not combined and not include_extended:
+                fallback = _symbols_from_ticker_info_csv()
+                if fallback:
+                    return fallback
+            return combined if combined else (from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
         except Exception as e:
             print(f"Warning: Failed to load symbols: {e}")
-            return from_data or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT']
+            return from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT']
 
 
 @app.get("/api/symbol-info")
