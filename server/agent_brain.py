@@ -371,21 +371,27 @@ class AgentBrain:
         await self.trader.update_positions()
         await self.manage_positions()
 
-        for symbol in WATCH_SYMBOLS:
-            if symbol in self.trader.state.positions:
-                continue
+        # Check consecutive losses — pause after 3 consecutive losses
+        recent = self.trader.state.trade_history[-3:]
+        if len(recent) >= 3 and all(t.pnl_usd < 0 for t in recent):
+            print(f"[Agent] 3 consecutive losses — pausing new entries until a win")
+        else:
+            for symbol in WATCH_SYMBOLS:
+                if symbol in self.trader.state.positions:
+                    continue
 
-            signal = await self.generate_signal(symbol)
-            if signal is None or signal.get("action") not in ("long", "short"):
-                continue
+                signal = await self.generate_signal(symbol)
+                if signal is None or signal.get("action") not in ("long", "short"):
+                    self._last_signals[symbol] = signal  # store for UI even if no action
+                    continue
 
-            if signal["confidence"] >= 0.6:
-                size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
-                result = await self.trader.open_position(symbol, signal["action"], size)
-                if result["ok"]:
-                    print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
-                    self._last_signals[symbol] = signal
-                    self._save_state()
+                if signal["confidence"] >= 0.8:
+                    size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
+                    result = await self.trader.open_position(symbol, signal["action"], size)
+                    if result["ok"]:
+                        print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
+                        self._last_signals[symbol] = signal
+                        self._save_state()
 
         if (self.trader.state.total_trades > 0 and
                 self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0):

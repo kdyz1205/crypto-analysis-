@@ -1998,7 +1998,30 @@ async function refreshAgentStatus() {
         if (!res.ok) return;
         const d = await res.json();
         const $ = id => document.getElementById(id);
-        $('agent-mode').textContent = (d.mode || '—').toUpperCase();
+        const mode = (d.mode || 'paper').toLowerCase();
+        $('agent-mode').textContent = mode.toUpperCase();
+
+        // Update prominent mode banner
+        const banner = $('mode-banner');
+        const bannerText = $('mode-banner-text');
+        const paperBtn = $('mode-switch-paper');
+        const liveBtn = $('mode-switch-live');
+        if (banner && bannerText) {
+            if (mode === 'live') {
+                banner.style.background = '#b71c1c';
+                banner.style.color = '#fff';
+                bannerText.textContent = '🔴 LIVE TRADING — Real Money';
+                if (paperBtn) { paperBtn.style.background = '#333'; paperBtn.style.color = '#aaa'; }
+                if (liveBtn) { liveBtn.style.background = '#ef5350'; liveBtn.style.color = '#fff'; }
+            } else {
+                banner.style.background = '#1b5e20';
+                banner.style.color = '#fff';
+                bannerText.textContent = '📄 PAPER MODE — Simulated';
+                if (paperBtn) { paperBtn.style.background = '#26a69a'; paperBtn.style.color = '#fff'; }
+                if (liveBtn) { liveBtn.style.background = '#333'; liveBtn.style.color = '#aaa'; }
+            }
+        }
+
         const statusEl = $('agent-status');
         if (d.running) {
             statusEl.textContent = 'RUNNING';
@@ -2186,6 +2209,21 @@ document.getElementById('agent-stop-btn')?.addEventListener('click', async () =>
 });
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
     await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
+    refreshAgentStatus();
+});
+
+// Mode switch buttons
+document.getElementById('mode-switch-paper')?.addEventListener('click', async () => {
+    await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'paper' }) });
+    refreshAgentStatus();
+});
+document.getElementById('mode-switch-live')?.addEventListener('click', async () => {
+    if (!confirm('Switch to LIVE trading? This will use real money via OKX API.\n\nMake sure your API keys are configured.')) return;
+    const resp = await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'live' }) });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert('Cannot switch to live: ' + (data.reason || 'Unknown error'));
+    }
     refreshAgentStatus();
 });
 

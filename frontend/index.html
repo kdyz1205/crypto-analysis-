@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=10">
+    <link rel="stylesheet" href="style.css?v=11">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -278,6 +278,14 @@
             <button type="button" id="agent-close">&times;</button>
         </div>
         <div class="agent-body">
+            <!-- Prominent trading mode banner -->
+            <div id="mode-banner" style="padding:10px 16px;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:14px;">
+                <span id="mode-banner-text">PAPER MODE</span>
+                <div style="display:flex;gap:6px;">
+                    <button id="mode-switch-paper" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Paper</button>
+                    <button id="mode-switch-live" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Go Live</button>
+                </div>
+            </div>
             <div class="agent-stats">
                 <div class="agent-stat">
                     <span class="agent-stat-label">Mode</span>
@@ -417,6 +425,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=11"></script>
 </body>
 </html>
