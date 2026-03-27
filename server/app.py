@@ -955,9 +955,13 @@ async def api_agent_strategy_config(req: StrategyConfigRequest):
 
 
 @app.post("/api/agent/strategy-params")
-async def api_agent_strategy_params(req: dict = {}):
+async def api_agent_strategy_params(request: Request):
     """Update V6 strategy parameters. Accepts partial dict of param key:value."""
     agent = get_agent()
+    try:
+        req = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON body"}
     params = agent.trader.state.strategy_params
     changes = []
     valid_keys = set(params.keys())
