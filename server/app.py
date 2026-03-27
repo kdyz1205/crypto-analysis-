@@ -1031,6 +1031,13 @@ async def api_agent_audit_log(limit: int = Query(50, ge=1, le=500)):
         return {"entries": []}
 
 
+@app.get("/api/agent/lessons")
+async def api_agent_lessons():
+    """Get the agent's lessons ledger (举一反三 insights)."""
+    agent = get_agent()
+    return agent.lessons.get_summary()
+
+
 @app.get("/api/top-volume")
 async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     """Get top N symbols by 24h trading volume."""

@@ -2053,6 +2053,32 @@ async function refreshAgentStatus() {
             dailyEl.className = `agent-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
         } else { dailyEl.textContent = '—'; }
 
+        // Harness: regime, cycle, phase, lessons
+        if (d.harness) {
+            const h = d.harness;
+            const regimeEl = $('agent-regime');
+            if (regimeEl) {
+                regimeEl.textContent = (h.market_regime || 'unknown').toUpperCase();
+                regimeEl.className = `agent-stat-value regime-badge regime-${h.market_regime || 'unknown'}`;
+            }
+            const cycleEl = $('agent-cycle');
+            if (cycleEl) cycleEl.textContent = h.cycle || 0;
+            const phaseEl = $('agent-phase');
+            if (phaseEl) phaseEl.textContent = (d.cycle_phase || 'idle').toUpperCase();
+
+            // Lessons display
+            const lessonsCountEl = $('lessons-count');
+            if (lessonsCountEl) lessonsCountEl.textContent = `${h.total_lessons || 0} lessons`;
+            const lessonsList = $('lessons-list');
+            if (lessonsList && h.recent && h.recent.length > 0) {
+                lessonsList.innerHTML = h.recent.slice().reverse().map(l =>
+                    `<div class="lesson-entry ${l.category}"><strong>[${l.category}]</strong> ${l.lesson} <span style="color:#555;font-size:9px;">${l.symbol}</span></div>`
+                ).join('');
+            } else if (lessonsList && (!h.recent || h.recent.length === 0)) {
+                lessonsList.textContent = 'No lessons yet — agent learns from trades automatically.';
+            }
+        }
+
         // Positions (API returns {symbol: {side, size, entry_price, unrealized_pnl}})
         const posEl = $('agent-positions');
         const posArr = d.positions ? (Array.isArray(d.positions) ? d.positions : Object.values(d.positions)) : [];

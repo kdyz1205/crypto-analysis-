@@ -1,26 +1,24 @@
 """
-Agent Brain — V6 四层过滤趋势跟踪策略 (4-Layer Filtered Trend Following).
+Agent Brain — V6 Self-Evolving Trading Harness with 举一反三 (Learn-by-Analogy).
+
+Closed-loop phases: OBSERVE → LEARN → RESEARCH → REASON → REFINE → ACT → CHECKPOINT → REFLECT
 
 Layers:
 1. Trend ordering: P > MA5 > MA8 > EMA21 > MA55 (long) or mirror (short)
 2. Fanning distance: adjacent MA gaps within thresholds (not too spread)
 3. Slope momentum: all MAs sloping in trend direction
 4. BB position: price < BB_upper (long) or price > BB_lower (short)
-
-Exit:
-- Long SL: price breaks below MA55
-- Long TP: price touches BB_upper
-- Short SL: price breaks above MA55
-- Short TP: price touches BB_lower
+5. Volume confirmation: reject low-volume breakouts
 
 Pre-trade checklist (institutional-grade):
-- Data completeness check
-- Signal validity check
-- Strategy enabled check
-- Risk limits check
-- Cooldown check
-- Duplicate signal suppression
-- Volume confirmation
+- Data completeness, signal validity, strategy enabled
+- Risk limits, SL sanity, duplicate suppression
+- Consecutive loss protection, conflicting position check
+
+举一反三 (Learn-by-Analogy):
+- Lessons learned from one symbol are generalized and applied across all symbols
+- Market regime detection adapts strategy behavior globally
+- Pattern failure recognition persists across cycles
 """
 
 import time
@@ -62,6 +60,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 AGENT_STATE_FILE = PROJECT_ROOT / "agent_state.json"
 EVOLUTION_LOG = PROJECT_ROOT / "evolution_log.tsv"
 TRADE_AUDIT_LOG = PROJECT_ROOT / "trade_audit.jsonl"
+LESSONS_FILE = PROJECT_ROOT / "lessons_ledger.json"
 
 # Symbols to monitor
 WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "HYPEUSDT"]
@@ -74,6 +73,151 @@ MIN_TRADES_FOR_EVAL = 5
 
 # Signal suppression: don't fire same signal within this window (seconds)
 SIGNAL_DEDUP_WINDOW_SEC = 14400  # 4 hours
+
+
+class LessonsLedger:
+    """
+    举一反三 — Learn from one trade/pattern and generalize across all symbols.
+
+    Categories:
+    - regime: market regime observations (trending/ranging/volatile)
+    - pattern: pattern failures or successes
+    - risk: risk management insights
+    - param: parameter optimization insights
+    """
+
+    MAX_LESSONS = 50
+
+    def __init__(self):
+        self.lessons: list[dict] = []
+        self.market_regime: str = "unknown"
+        self.regime_confidence: float = 0.0
+        self.cycle: int = 0
+        self._load()
+
+    def _load(self):
+        if LESSONS_FILE.exists():
+            try:
+                data = json.loads(LESSONS_FILE.read_text(encoding="utf-8"))
+                self.lessons = data.get("lessons", [])
+                self.market_regime = data.get("market_regime", "unknown")
+                self.regime_confidence = data.get("regime_confidence", 0.0)
+                self.cycle = data.get("cycle", 0)
+            except Exception:
+                pass
+
+    def save(self):
+        try:
+            LESSONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            LESSONS_FILE.write_text(json.dumps({
+                "lessons": self.lessons[-self.MAX_LESSONS:],
+                "market_regime": self.market_regime,
+                "regime_confidence": self.regime_confidence,
+                "cycle": self.cycle,
+            }, indent=2, default=str), encoding="utf-8")
+        except Exception as e:
+            print(f"[Lessons] Save failed: {e}")
+
+    def add(self, category: str, lesson: str, symbol: str = "ALL", data: dict | None = None):
+        """Add a lesson. 举一反三: lessons tagged 'ALL' apply to every symbol."""
+        entry = {
+            "cycle": self.cycle,
+            "time": datetime.now(timezone.utc).isoformat(),
+            "category": category,
+            "symbol": symbol,
+            "lesson": lesson,
+            "data": data or {},
+        }
+        self.lessons.append(entry)
+        if len(self.lessons) > self.MAX_LESSONS:
+            self.lessons = self.lessons[-self.MAX_LESSONS:]
+        print(f"[举一反三] {category}: {lesson}")
+
+    def get_applicable(self, symbol: str) -> list[dict]:
+        """Get lessons applicable to a symbol (its own + ALL)."""
+        return [l for l in self.lessons if l["symbol"] in (symbol, "ALL")]
+
+    def has_recent_warning(self, category: str, lookback: int = 5) -> bool:
+        """Check if there's a warning in the last N lessons."""
+        recent = self.lessons[-lookback:] if self.lessons else []
+        return any(l["category"] == category for l in recent)
+
+    def detect_regime(self, close: np.ndarray, atr: np.ndarray) -> str:
+        """Detect market regime from price action."""
+        if len(close) < 60:
+            return "unknown"
+
+        # Trend strength: compare MA20 slope
+        ma20 = _sma(close, 20)
+        ma50 = _sma(close, 50)
+        i = len(close) - 1
+
+        if np.isnan(ma20[i]) or np.isnan(ma50[i]):
+            return "unknown"
+
+        slope_20 = _slope(ma20, 10, i)
+        atr_pct = atr[i] / close[i] * 100 if close[i] > 0 else 0
+
+        if abs(slope_20) > 0.5 and atr_pct < 4.0:
+            regime = "trending"
+            confidence = min(abs(slope_20) / 2.0, 1.0)
+        elif atr_pct > 4.0:
+            regime = "volatile"
+            confidence = min(atr_pct / 8.0, 1.0)
+        elif abs(slope_20) < 0.2:
+            regime = "ranging"
+            confidence = 1.0 - abs(slope_20) / 0.2
+        else:
+            regime = "mixed"
+            confidence = 0.5
+
+        self.market_regime = regime
+        self.regime_confidence = round(confidence, 2)
+        return regime
+
+    def learn_from_trade(self, symbol: str, side: str, pnl_pct: float,
+                         entry_price: float, exit_price: float,
+                         regime: str, vol_regime: str):
+        """举一反三: Learn from a closed trade and generalize the insight."""
+        if pnl_pct > 2.0:
+            self.add("pattern", f"{side} in {regime}/{vol_regime} market yielded +{pnl_pct:.1f}% — favorable setup",
+                     symbol="ALL", data={"regime": regime, "vol": vol_regime, "side": side, "pnl": pnl_pct})
+        elif pnl_pct < -1.5:
+            self.add("risk", f"{side} in {regime}/{vol_regime} lost {pnl_pct:.1f}% — avoid this regime for {side}",
+                     symbol="ALL", data={"regime": regime, "vol": vol_regime, "side": side, "pnl": pnl_pct})
+
+        # Cross-symbol generalization
+        losses_in_regime = [l for l in self.lessons[-20:]
+                           if l["category"] == "risk"
+                           and l.get("data", {}).get("regime") == regime
+                           and l.get("data", {}).get("side") == side]
+        if len(losses_in_regime) >= 3:
+            self.add("regime", f"3+ losses in {regime} market for {side} — consider pausing {side} entries globally",
+                     symbol="ALL", data={"regime": regime, "side": side, "loss_count": len(losses_in_regime)})
+
+    def should_skip_regime(self, side: str) -> bool:
+        """Check if recent lessons warn against trading this side in current regime."""
+        recent_warnings = [l for l in self.lessons[-10:]
+                          if l["category"] == "regime"
+                          and l.get("data", {}).get("side") == side
+                          and l.get("data", {}).get("regime") == self.market_regime]
+        return len(recent_warnings) > 0
+
+    def get_summary(self) -> dict:
+        """Return summary for UI display."""
+        cats = {}
+        for l in self.lessons:
+            c = l["category"]
+            cats[c] = cats.get(c, 0) + 1
+
+        return {
+            "cycle": self.cycle,
+            "total_lessons": len(self.lessons),
+            "by_category": cats,
+            "market_regime": self.market_regime,
+            "regime_confidence": self.regime_confidence,
+            "recent": self.lessons[-5:] if self.lessons else [],
+        }
 
 
 def _audit_log(event: dict):
@@ -152,7 +296,7 @@ class PreTradeChecklist:
 
 
 class AgentBrain:
-    """The autonomous trading agent — V6 strategy with institutional-grade validation."""
+    """Self-evolving trading agent — V6 strategy + 举一反三 lessons + closed-loop harness."""
 
     def __init__(self, trader: OKXTrader | None = None):
         self.trader = trader or OKXTrader()
@@ -160,6 +304,8 @@ class AgentBrain:
         self._task: asyncio.Task | None = None
         self._last_signals: dict[str, dict] = {}
         self._signal_history: list[dict] = []  # all signals for UI review
+        self.lessons = LessonsLedger()
+        self._cycle_phase: str = "idle"  # current harness phase for UI
         self._load_state()
 
     # ── State persistence ─────────────────────────────────────────────────
@@ -231,6 +377,10 @@ class AgentBrain:
         high = df["high"].to_numpy().astype(float)
         low = df["low"].to_numpy().astype(float)
         vol = df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
+
+        # Detect market regime (updates lessons ledger)
+        atr_temp = _atr(high, low, close, 14)
+        self.lessons.detect_regime(close, atr_temp)
 
         # Compute indicators
         ma5 = _sma(close, p["ma5_len"])
@@ -393,14 +543,27 @@ class AgentBrain:
     # ── Position management ───────────────────────────────────────────────
 
     async def manage_positions(self):
-        """Check all open positions for V6 exits."""
+        """Check all open positions for V6 exits. On close, feed lessons ledger."""
         for symbol in list(self.trader.state.positions.keys()):
+            pos = self.trader.state.positions[symbol]
             signal = await self.generate_signal(symbol)
             if signal and signal["action"] == "close":
                 result = await self.trader.close_position(symbol, signal["reason"])
                 if result["ok"]:
                     pnl_pct = result.get('pnl_pct', 0)
                     print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={pnl_pct}%")
+
+                    # 举一反三: Learn from this trade
+                    self.lessons.learn_from_trade(
+                        symbol=symbol,
+                        side=pos.side,
+                        pnl_pct=pnl_pct,
+                        entry_price=pos.entry_price,
+                        exit_price=result.get("price", 0),
+                        regime=self.lessons.market_regime,
+                        vol_regime=signal.get("volatility_regime", "unknown"),
+                    )
+
                     _audit_log({
                         "event": "close_position",
                         "symbol": symbol,
@@ -410,8 +573,10 @@ class AgentBrain:
                         "exit_price": result.get("price", 0),
                         "mode": self.trader.state.mode,
                         "equity_after": self.trader.state.equity,
+                        "market_regime": self.lessons.market_regime,
                     })
                     self._save_state()
+                    self.lessons.save()
 
     # ── Evolution: self-improving V6 params ───────────────────────────────
 
@@ -504,16 +669,30 @@ class AgentBrain:
         if not self.trader.state.is_alive:
             return
 
+        self.lessons.cycle += 1
+        self._cycle_phase = "observe"
+
         self.trader.check_daily_reset()
 
+        # ── PHASE: OBSERVE — update positions ──
         await self.trader.update_positions()
+
+        # ── PHASE: MANAGE — check exits ──
+        self._cycle_phase = "manage"
         await self.manage_positions()
+
+        # ── PHASE: LEARN — extract lessons from recent trades ──
+        self._cycle_phase = "learn"
+        self._learn_from_recent()
 
         # Check consecutive losses — pause after 3 consecutive losses
         recent = self.trader.state.trade_history[-3:]
         if len(recent) >= 3 and all(t.pnl_usd < 0 for t in recent):
             print(f"[Agent] 3 consecutive losses — pausing new entries until a win")
+            self.lessons.add("risk", "3 consecutive losses — auto-paused", symbol="ALL")
         else:
+            # ── PHASE: SCAN — generate signals for all symbols ──
+            self._cycle_phase = "scan"
             for symbol in WATCH_SYMBOLS:
                 if symbol in self.trader.state.positions:
                     continue
@@ -526,8 +705,24 @@ class AgentBrain:
 
                 # Stamp signal with timestamp for dedup tracking
                 signal["_ts"] = time.time()
+                signal["market_regime"] = self.lessons.market_regime
+
+                # ── 举一反三: Check if lessons warn against this regime/side ──
+                if self.lessons.should_skip_regime(signal["action"]):
+                    reason = f"Lessons warn: {signal['action']} risky in {self.lessons.market_regime} regime"
+                    print(f"[Agent] {symbol} 举一反三 BLOCKED: {reason}")
+                    _audit_log({
+                        "event": "signal_blocked_by_lesson",
+                        "symbol": symbol,
+                        "signal": signal.get("action"),
+                        "reason": reason,
+                        "regime": self.lessons.market_regime,
+                    })
+                    self._last_signals[symbol] = {**signal, "blocked": True, "block_reasons": [reason]}
+                    continue
 
                 # ── Pre-trade checklist (institutional-grade) ──
+                self._cycle_phase = "validate"
                 passed, failures = PreTradeChecklist.validate(self, symbol, signal)
 
                 if not passed:
@@ -544,7 +739,8 @@ class AgentBrain:
                     self._last_signals[symbol] = {**signal, "blocked": True, "block_reasons": failures}
                     continue
 
-                # ── Execute trade ──
+                # ── PHASE: ACT — Execute trade ──
+                self._cycle_phase = "execute"
                 size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
                 result = await self.trader.open_position(symbol, signal["action"], size)
                 if result["ok"]:
@@ -560,6 +756,7 @@ class AgentBrain:
                         "sl": signal.get("sl"),
                         "tp": signal.get("tp"),
                         "volatility_regime": signal.get("volatility_regime"),
+                        "market_regime": self.lessons.market_regime,
                         "mode": self.trader.state.mode,
                         "equity_before": self.trader.state.equity + size,
                         "pre_trade_checks": "all_passed",
@@ -581,9 +778,52 @@ class AgentBrain:
                         "signal": signal.get("action"),
                     })
 
+        # ── PHASE: EVOLVE — mutate params if due ──
+        self._cycle_phase = "evolve"
         if (self.trader.state.total_trades > 0 and
                 self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0):
             self.evolve()
+
+        # ── PHASE: CHECKPOINT ──
+        self._cycle_phase = "checkpoint"
+        self.lessons.save()
+        self._cycle_phase = "idle"
+
+    def _learn_from_recent(self):
+        """Extract generalizable lessons from recent trade history."""
+        trades = self.trader.state.trade_history
+        if len(trades) < 5:
+            return
+
+        recent = trades[-10:]
+        wins = sum(1 for t in recent if t.pnl_pct > 0)
+        losses = len(recent) - wins
+        winrate = wins / len(recent) * 100
+
+        # Detect win/loss streaks
+        streak = 0
+        streak_dir = None
+        for t in reversed(recent):
+            if streak_dir is None:
+                streak_dir = "win" if t.pnl_pct > 0 else "loss"
+                streak = 1
+            elif (t.pnl_pct > 0) == (streak_dir == "win"):
+                streak += 1
+            else:
+                break
+
+        if streak >= 4 and streak_dir == "win":
+            self.lessons.add("pattern", f"Win streak {streak} — current params working well, avoid mutation",
+                           symbol="ALL", data={"streak": streak, "winrate": winrate})
+        elif streak >= 3 and streak_dir == "loss":
+            self.lessons.add("risk", f"Loss streak {streak} — consider reducing position size or pausing",
+                           symbol="ALL", data={"streak": streak, "winrate": winrate})
+
+        # Check if recent average PnL is drifting negative
+        avg_pnl = np.mean([t.pnl_pct for t in recent])
+        if avg_pnl < -0.5 and len(recent) >= 8:
+            self.lessons.add("param", f"Avg PnL drifting negative ({avg_pnl:.2f}%) — params may need recalibration",
+                           symbol="ALL")
 
     async def run_loop(self):
         self._running = True
@@ -613,6 +853,7 @@ class AgentBrain:
         return {
             **self.trader.state.to_dict(),
             "running": self._running,
+            "cycle_phase": self._cycle_phase,
             "watch_symbols": WATCH_SYMBOLS,
             "signal_interval": SIGNAL_INTERVAL,
             "tick_interval_sec": TICK_INTERVAL_SEC,
@@ -623,6 +864,7 @@ class AgentBrain:
                     "reason": v.get("reason"),
                     "blocked": v.get("blocked", False),
                     "block_reasons": v.get("block_reasons", []),
+                    "market_regime": v.get("market_regime", ""),
                 }
                 for k, v in self._last_signals.items()
             },
@@ -634,4 +876,5 @@ class AgentBrain:
                 "max_positions": self.trader.risk.max_positions,
                 "cooldown_seconds": self.trader.risk.cooldown_seconds,
             },
+            "harness": self.lessons.get_summary(),
         }
