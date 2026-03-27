@@ -1990,6 +1990,7 @@ function toggleAgentPanel() {
 }
 
 let _agentPollInFlight = false;
+let _lastOKXBalanceFetch = 0;
 async function refreshAgentStatus() {
     if (_agentPollInFlight) return;
     _agentPollInFlight = true;
@@ -1999,61 +2000,121 @@ async function refreshAgentStatus() {
         const d = await res.json();
         const $ = id => document.getElementById(id);
         const mode = (d.mode || 'paper').toLowerCase();
-        $('agent-mode').textContent = mode.toUpperCase();
+        const isLive = mode === 'live';
 
-        // Update prominent mode banner
+        // Hidden compat field
+        const modeEl = $('agent-mode');
+        if (modeEl) modeEl.textContent = mode.toUpperCase();
+
+        // Header mode badge
+        const headerBadge = $('agent-header-mode');
+        if (headerBadge) {
+            headerBadge.textContent = isLive ? 'LIVE' : 'PAPER';
+            headerBadge.classList.toggle('live', isLive);
+        }
+        // Header dot color (green=paper, red=live)
+        const headerDot = document.querySelector('.agent-header-dot');
+        if (headerDot) {
+            headerDot.style.background = isLive ? 'var(--accent-red)' : 'var(--accent-green)';
+            headerDot.style.boxShadow = isLive ? '0 0 8px var(--accent-red)' : '0 0 8px var(--accent-green)';
+        }
+
+        // Mode banner
         const banner = $('mode-banner');
         const bannerText = $('mode-banner-text');
         const paperBtn = $('mode-switch-paper');
         const liveBtn = $('mode-switch-live');
-        if (banner && bannerText) {
-            if (mode === 'live') {
-                banner.style.background = '#b71c1c';
-                banner.style.color = '#fff';
-                bannerText.textContent = '🔴 LIVE TRADING — Real Money';
-                if (paperBtn) { paperBtn.style.background = '#333'; paperBtn.style.color = '#aaa'; }
-                if (liveBtn) { liveBtn.style.background = '#ef5350'; liveBtn.style.color = '#fff'; }
+        if (banner) {
+            banner.classList.toggle('live-mode', isLive);
+        }
+        if (bannerText) {
+            bannerText.textContent = isLive ? 'LIVE TRADING — Real Money' : 'PAPER MODE — Simulated';
+        }
+        if (paperBtn) { paperBtn.classList.toggle('active', !isLive); }
+        if (liveBtn) { liveBtn.classList.toggle('active', isLive); }
+
+        // Status
+        const statusEl = $('agent-status');
+        if (statusEl) {
+            if (d.running) {
+                statusEl.textContent = 'RUNNING';
+                statusEl.className = 'agent-stat-value status-running';
+            } else if (d.emergency_shutdown) {
+                statusEl.textContent = 'SHUTDOWN';
+                statusEl.className = 'agent-stat-value status-shutdown';
             } else {
-                banner.style.background = '#1b5e20';
-                banner.style.color = '#fff';
-                bannerText.textContent = '📄 PAPER MODE — Simulated';
-                if (paperBtn) { paperBtn.style.background = '#26a69a'; paperBtn.style.color = '#fff'; }
-                if (liveBtn) { liveBtn.style.background = '#333'; liveBtn.style.color = '#aaa'; }
+                statusEl.textContent = 'STOPPED';
+                statusEl.className = 'agent-stat-value status-stopped';
             }
         }
 
-        const statusEl = $('agent-status');
-        if (d.running) {
-            statusEl.textContent = 'RUNNING';
-            statusEl.className = 'agent-stat-value status-running';
-        } else if (d.emergency_shutdown) {
-            statusEl.textContent = 'SHUTDOWN';
-            statusEl.className = 'agent-stat-value status-shutdown';
-        } else {
-            statusEl.textContent = 'STOPPED';
-            statusEl.className = 'agent-stat-value status-stopped';
-        }
-        $('agent-gen').textContent = d.generation ?? '—';
-        $('agent-equity').textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
-        $('agent-cash').textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+        // Gen / Cycle combined
+        const genEl = $('agent-gen');
+        const cycle = d.harness?.cycle || 0;
+        if (genEl) genEl.textContent = `${d.generation ?? 0} / ${cycle}`;
+        const cycleEl = $('agent-cycle');
+        if (cycleEl) cycleEl.textContent = cycle;
 
+        // Account hero: Equity — show OKX balance in live mode
+        const equityEl = $('agent-equity');
+        const sourceEl = $('agent-equity-source');
+        if (isLive) {
+            // Fetch OKX balance every 15s max
+            const now = Date.now();
+            if (now - _lastOKXBalanceFetch > 15000) {
+                _lastOKXBalanceFetch = now;
+                try {
+                    const okxRes = await fetch(`${API_BASE}/api/agent/okx-status`);
+                    if (okxRes.ok) {
+                        const okxData = await okxRes.json();
+                        if (okxData.balance?.total_equity != null) {
+                            if (equityEl) equityEl.textContent = `$${okxData.balance.total_equity.toFixed(2)}`;
+                            if (sourceEl) sourceEl.textContent = `OKX Live | USDT: $${(okxData.balance.usdt_available ?? 0).toFixed(2)}`;
+                        } else {
+                            if (equityEl) equityEl.textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
+                            if (sourceEl) sourceEl.textContent = 'OKX Live (balance unavailable)';
+                        }
+                    }
+                } catch (_) {
+                    if (equityEl && d.equity != null) equityEl.textContent = `$${d.equity.toFixed(2)}`;
+                    if (sourceEl) sourceEl.textContent = 'OKX Live (offline)';
+                }
+            }
+        } else {
+            if (equityEl) equityEl.textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
+            if (sourceEl) sourceEl.textContent = 'Paper Account';
+        }
+
+        // Cash
+        const cashEl = $('agent-cash');
+        if (cashEl) cashEl.textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+
+        // Hero PnL
         const pnl = d.total_pnl_usd ?? d.total_pnl;
         const pnlEl = $('agent-pnl');
-        if (pnl != null) {
-            pnlEl.textContent = `$${pnl.toFixed(2)}`;
-            pnlEl.className = `agent-stat-value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
-        } else { pnlEl.textContent = '—'; }
+        if (pnlEl && pnl != null) {
+            const sign = pnl >= 0 ? '+' : '';
+            pnlEl.textContent = `${sign}$${pnl.toFixed(2)}`;
+            pnlEl.className = `hero-stat-value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else if (pnlEl) { pnlEl.textContent = '$0.00'; }
 
-        $('agent-winrate').textContent = d.win_rate != null ? `${d.win_rate.toFixed(1)}%` : '—';
-        $('agent-trades').textContent = d.total_trades ?? '—';
+        // Hero Win Rate
+        const wrEl = $('agent-winrate');
+        if (wrEl) wrEl.textContent = d.win_rate != null ? `${d.win_rate.toFixed(1)}%` : '0.0%';
 
+        // Hero Trades
+        const tradesEl = $('agent-trades');
+        if (tradesEl) tradesEl.textContent = d.total_trades ?? '0';
+
+        // Hero Daily PnL
         const dailyEl = $('agent-daily-pnl');
-        if (d.daily_pnl != null) {
-            dailyEl.textContent = `$${d.daily_pnl.toFixed(2)}`;
-            dailyEl.className = `agent-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
-        } else { dailyEl.textContent = '—'; }
+        if (dailyEl && d.daily_pnl != null) {
+            const sign = d.daily_pnl >= 0 ? '+' : '';
+            dailyEl.textContent = `${sign}$${d.daily_pnl.toFixed(2)}`;
+            dailyEl.className = `hero-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else if (dailyEl) { dailyEl.textContent = '$0.00'; }
 
-        // Harness: regime, cycle, phase, lessons
+        // Harness: regime, phase, lessons
         if (d.harness) {
             const h = d.harness;
             const regimeEl = $('agent-regime');
@@ -2061,8 +2122,6 @@ async function refreshAgentStatus() {
                 regimeEl.textContent = (h.market_regime || 'unknown').toUpperCase();
                 regimeEl.className = `agent-stat-value regime-badge regime-${h.market_regime || 'unknown'}`;
             }
-            const cycleEl = $('agent-cycle');
-            if (cycleEl) cycleEl.textContent = h.cycle || 0;
             const phaseEl = $('agent-phase');
             if (phaseEl) phaseEl.textContent = (d.cycle_phase || 'idle').toUpperCase();
 
@@ -2254,22 +2313,34 @@ async function refreshAgentStatus() {
 // Agent button handlers
 document.getElementById('tab-agent')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-close')?.addEventListener('click', () => toggleAgentPanel());
+
+// Start/Stop/Revive with loading states
 document.getElementById('agent-start-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' });
+    const btn = document.getElementById('agent-start-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Start'; btn.disabled = false; }
     refreshAgentStatus();
 });
 document.getElementById('agent-stop-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' });
+    const btn = document.getElementById('agent-stop-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Stop'; btn.disabled = false; }
     refreshAgentStatus();
 });
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
+    const btn = document.getElementById('agent-revive-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Revive'; btn.disabled = false; }
     refreshAgentStatus();
 });
 
 // Mode switch buttons
 document.getElementById('mode-switch-paper')?.addEventListener('click', async () => {
     await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'paper' }) });
+    _lastOKXBalanceFetch = 0; // force refresh
     refreshAgentStatus();
 });
 document.getElementById('mode-switch-live')?.addEventListener('click', async () => {
@@ -2279,6 +2350,7 @@ document.getElementById('mode-switch-live')?.addEventListener('click', async () 
     if (!data.ok) {
         alert('Cannot switch to live: ' + (data.reason || 'Unknown error'));
     }
+    _lastOKXBalanceFetch = 0; // force refresh
     refreshAgentStatus();
 });
 
@@ -2554,7 +2626,7 @@ function calcPositionSize() {
     if (!out) return;
     // Get equity from agent status display
     const eqEl = document.getElementById('agent-equity');
-    const equity = eqEl ? parseFloat(eqEl.textContent.replace(/[^0-9.]/g, '')) : NaN;
+    const equity = eqEl ? parseFloat(eqEl.textContent.replace(/[^0-9.-]/g, '')) : NaN;
     if (isNaN(entry) || isNaN(stop) || isNaN(riskPct) || entry === stop) {
         out.textContent = 'Position: — | Risk: —';
         return;

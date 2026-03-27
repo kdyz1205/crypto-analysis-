@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=25">
+    <link rel="stylesheet" href="style.css?v=30">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -214,76 +214,88 @@
     <!-- Agent Dashboard (overlay panel) -->
     <div id="agent-panel" class="agent-panel hidden">
         <div class="agent-panel-header">
-            <h3>Agent Dashboard</h3>
+            <div class="agent-header-left">
+                <div class="agent-header-dot"></div>
+                <h3>AGENT</h3>
+                <span id="agent-header-mode" class="agent-header-mode-badge">PAPER</span>
+            </div>
             <div class="agent-controls">
                 <button type="button" id="agent-start-btn" class="agent-btn agent-start">Start</button>
                 <button type="button" id="agent-stop-btn" class="agent-btn agent-stop">Stop</button>
                 <button type="button" id="agent-revive-btn" class="agent-btn agent-revive">Revive</button>
             </div>
-            <button type="button" id="agent-close">&times;</button>
+            <button type="button" id="agent-close" class="agent-close-btn">&times;</button>
         </div>
         <div class="agent-body">
-            <!-- Prominent trading mode banner -->
-            <div id="mode-banner" style="padding:10px 16px;border-radius:6px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:14px;">
-                <span id="mode-banner-text">PAPER MODE</span>
-                <div style="display:flex;gap:6px;">
-                    <button id="mode-switch-paper" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Paper</button>
-                    <button id="mode-switch-live" style="padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">Go Live</button>
+            <!-- Mode switch bar -->
+            <div id="mode-banner" class="mode-banner">
+                <div class="mode-banner-left">
+                    <span id="mode-indicator" class="mode-indicator"></span>
+                    <span id="mode-banner-text" class="mode-banner-label">PAPER MODE</span>
+                </div>
+                <div class="mode-switch-group">
+                    <button id="mode-switch-paper" class="mode-switch-btn mode-btn-paper">Paper</button>
+                    <button id="mode-switch-live" class="mode-switch-btn mode-btn-live">Go Live</button>
                 </div>
             </div>
-            <div class="agent-stats">
-                <div class="agent-stat">
-                    <span class="agent-stat-label">Mode</span>
-                    <span id="agent-mode" class="agent-stat-value">—</span>
+
+            <!-- Account overview — hero section -->
+            <div class="account-hero">
+                <div class="account-hero-main">
+                    <span class="account-hero-label">Total Equity</span>
+                    <span id="agent-equity" class="account-hero-value">$10,000.00</span>
+                    <span id="agent-equity-source" class="account-hero-source">Paper Account</span>
                 </div>
+                <div class="account-hero-secondary">
+                    <div class="hero-stat">
+                        <span class="hero-stat-label">PnL</span>
+                        <span id="agent-pnl" class="hero-stat-value">$0.00</span>
+                    </div>
+                    <div class="hero-stat">
+                        <span class="hero-stat-label">Today</span>
+                        <span id="agent-daily-pnl" class="hero-stat-value">$0.00</span>
+                    </div>
+                    <div class="hero-stat">
+                        <span class="hero-stat-label">Win Rate</span>
+                        <span id="agent-winrate" class="hero-stat-value">0.0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats grid -->
+            <div class="agent-stats">
                 <div class="agent-stat">
                     <span class="agent-stat-label">Status</span>
                     <span id="agent-status" class="agent-stat-value">—</span>
-                </div>
-                <div class="agent-stat">
-                    <span class="agent-stat-label">Generation</span>
-                    <span id="agent-gen" class="agent-stat-value">—</span>
-                </div>
-                <div class="agent-stat">
-                    <span class="agent-stat-label">Equity</span>
-                    <span id="agent-equity" class="agent-stat-value">—</span>
                 </div>
                 <div class="agent-stat">
                     <span class="agent-stat-label">Cash</span>
                     <span id="agent-cash" class="agent-stat-value">—</span>
                 </div>
                 <div class="agent-stat">
-                    <span class="agent-stat-label">Total PnL</span>
-                    <span id="agent-pnl" class="agent-stat-value">—</span>
-                </div>
-                <div class="agent-stat">
-                    <span class="agent-stat-label">Win Rate</span>
-                    <span id="agent-winrate" class="agent-stat-value">—</span>
-                </div>
-                <div class="agent-stat">
                     <span class="agent-stat-label">Trades</span>
                     <span id="agent-trades" class="agent-stat-value">—</span>
-                </div>
-                <div class="agent-stat">
-                    <span class="agent-stat-label">Daily PnL</span>
-                    <span id="agent-daily-pnl" class="agent-stat-value">—</span>
                 </div>
                 <div class="agent-stat">
                     <span class="agent-stat-label">Regime</span>
                     <span id="agent-regime" class="agent-stat-value regime-badge">—</span>
                 </div>
                 <div class="agent-stat">
-                    <span class="agent-stat-label">Cycle</span>
-                    <span id="agent-cycle" class="agent-stat-value">—</span>
+                    <span class="agent-stat-label">Gen / Cycle</span>
+                    <span id="agent-gen" class="agent-stat-value">—</span>
                 </div>
                 <div class="agent-stat">
                     <span class="agent-stat-label">Phase</span>
                     <span id="agent-phase" class="agent-stat-value">—</span>
                 </div>
             </div>
+            <!-- hidden fields for JS compat -->
+            <span id="agent-mode" style="display:none">—</span>
+            <span id="agent-cycle" style="display:none">0</span>
+
             <!-- Harness: 举一反三 Lessons -->
             <div class="agent-section harness-section">
-                <h4>举一反三 Lessons <span id="lessons-count" style="font-size:10px;color:#787b86;font-weight:400;">0 lessons</span></h4>
+                <h4>举一反三 Lessons <span id="lessons-count" class="section-badge">0</span></h4>
                 <div id="lessons-list" class="lessons-list">No lessons yet — agent learns from trades automatically.</div>
             </div>
             <div class="agent-section">
@@ -295,7 +307,7 @@
                 <div id="agent-recent-trades" class="agent-table-wrap">None</div>
             </div>
             <div class="agent-section">
-                <h4>Current Signals <button id="scan-now-btn" style="margin-left:8px;padding:2px 10px;background:#2962ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Scan Now</button></h4>
+                <h4>Signals <button id="scan-now-btn" class="scan-now-btn">Scan Now</button></h4>
                 <div id="agent-signals" class="agent-table-wrap">Waiting...</div>
             </div>
             <div class="agent-section config-section">
@@ -426,6 +438,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=25"></script>
+    <script src="app.js?v=30"></script>
 </body>
 </html>
