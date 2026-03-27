@@ -274,6 +274,8 @@ class OKXTrader:
         if price is None:
             return {"ok": False, "reason": f"Cannot get price for {symbol}"}
 
+        if pos.entry_price <= 0:
+            return {"ok": False, "reason": f"Invalid entry price for {symbol}"}
         if pos.side == "long":
             pnl_pct = (price - pos.entry_price) / pos.entry_price * 100
         else:
@@ -315,7 +317,7 @@ class OKXTrader:
         """Update unrealized PnL for all positions."""
         for symbol, pos in list(self.state.positions.items()):
             price = await self.get_price(symbol)
-            if price is None:
+            if price is None or pos.entry_price <= 0:
                 continue
             if pos.side == "long":
                 pos.unrealized_pnl = (price - pos.entry_price) / pos.entry_price * 100
@@ -374,13 +376,14 @@ class OKXTrader:
     async def get_account_balance(self) -> dict:
         """Get OKX account balance to verify API keys work."""
         data = await self._okx_request("GET", "/api/v5/account/balance")
-        if data.get("code") == "0" and data.get("data"):
-            details = data["data"][0].get("details", [])
-            usdt = next((d for d in details if d["ccy"] == "USDT"), None)
+        if data.get("code") == "0" and data.get("data") and len(data["data"]) > 0:
+            acct = data["data"][0]
+            details = acct.get("details", [])
+            usdt = next((d for d in details if d.get("ccy") == "USDT"), None)
             return {
                 "ok": True,
-                "total_equity": float(data["data"][0].get("totalEq", 0)),
-                "usdt_available": float(usdt["availBal"]) if usdt else 0,
+                "total_equity": float(acct.get("totalEq", 0)),
+                "usdt_available": float(usdt.get("availBal", 0)) if usdt else 0,
             }
         return {"ok": False, "reason": data.get("msg", "Unknown error")}
 
@@ -393,7 +396,7 @@ class OKXTrader:
                     params={"instType": "SWAP", "instId": inst_id}
                 )
                 data = resp.json()
-            if data.get("code") == "0" and data.get("data"):
+            if data.get("code") == "0" and data.get("data") and len(data["data"]) > 0:
                 return float(data["data"][0].get("ctVal", 1))
         except Exception:
             pass
@@ -407,6 +410,8 @@ class OKXTrader:
         inst_id = self._inst_id(symbol)
         # Calculate contract quantity: sz = number of contracts
         ct_val = await self._get_contract_size(inst_id)
+        if price <= 0 or ct_val <= 0:
+            return {"ok": False, "reason": f"Invalid price ({price}) or contract value ({ct_val})"}
         n_contracts = max(1, int(size_usd / (price * ct_val)))
 
         path = "/api/v5/trade/order"
@@ -420,11 +425,13 @@ class OKXTrader:
         })
 
         data = await self._okx_request("POST", path, body)
-        if data.get("code") == "0" and data.get("data"):
+        if data.get("code") == "0" and data.get("data") and len(data["data"]) > 0:
             ord_id = data["data"][0].get("ordId", "")
             print(f"[OKX LIVE] Order placed: {side} {inst_id} x{n_contracts} ordId={ord_id}")
             return {"ok": True, "orderId": ord_id, "price": price, "contracts": n_contracts}
-        msg = data.get("msg") or (data.get("data", [{}])[0].get("sMsg") if data.get("data") else "Unknown error")
+        msg = data.get("msg", "")
+        if not msg and data.get("data") and len(data["data"]) > 0:
+            msg = data["data"][0].get("sMsg", "Unknown error")
         print(f"[OKX LIVE] Order failed: {msg}")
         return {"ok": False, "reason": msg}
 

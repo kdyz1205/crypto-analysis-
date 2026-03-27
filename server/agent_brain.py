@@ -398,6 +398,8 @@ class AgentBrain:
             return None
 
         price = close[i]
+        if np.isnan(price) or price <= 0:
+            return None
         slope_len = p["slope_len"]
         slope_thresh = p["slope_threshold"]
 
@@ -447,6 +449,8 @@ class AgentBrain:
 
         # ── Layer 2: Fanning distance (MAs not too spread apart) ──
         def pct_dist(a, b):
+            if np.isnan(a) or np.isnan(b):
+                return 999.0  # force fail
             return abs(a - b) / max(abs(b), 1e-10) * 100
 
         dist_5_8 = pct_dist(ma5[i], ma8[i])
