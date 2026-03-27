@@ -131,49 +131,6 @@
                 <div id="pattern-stats-selected" class="pattern-stats-selected hidden">点击支撑/阻力线查看该线历史表现</div>
                 <div id="similar-lines-list" class="similar-lines-list hidden"></div>
             </div>
-            <div id="trader-console" class="trader-console">
-                <div class="pattern-stats-title">Trader Console</div>
-                <div class="console-block">
-                    <div class="console-subtitle">下单前检查清单</div>
-                    <label class="check-row"><input id="check-trend" type="checkbox"> 顺势（高周期同向）</label>
-                    <label class="check-row"><input id="check-level" type="checkbox"> 关键位确认（S/R 或形态）</label>
-                    <label class="check-row"><input id="check-risk" type="checkbox"> 风险参数已定义（止损/仓位）</label>
-                    <div id="check-progress">0/3 complete</div>
-                </div>
-                <div class="console-block">
-                    <div class="console-subtitle">风险面板</div>
-                    <div class="risk-grid">
-                        <input id="risk-balance" type="number" placeholder="账户资金 USDT" min="0" step="0.01">
-                        <input id="risk-percent" type="number" placeholder="单笔风险 %" min="0.1" max="10" step="0.1" value="1">
-                        <input id="risk-entry" type="number" placeholder="入场价" min="0" step="0.0001">
-                        <input id="risk-stop" type="number" placeholder="止损价" min="0" step="0.0001">
-                    </div>
-                    <div id="risk-output">建议仓位：—</div>
-                    <button type="button" id="save-journal" class="draw-btn">保存到交易日志</button>
-                </div>
-                <div class="console-block">
-                    <div class="console-subtitle">AI Trader Coach</div>
-                    <div id="ai-coach-summary">等待数据...</div>
-                    <button type="button" id="ai-refresh" class="draw-btn">刷新 AI 建议</button>
-                </div>
-                <div class="console-block">
-                    <div class="console-subtitle">数据优先级策略</div>
-                    <select id="data-priority-select">
-                        <option value="fast" selected>Fast (更快刷新，较短历史)</option>
-                        <option value="balanced">Balanced (默认)</option>
-                        <option value="deep">Deep (更全历史，较慢)</option>
-                    </select>
-                </div>
-                <div class="console-block">
-                    <div class="console-subtitle">交易日志回放</div>
-                    <div id="journal-list" class="journal-list">暂无记录</div>
-                    <div class="journal-actions">
-                        <button type="button" id="journal-prev" class="draw-btn">上一条</button>
-                        <button type="button" id="journal-next" class="draw-btn">下一条</button>
-                        <button type="button" id="journal-clear" class="draw-btn draw-clear">清空日志</button>
-                    </div>
-                </div>
-            </div>
         </div>
         <div id="chart-wrapper">
             <div id="chart-header">
@@ -395,6 +352,23 @@
                 </div>
                 <button type="button" id="rl-save-btn" class="agent-btn" style="background:#ef5350;border-color:#ef5350;font-size:11px;margin-top:6px;">Save Risk Limits</button>
                 <span id="rl-status-msg" style="font-size:10px;color:#787b86;margin-left:8px;"></span>
+            </div>
+            <div class="agent-section">
+                <h4>Position Sizer</h4>
+                <div class="config-grid">
+                    <div class="config-row"><label>Entry Price</label><input type="number" id="ps-entry" class="config-input" placeholder="Entry" min="0" step="0.0001"></div>
+                    <div class="config-row"><label>Stop Loss</label><input type="number" id="ps-stop" class="config-input" placeholder="Stop" min="0" step="0.0001"></div>
+                    <div class="config-row"><label>Risk %</label><input type="number" id="ps-risk-pct" class="config-input" value="1" min="0.1" max="10" step="0.1"></div>
+                </div>
+                <div id="ps-result" style="font-size:11px;color:#d1d4dc;margin-top:6px;padding:4px 0;">Position: — | Risk: —</div>
+            </div>
+            <div class="agent-section">
+                <h4>Data Priority</h4>
+                <select id="data-priority-select" class="config-select" style="width:100%;">
+                    <option value="fast">Fast (less history, quick load)</option>
+                    <option value="balanced" selected>Balanced</option>
+                    <option value="deep">Deep (full history, slower)</option>
+                </select>
             </div>
             <div class="agent-section">
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
