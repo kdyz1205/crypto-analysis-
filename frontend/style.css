@@ -23,6 +23,8 @@ body {
     height: 44px;
     z-index: 20;
     position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 #toolbar-spacer {
@@ -165,19 +167,22 @@ body {
 
 #view-tabs {
     display: inline-flex;
-    border: 1px solid #363a45;
+    border: 1px solid #2962ff;
     border-radius: 6px;
     overflow: hidden;
     margin-left: 10px;
+    flex-shrink: 0;
 }
 
 .view-tab {
     border: none;
     background: #1e222d;
-    color: #787b86;
-    padding: 6px 10px;
+    color: #d1d4dc;
+    padding: 6px 14px;
     font-size: 12px;
+    font-weight: 600;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .view-tab + .view-tab {
@@ -185,8 +190,17 @@ body {
 }
 
 .view-tab.active {
-    color: #d1d4dc;
-    background: #2a2e39;
+    color: #fff;
+    background: #2962ff;
+}
+
+#tab-agent {
+    color: #26a69a;
+    font-weight: 700;
+}
+#tab-agent.active {
+    color: #fff;
+    background: #26a69a;
 }
 
 .tf-btn {
