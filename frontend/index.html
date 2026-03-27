@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#131722">
     <title>Crypto TA</title>
-    <link rel="stylesheet" href="style.css?v=20">
+    <link rel="stylesheet" href="style.css?v=25">
     <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -48,18 +48,6 @@
         </div>
 
         <div id="toolbar-spacer"></div>
-        <div id="quick-command-wrap">
-            <input id="quick-command" type="text" placeholder="Quick command: btc 5m assist / swing / replay on" autocomplete="off" spellcheck="false">
-        </div>
-        <div id="layout-presets">
-            <span class="control-label">Layout</span>
-            <select id="layout-select">
-                <option value="manual" selected>Manual</option>
-                <option value="scalper">Scalper</option>
-                <option value="swing">Swing</option>
-                <option value="position">Position</option>
-            </select>
-        </div>
 
         <!-- S/R toggle -->
         <label id="sr-label">
@@ -380,14 +368,6 @@
                 <div id="ps-result" style="font-size:11px;color:#d1d4dc;margin-top:6px;padding:4px 0;">Position: — | Risk: —</div>
             </div>
             <div class="agent-section">
-                <h4>Data Priority</h4>
-                <select id="data-priority-select" class="config-select" style="width:100%;">
-                    <option value="fast">Fast (less history, quick load)</option>
-                    <option value="balanced" selected>Balanced</option>
-                    <option value="deep">Deep (full history, slower)</option>
-                </select>
-            </div>
-            <div class="agent-section">
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
                 <div id="agent-params" class="agent-params-grid">—</div>
             </div>
@@ -405,33 +385,37 @@
                 <span id="preset-status-msg" style="font-size:10px;color:#787b86;"></span>
             </div>
             <div class="agent-section okx-section">
-                <h4>OKX Trading <span id="okx-status-badge" class="healer-badge">—</span></h4>
-                <div class="okx-config">
-                    <div id="okx-balance-info" style="font-size:11px;color:#787b86;margin-bottom:6px;"></div>
-                    <input type="text" id="okx-api-key" placeholder="API Key" class="okx-input" autocomplete="off">
-                    <input type="password" id="okx-secret" placeholder="Secret Key" class="okx-input" autocomplete="off">
-                    <input type="password" id="okx-passphrase" placeholder="Passphrase" class="okx-input" autocomplete="off">
-                    <div class="okx-btn-row">
-                        <button type="button" id="okx-save-keys-btn" class="agent-btn" style="background:#2962ff;border-color:#2962ff;font-size:11px;">Save & Verify</button>
-                        <button type="button" id="okx-go-live-btn" class="agent-btn" style="background:#ef5350;border-color:#ef5350;font-size:11px;" disabled>Go Live</button>
-                        <button type="button" id="okx-go-paper-btn" class="agent-btn" style="background:#26a69a;border-color:#26a69a;font-size:11px;">Paper Mode</button>
+                <h4 class="collapsible-header" data-target="okx-config-body">OKX API Keys <span id="okx-status-badge" class="healer-badge">—</span> <span class="collapse-arrow">▶</span></h4>
+                <div id="okx-config-body" class="collapsible-body" style="display:none;">
+                    <div class="okx-config">
+                        <div id="okx-balance-info" style="font-size:11px;color:#787b86;margin-bottom:6px;"></div>
+                        <input type="text" id="okx-api-key" placeholder="API Key" class="okx-input" autocomplete="off">
+                        <input type="password" id="okx-secret" placeholder="Secret Key" class="okx-input" autocomplete="off">
+                        <input type="password" id="okx-passphrase" placeholder="Passphrase" class="okx-input" autocomplete="off">
+                        <div class="okx-btn-row">
+                            <button type="button" id="okx-save-keys-btn" class="agent-btn" style="background:#2962ff;border-color:#2962ff;font-size:11px;">Save & Verify</button>
+                        </div>
+                        <div id="okx-status-msg" style="font-size:10px;color:#787b86;margin-top:4px;"></div>
                     </div>
-                    <div id="okx-status-msg" style="font-size:10px;color:#787b86;margin-top:4px;"></div>
                 </div>
             </div>
             <div class="agent-section">
-                <h4>Agent Logs</h4>
-                <div id="agent-logs" class="agent-logs-wrap"></div>
+                <h4 class="collapsible-header" data-target="agent-logs-body">Agent Logs <span class="collapse-arrow">▶</span></h4>
+                <div id="agent-logs-body" class="collapsible-body" style="display:none;">
+                    <div id="agent-logs" class="agent-logs-wrap"></div>
+                </div>
             </div>
             <div class="agent-section healer-section">
-                <h4>Self-Healer <span id="healer-status-badge" class="healer-badge">—</span></h4>
-                <div class="healer-stats">
-                    <span class="healer-stat">Fixes: <strong id="healer-fix-count">0</strong></span>
-                    <span class="healer-stat">AI: <strong id="healer-ai-status">—</strong></span>
-                </div>
-                <div id="healer-recent-errors" class="agent-table-wrap" style="font-size:10px;max-height:80px;white-space:pre-wrap;color:#787b86;"></div>
-                <div class="healer-controls">
-                    <button type="button" id="healer-trigger-btn" class="agent-btn" style="background:#7e57c2;border-color:#7e57c2;font-size:11px;">Force Heal</button>
+                <h4 class="collapsible-header" data-target="healer-body">Self-Healer <span id="healer-status-badge" class="healer-badge">—</span> <span class="collapse-arrow">▶</span></h4>
+                <div id="healer-body" class="collapsible-body" style="display:none;">
+                    <div class="healer-stats">
+                        <span class="healer-stat">Fixes: <strong id="healer-fix-count">0</strong></span>
+                        <span class="healer-stat">AI: <strong id="healer-ai-status">—</strong></span>
+                    </div>
+                    <div id="healer-recent-errors" class="agent-table-wrap" style="font-size:10px;max-height:80px;white-space:pre-wrap;color:#787b86;"></div>
+                    <div class="healer-controls">
+                        <button type="button" id="healer-trigger-btn" class="agent-btn" style="background:#7e57c2;border-color:#7e57c2;font-size:11px;">Force Heal</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -442,6 +426,6 @@
         // To configure: set window.__API_BASE before app.js loads
         // e.g. window.__API_BASE = 'https://your-app.railway.app';
     </script>
-    <script src="app.js?v=20"></script>
+    <script src="app.js?v=25"></script>
 </body>
 </html>

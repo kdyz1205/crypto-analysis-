@@ -1003,6 +1003,28 @@ body {
 /* ── Utility ── */
 .hidden { display: none !important; }
 
+/* ── Collapsible sections ── */
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.collapsible-header:hover {
+    color: var(--accent-blue);
+}
+.collapse-arrow {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+    margin-left: auto;
+}
+.collapsible-body {
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+}
+
 /* ── Responsive ── */
 @media (max-width: 1200px) {
     .agent-panel, .chat-panel { width: 380px; }

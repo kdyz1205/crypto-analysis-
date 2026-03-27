@@ -2118,11 +2118,11 @@ async function refreshAgentStatus() {
             sigEl.textContent = d.running ? 'Scanning...' : 'Agent stopped — no signals';
         }
 
-        // Sync config fields from server state
+        // Sync config fields from server state (skip if user is editing)
         const cfgTf = $('cfg-timeframe');
-        if (cfgTf && d.signal_interval) cfgTf.value = d.signal_interval;
+        if (cfgTf && d.signal_interval && document.activeElement !== cfgTf) cfgTf.value = d.signal_interval;
         const cfgSym = $('cfg-symbols');
-        if (cfgSym && d.watch_symbols) cfgSym.value = d.watch_symbols.join(',');
+        if (cfgSym && d.watch_symbols && document.activeElement !== cfgSym) cfgSym.value = d.watch_symbols.join(',');
 
         // Sync risk limits from server
         if (d.risk_limits) {
@@ -2136,40 +2136,46 @@ async function refreshAgentStatus() {
             rlEl('rl-cooldown', rl.cooldown_seconds);
         }
 
-        // Strategy params (V6) — editable
+        // Strategy params (V6) — editable (only rebuild if user is NOT editing)
         $('agent-params-gen').textContent = d.generation ?? '0';
         const paramsEl = $('agent-params');
-        if (d.strategy_params && typeof d.strategy_params === 'object') {
-            const paramLabels = {
-                'ma5_len': 'MA5', 'ma8_len': 'MA8', 'ema21_len': 'EMA21', 'ma55_len': 'MA55',
-                'bb_length': 'BB Len', 'bb_std_dev': 'BB Std',
-                'dist_ma5_ma8': 'Dist 5-8', 'dist_ma8_ema21': 'Dist 8-21', 'dist_ema21_ma55': 'Dist 21-55',
-                'slope_len': 'Slope Len', 'slope_threshold': 'Slope Thr', 'atr_period': 'ATR',
-            };
-            const paramStep = {
-                'ma5_len': 1, 'ma8_len': 1, 'ema21_len': 1, 'ma55_len': 1,
-                'bb_length': 1, 'bb_std_dev': 0.1,
-                'dist_ma5_ma8': 0.1, 'dist_ma8_ema21': 0.1, 'dist_ema21_ma55': 0.1,
-                'slope_len': 1, 'slope_threshold': 0.01, 'atr_period': 1,
-            };
-            paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) => {
-                const label = paramLabels[k] || k;
-                const val = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
-                const step = paramStep[k] || 0.1;
-                return `<div class="agent-param-item">
-                    <span class="agent-param-key">${label}</span>
-                    <input type="number" class="agent-param-input" data-param="${k}" value="${val}" step="${step}" style="width:60px;background:#252a32;color:#d1d4dc;border:1px solid #363a45;border-radius:3px;text-align:right;font-size:11px;padding:1px 4px;">
-                </div>`;
-            }).join('') + '<button id="save-params-btn" style="margin-top:6px;padding:3px 12px;background:#2962ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Params</button>';
+        const userEditingParams = paramsEl && paramsEl.querySelector('.agent-param-input:focus');
+        if (d.strategy_params && typeof d.strategy_params === 'object' && !userEditingParams) {
+            // Check if params actually changed to avoid unnecessary DOM rebuild
+            const newParamsKey = JSON.stringify(d.strategy_params);
+            if (paramsEl._lastParamsKey !== newParamsKey) {
+                paramsEl._lastParamsKey = newParamsKey;
+                const paramLabels = {
+                    'ma5_len': 'MA5', 'ma8_len': 'MA8', 'ema21_len': 'EMA21', 'ma55_len': 'MA55',
+                    'bb_length': 'BB Len', 'bb_std_dev': 'BB Std',
+                    'dist_ma5_ma8': 'Dist 5-8', 'dist_ma8_ema21': 'Dist 8-21', 'dist_ema21_ma55': 'Dist 21-55',
+                    'slope_len': 'Slope Len', 'slope_threshold': 'Slope Thr', 'atr_period': 'ATR',
+                };
+                const paramStep = {
+                    'ma5_len': 1, 'ma8_len': 1, 'ema21_len': 1, 'ma55_len': 1,
+                    'bb_length': 1, 'bb_std_dev': 0.1,
+                    'dist_ma5_ma8': 0.1, 'dist_ma8_ema21': 0.1, 'dist_ema21_ma55': 0.1,
+                    'slope_len': 1, 'slope_threshold': 0.01, 'atr_period': 1,
+                };
+                paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) => {
+                    const label = paramLabels[k] || k;
+                    const val = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
+                    const step = paramStep[k] || 0.1;
+                    return `<div class="agent-param-item">
+                        <span class="agent-param-key">${label}</span>
+                        <input type="number" class="agent-param-input" data-param="${k}" value="${val}" step="${step}" style="width:60px;background:#252a32;color:#d1d4dc;border:1px solid #363a45;border-radius:3px;text-align:right;font-size:11px;padding:1px 4px;">
+                    </div>`;
+                }).join('') + '<button id="save-params-btn" style="margin-top:6px;padding:3px 12px;background:#2962ff;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Params</button>';
 
-            // Attach save handler
-            setTimeout(() => {
+                // Attach save handler (use event delegation to avoid stale listeners)
                 document.getElementById('save-params-btn')?.addEventListener('click', async () => {
                     const inputs = paramsEl.querySelectorAll('.agent-param-input');
                     const updates = {};
                     inputs.forEach(inp => {
                         updates[inp.dataset.param] = parseFloat(inp.value);
                     });
+                    const btn = document.getElementById('save-params-btn');
+                    if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
                     try {
                         const resp = await fetch(`${API_BASE}/api/agent/strategy-params`, {
                             method: 'POST',
@@ -2177,58 +2183,67 @@ async function refreshAgentStatus() {
                             body: JSON.stringify(updates),
                         });
                         const data = await resp.json();
-                        if (data.ok && data.changes?.length > 0) {
-                            const btn = document.getElementById('save-params-btn');
-                            if (btn) { btn.textContent = 'Saved ✓'; btn.style.background = '#26a69a'; setTimeout(() => { btn.textContent = 'Save Params'; btn.style.background = '#2962ff'; }, 2000); }
+                        if (data.ok) {
+                            if (btn) { btn.textContent = 'Saved ✓'; btn.style.background = '#26a69a'; btn.disabled = false; setTimeout(() => { btn.textContent = 'Save Params'; btn.style.background = '#2962ff'; }, 2000); }
+                            // Force cache invalidation so next poll picks up new values
+                            paramsEl._lastParamsKey = null;
+                        } else {
+                            if (btn) { btn.textContent = 'Failed'; btn.style.background = '#ef5350'; btn.disabled = false; }
                         }
                     } catch (e) {
                         console.error('Save params error:', e);
+                        if (btn) { btn.textContent = 'Error'; btn.style.background = '#ef5350'; btn.disabled = false; }
                     }
                 });
-            }, 50);
+            }
         }
 
-        // Fetch & display logs
-        try {
-            const logRes = await fetch(`${API_BASE}/api/agent/logs?limit=30`);
-            if (logRes.ok) {
-                const logData = await logRes.json();
-                const logEl = $('agent-logs');
-                if (logEl && logData.logs) {
-                    if (logData.logs.length === 0) {
-                        logEl.innerHTML = '<div class="log-line log-info" style="opacity:0.5">Agent not started — click Start to begin V6 strategy</div>';
-                    } else {
-                        logEl.innerHTML = logData.logs.slice(-30).reverse().map(l => {
-                            const msg = l.msg || '';
-                            const cls = msg.includes('Error') || msg.includes('error') || msg.includes('FAIL') || msg.includes('SL:') ? 'log-error' :
-                                        msg.includes('Opened') || msg.includes('TP:') ? 'log-success' :
-                                        msg.includes('[Agent]') ? 'log-agent' :
-                                        msg.includes('[OKX]') ? 'log-okx' :
-                                        msg.includes('[Data]') ? 'log-data' : 'log-info';
-                            // Clean up message for readability
-                            const clean = msg.replace(/^\[Agent\]\s*/, '🤖 ').replace(/^\[OKX\]\s*/, '📡 ').replace(/^\[Data\]\s*/, '📊 ');
-                            return `<div class="log-line ${cls}"><span class="log-time">${l.time}</span> ${clean}</div>`;
-                        }).join('');
+        // Fetch & display logs (only when section is expanded)
+        const logsBody = $('agent-logs-body');
+        if (logsBody && logsBody.style.display !== 'none') {
+            try {
+                const logRes = await fetch(`${API_BASE}/api/agent/logs?limit=30`);
+                if (logRes.ok) {
+                    const logData = await logRes.json();
+                    const logEl = $('agent-logs');
+                    if (logEl && logData.logs) {
+                        if (logData.logs.length === 0) {
+                            logEl.innerHTML = '<div class="log-line log-info" style="opacity:0.5">Agent not started — click Start to begin V6 strategy</div>';
+                        } else {
+                            logEl.innerHTML = logData.logs.slice(-30).reverse().map(l => {
+                                const msg = l.msg || '';
+                                const cls = msg.includes('Error') || msg.includes('error') || msg.includes('FAIL') || msg.includes('SL:') ? 'log-error' :
+                                            msg.includes('Opened') || msg.includes('TP:') ? 'log-success' :
+                                            msg.includes('[Agent]') ? 'log-agent' :
+                                            msg.includes('[OKX]') ? 'log-okx' :
+                                            msg.includes('[Data]') ? 'log-data' : 'log-info';
+                                const clean = msg.replace(/^\[Agent\]\s*/, '🤖 ').replace(/^\[OKX\]\s*/, '📡 ').replace(/^\[Data\]\s*/, '📊 ');
+                                return `<div class="log-line ${cls}"><span class="log-time">${l.time}</span> ${clean}</div>`;
+                            }).join('');
+                        }
+                        logEl.scrollTop = 0;
                     }
-                    logEl.scrollTop = 0;
                 }
-            }
-        } catch (_) {}
+            } catch (_) {}
+        }
 
-        // Self-healer status
-        try {
-            const hr = await fetch(`${API_BASE}/api/healer/status`);
-            if (hr.ok) {
-                const hd = await hr.json();
-                const badge = $('healer-status-badge');
-                if (badge) { badge.textContent = hd.running ? 'ACTIVE' : 'OFF'; badge.className = `healer-badge${hd.running ? '' : ' inactive'}`; }
-                const fc = $('healer-fix-count'); if (fc) fc.textContent = hd.fix_count ?? 0;
-                const ai = $('healer-ai-status');
-                if (ai) { ai.textContent = hd.has_ai ? 'ON' : 'NO KEY'; ai.style.color = hd.has_ai ? '#26a69a' : '#ef5350'; }
-                const errEl = $('healer-recent-errors');
-                if (errEl) errEl.textContent = (hd.recent_errors || '(no errors)').slice(-400);
-            }
-        } catch (_) {}
+        // Self-healer status (only when section is expanded)
+        const healerBody = $('healer-body');
+        if (healerBody && healerBody.style.display !== 'none') {
+            try {
+                const hr = await fetch(`${API_BASE}/api/healer/status`);
+                if (hr.ok) {
+                    const hd = await hr.json();
+                    const badge = $('healer-status-badge');
+                    if (badge) { badge.textContent = hd.running ? 'ACTIVE' : 'OFF'; badge.className = `healer-badge${hd.running ? '' : ' inactive'}`; }
+                    const fc = $('healer-fix-count'); if (fc) fc.textContent = hd.fix_count ?? 0;
+                    const ai = $('healer-ai-status');
+                    if (ai) { ai.textContent = hd.has_ai ? 'ON' : 'NO KEY'; ai.style.color = hd.has_ai ? '#26a69a' : '#ef5350'; }
+                    const errEl = $('healer-recent-errors');
+                    if (errEl) errEl.textContent = (hd.recent_errors || '(no errors)').slice(-400);
+                }
+            } catch (_) {}
+        }
     } catch (e) {
         console.warn('Agent status fetch failed:', e);
     } finally {
@@ -2327,25 +2342,7 @@ document.getElementById('okx-save-keys-btn')?.addEventListener('click', async ()
     refreshOKXStatus();
 });
 
-document.getElementById('okx-go-live-btn')?.addEventListener('click', async () => {
-    const msgEl = document.getElementById('okx-status-msg');
-    if (msgEl) msgEl.textContent = 'Switching to LIVE mode...';
-    const resp = await fetch(`${API_BASE}/api/agent/config?mode=live`, { method: 'POST' });
-    const data = await resp.json();
-    if (data.ok) {
-        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350;font-weight:bold">LIVE MODE — Real money at risk!</span>';
-    } else {
-        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">' + (data.reason || 'Failed') + '</span>';
-    }
-    refreshAgentStatus();
-});
-
-document.getElementById('okx-go-paper-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/config?mode=paper`, { method: 'POST' });
-    const msgEl = document.getElementById('okx-status-msg');
-    if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Paper mode (simulated)</span>';
-    refreshAgentStatus();
-});
+// (OKX Go Live / Paper buttons removed — use top mode banner instead)
 
 // ── Strategy Config ──
 // Toggle symbols input visibility based on watch mode
@@ -2433,7 +2430,6 @@ async function refreshOKXStatus() {
         const data = await resp.json();
         const badge = document.getElementById('okx-status-badge');
         const balInfo = document.getElementById('okx-balance-info');
-        const liveBtn = document.getElementById('okx-go-live-btn');
         if (badge) {
             if (data.has_keys && data.balance) {
                 badge.textContent = data.mode === 'live' ? 'LIVE' : 'READY';
@@ -2449,54 +2445,22 @@ async function refreshOKXStatus() {
         if (balInfo && data.balance) {
             balInfo.textContent = 'Equity: $' + (data.balance.total_equity?.toFixed(2) || '—') + ' | USDT: $' + (data.balance.usdt_available?.toFixed(2) || '—');
         }
-        if (liveBtn) liveBtn.disabled = !data.has_keys;
+        // Update agent equity display with real balance in live mode
+        if (data.mode === 'live' && data.balance?.total_equity) {
+            const eqEl = document.getElementById('agent-equity');
+            if (eqEl) eqEl.textContent = `$${data.balance.total_equity.toFixed(2)} (LIVE)`;
+        }
     } catch (_) {}
 }
 
-// ── Data priority selector: reload on change ──
-document.getElementById('data-priority-select')?.addEventListener('change', () => {
-    loadData();
-});
+// (Data priority removed — auto-adaptive)
 
 // ── Refresh button ──
 document.getElementById('data-refresh-btn')?.addEventListener('click', () => {
     loadData();
 });
 
-// ── Quick command ──
-document.getElementById('quick-command')?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    const cmd = e.target.value.trim().toLowerCase();
-    if (!cmd) return;
-    e.target.value = '';
-    // Parse: "btc 5m" → switch to BTCUSDT 5m
-    const parts = cmd.split(/\s+/);
-    if (parts.length >= 1) {
-        let sym = parts[0].toUpperCase();
-        if (!sym.endsWith('USDT')) sym += 'USDT';
-        currentSymbol = sym;
-        document.getElementById('current-ticker')?.replaceChildren(document.createTextNode(formatTicker(sym)));
-    }
-    if (parts.length >= 2 && ['1m','5m','15m','1h','4h','1d'].includes(parts[1])) {
-        currentInterval = parts[1];
-        document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === currentInterval));
-    }
-    if (parts.includes('replay') && parts.includes('on')) {
-        const toggle = document.getElementById('replay-toggle');
-        if (toggle) toggle.checked = true;
-    }
-    loadData();
-});
-
-// ── Layout presets ──
-document.getElementById('layout-select')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    if (val === 'scalper') { currentInterval = '5m'; }
-    else if (val === 'swing') { currentInterval = '4h'; }
-    else if (val === 'position') { currentInterval = '1d'; }
-    document.querySelectorAll('.tf-btn').forEach(b => b.classList.toggle('active', b.dataset.tf === currentInterval));
-    loadData();
-});
+// (Quick command and Layout presets removed — not useful, caused refresh loops)
 
 // ── Strategy presets ──
 document.getElementById('strategy-select')?.addEventListener('change', async (e) => {
@@ -2625,5 +2589,19 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', () => {
         if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
         if (liveUpdateInterval) { clearInterval(liveUpdateInterval); liveUpdateInterval = null; }
+    });
+
+    // ── Collapsible sections ──
+    document.querySelectorAll('.collapsible-header').forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', () => {
+            const targetId = header.dataset.target;
+            const body = document.getElementById(targetId);
+            if (!body) return;
+            const isOpen = body.style.display !== 'none';
+            body.style.display = isOpen ? 'none' : 'block';
+            const arrow = header.querySelector('.collapse-arrow');
+            if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
+        });
     });
 });
