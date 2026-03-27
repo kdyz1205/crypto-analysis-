@@ -391,6 +391,19 @@
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
                 <div id="agent-params" class="agent-params-grid">—</div>
             </div>
+            <div class="agent-section">
+                <h4>Strategy Presets</h4>
+                <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px;">
+                    <select id="preset-select" class="config-select" style="flex:1;"></select>
+                    <button type="button" id="preset-load-btn" class="agent-btn" style="background:#2962ff;border-color:#2962ff;font-size:11px;">Load</button>
+                    <button type="button" id="preset-delete-btn" class="agent-btn" style="background:#ef5350;border-color:#ef5350;font-size:11px;">Del</button>
+                </div>
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <input type="text" id="preset-name-input" class="config-input" placeholder="New preset name..." style="flex:1;">
+                    <button type="button" id="preset-save-btn" class="agent-btn" style="background:#26a69a;border-color:#26a69a;font-size:11px;">Save Current</button>
+                </div>
+                <span id="preset-status-msg" style="font-size:10px;color:#787b86;"></span>
+            </div>
             <div class="agent-section okx-section">
                 <h4>OKX Trading <span id="okx-status-badge" class="healer-badge">—</span></h4>
                 <div class="okx-config">

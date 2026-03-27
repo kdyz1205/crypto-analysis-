@@ -4,7 +4,7 @@ import json
 import logging
 from collections import deque
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -829,19 +829,33 @@ async def api_agent_revive():
 
 @app.post("/api/agent/config")
 async def api_agent_config(
+    request: Request,
     mode: str | None = Query(None, description="paper or live"),
     equity: float | None = Query(None, description="Set paper equity"),
 ):
-    """Update agent config (mode, equity)."""
+    """Update agent config (mode, equity). Accepts both query params and JSON body."""
     agent = get_agent()
-    if mode and mode in ("paper", "live"):
-        if mode == "live" and not agent.trader.has_api_keys():
+    # Also read from JSON body (frontend sends mode as JSON)
+    body_mode, body_equity = None, None
+    try:
+        body = await request.json()
+        body_mode = body.get("mode")
+        body_equity = body.get("equity")
+    except Exception:
+        pass
+
+    final_mode = body_mode or mode
+    final_equity = body_equity or equity
+
+    if final_mode and final_mode in ("paper", "live"):
+        if final_mode == "live" and not agent.trader.has_api_keys():
             return {"ok": False, "reason": "Cannot switch to live: OKX API keys not configured. Set keys first via /api/agent/okx-keys"}
-        agent.trader.state.mode = mode
-    if equity is not None and equity > 0:
-        agent.trader.state.equity = equity
-        agent.trader.state.peak_equity = max(agent.trader.state.peak_equity, equity)
-        agent.trader.state.cash = equity
+        agent.trader.state.mode = final_mode
+        print(f"[Agent] Mode switched to {final_mode.upper()}")
+    if final_equity is not None and final_equity > 0:
+        agent.trader.state.equity = float(final_equity)
+        agent.trader.state.peak_equity = max(agent.trader.state.peak_equity, float(final_equity))
+        agent.trader.state.cash = float(final_equity)
     agent._save_state()
     return {"ok": True, "state": agent.get_status()}
 
@@ -964,6 +978,97 @@ async def api_agent_strategy_params(req: dict = {}):
         agent._save_state()
         print(f"[Agent] Strategy params updated: {', '.join(changes)}")
     return {"ok": True, "changes": changes, "params": params}
+
+
+# ── Strategy Presets (save/load custom strategies) ────────────────────────────
+
+STRATEGY_PRESETS_FILE = PROJECT_ROOT / "strategy_presets.json"
+
+def _load_presets() -> dict:
+    if STRATEGY_PRESETS_FILE.exists():
+        try:
+            return json.loads(STRATEGY_PRESETS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    # Built-in defaults
+    return {
+        "V6 Default": {
+            "ma5_len": 5, "ma8_len": 8, "ema21_len": 21, "ma55_len": 55,
+            "bb_length": 21, "bb_std_dev": 2.5,
+            "dist_ma5_ma8": 1.5, "dist_ma8_ema21": 2.5, "dist_ema21_ma55": 4.0,
+            "slope_len": 3, "slope_threshold": 0.1, "atr_period": 14,
+        },
+        "Momentum": {
+            "ma5_len": 3, "ma8_len": 6, "ema21_len": 15, "ma55_len": 40,
+            "bb_length": 18, "bb_std_dev": 2.0,
+            "dist_ma5_ma8": 2.0, "dist_ma8_ema21": 3.5, "dist_ema21_ma55": 5.0,
+            "slope_len": 2, "slope_threshold": 0.15, "atr_period": 10,
+        },
+        "Conservative": {
+            "ma5_len": 5, "ma8_len": 10, "ema21_len": 25, "ma55_len": 60,
+            "bb_length": 25, "bb_std_dev": 3.0,
+            "dist_ma5_ma8": 1.0, "dist_ma8_ema21": 2.0, "dist_ema21_ma55": 3.0,
+            "slope_len": 4, "slope_threshold": 0.05, "atr_period": 18,
+        },
+        "Scalper": {
+            "ma5_len": 3, "ma8_len": 5, "ema21_len": 13, "ma55_len": 34,
+            "bb_length": 15, "bb_std_dev": 2.0,
+            "dist_ma5_ma8": 2.5, "dist_ma8_ema21": 4.0, "dist_ema21_ma55": 6.0,
+            "slope_len": 2, "slope_threshold": 0.2, "atr_period": 7,
+        },
+    }
+
+def _save_presets(presets: dict):
+    STRATEGY_PRESETS_FILE.write_text(json.dumps(presets, indent=2), encoding="utf-8")
+
+
+@app.get("/api/agent/strategy-presets")
+async def api_get_presets():
+    """List all saved strategy presets."""
+    return {"presets": _load_presets()}
+
+
+@app.post("/api/agent/strategy-presets/save")
+async def api_save_preset(request: Request):
+    """Save current strategy params as a named preset."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    if not name:
+        return {"ok": False, "reason": "Preset name is required"}
+    agent = get_agent()
+    presets = _load_presets()
+    presets[name] = dict(agent.trader.state.strategy_params)
+    _save_presets(presets)
+    print(f"[Agent] Strategy preset saved: {name}")
+    return {"ok": True, "name": name, "presets": presets}
+
+
+@app.post("/api/agent/strategy-presets/load")
+async def api_load_preset(request: Request):
+    """Load a named preset into the active strategy."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    presets = _load_presets()
+    if name not in presets:
+        return {"ok": False, "reason": f"Preset '{name}' not found"}
+    agent = get_agent()
+    agent.trader.state.strategy_params.update(presets[name])
+    agent._save_state()
+    print(f"[Agent] Loaded strategy preset: {name}")
+    return {"ok": True, "name": name, "params": agent.trader.state.strategy_params}
+
+
+@app.post("/api/agent/strategy-presets/delete")
+async def api_delete_preset(request: Request):
+    """Delete a named preset."""
+    body = await request.json()
+    name = body.get("name", "").strip()
+    presets = _load_presets()
+    if name in presets:
+        del presets[name]
+        _save_presets(presets)
+        return {"ok": True, "name": name}
+    return {"ok": False, "reason": f"Preset '{name}' not found"}
 
 
 class RiskLimitsRequest(BaseModel):

@@ -2515,6 +2515,72 @@ document.getElementById('strategy-select')?.addEventListener('change', async (e)
     } catch (_) {}
 });
 
+// ── Strategy Presets (save/load/delete) ──
+async function loadPresetList() {
+    try {
+        const res = await fetch(`${API_BASE}/api/agent/strategy-presets`);
+        const data = await res.json();
+        const sel = document.getElementById('preset-select');
+        if (!sel || !data.presets) return;
+        sel.innerHTML = Object.keys(data.presets).map(name =>
+            `<option value="${name}">${name}</option>`
+        ).join('');
+    } catch (_) {}
+}
+loadPresetList();
+
+document.getElementById('preset-load-btn')?.addEventListener('click', async () => {
+    const name = document.getElementById('preset-select')?.value;
+    if (!name) return;
+    const msg = document.getElementById('preset-status-msg');
+    try {
+        const res = await fetch(`${API_BASE}/api/agent/strategy-presets/load`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            if (msg) msg.textContent = `Loaded "${name}"`;
+            refreshAgentStatus();
+        } else {
+            if (msg) msg.textContent = data.reason || 'Failed';
+        }
+    } catch (e) { if (msg) msg.textContent = 'Error: ' + e.message; }
+});
+
+document.getElementById('preset-save-btn')?.addEventListener('click', async () => {
+    const nameInput = document.getElementById('preset-name-input');
+    const name = nameInput?.value?.trim();
+    if (!name) { alert('Enter a preset name'); return; }
+    const msg = document.getElementById('preset-status-msg');
+    try {
+        const res = await fetch(`${API_BASE}/api/agent/strategy-presets/save`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            if (msg) msg.textContent = `Saved "${name}"`;
+            nameInput.value = '';
+            loadPresetList();
+        }
+    } catch (e) { if (msg) msg.textContent = 'Error: ' + e.message; }
+});
+
+document.getElementById('preset-delete-btn')?.addEventListener('click', async () => {
+    const name = document.getElementById('preset-select')?.value;
+    if (!name || !confirm(`Delete preset "${name}"?`)) return;
+    const msg = document.getElementById('preset-status-msg');
+    try {
+        await fetch(`${API_BASE}/api/agent/strategy-presets/delete`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name })
+        });
+        if (msg) msg.textContent = `Deleted "${name}"`;
+        loadPresetList();
+    } catch (e) { if (msg) msg.textContent = 'Error: ' + e.message; }
+});
+
 // ── Position Sizer (in Agent Dashboard, uses agent equity) ──
 function calcPositionSize() {
     const entry = parseFloat(document.getElementById('ps-entry')?.value);

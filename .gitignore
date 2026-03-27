@@ -28,6 +28,7 @@ agent_state.json
 evolution_log.tsv
 trade_audit.jsonl
 lessons_ledger.json
+strategy_presets.json
 support_resistance.py
 note*
 data/*.csv
