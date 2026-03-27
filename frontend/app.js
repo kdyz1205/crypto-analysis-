@@ -2081,10 +2081,12 @@ async function refreshAgentStatus() {
         const sigs = d.last_signals || {};
         const sigEntries = Object.entries(sigs).filter(([, v]) => v && v.action);
         if (sigEntries.length > 0) {
-            sigEl.innerHTML = `<table><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Reason</th></tr>` +
+            sigEl.innerHTML = `<table><tr><th>Symbol</th><th>Signal</th><th>Conf</th><th>Status</th><th>Reason</th></tr>` +
                 sigEntries.map(([sym, s]) => {
                     const cls = s.action === 'long' ? 'pnl-positive' : s.action === 'short' ? 'pnl-negative' : '';
-                    return `<tr><td>${sym}</td><td class="${cls}">${(s.action || '—').toUpperCase()}</td><td>${(s.confidence ?? 0).toFixed(2)}</td><td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${s.reason || '—'}</td></tr>`;
+                    const blocked = s.blocked ? '<span style="color:#ef5350;font-weight:600">BLOCKED</span>' : '<span style="color:#26a69a">PASS</span>';
+                    const blockInfo = s.block_reasons?.length ? `<div style="color:#ef5350;font-size:9px;margin-top:2px">${s.block_reasons.join('; ')}</div>` : '';
+                    return `<tr><td>${sym}</td><td class="${cls}">${(s.action || '—').toUpperCase()}</td><td>${(s.confidence ?? 0).toFixed(2)}</td><td>${blocked}</td><td style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${s.reason || '—'}${blockInfo}</td></tr>`;
                 }).join('') + `</table>`;
         } else {
             sigEl.textContent = d.running ? 'Scanning...' : 'Agent stopped — no signals';
@@ -2095,6 +2097,18 @@ async function refreshAgentStatus() {
         if (cfgTf && d.signal_interval) cfgTf.value = d.signal_interval;
         const cfgSym = $('cfg-symbols');
         if (cfgSym && d.watch_symbols) cfgSym.value = d.watch_symbols.join(',');
+
+        // Sync risk limits from server
+        if (d.risk_limits) {
+            const rl = d.risk_limits;
+            const rlEl = (id, val) => { const el = $(id); if (el && !document.activeElement?.id?.startsWith('rl-')) el.value = val; };
+            rlEl('rl-max-pos-pct', (rl.max_position_pct * 100).toFixed(1));
+            rlEl('rl-max-exp-pct', (rl.max_total_exposure_pct * 100).toFixed(0));
+            rlEl('rl-max-daily-loss', (rl.max_daily_loss_pct * 100).toFixed(1));
+            rlEl('rl-max-dd', (rl.max_drawdown_pct * 100).toFixed(0));
+            rlEl('rl-max-positions', rl.max_positions);
+            rlEl('rl-cooldown', rl.cooldown_seconds);
+        }
 
         // Strategy params (V6) — editable
         $('agent-params-gen').textContent = d.generation ?? '0';
@@ -2354,6 +2368,36 @@ document.getElementById('cfg-apply-btn')?.addEventListener('click', async () => 
         if (msgEl) msgEl.innerHTML = `<span style="color:#ef5350">Error: ${e.message}</span>`;
     }
     refreshAgentStatus();
+});
+
+// Risk limits save handler
+document.getElementById('rl-save-btn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('rl-status-msg');
+    const body = {
+        max_position_pct: parseFloat(document.getElementById('rl-max-pos-pct')?.value || '5'),
+        max_total_exposure_pct: parseFloat(document.getElementById('rl-max-exp-pct')?.value || '15'),
+        max_daily_loss_pct: parseFloat(document.getElementById('rl-max-daily-loss')?.value || '2'),
+        max_drawdown_pct: parseFloat(document.getElementById('rl-max-dd')?.value || '5'),
+        max_positions: parseInt(document.getElementById('rl-max-positions')?.value || '3'),
+        cooldown_seconds: parseInt(document.getElementById('rl-cooldown')?.value || '3600'),
+    };
+    try {
+        if (msgEl) msgEl.textContent = 'Saving...';
+        const resp = await fetch(`${API_BASE}/api/agent/risk-limits`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.ok && data.changes?.length > 0) {
+            if (msgEl) msgEl.innerHTML = `<span style="color:#26a69a">Saved: ${data.changes.join(', ')}</span>`;
+            setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
+        } else {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#787b86">No changes</span>';
+        }
+    } catch (e) {
+        if (msgEl) msgEl.innerHTML = `<span style="color:#ef5350">Error: ${e.message}</span>`;
+    }
 });
 
 async function refreshOKXStatus() {

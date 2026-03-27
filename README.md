@@ -33,15 +33,23 @@ TradingView-style crypto technical analysis dashboard with V6 autonomous trading
 - **Backtest** — MFI/MA strategy backtesting with parameter optimization
 
 ### Autonomous Trading Agent (V6 Strategy)
-- **4-layer filtered trend following**:
+- **5-layer filtered trend following**:
   1. Trend ordering (P > MA5 > MA8 > EMA21 > MA55)
   2. Fanning distance (ATR-normalized MA gap thresholds)
   3. Slope momentum (all MAs trending in same direction)
   4. Bollinger Band position filter
+  5. Volume confirmation (reject low-volume breakouts)
+- **Institutional pre-trade checklist** — every trade must pass:
+  - Data completeness, signal validity, stop-loss sanity
+  - Risk limit checks, cooldown, duplicate suppression
+  - Consecutive loss protection (auto-pause after 3+ losses)
 - **Self-evolving** — mutates strategy parameters based on performance metrics
 - **Paper & Live mode** — switch with safety confirmation
 - **OKX live trading** — automated order placement via OKX REST API
-- **Risk management** — max drawdown, position limits, consecutive loss circuit breaker
+- **Configurable risk limits** (editable from UI):
+  - Max position size %, max exposure %, max daily loss %
+  - Max drawdown %, max concurrent positions, cooldown timer
+- **Trade audit log** — every signal, block, open, close logged to `trade_audit.jsonl`
 
 ### Dashboard Panels
 - **Agent Dashboard** — equity, PnL, positions, trades, signals, strategy params

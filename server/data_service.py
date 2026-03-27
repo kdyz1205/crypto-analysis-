@@ -74,7 +74,10 @@ DOWNLOAD_DAYS = {
 
 # Interval durations in milliseconds (for staleness / gap detection)
 INTERVAL_MS = {
+    "1m": 60 * 1000,
+    "3m": 3 * 60 * 1000,
     "5m": 5 * 60 * 1000,
+    "15m": 15 * 60 * 1000,
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "1d": 24 * 60 * 60 * 1000,
@@ -559,85 +562,71 @@ def _get_last_timestamp_ms(df: pl.DataFrame) -> int:
 
 
 async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) -> pl.DataFrame:
-    """Fetch OKX swap candles from start_ms to now for incremental updates."""
+    """Fetch OKX swap candles from start_ms to now for incremental updates.
+    Uses pagination to handle gaps > 200 candles."""
     import pandas as pd
-    
+    import asyncio as _asyncio
+
     swap_symbols = await load_okx_swap_symbols()
     symbol_upper = symbol.upper()
-    
-    # If symbol not found, try constructing instId directly
+
     if symbol_upper not in swap_symbols:
         base = symbol_upper.replace("USDT", "")
         inst_id = f"{base}-USDT-SWAP"
     else:
         inst_id = swap_symbols[symbol_upper]["instId"]
-    
-    # Map interval to OKX bar
-    interval_map = {
-        "5m": "5m",
-        "15m": "15m",
-        "1h": "1H",
-        "4h": "4H",
-        "1d": "1D",
-    }
+
+    interval_map = {"5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D"}
     bar = interval_map.get(interval)
     if bar is None:
         return pl.DataFrame()
-    
-    # OKX accepts after parameter (timestamp in ISO format or ms)
-    # We'll use limit to get recent candles and filter
-    params = {
-        "instId": inst_id,
-        "bar": bar,
-        "limit": "200",  # Get last 200 candles, filter by timestamp
-    }
-    
+
     client = _get_http_client()
-    resp = await client.get(OKX_CANDLES_URL, params=params)
-    data = resp.json()
+    all_records = []
+    after_ts = None
+    max_pages = 20  # Safety limit for incremental updates
 
-    if not isinstance(data, dict) or data.get("code") != "0":
+    for _ in range(max_pages):
+        params = {"instId": inst_id, "bar": bar, "limit": str(OKX_CANDLES_PAGE_LIMIT)}
+        if after_ts is not None:
+            params["after"] = str(after_ts)
+
+        try:
+            resp = await client.get(OKX_CANDLES_URL, params=params)
+            data = resp.json()
+        except Exception:
+            break
+
+        if not isinstance(data, dict) or data.get("code") != "0":
+            break
+
+        rows = data.get("data") or []
+        if not rows:
+            break
+
+        rows_oldest_first = list(reversed(rows))
+        for r in rows_oldest_first:
+            ts_ms = int(r[0])
+            if ts_ms >= start_ms:
+                all_records.append(_okx_rows_to_records([r])[0])
+
+        oldest_ts = int(rows_oldest_first[0][0])
+        if oldest_ts <= start_ms:
+            break  # We've reached or passed our target start
+        after_ts = oldest_ts
+        await _asyncio.sleep(0.06)
+
+    if not all_records:
         return pl.DataFrame()
 
-    rows = data.get("data") or []
-    if not rows:
-        return pl.DataFrame()
-    
-    # OKX returns newest-first; reverse to oldest-first
-    rows = list(reversed(rows))
-    
-    # Filter rows where timestamp >= start_ms
-    filtered_rows = []
-    for r in rows:
-        ts_ms = int(r[0])
-        if ts_ms >= start_ms:
-            filtered_rows.append(r)
-    
-    if not filtered_rows:
-        return pl.DataFrame()
-    
-    # Convert to DataFrame
-    records = []
-    for r in filtered_rows:
-        ts_ms = int(r[0])
-        o = float(r[1])
-        h = float(r[2])
-        l = float(r[3])
-        c = float(r[4])
-        vol = float(r[5])
-        quote_vol = float(r[7]) if len(r) > 7 and r[7] is not None else 0.0
-        records.append([
-            ts_ms, o, h, l, c, vol, ts_ms, quote_vol, 0, 0.0, 0.0, 0,
-        ])
-    
-    pdf = pd.DataFrame(records, columns=CSV_COLUMNS)
+    pdf = pd.DataFrame(all_records, columns=CSV_COLUMNS)
     pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
     pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
     numeric_cols = ["open", "high", "low", "close", "volume"]
     pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=1)
-    
+    pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
+
     result = pl.from_pandas(pdf)
-    # Match schema
     casts = []
     if result["open_time"].dtype == pl.Datetime("ns"):
         casts.append(pl.col("open_time").cast(pl.Datetime("us")))

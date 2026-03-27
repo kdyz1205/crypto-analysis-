@@ -23,12 +23,10 @@ venv/
 .claude/
 
 # Project-specific
-autoresearch/chat_memory/
-autoresearch/agent_state.json
-autoresearch/evolution_log.tsv
-autoresearch/results.tsv
-autoresearch/autoresearch.py
-autoresearch/program.md
+autoresearch/
+agent_state.json
+evolution_log.tsv
+trade_audit.jsonl
 support_resistance.py
 note*
 data/*.csv

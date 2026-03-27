@@ -1,5 +1,6 @@
 import asyncio
 import time
+import json
 import logging
 from collections import deque
 
@@ -965,12 +966,121 @@ async def api_agent_strategy_params(req: dict = {}):
     return {"ok": True, "changes": changes, "params": params}
 
 
+class RiskLimitsRequest(BaseModel):
+    max_position_pct: float | None = None
+    max_total_exposure_pct: float | None = None
+    max_daily_loss_pct: float | None = None
+    max_drawdown_pct: float | None = None
+    max_positions: int | None = None
+    cooldown_seconds: int | None = None
+
+
+@app.post("/api/agent/risk-limits")
+async def api_agent_risk_limits(req: RiskLimitsRequest):
+    """Update risk limits. Values are in percentage (e.g. 5 means 5%)."""
+    agent = get_agent()
+    changes = []
+
+    if req.max_position_pct is not None and 0.5 <= req.max_position_pct <= 25:
+        agent.trader.risk.max_position_pct = req.max_position_pct / 100.0
+        changes.append(f"max_position_pct={req.max_position_pct}%")
+    if req.max_total_exposure_pct is not None and 1 <= req.max_total_exposure_pct <= 100:
+        agent.trader.risk.max_total_exposure_pct = req.max_total_exposure_pct / 100.0
+        changes.append(f"max_total_exposure_pct={req.max_total_exposure_pct}%")
+    if req.max_daily_loss_pct is not None and 0.1 <= req.max_daily_loss_pct <= 20:
+        agent.trader.risk.max_daily_loss_pct = req.max_daily_loss_pct / 100.0
+        changes.append(f"max_daily_loss_pct={req.max_daily_loss_pct}%")
+    if req.max_drawdown_pct is not None and 1 <= req.max_drawdown_pct <= 50:
+        agent.trader.risk.max_drawdown_pct = req.max_drawdown_pct / 100.0
+        changes.append(f"max_drawdown_pct={req.max_drawdown_pct}%")
+    if req.max_positions is not None and 1 <= req.max_positions <= 20:
+        agent.trader.risk.max_positions = req.max_positions
+        changes.append(f"max_positions={req.max_positions}")
+    if req.cooldown_seconds is not None and 0 <= req.cooldown_seconds <= 86400:
+        agent.trader.risk.cooldown_seconds = req.cooldown_seconds
+        changes.append(f"cooldown={req.cooldown_seconds}s")
+
+    if changes:
+        print(f"[Agent] Risk limits updated: {', '.join(changes)}")
+    return {"ok": True, "changes": changes, "risk_limits": {
+        "max_position_pct": agent.trader.risk.max_position_pct * 100,
+        "max_total_exposure_pct": agent.trader.risk.max_total_exposure_pct * 100,
+        "max_daily_loss_pct": agent.trader.risk.max_daily_loss_pct * 100,
+        "max_drawdown_pct": agent.trader.risk.max_drawdown_pct * 100,
+        "max_positions": agent.trader.risk.max_positions,
+        "cooldown_seconds": agent.trader.risk.cooldown_seconds,
+    }}
+
+
+@app.get("/api/agent/audit-log")
+async def api_agent_audit_log(limit: int = Query(50, ge=1, le=500)):
+    """Get recent entries from the trade audit log."""
+    from .agent_brain import TRADE_AUDIT_LOG
+    if not TRADE_AUDIT_LOG.exists():
+        return {"entries": []}
+    try:
+        lines = TRADE_AUDIT_LOG.read_text(encoding="utf-8").strip().split("\n")
+        entries = []
+        for line in lines[-limit:]:
+            try:
+                entries.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        return {"entries": entries}
+    except Exception:
+        return {"entries": []}
+
+
 @app.get("/api/top-volume")
 async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     """Get top N symbols by 24h trading volume."""
     from .data_service import get_top_volume_symbols
     symbols = await get_top_volume_symbols(n)
     return {"symbols": symbols, "count": len(symbols)}
+
+
+@app.get("/api/data-info")
+async def api_data_info(
+    symbol: str = Query(...),
+    interval: str = Query("4h"),
+):
+    """Return data completeness metadata for a symbol/interval."""
+    from .data_service import _find_csv, _load_csv, INTERVAL_MS, DOWNLOAD_DAYS
+    symbol = symbol.upper().replace("/", "")
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+
+    info = {
+        "symbol": symbol,
+        "interval": interval,
+        "has_local_csv": False,
+        "total_bars": 0,
+        "data_start": None,
+        "data_end": None,
+        "coverage_days": 0,
+        "missing_bars_estimate": 0,
+        "max_available_days": DOWNLOAD_DAYS.get(interval, 30),
+    }
+
+    csv_path = _find_csv(symbol, interval)
+    if csv_path:
+        info["has_local_csv"] = True
+        try:
+            df = _load_csv(csv_path)
+            if not df.is_empty():
+                info["total_bars"] = len(df)
+                info["data_start"] = str(df["open_time"].min())
+                info["data_end"] = str(df["open_time"].max())
+                start_ts = df["open_time"].min().timestamp()
+                end_ts = df["open_time"].max().timestamp()
+                info["coverage_days"] = round((end_ts - start_ts) / 86400, 1)
+                interval_sec = INTERVAL_MS.get(interval, 3600000) / 1000
+                expected_bars = int((end_ts - start_ts) / interval_sec) + 1
+                info["missing_bars_estimate"] = max(0, expected_bars - len(df))
+        except Exception as e:
+            info["error"] = str(e)
+
+    return info
 
 
 @app.get("/api/agent/signals")

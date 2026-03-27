@@ -384,6 +384,19 @@
                 <span id="cfg-status-msg" style="font-size:10px;color:#787b86;margin-left:8px;"></span>
             </div>
             <div class="agent-section">
+                <h4>Risk Limits</h4>
+                <div class="config-grid" id="risk-limits-grid">
+                    <div class="config-row"><label>Max Position %</label><input type="number" id="rl-max-pos-pct" class="config-input" value="5" min="0.5" max="25" step="0.5"></div>
+                    <div class="config-row"><label>Max Exposure %</label><input type="number" id="rl-max-exp-pct" class="config-input" value="15" min="1" max="100" step="1"></div>
+                    <div class="config-row"><label>Max Daily Loss %</label><input type="number" id="rl-max-daily-loss" class="config-input" value="2" min="0.1" max="20" step="0.1"></div>
+                    <div class="config-row"><label>Max Drawdown %</label><input type="number" id="rl-max-dd" class="config-input" value="5" min="1" max="50" step="1"></div>
+                    <div class="config-row"><label>Max Positions</label><input type="number" id="rl-max-positions" class="config-input" value="3" min="1" max="20" step="1"></div>
+                    <div class="config-row"><label>Cooldown (sec)</label><input type="number" id="rl-cooldown" class="config-input" value="3600" min="0" max="86400" step="60"></div>
+                </div>
+                <button type="button" id="rl-save-btn" class="agent-btn" style="background:#ef5350;border-color:#ef5350;font-size:11px;margin-top:6px;">Save Risk Limits</button>
+                <span id="rl-status-msg" style="font-size:10px;color:#787b86;margin-left:8px;"></span>
+            </div>
+            <div class="agent-section">
                 <h4>Strategy Params (Gen <span id="agent-params-gen">0</span>)</h4>
                 <div id="agent-params" class="agent-params-grid">—</div>
             </div>

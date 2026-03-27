@@ -12,6 +12,15 @@ Exit:
 - Long TP: price touches BB_upper
 - Short SL: price breaks above MA55
 - Short TP: price touches BB_lower
+
+Pre-trade checklist (institutional-grade):
+- Data completeness check
+- Signal validity check
+- Strategy enabled check
+- Risk limits check
+- Cooldown check
+- Duplicate signal suppression
+- Volume confirmation
 """
 
 import time
@@ -19,6 +28,7 @@ import asyncio
 import random
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 
 import numpy as np
 
@@ -49,8 +59,9 @@ def _slope(arr, length, i):
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-AGENT_STATE_FILE = PROJECT_ROOT / "autoresearch" / "agent_state.json"
-EVOLUTION_LOG = PROJECT_ROOT / "autoresearch" / "evolution_log.tsv"
+AGENT_STATE_FILE = PROJECT_ROOT / "agent_state.json"
+EVOLUTION_LOG = PROJECT_ROOT / "evolution_log.tsv"
+TRADE_AUDIT_LOG = PROJECT_ROOT / "trade_audit.jsonl"
 
 # Symbols to monitor
 WATCH_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "HYPEUSDT"]
@@ -61,15 +72,94 @@ TICK_INTERVAL_SEC = 60
 EVOLVE_EVERY_N_TRADES = 10
 MIN_TRADES_FOR_EVAL = 5
 
+# Signal suppression: don't fire same signal within this window (seconds)
+SIGNAL_DEDUP_WINDOW_SEC = 14400  # 4 hours
+
+
+def _audit_log(event: dict):
+    """Append a structured JSON log entry to the trade audit log."""
+    try:
+        event["timestamp"] = datetime.now(timezone.utc).isoformat()
+        TRADE_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(TRADE_AUDIT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(event, default=str) + "\n")
+    except Exception as e:
+        print(f"[Audit] Log write failed: {e}")
+
+
+class PreTradeChecklist:
+    """Institutional-grade pre-trade validation. Returns (pass, reasons) tuple."""
+
+    @staticmethod
+    def validate(agent, symbol: str, signal: dict) -> tuple[bool, list[str]]:
+        failures = []
+
+        # 1. Data completeness — signal must have required fields
+        required = ["action", "confidence", "reason", "sl", "tp", "price"]
+        for field in required:
+            if field not in signal or signal[field] is None:
+                failures.append(f"Missing field: {field}")
+
+        # 2. Signal validity — confidence threshold
+        if signal.get("confidence", 0) < 0.6:
+            failures.append(f"Low confidence: {signal.get('confidence', 0):.2f} < 0.60")
+
+        # 3. Strategy enabled
+        if not agent.trader.state.is_alive:
+            failures.append(f"Agent shutdown: {agent.trader.state.shutdown_reason}")
+
+        # 4. Risk limits
+        can, reason = agent.trader.can_trade(symbol)
+        if not can:
+            failures.append(f"Risk check failed: {reason}")
+
+        # 5. Stop loss must exist and be reasonable
+        price = signal.get("price", 0)
+        sl = signal.get("sl", 0)
+        if price > 0 and sl > 0:
+            sl_dist_pct = abs(price - sl) / price * 100
+            if sl_dist_pct > 10:
+                failures.append(f"SL too far: {sl_dist_pct:.1f}% (max 10%)")
+            if sl_dist_pct < 0.1:
+                failures.append(f"SL too tight: {sl_dist_pct:.3f}% (min 0.1%)")
+
+        # 6. Duplicate signal suppression
+        last_sig = agent._last_signals.get(symbol)
+        if last_sig and last_sig.get("action") == signal.get("action"):
+            last_time = last_sig.get("_ts", 0)
+            if time.time() - last_time < SIGNAL_DEDUP_WINDOW_SEC:
+                failures.append(f"Duplicate signal suppressed (same {signal['action']} within {SIGNAL_DEDUP_WINDOW_SEC}s)")
+
+        # 7. No conflicting position
+        if symbol in agent.trader.state.positions:
+            pos = agent.trader.state.positions[symbol]
+            if signal.get("action") == pos.side:
+                failures.append(f"Already in {pos.side} position for {symbol}")
+
+        # 8. Consecutive loss protection
+        recent = agent.trader.state.trade_history[-5:]
+        consec_losses = 0
+        for t in reversed(recent):
+            if t.pnl_usd < 0:
+                consec_losses += 1
+            else:
+                break
+        if consec_losses >= 3:
+            failures.append(f"Consecutive loss protection: {consec_losses} losses in a row")
+
+        passed = len(failures) == 0
+        return passed, failures
+
 
 class AgentBrain:
-    """The autonomous trading agent — V6 strategy."""
+    """The autonomous trading agent — V6 strategy with institutional-grade validation."""
 
     def __init__(self, trader: OKXTrader | None = None):
         self.trader = trader or OKXTrader()
         self._running = False
         self._task: asyncio.Task | None = None
         self._last_signals: dict[str, dict] = {}
+        self._signal_history: list[dict] = []  # all signals for UI review
         self._load_state()
 
     # ── State persistence ─────────────────────────────────────────────────
@@ -140,6 +230,7 @@ class AgentBrain:
         close = df["close"].to_numpy().astype(float)
         high = df["high"].to_numpy().astype(float)
         low = df["low"].to_numpy().astype(float)
+        vol = df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
 
         # Compute indicators
         ma5 = _sma(close, p["ma5_len"])
@@ -255,6 +346,17 @@ class AgentBrain:
         if volatility_regime in ("normal", "high"):
             confidence = min(confidence + 0.1, 1.0)
 
+        # ── Layer 5: Volume confirmation ──
+        if vol is not None and len(vol) > 20:
+            vol_ma = np.mean(vol[max(0, i - 20):i]) if i >= 20 else np.mean(vol[:i+1])
+            if vol_ma > 0:
+                vol_ratio = vol[i] / vol_ma
+                if vol_ratio < 0.5:
+                    # Very low volume — likely fake breakout
+                    return None
+                if vol_ratio > 1.5:
+                    confidence = min(confidence + 0.1, 1.0)  # High volume = strong confirmation
+
         if confidence < 0.4:
             return None
 
@@ -297,7 +399,18 @@ class AgentBrain:
             if signal and signal["action"] == "close":
                 result = await self.trader.close_position(symbol, signal["reason"])
                 if result["ok"]:
-                    print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={result['pnl_pct']}%")
+                    pnl_pct = result.get('pnl_pct', 0)
+                    print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={pnl_pct}%")
+                    _audit_log({
+                        "event": "close_position",
+                        "symbol": symbol,
+                        "reason": signal["reason"],
+                        "pnl_pct": pnl_pct,
+                        "pnl_usd": result.get("pnl_usd", 0),
+                        "exit_price": result.get("price", 0),
+                        "mode": self.trader.state.mode,
+                        "equity_after": self.trader.state.equity,
+                    })
                     self._save_state()
 
     # ── Evolution: self-improving V6 params ───────────────────────────────
@@ -407,16 +520,66 @@ class AgentBrain:
 
                 signal = await self.generate_signal(symbol)
                 if signal is None or signal.get("action") not in ("long", "short"):
-                    self._last_signals[symbol] = signal  # store for UI even if no action
+                    if signal:
+                        self._last_signals[symbol] = signal
                     continue
 
-                if signal["confidence"] >= 0.8:
-                    size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
-                    result = await self.trader.open_position(symbol, signal["action"], size)
-                    if result["ok"]:
-                        print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
-                        self._last_signals[symbol] = signal
-                        self._save_state()
+                # Stamp signal with timestamp for dedup tracking
+                signal["_ts"] = time.time()
+
+                # ── Pre-trade checklist (institutional-grade) ──
+                passed, failures = PreTradeChecklist.validate(self, symbol, signal)
+
+                if not passed:
+                    print(f"[Agent] {symbol} pre-trade BLOCKED: {'; '.join(failures)}")
+                    _audit_log({
+                        "event": "signal_blocked",
+                        "symbol": symbol,
+                        "signal": signal.get("action"),
+                        "confidence": signal.get("confidence"),
+                        "reason": signal.get("reason"),
+                        "failures": failures,
+                        "mode": self.trader.state.mode,
+                    })
+                    self._last_signals[symbol] = {**signal, "blocked": True, "block_reasons": failures}
+                    continue
+
+                # ── Execute trade ──
+                size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
+                result = await self.trader.open_position(symbol, signal["action"], size)
+                if result["ok"]:
+                    print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
+                    _audit_log({
+                        "event": "open_position",
+                        "symbol": symbol,
+                        "side": signal["action"],
+                        "price": result["price"],
+                        "size_usd": size,
+                        "confidence": signal["confidence"],
+                        "reason": signal["reason"],
+                        "sl": signal.get("sl"),
+                        "tp": signal.get("tp"),
+                        "volatility_regime": signal.get("volatility_regime"),
+                        "mode": self.trader.state.mode,
+                        "equity_before": self.trader.state.equity + size,
+                        "pre_trade_checks": "all_passed",
+                    })
+                    self._last_signals[symbol] = signal
+                    self._signal_history.append({
+                        "symbol": symbol,
+                        "signal": signal,
+                        "time": time.time(),
+                        "executed": True,
+                    })
+                    self._save_state()
+                else:
+                    print(f"[Agent] {symbol} execution failed: {result.get('reason')}")
+                    _audit_log({
+                        "event": "execution_failed",
+                        "symbol": symbol,
+                        "reason": result.get("reason"),
+                        "signal": signal.get("action"),
+                    })
 
         if (self.trader.state.total_trades > 0 and
                 self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0):
@@ -452,8 +615,23 @@ class AgentBrain:
             "running": self._running,
             "watch_symbols": WATCH_SYMBOLS,
             "signal_interval": SIGNAL_INTERVAL,
+            "tick_interval_sec": TICK_INTERVAL_SEC,
             "last_signals": {
-                k: {"action": v.get("action"), "confidence": v.get("confidence"), "reason": v.get("reason")}
+                k: {
+                    "action": v.get("action"),
+                    "confidence": v.get("confidence"),
+                    "reason": v.get("reason"),
+                    "blocked": v.get("blocked", False),
+                    "block_reasons": v.get("block_reasons", []),
+                }
                 for k, v in self._last_signals.items()
+            },
+            "risk_limits": {
+                "max_position_pct": self.trader.risk.max_position_pct,
+                "max_total_exposure_pct": self.trader.risk.max_total_exposure_pct,
+                "max_daily_loss_pct": self.trader.risk.max_daily_loss_pct,
+                "max_drawdown_pct": self.trader.risk.max_drawdown_pct,
+                "max_positions": self.trader.risk.max_positions,
+                "cooldown_seconds": self.trader.risk.cooldown_seconds,
             },
         }
