@@ -15,11 +15,5 @@
     { "src": "/static/(.*)", "dest": "/frontend/$1" },
     { "src": "/(style\\.css|app\\.js)(.*)", "dest": "/frontend/$1" },
     { "src": "/", "dest": "/frontend/index.html" }
-  ],
-  "env": {
-    "ANTHROPIC_API_KEY": "@anthropic-api-key",
-    "OKX_API_KEY": "@okx-api-key",
-    "OKX_API_SECRET": "@okx-api-secret",
-    "OKX_PASSPHRASE": "@okx-passphrase"
-  }
+  ]
 }
