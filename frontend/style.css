@@ -532,7 +532,7 @@ body {
     align-items: center;
     justify-content: center;
 }
-#loading.hidden { display: none; }
+#loading.hidden, #loading.loading-hidden { display: none; }
 .loading-inner { text-align: center; }
 .spinner {
     width: 32px;
@@ -991,6 +991,14 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Trend indicator styles ── */
+.trend-up { background: var(--glow-green); color: var(--accent-green); border: 1px solid rgba(0, 230, 118, 0.3); }
+.trend-down { background: var(--glow-red); color: var(--accent-red); border: 1px solid rgba(255, 23, 68, 0.3); }
+.trend-sideways { background: rgba(255, 214, 0, 0.1); color: var(--accent-yellow); border: 1px solid rgba(255, 214, 0, 0.3); }
+
+/* Ticker item highlight */
+.ticker-item.highlight { background: var(--accent-blue); color: #fff; }
 
 /* ── Utility ── */
 .hidden { display: none !important; }

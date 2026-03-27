@@ -676,7 +676,7 @@ function getReplayEndTime() {
 }
 
 // ── Data Loading ──
-const LOAD_DATA_TIMEOUT_MS = 90000; // 90s for API-only first load (OKX pagination can be slow)
+const LOAD_DATA_TIMEOUT_MS = 30000; // 30s timeout (was 90s — too long)
 let _loadDataInFlight = false;
 let _loadDataAbortController = null;
 async function loadData(isLiveUpdate = false) {
