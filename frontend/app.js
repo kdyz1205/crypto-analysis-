@@ -662,9 +662,9 @@ function buildPatternParams() {
 }
 
 function getReplayEndTime() {
-    const dateVal = document.getElementById('replay-date').value;
+    const dateVal = document.getElementById('replay-date')?.value;
     if (!dateVal) return null;
-    const hour = parseInt(document.getElementById('replay-hour').value) || 0;
+    const hour = parseInt(document.getElementById('replay-hour')?.value) || 0;
     const activeBtn = document.querySelector('#tz-group .tz-btn.active');
     const tzOffset = activeBtn ? parseInt(activeBtn.dataset.offset) : 0;
 
@@ -704,8 +704,16 @@ async function loadData(isLiveUpdate = false) {
             }
             console.error('Chart fetch error:', errMsg, 'URL:', `/api/ohlcv?${params}`);
             if (!isLiveUpdate) {
-                console.warn(`Data error: ${errMsg} — will retry in 3s`);
-                setTimeout(() => loadData(), 3000);
+                showLoading(false);
+                if (!window._loadRetryCount) window._loadRetryCount = 0;
+                window._loadRetryCount++;
+                if (window._loadRetryCount <= 5) {
+                    console.warn(`HTTP error, retry ${window._loadRetryCount}/5 in 3s: ${errMsg}`);
+                    setTimeout(() => loadData(), 3000);
+                } else {
+                    console.error('Max retries reached. Server may be down.');
+                    window._loadRetryCount = 0;
+                }
             }
             return;
         }
@@ -773,8 +781,15 @@ async function loadData(isLiveUpdate = false) {
         if (e.name === 'AbortError') {
             if (!isLiveUpdate) {
                 showLoading(false);
-                console.warn('Load timeout — will retry in 3s');
-                setTimeout(() => loadData(), 3000);
+                if (!window._loadRetryCount) window._loadRetryCount = 0;
+                window._loadRetryCount++;
+                if (window._loadRetryCount <= 5) {
+                    console.warn(`Load timeout, retry ${window._loadRetryCount}/5 in 3s`);
+                    setTimeout(() => loadData(), 3000);
+                } else {
+                    console.error('Max retries reached (timeout). Server may be down.');
+                    window._loadRetryCount = 0;
+                }
             }
             return;
         }
@@ -1515,20 +1530,45 @@ async function loadSymbols() {
     }
 }
 
-function renderTickerList(symbols) {
+const PINNED_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'HYPEUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'SUIUSDT'];
+
+function renderTickerList(symbols, isSearch = false) {
     const list = document.getElementById('ticker-list');
     if (!list) return;
-    
+
     // Handle both string arrays and object arrays (for OKX with metadata)
     const symbolList = symbols.map(s => {
         if (typeof s === 'string') return s;
         if (typeof s === 'object' && s.symbol) return s.symbol;
         return String(s);
     });
-    
-    list.innerHTML = symbolList.map(s =>
-        `<div class="ticker-item${s === currentSymbol ? ' active' : ''}" data-symbol="${s}">${formatTicker(s)}</div>`
+
+    let html = '';
+
+    // Show pinned favorites when not searching
+    if (!isSearch) {
+        const pinned = PINNED_SYMBOLS.filter(p => symbolList.includes(p));
+        if (pinned.length) {
+            html += '<div class="ticker-section-label">Popular</div>';
+            html += pinned.map(s =>
+                `<div class="ticker-item${s === currentSymbol ? ' active' : ''}" data-symbol="${s}">` +
+                `<span class="ticker-item-name">${formatTicker(s)}</span>` +
+                `<span class="ticker-item-badge">★</span></div>`
+            ).join('');
+            html += '<div class="ticker-section-label">All Symbols</div>';
+        }
+    }
+
+    html += symbolList.map(s =>
+        `<div class="ticker-item${s === currentSymbol ? ' active' : ''}" data-symbol="${s}">` +
+        `<span class="ticker-item-name">${formatTicker(s)}</span></div>`
     ).join('');
+
+    if (!symbolList.length) {
+        html = '<div class="ticker-no-result">No matches found</div>';
+    }
+
+    list.innerHTML = html;
 }
 
 function formatTicker(s) {
@@ -1625,11 +1665,12 @@ function selectTicker(symbol) {
 }
 
 // Ticker dropdown toggle
-document.getElementById('ticker-selector').addEventListener('click', (e) => {
+document.getElementById('ticker-selector')?.addEventListener('click', (e) => {
     const dropdown = document.getElementById('ticker-dropdown');
+    if (!dropdown) return;
     dropdown.classList.toggle('hidden');
     if (!dropdown.classList.contains('hidden')) {
-        document.getElementById('ticker-search').focus();
+        document.getElementById('ticker-search')?.focus();
         renderTickerList(allSymbols);
     }
 });
@@ -1637,13 +1678,12 @@ document.getElementById('ticker-selector').addEventListener('click', (e) => {
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
     const selector = document.getElementById('ticker-selector');
-    if (!selector.contains(e.target)) {
-        document.getElementById('ticker-dropdown').classList.add('hidden');
-    }
+    if (!selector || selector.contains(e.target)) return;
+    document.getElementById('ticker-dropdown')?.classList.add('hidden');
 });
 
 // Stop propagation on dropdown to prevent closing
-document.getElementById('ticker-dropdown').addEventListener('click', (e) => {
+document.getElementById('ticker-dropdown')?.addEventListener('click', (e) => {
     e.stopPropagation();
 });
 
@@ -1661,7 +1701,7 @@ document.getElementById('ticker-search').addEventListener('input', (e) => {
             if (s.includes(joined)) return true;
             return words.some(w => s.includes(w));
         });
-        renderTickerList(filtered);
+        renderTickerList(filtered, true);
     }, 150);
 });
 
@@ -1727,27 +1767,27 @@ function initReplayPanel() {
     document.getElementById('replay-date').value = today;
 }
 
-document.getElementById('replay-toggle').addEventListener('change', (e) => {
+document.getElementById('replay-toggle')?.addEventListener('change', (e) => {
     const panel = document.getElementById('replay-panel');
-    panel.classList.toggle('hidden', !e.target.checked);
+    if (panel) panel.classList.toggle('hidden', !e.target.checked);
     loadData();
 });
 
-document.getElementById('replay-date').addEventListener('change', () => {
-    if (document.getElementById('replay-toggle').checked) loadData();
+document.getElementById('replay-date')?.addEventListener('change', () => {
+    if (document.getElementById('replay-toggle')?.checked) loadData();
 });
 
-document.getElementById('replay-hour').addEventListener('change', () => {
-    if (document.getElementById('replay-toggle').checked) loadData();
+document.getElementById('replay-hour')?.addEventListener('change', () => {
+    if (document.getElementById('replay-toggle')?.checked) loadData();
 });
 
 // Timezone toggle buttons
-document.getElementById('tz-group').addEventListener('click', (e) => {
+document.getElementById('tz-group')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.tz-btn');
     if (!btn) return;
     document.querySelectorAll('#tz-group .tz-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    if (document.getElementById('replay-toggle').checked) loadData();
+    if (document.getElementById('replay-toggle')?.checked) loadData();
 });
 
 // ── Keyboard Shortcuts ──
@@ -2907,9 +2947,13 @@ function renderWalletList(listId, wallets, type) {
     const el = document.getElementById(listId);
     if (!el) return;
     if (!wallets.length) { el.textContent = type === 'tokens' ? 'No tokens tracked' : 'No wallets added'; return; }
+    if (type === 'tokens') {
+        _renderTokenList(el, wallets);
+        return;
+    }
     el.innerHTML = wallets.map((w, i) => `
         <div class="wallet-entry">
-            <span class="wallet-entry-label">${w.label || (type === 'tokens' ? w.chain?.toUpperCase() : 'Wallet')}</span>
+            <span class="wallet-entry-label">${w.label || 'Wallet'}</span>
             <span class="wallet-entry-addr" title="${w.address}">${w.address.slice(0, 6)}...${w.address.slice(-4)}</span>
             <span class="wallet-entry-bal">${w.balance || '—'}</span>
             <span class="wallet-entry-remove" data-type="${type}" data-idx="${i}">&times;</span>
@@ -2922,6 +2966,125 @@ function renderWalletList(listId, wallets, type) {
             renderAllOnchainLists();
         });
     });
+}
+
+function _renderTokenList(el, tokens) {
+    el.innerHTML = tokens.map((t, i) => {
+        const chainColors = { solana: '#9945ff', ethereum: '#627eea', base: '#0052ff', arbitrum: '#28a0f0' };
+        const chainColor = chainColors[t.chain] || '#888';
+        return `
+        <div class="token-card" data-idx="${i}">
+            <div class="token-card-header">
+                <span class="token-card-symbol">${t.label || '???'}</span>
+                <span class="token-card-chain" style="background:${chainColor}">${(t.chain || 'solana').toUpperCase()}</span>
+                <span class="token-card-price">${t.balance || '—'}</span>
+                <button class="token-card-view" data-idx="${i}" title="Analyze token">&#x1f50d;</button>
+                <span class="token-card-copy" data-addr="${t.address}" title="Copy address">&#x2398;</span>
+                <span class="wallet-entry-remove" data-type="tokens" data-idx="${i}" title="Remove">&times;</span>
+            </div>
+            <div class="token-card-addr">${t.address}</div>
+            <div class="token-card-detail" id="token-detail-${i}" style="display:none;"></div>
+        </div>`;
+    }).join('');
+
+    // Remove button
+    el.querySelectorAll('.wallet-entry-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _onchainWallets.tokens.splice(parseInt(btn.dataset.idx), 1);
+            _saveOnchainWallets(); renderAllOnchainLists();
+            document.getElementById('token-detail-panel').style.display = 'none';
+        });
+    });
+    // Copy address
+    el.querySelectorAll('.token-card-copy').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(btn.dataset.addr).then(() => {
+                const orig = btn.textContent;
+                btn.textContent = '✓';
+                setTimeout(() => { btn.textContent = orig; }, 1200);
+            });
+        });
+    });
+    // View/Analyze button
+    el.querySelectorAll('.token-card-view').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx);
+            _analyzeToken(idx);
+        });
+    });
+}
+
+async function _analyzeToken(idx) {
+    const tok = _onchainWallets.tokens[idx];
+    if (!tok) return;
+    const detailEl = document.getElementById(`token-detail-${idx}`);
+    const globalDetail = document.getElementById('token-detail-panel');
+
+    // Toggle off if already open
+    if (detailEl && detailEl.style.display === 'block') {
+        detailEl.style.display = 'none';
+        if (globalDetail) globalDetail.style.display = 'none';
+        return;
+    }
+
+    // Close other details
+    document.querySelectorAll('.token-card-detail').forEach(d => d.style.display = 'none');
+
+    if (detailEl) {
+        detailEl.style.display = 'block';
+        detailEl.innerHTML = '<span style="color:var(--text-muted)">Analyzing...</span>';
+    }
+
+    try {
+        const chain = tok.chain || 'solana';
+        const resp = await fetch(`${API_BASE}/api/onchain/token/analyze/${encodeURIComponent(tok.address)}?network=${chain}`);
+        const data = await resp.json();
+
+        if (data.error) {
+            const errMsg = data.offline
+                ? 'Smart Money API offline — start server on port 8002'
+                : (data.error || 'Token not found');
+            if (detailEl) detailEl.innerHTML = `<span style="color:var(--accent-red)">${errMsg}</span>`;
+            return;
+        }
+
+        // Update price/label in list
+        if (data.overview?.token_symbol) tok.label = data.overview.token_symbol;
+        if (data.overview?.price_usd != null) tok.balance = `$${data.overview.price_usd.toFixed(6)}`;
+        _saveOnchainWallets(); renderAllOnchainLists();
+
+        // Show detail in the global panel (since renderAllOnchainLists re-renders the inline ones)
+        if (globalDetail) {
+            const ov = data.overview || {};
+            let html = `<div class="token-detail-header"><strong>${ov.token_symbol || tok.label}</strong> on ${(tok.chain || 'solana').toUpperCase()}</div>`;
+            if (ov.price_usd != null) html += `<div class="token-detail-row"><span>Price</span><span>$${ov.price_usd.toFixed(6)}</span></div>`;
+            if (ov.market_cap != null) html += `<div class="token-detail-row"><span>Market Cap</span><span>$${_formatNum(ov.market_cap)}</span></div>`;
+            if (ov.liquidity_usd != null) html += `<div class="token-detail-row"><span>Liquidity</span><span>$${_formatNum(ov.liquidity_usd)}</span></div>`;
+            if (ov.volume_24h != null) html += `<div class="token-detail-row"><span>24h Volume</span><span>$${_formatNum(ov.volume_24h)}</span></div>`;
+            if (ov.holders != null) html += `<div class="token-detail-row"><span>Holders</span><span>${_formatNum(ov.holders)}</span></div>`;
+            if (ov.price_change_24h != null) {
+                const pct = ov.price_change_24h;
+                const color = pct >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+                html += `<div class="token-detail-row"><span>24h Change</span><span style="color:${color}">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span></div>`;
+            }
+            if (data.summary) html += `<div class="token-detail-summary">${data.summary}</div>`;
+            globalDetail.innerHTML = html;
+            globalDetail.style.display = 'block';
+        }
+    } catch (e) {
+        if (detailEl) detailEl.innerHTML = `<span style="color:var(--accent-red)">Failed to analyze: ${e.message}</span>`;
+    }
+}
+
+function _formatNum(n) {
+    if (n == null) return '—';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+    return n.toFixed(2);
 }
 
 function renderAllOnchainLists() {
@@ -2990,7 +3153,7 @@ document.getElementById('watch-wallet-add-btn')?.addEventListener('click', async
     // Check if this is a token contract address
     btn.disabled = true; btn.textContent = 'Checking...';
     const isToken = await isTokenContract(addr);
-    btn.disabled = false; btn.textContent = 'Add';
+    btn.disabled = false; btn.textContent = 'Track';
     if (isToken) { showOnchainError('watch-wallet-error', 'This is a token contract, not a wallet. Use Token Monitor below to track tokens.'); return; }
     _onchainWallets.watch.push({ address: addr, label, group, balance: '—' });
     _saveOnchainWallets(); renderAllOnchainLists(); renderTrackGroups();

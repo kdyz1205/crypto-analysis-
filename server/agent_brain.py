@@ -257,10 +257,10 @@ class PreTradeChecklist:
         if not can:
             failures.append(f"Risk check failed: {reason}")
 
-        # 5. Stop loss must exist and be reasonable
+        # 5. Stop loss must exist, be reasonable, and be directionally correct
         price = signal.get("price", 0)
         sl = signal.get("sl", 0)
-        action = signal.get("action")
+        action = signal.get("action", "")
         if action in ("long", "short") and (not sl or sl <= 0):
             failures.append("Missing or zero stop loss for entry signal")
         elif price > 0 and sl > 0:
@@ -269,6 +269,11 @@ class PreTradeChecklist:
                 failures.append(f"SL too far: {sl_dist_pct:.1f}% (max 10%)")
             if sl_dist_pct < 0.1:
                 failures.append(f"SL too tight: {sl_dist_pct:.3f}% (min 0.1%)")
+            # SL must be below price for longs, above price for shorts
+            if action == "long" and sl >= price:
+                failures.append(f"SL above price for long: SL={sl:.6f} >= price={price:.6f}")
+            if action == "short" and sl <= price:
+                failures.append(f"SL below price for short: SL={sl:.6f} <= price={price:.6f}")
 
         # 6. Duplicate signal suppression
         last_sig = agent._last_signals.get(symbol)

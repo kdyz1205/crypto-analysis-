@@ -717,7 +717,11 @@ async def _fetch_candles_since(symbol: str, interval: str, start_ms: int) -> pl.
 
 def _merge_and_save(existing_df: pl.DataFrame, new_df: pl.DataFrame, symbol: str, interval: str) -> pl.DataFrame:
     """Deduplicate, merge, sort, and save to CSV. Returns merged DataFrame."""
-    # Align new_df schema to match existing_df
+    # Trim both DataFrames to shared columns (avoids width mismatch on concat)
+    shared_cols = [c for c in existing_df.columns if c in new_df.columns]
+    existing_df = existing_df.select(shared_cols)
+    new_df = new_df.select(shared_cols)
+    # Align dtypes
     casts = []
     for col_name, col_type in existing_df.schema.items():
         if col_name in new_df.columns and new_df[col_name].dtype != col_type:
@@ -757,7 +761,9 @@ async def _append_okx_live(df: pl.DataFrame, symbol: str, base_interval: str) ->
     new_df = await _fetch_candles_since(symbol, base_interval, start_ms=last_ms)
     if new_df.is_empty():
         return df
-    # Merge in memory: concat + dedupe by open_time (keep last), sort
+    # Merge in memory: trim to shared cols, cast, concat + dedupe
+    shared_cols = [c for c in df.columns if c in new_df.columns]
+    new_df = new_df.select(shared_cols)
     casts = []
     for col_name, col_type in df.schema.items():
         if col_name in new_df.columns and new_df[col_name].dtype != col_type:

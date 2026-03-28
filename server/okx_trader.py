@@ -222,10 +222,11 @@ class OKXTrader:
         if len(self.state.positions) >= self.risk.max_positions and symbol not in self.state.positions:
             return False, f"Max positions ({self.risk.max_positions}) reached"
 
-        # Total exposure
+        # Total exposure (checked again with new position size in open_position)
         total_exposure = sum(p.size for p in self.state.positions.values())
-        if total_exposure > self.risk.max_total_exposure_pct * self.state.equity:
-            return False, "Max total exposure reached"
+        max_exposure = self.risk.max_total_exposure_pct * self.state.equity
+        if total_exposure >= max_exposure:
+            return False, f"Max total exposure reached ({total_exposure:.0f}/{max_exposure:.0f})"
 
         # Cooldown
         last = self.state.last_trade_time.get(symbol, 0)
@@ -247,6 +248,14 @@ class OKXTrader:
         max_size = self.state.equity * self.risk.max_position_pct
         size_usd = min(size_usd, max_size)
 
+        # Enforce total exposure limit (including this new position)
+        current_exposure = sum(p.size for p in self.state.positions.values())
+        max_exposure = self.risk.max_total_exposure_pct * self.state.equity
+        remaining = max_exposure - current_exposure
+        if remaining <= 0:
+            return {"ok": False, "reason": "Max total exposure reached"}
+        size_usd = min(size_usd, remaining)
+
         price = await self.get_price(symbol)
         if price is None:
             return {"ok": False, "reason": f"Cannot get price for {symbol}"}
@@ -260,6 +269,8 @@ class OKXTrader:
             )
             self.state.positions[symbol] = pos
             self.state.cash -= size_usd
+            # Update equity immediately so next trade uses correct value
+            self.state.equity = self.state.cash + sum(p.size for p in self.state.positions.values())
             self.state.last_trade_time[symbol] = time.time()
             return {"ok": True, "price": price, "size": size_usd, "side": side}
         else:
@@ -301,6 +312,7 @@ class OKXTrader:
             self.state.win_count += 1
         elif pnl_usd < 0:
             self.state.loss_count += 1
+        # Break-even trades (pnl_usd == 0) are not counted as win or loss
 
         # In live mode, close on exchange FIRST before updating local state
         if self.state.mode == "live":
@@ -308,18 +320,15 @@ class OKXTrader:
             if not live_result.get("ok"):
                 return {"ok": False, "reason": f"Exchange close failed: {live_result.get('reason')}"}
 
-        # Update equity: include size + unrealized PnL of remaining positions for consistency
+        # Remove position, then update equity
+        del self.state.positions[symbol]
         self.state.cash += pos.size + pnl_usd
-        self.state.equity = self.state.cash + sum(
-            p.size + p.size * p.unrealized_pnl / 100
-            for p in self.state.positions.values() if p.symbol != symbol
-        )
+        self.state.equity = self.state.cash + sum(p.size for p in self.state.positions.values())
         self.state.peak_equity = max(self.state.peak_equity, self.state.equity)
 
-        del self.state.positions[symbol]
         self.state.last_trade_time[symbol] = time.time()
 
-        return {"ok": True, "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2), "reason": reason, "exit_price": price}
+        return {"ok": True, "price": price, "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2), "reason": reason, "exit_price": price}
 
     async def update_positions(self):
         """Update unrealized PnL for all positions."""
@@ -377,6 +386,9 @@ class OKXTrader:
                     resp = await client.get(f"{OKX_REST_BASE}{path}", headers=headers)
                 else:
                     resp = await client.post(f"{OKX_REST_BASE}{path}", headers=headers, content=body)
+                if resp.status_code >= 400:
+                    print(f"[OKX] HTTP {resp.status_code} on {method} {path}")
+                    return {"code": "-1", "msg": f"HTTP {resp.status_code}: {resp.text[:200]}"}
                 return resp.json()
         except Exception as e:
             return {"code": "-1", "msg": str(e)}
@@ -406,8 +418,8 @@ class OKXTrader:
                 data = resp.json()
             if data.get("code") == "0" and data.get("data") and len(data["data"]) > 0:
                 return float(data["data"][0].get("ctVal", 1))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[OKX] Failed to get contract size for {inst_id}: {e}")
         return 1.0
 
     async def _place_order_live(self, symbol: str, side: str, size_usd: float, price: float) -> dict:

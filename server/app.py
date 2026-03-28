@@ -3,6 +3,7 @@ import time
 import json
 import logging
 from collections import deque
+from typing import Optional
 
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -1359,7 +1360,7 @@ async def serve_js():
 SMART_MONEY_BASE = "http://127.0.0.1:8002"
 
 
-async def _sm_proxy(method: str, path: str, body: dict | None = None):
+async def _sm_proxy(method: str, path: str, body: Optional[dict] = None):
     """Proxy a request to the smart-money API."""
     import httpx
     try:
