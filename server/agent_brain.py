@@ -103,8 +103,8 @@ class LessonsLedger:
                 self.market_regime = data.get("market_regime", "unknown")
                 self.regime_confidence = data.get("regime_confidence", 0.0)
                 self.cycle = data.get("cycle", 0)
-            except Exception:
-                pass
+            except Exception as e:
+                logging.warning(f"Failed to load lessons ledger: {e}")
 
     def save(self):
         try:
@@ -513,7 +513,7 @@ class AgentBrain:
         # ── Layer 5: Volume confirmation ──
         if vol is not None and len(vol) > 20:
             vol_ma = np.mean(vol[max(0, i - 20):i]) if i >= 20 else np.mean(vol[:i+1])
-            if vol_ma > 0:
+            if vol_ma > 0 and not np.isnan(vol[i]):
                 vol_ratio = vol[i] / vol_ma
                 if vol_ratio < 0.5:
                     # Very low volume — likely fake breakout

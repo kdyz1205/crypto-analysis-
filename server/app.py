@@ -197,7 +197,8 @@ def _symbols_from_ticker_info_csv() -> list[str]:
                 sym = (row.get("symbol") or row.get("Symbol") or row.get("ticker") or row.get("Ticker") or "").strip().upper()
                 if sym and sym.endswith("USDT"):
                     out.add(sym)
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Failed to load extended symbols: {e}")
         return []
     return sorted(out)
 
@@ -536,7 +537,8 @@ async def api_pattern_stats_features(
         symbol += "USDT"
     try:
         df, _ = await _load_df_for_analysis(symbol, interval, end_time, days=90)
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Feature load failed for {symbol} {interval}: {e}")
         return {"symbol": symbol, "interval": interval, "features": []}
     if df is None or df.is_empty():
         return {"symbol": symbol, "interval": interval, "features": []}
@@ -665,7 +667,8 @@ async def api_pattern_stats_line_similar(
 
     try:
         df, _ = await _load_df_for_analysis(symbol, interval, None, days)
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Similar lines data load failed for {symbol} {interval}: {e}")
         return {"count": 0, "lines": []}
     if df is None or df.is_empty():
         return {"count": 0, "lines": []}
@@ -1179,7 +1182,8 @@ async def api_agent_audit_log(limit: int = Query(50, ge=1, le=500)):
             except json.JSONDecodeError:
                 pass
         return {"entries": entries}
-    except Exception:
+    except Exception as e:
+        logging.warning(f"Failed to read trade log: {e}")
         return {"entries": []}
 
 
@@ -1255,7 +1259,8 @@ async def api_agent_signals():
     async def _gen(sym: str):
         try:
             return sym, await agent.generate_signal(sym)
-        except Exception:
+        except Exception as e:
+            logging.warning(f"Signal generation failed for {sym}: {e}")
             return sym, None
 
     results = await asyncio.gather(*[_gen(sym) for sym in WATCH_SYMBOLS])

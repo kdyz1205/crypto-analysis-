@@ -111,6 +111,7 @@ async def load_okx_swap_symbols() -> dict[str, dict]:
     try:
         client = _get_http_client()
         resp = await client.get(OKX_INSTRUMENTS_URL, params={"instType": "SWAP"})
+        resp.raise_for_status()
         data = resp.json()
 
         if not isinstance(data, dict) or data.get("code") != "0":
@@ -171,6 +172,7 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
             "https://www.okx.com/api/v5/market/tickers",
             params={"instType": "SWAP"}
         )
+        resp.raise_for_status()
         data = resp.json()
 
         if data.get("code") != "0" or not data.get("data"):
@@ -382,6 +384,7 @@ async def _download_ohlcv_binance(symbol: str, interval: str, days: int = 30) ->
             "limit": 1500,
         }
         resp = await client.get(BINANCE_FUTURES_URL, params=params)
+        resp.raise_for_status()
         data = resp.json()
 
         if isinstance(data, dict) and "code" in data:
@@ -569,9 +572,13 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
 
 # ── Incremental update helpers ──
 
-def _get_last_timestamp_ms(df: pl.DataFrame) -> int:
+def _get_last_timestamp_ms(df: pl.DataFrame) -> int | None:
     """Get the last open_time as epoch milliseconds (UTC)."""
+    if df is None or df.is_empty():
+        return None
     last_dt = df["open_time"].max()
+    if last_dt is None:
+        return None
     # Binance data is UTC; naive datetimes must be tagged as UTC for correct epoch
     return int(last_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
@@ -608,6 +615,7 @@ async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) ->
 
         try:
             resp = await client.get(OKX_CANDLES_URL, params=params)
+            resp.raise_for_status()
             data = resp.json()
         except Exception:
             break
@@ -674,6 +682,7 @@ async def _fetch_candles_since(symbol: str, interval: str, start_ms: int) -> pl.
             "limit": 1500,
         }
         resp = await client.get(BINANCE_FUTURES_URL, params=params)
+        resp.raise_for_status()
         data = resp.json()
 
         if isinstance(data, dict) and "code" in data:
@@ -881,7 +890,7 @@ async def get_ohlcv(
                         last_ms = _get_last_timestamp_ms(df)
                         now_ms = int(time.time() * 1000)
                         interval_ms = INTERVAL_MS.get(base_interval, 60 * 60 * 1000)
-                        if (now_ms - last_ms) >= interval_ms * 2:
+                        if last_ms is not None and (now_ms - last_ms) >= interval_ms * 2:
                             try:
                                 df = await _incremental_update(symbol, base_interval)
                             except Exception as e:
@@ -1030,7 +1039,7 @@ async def get_ohlcv_with_df(
                         last_ms = _get_last_timestamp_ms(df)
                         now_ms = int(time.time() * 1000)
                         interval_ms = INTERVAL_MS.get(base_interval, 60 * 60 * 1000)
-                        if (now_ms - last_ms) >= interval_ms * 2:
+                        if last_ms is not None and (now_ms - last_ms) >= interval_ms * 2:
                             try:
                                 df = await _incremental_update(symbol, base_interval)
                             except Exception as e:

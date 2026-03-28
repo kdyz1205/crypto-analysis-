@@ -875,7 +875,7 @@ async function loadPatterns(existingParams) {
 
         rawPatternData = await resp.json();
         // Evict oldest cache entries to prevent memory leak
-        if (patternResponseCache.size >= PATTERN_CACHE_MAX_SIZE) {
+        while (patternResponseCache.size >= PATTERN_CACHE_MAX_SIZE) {
             const firstKey = patternResponseCache.keys().next().value;
             patternResponseCache.delete(firstKey);
         }
@@ -1689,7 +1689,7 @@ document.getElementById('ticker-dropdown')?.addEventListener('click', (e) => {
 
 // Ticker search (debounced)
 let _tickerSearchTimer = null;
-document.getElementById('ticker-search').addEventListener('input', (e) => {
+document.getElementById('ticker-search')?.addEventListener('input', (e) => {
     clearTimeout(_tickerSearchTimer);
     _tickerSearchTimer = setTimeout(() => {
         const raw = e.target.value.toUpperCase().trim();
@@ -1706,7 +1706,7 @@ document.getElementById('ticker-search').addEventListener('input', (e) => {
 });
 
 // Ticker item click (delegated)
-document.getElementById('ticker-list').addEventListener('click', (e) => {
+document.getElementById('ticker-list')?.addEventListener('click', (e) => {
     const item = e.target.closest('.ticker-item');
     if (item) {
         selectTicker(item.dataset.symbol);

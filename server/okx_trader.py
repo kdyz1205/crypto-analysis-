@@ -192,8 +192,11 @@ class OKXTrader:
 
     def check_daily_reset(self):
         """Reset daily counters at midnight UTC."""
+        import datetime as _dt
         now = time.time()
-        if now - self.state.last_daily_reset > 86400:
+        now_utc = _dt.datetime.utcfromtimestamp(now)
+        last_utc = _dt.datetime.utcfromtimestamp(self.state.last_daily_reset) if self.state.last_daily_reset > 0 else None
+        if last_utc is None or now_utc.date() > last_utc.date():
             self.state.daily_pnl = 0.0
             self.state.daily_trades = 0
             self.state.last_daily_reset = now
@@ -256,6 +259,10 @@ class OKXTrader:
             return {"ok": False, "reason": "Max total exposure reached"}
         size_usd = min(size_usd, remaining)
 
+        # Reject zero/tiny trades
+        if size_usd < 1.0:
+            return {"ok": False, "reason": f"Position size too small: ${size_usd:.2f}"}
+
         price = await self.get_price(symbol)
         if price is None:
             return {"ok": False, "reason": f"Cannot get price for {symbol}"}
@@ -275,7 +282,18 @@ class OKXTrader:
             return {"ok": True, "price": price, "size": size_usd, "side": side}
         else:
             # Live mode: place market order via OKX API
-            return await self._place_order_live(symbol, side, size_usd, price)
+            result = await self._place_order_live(symbol, side, size_usd, price)
+            if result.get("ok"):
+                # Sync position to local state after confirmed exchange order
+                pos = Position(
+                    symbol=symbol, side=side, size=size_usd,
+                    entry_price=price, entry_time=time.time(),
+                )
+                self.state.positions[symbol] = pos
+                self.state.cash -= size_usd
+                self.state.equity = self.state.cash + sum(p.size for p in self.state.positions.values())
+                self.state.last_trade_time[symbol] = time.time()
+            return result
 
     async def close_position(self, symbol: str, reason: str = "SIGNAL") -> dict:
         """Close an existing position."""
@@ -295,7 +313,13 @@ class OKXTrader:
             pnl_pct = (pos.entry_price - price) / pos.entry_price * 100
         pnl_usd = pos.size * pnl_pct / 100
 
-        # Record trade
+        # In live mode, close on exchange FIRST before recording trade
+        if self.state.mode == "live":
+            live_result = await self._close_order_live(symbol, pos.side)
+            if not live_result.get("ok"):
+                return {"ok": False, "reason": f"Exchange close failed: {live_result.get('reason')}"}
+
+        # Record trade only after confirmed close
         record = TradeRecord(
             symbol=symbol, side=pos.side,
             entry_price=pos.entry_price, exit_price=price,
@@ -304,6 +328,9 @@ class OKXTrader:
             reason=reason,
         )
         self.state.trade_history.append(record)
+        # Cap history to prevent unbounded memory growth
+        if len(self.state.trade_history) > 500:
+            self.state.trade_history = self.state.trade_history[-500:]
         self.state.total_trades += 1
         self.state.total_pnl_usd += pnl_usd
         self.state.daily_pnl += pnl_usd
@@ -312,13 +339,6 @@ class OKXTrader:
             self.state.win_count += 1
         elif pnl_usd < 0:
             self.state.loss_count += 1
-        # Break-even trades (pnl_usd == 0) are not counted as win or loss
-
-        # In live mode, close on exchange FIRST before updating local state
-        if self.state.mode == "live":
-            live_result = await self._close_order_live(symbol, pos.side)
-            if not live_result.get("ok"):
-                return {"ok": False, "reason": f"Exchange close failed: {live_result.get('reason')}"}
 
         # Remove position, then update equity
         del self.state.positions[symbol]
