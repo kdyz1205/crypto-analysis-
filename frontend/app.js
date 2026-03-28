@@ -1484,7 +1484,7 @@ async function runOptimize() {
 }
 
 document.getElementById('backtest-btn')?.addEventListener('click', runBacktest);
-document.getElementById('optimize-btn')?.addEventListener('click', runOptimize);
+// Optimize button removed — panel couldn't close, not useful
 document.getElementById('backtest-close')?.addEventListener('click', (e) => {
     e.preventDefault();
     closeBacktestPanel();
@@ -1548,6 +1548,8 @@ function updateViewTabsUI() {
     if (drawBtn) drawBtn.classList.toggle('active', toolMode === 'draw');
     if (assistBtn) assistBtn.classList.toggle('active', toolMode === 'assist');
     if (agentBtn) agentBtn.classList.toggle('active', agentPanelOpen);
+    const onchainBtn = document.getElementById('tab-onchain');
+    if (onchainBtn) onchainBtn.classList.toggle('active', onchainPanelOpen);
     if (chatBtn) chatBtn.classList.toggle('active', chatPanelOpen);
 }
 
@@ -1650,10 +1652,15 @@ let _tickerSearchTimer = null;
 document.getElementById('ticker-search').addEventListener('input', (e) => {
     clearTimeout(_tickerSearchTimer);
     _tickerSearchTimer = setTimeout(() => {
-        const query = e.target.value.toUpperCase().trim();
-        const filtered = query
-            ? allSymbols.filter(s => s.includes(query))
-            : allSymbols;
+        const raw = e.target.value.toUpperCase().trim();
+        if (!raw) { renderTickerList(allSymbols); return; }
+        const joined = raw.replace(/[\s\/\-]+/g, '');
+        // Try joined first, then each word as OR, to handle "ach h" -> find ACH
+        const words = raw.split(/[\s\/\-]+/).filter(Boolean);
+        const filtered = allSymbols.filter(s => {
+            if (s.includes(joined)) return true;
+            return words.some(w => s.includes(w));
+        });
         renderTickerList(filtered);
     }, 150);
 });
@@ -1813,27 +1820,29 @@ function _adjustChartForPanels() {
     // Shrink chart area when side panels are open so they don't overlap
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
-    const CHAT_W = 440, AGENT_W = 420;
+    const CHAT_W = 440, AGENT_W = 420, ONCHAIN_W = 460;
     let rightOffset = 0;
     if (chatPanelOpen) rightOffset = CHAT_W;
     else if (agentPanelOpen) rightOffset = AGENT_W;
+    else if (onchainPanelOpen) rightOffset = ONCHAIN_W;
     chartArea.style.right = rightOffset + 'px';
     // ResizeObserver on #chart-container handles chart.resize automatically
 }
 
+function _closeAllPanelsExcept(keep) {
+    if (keep !== 'chat') { chatPanelOpen = false; document.getElementById('chat-panel')?.classList.add('hidden'); }
+    if (keep !== 'agent') { agentPanelOpen = false; document.getElementById('agent-panel')?.classList.add('hidden'); if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; } }
+    if (keep !== 'onchain') { onchainPanelOpen = false; document.getElementById('onchain-panel')?.classList.add('hidden'); }
+}
+
 function toggleChatPanel() {
     chatPanelOpen = !chatPanelOpen;
-    if (chatPanelOpen) agentPanelOpen = false; // close agent when chat opens
+    _closeAllPanelsExcept(chatPanelOpen ? 'chat' : null);
     const panel = document.getElementById('chat-panel');
-    const agentPanel = document.getElementById('agent-panel');
     if (panel) panel.classList.toggle('hidden', !chatPanelOpen);
-    if (agentPanel) agentPanel.classList.toggle('hidden', !agentPanelOpen);
-    if (agentPollTimer) { clearInterval(agentPollTimer); agentPollTimer = null; }
     updateViewTabsUI();
     _adjustChartForPanels();
-    if (chatPanelOpen) {
-        document.getElementById('chat-input')?.focus();
-    }
+    if (chatPanelOpen) document.getElementById('chat-input')?.focus();
 }
 
 async function sendChatMessage(text) {
@@ -1967,17 +1976,32 @@ document.getElementById('chat-clear-btn')?.addEventListener('click', async () =>
         </div>`;
 });
 
+// ── On-Chain Panel ──
+let onchainPanelOpen = false;
+
+function toggleOnchainPanel() {
+    onchainPanelOpen = !onchainPanelOpen;
+    _closeAllPanelsExcept(onchainPanelOpen ? 'onchain' : null);
+    const panel = document.getElementById('onchain-panel');
+    if (panel) panel.classList.toggle('hidden', !onchainPanelOpen);
+    updateViewTabsUI();
+    _adjustChartForPanels();
+    if (onchainPanelOpen) startOnchainPolling();
+    else stopOnchainPolling();
+}
+
+document.getElementById('tab-onchain')?.addEventListener('click', toggleOnchainPanel);
+document.getElementById('onchain-close')?.addEventListener('click', toggleOnchainPanel);
+
 // ── Agent Dashboard ──
 let agentPanelOpen = false;
 let agentPollTimer = null;
 
 function toggleAgentPanel() {
     agentPanelOpen = !agentPanelOpen;
-    if (agentPanelOpen) chatPanelOpen = false; // close chat when agent opens
+    _closeAllPanelsExcept(agentPanelOpen ? 'agent' : null);
     const panel = document.getElementById('agent-panel');
-    const chatPanel = document.getElementById('chat-panel');
     if (panel) panel.classList.toggle('hidden', !agentPanelOpen);
-    if (chatPanel) chatPanel.classList.toggle('hidden', !chatPanelOpen);
     updateViewTabsUI();
     _adjustChartForPanels();
     if (agentPanelOpen) {
@@ -1990,6 +2014,7 @@ function toggleAgentPanel() {
 }
 
 let _agentPollInFlight = false;
+let _lastOKXBalanceFetch = 0;
 async function refreshAgentStatus() {
     if (_agentPollInFlight) return;
     _agentPollInFlight = true;
@@ -1999,61 +2024,130 @@ async function refreshAgentStatus() {
         const d = await res.json();
         const $ = id => document.getElementById(id);
         const mode = (d.mode || 'paper').toLowerCase();
-        $('agent-mode').textContent = mode.toUpperCase();
+        const isLive = mode === 'live';
 
-        // Update prominent mode banner
+        // Hidden compat field
+        const modeEl = $('agent-mode');
+        if (modeEl) modeEl.textContent = mode.toUpperCase();
+
+        // Header mode badge
+        const headerBadge = $('agent-header-mode');
+        if (headerBadge) {
+            headerBadge.textContent = isLive ? 'LIVE' : 'PAPER';
+            headerBadge.classList.toggle('live', isLive);
+        }
+        // Header dot color (green=paper, red=live)
+        const headerDot = document.querySelector('.agent-header-dot');
+        if (headerDot) {
+            headerDot.style.background = isLive ? 'var(--accent-red)' : 'var(--accent-green)';
+            headerDot.style.boxShadow = isLive ? '0 0 8px var(--accent-red)' : '0 0 8px var(--accent-green)';
+        }
+
+        // Mode banner
         const banner = $('mode-banner');
         const bannerText = $('mode-banner-text');
         const paperBtn = $('mode-switch-paper');
         const liveBtn = $('mode-switch-live');
-        if (banner && bannerText) {
-            if (mode === 'live') {
-                banner.style.background = '#b71c1c';
-                banner.style.color = '#fff';
-                bannerText.textContent = '🔴 LIVE TRADING — Real Money';
-                if (paperBtn) { paperBtn.style.background = '#333'; paperBtn.style.color = '#aaa'; }
-                if (liveBtn) { liveBtn.style.background = '#ef5350'; liveBtn.style.color = '#fff'; }
+        if (banner) {
+            banner.classList.toggle('live-mode', isLive);
+        }
+        if (bannerText) {
+            bannerText.textContent = isLive ? 'LIVE TRADING — Real Money' : 'PAPER MODE — Simulated';
+        }
+        if (paperBtn) { paperBtn.classList.toggle('active', !isLive); }
+        if (liveBtn) { liveBtn.classList.toggle('active', isLive); }
+
+        // Status
+        const statusEl = $('agent-status');
+        if (statusEl) {
+            if (d.running) {
+                statusEl.textContent = 'RUNNING';
+                statusEl.className = 'agent-stat-value status-running';
+            } else if (d.emergency_shutdown) {
+                statusEl.textContent = 'SHUTDOWN';
+                statusEl.className = 'agent-stat-value status-shutdown';
             } else {
-                banner.style.background = '#1b5e20';
-                banner.style.color = '#fff';
-                bannerText.textContent = '📄 PAPER MODE — Simulated';
-                if (paperBtn) { paperBtn.style.background = '#26a69a'; paperBtn.style.color = '#fff'; }
-                if (liveBtn) { liveBtn.style.background = '#333'; liveBtn.style.color = '#aaa'; }
+                statusEl.textContent = 'STOPPED';
+                statusEl.className = 'agent-stat-value status-stopped';
             }
         }
 
-        const statusEl = $('agent-status');
-        if (d.running) {
-            statusEl.textContent = 'RUNNING';
-            statusEl.className = 'agent-stat-value status-running';
-        } else if (d.emergency_shutdown) {
-            statusEl.textContent = 'SHUTDOWN';
-            statusEl.className = 'agent-stat-value status-shutdown';
-        } else {
-            statusEl.textContent = 'STOPPED';
-            statusEl.className = 'agent-stat-value status-stopped';
-        }
-        $('agent-gen').textContent = d.generation ?? '—';
-        $('agent-equity').textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
-        $('agent-cash').textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+        // Gen / Cycle combined
+        const genEl = $('agent-gen');
+        const cycle = d.harness?.cycle || 0;
+        if (genEl) genEl.textContent = `${d.generation ?? 0} / ${cycle}`;
+        const cycleEl = $('agent-cycle');
+        if (cycleEl) cycleEl.textContent = cycle;
 
+        // Account hero: Equity — show OKX balance in live mode
+        const equityEl = $('agent-equity');
+        const sourceEl = $('agent-equity-source');
+        if (isLive) {
+            // Fetch OKX balance every 15s max
+            const now = Date.now();
+            if (now - _lastOKXBalanceFetch > 15000) {
+                _lastOKXBalanceFetch = now;
+                try {
+                    const okxRes = await fetch(`${API_BASE}/api/agent/okx-status`);
+                    if (okxRes.ok) {
+                        const okxData = await okxRes.json();
+                        if (okxData.balance?.total_equity != null) {
+                            if (equityEl) equityEl.textContent = `$${okxData.balance.total_equity.toFixed(2)}`;
+                            if (sourceEl) sourceEl.textContent = `OKX Live | USDT: $${(okxData.balance.usdt_available ?? 0).toFixed(2)}`;
+                        } else {
+                            if (equityEl) equityEl.textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
+                            if (sourceEl) sourceEl.textContent = 'OKX Live (balance unavailable)';
+                        }
+                    }
+                } catch (_) {
+                    if (equityEl && d.equity != null) equityEl.textContent = `$${d.equity.toFixed(2)}`;
+                    if (sourceEl) sourceEl.textContent = 'OKX Live (offline)';
+                }
+            }
+        } else {
+            if (equityEl) equityEl.textContent = d.equity != null ? `$${d.equity.toFixed(2)}` : '—';
+            if (sourceEl) sourceEl.textContent = 'Paper Account';
+        }
+
+        // Cash — in live mode show OKX USDT available
+        const cashEl = $('agent-cash');
+        if (cashEl) {
+            if (isLive && sourceEl?.textContent?.includes('USDT:')) {
+                // Extract USDT from source text already fetched
+                const m = sourceEl.textContent.match(/USDT: \$([\d.]+)/);
+                if (m) cashEl.textContent = `$${m[1]}`;
+                else cashEl.textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+            } else {
+                cashEl.textContent = d.cash != null ? `$${d.cash.toFixed(2)}` : '—';
+            }
+        }
+
+        // Hero PnL
         const pnl = d.total_pnl_usd ?? d.total_pnl;
         const pnlEl = $('agent-pnl');
-        if (pnl != null) {
-            pnlEl.textContent = `$${pnl.toFixed(2)}`;
-            pnlEl.className = `agent-stat-value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
-        } else { pnlEl.textContent = '—'; }
+        if (pnlEl && pnl != null) {
+            const sign = pnl >= 0 ? '+' : '';
+            pnlEl.textContent = `${sign}$${pnl.toFixed(2)}`;
+            pnlEl.className = `hero-stat-value ${pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else if (pnlEl) { pnlEl.textContent = '$0.00'; }
 
-        $('agent-winrate').textContent = d.win_rate != null ? `${d.win_rate.toFixed(1)}%` : '—';
-        $('agent-trades').textContent = d.total_trades ?? '—';
+        // Hero Win Rate
+        const wrEl = $('agent-winrate');
+        if (wrEl) wrEl.textContent = d.win_rate != null ? `${d.win_rate.toFixed(1)}%` : '0.0%';
 
+        // Hero Trades
+        const tradesEl = $('agent-trades');
+        if (tradesEl) tradesEl.textContent = d.total_trades ?? '0';
+
+        // Hero Daily PnL
         const dailyEl = $('agent-daily-pnl');
-        if (d.daily_pnl != null) {
-            dailyEl.textContent = `$${d.daily_pnl.toFixed(2)}`;
-            dailyEl.className = `agent-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
-        } else { dailyEl.textContent = '—'; }
+        if (dailyEl && d.daily_pnl != null) {
+            const sign = d.daily_pnl >= 0 ? '+' : '';
+            dailyEl.textContent = `${sign}$${d.daily_pnl.toFixed(2)}`;
+            dailyEl.className = `hero-stat-value ${d.daily_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+        } else if (dailyEl) { dailyEl.textContent = '$0.00'; }
 
-        // Harness: regime, cycle, phase, lessons
+        // Harness: regime, phase, lessons
         if (d.harness) {
             const h = d.harness;
             const regimeEl = $('agent-regime');
@@ -2061,8 +2155,6 @@ async function refreshAgentStatus() {
                 regimeEl.textContent = (h.market_regime || 'unknown').toUpperCase();
                 regimeEl.className = `agent-stat-value regime-badge regime-${h.market_regime || 'unknown'}`;
             }
-            const cycleEl = $('agent-cycle');
-            if (cycleEl) cycleEl.textContent = h.cycle || 0;
             const phaseEl = $('agent-phase');
             if (phaseEl) phaseEl.textContent = (d.cycle_phase || 'idle').toUpperCase();
 
@@ -2121,8 +2213,11 @@ async function refreshAgentStatus() {
         // Sync config fields from server state (skip if user is editing)
         const cfgTf = $('cfg-timeframe');
         if (cfgTf && d.signal_interval && document.activeElement !== cfgTf) cfgTf.value = d.signal_interval;
-        const cfgSym = $('cfg-symbols');
-        if (cfgSym && d.watch_symbols && document.activeElement !== cfgSym) cfgSym.value = d.watch_symbols.join(',');
+        const cfgSymHidden = $('cfg-symbols-val');
+        if (cfgSymHidden && d.watch_symbols && document.activeElement?.id !== 'cfg-symbols') {
+            cfgSymHidden.value = d.watch_symbols.join(',');
+            initSymbolChips();
+        }
 
         // Sync risk limits from server
         if (d.risk_limits) {
@@ -2151,6 +2246,20 @@ async function refreshAgentStatus() {
                     'dist_ma5_ma8': 'Dist 5-8', 'dist_ma8_ema21': 'Dist 8-21', 'dist_ema21_ma55': 'Dist 21-55',
                     'slope_len': 'Slope Len', 'slope_threshold': 'Slope Thr', 'atr_period': 'ATR',
                 };
+                const paramTips = {
+                    'ma5_len': '5日均线周期（短期趋势）',
+                    'ma8_len': '8日均线周期（短中期趋势）',
+                    'ema21_len': '21日指数均线周期（中期趋势）',
+                    'ma55_len': '55日均线周期（长期趋势）',
+                    'bb_length': '布林带计算周期',
+                    'bb_std_dev': '布林带标准差倍数，越大带越宽，信号越少但更可靠',
+                    'dist_ma5_ma8': 'MA5与MA8之间的最小距离(%)。越大=需要更强趋势才触发信号',
+                    'dist_ma8_ema21': 'MA8与EMA21之间的最小距离(%)。衡量中期趋势强度',
+                    'dist_ema21_ma55': 'EMA21与MA55之间的最小距离(%)。衡量长期趋势确认',
+                    'slope_len': '计算斜率的K线数量',
+                    'slope_threshold': '均线斜率阈值(%)。斜率>此值=上涨趋势，<负此值=下跌。越小越敏感，越大越保守',
+                    'atr_period': 'ATR波动率计算周期，用于止损止盈距离',
+                };
                 const paramStep = {
                     'ma5_len': 1, 'ma8_len': 1, 'ema21_len': 1, 'ma55_len': 1,
                     'bb_length': 1, 'bb_std_dev': 0.1,
@@ -2159,9 +2268,10 @@ async function refreshAgentStatus() {
                 };
                 paramsEl.innerHTML = Object.entries(d.strategy_params).map(([k, v]) => {
                     const label = paramLabels[k] || k;
+                    const tip = paramTips[k] || k;
                     const val = typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(2)) : v;
                     const step = paramStep[k] || 0.1;
-                    return `<div class="agent-param-item">
+                    return `<div class="agent-param-item" title="${tip}">
                         <span class="agent-param-key">${label}</span>
                         <input type="number" class="agent-param-input" data-param="${k}" value="${val}" step="${step}" style="width:60px;background:#252a32;color:#d1d4dc;border:1px solid #363a45;border-radius:3px;text-align:right;font-size:11px;padding:1px 4px;">
                     </div>`;
@@ -2254,22 +2364,34 @@ async function refreshAgentStatus() {
 // Agent button handlers
 document.getElementById('tab-agent')?.addEventListener('click', () => toggleAgentPanel());
 document.getElementById('agent-close')?.addEventListener('click', () => toggleAgentPanel());
+
+// Start/Stop/Revive with loading states
 document.getElementById('agent-start-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' });
+    const btn = document.getElementById('agent-start-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/start`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Start'; btn.disabled = false; }
     refreshAgentStatus();
 });
 document.getElementById('agent-stop-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' });
+    const btn = document.getElementById('agent-stop-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/stop`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Stop'; btn.disabled = false; }
     refreshAgentStatus();
 });
 document.getElementById('agent-revive-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' });
+    const btn = document.getElementById('agent-revive-btn');
+    if (btn) { btn.textContent = '...'; btn.disabled = true; }
+    try { await fetch(`${API_BASE}/api/agent/revive`, { method: 'POST' }); } catch (_) {}
+    if (btn) { btn.textContent = 'Revive'; btn.disabled = false; }
     refreshAgentStatus();
 });
 
 // Mode switch buttons
 document.getElementById('mode-switch-paper')?.addEventListener('click', async () => {
     await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'paper' }) });
+    _lastOKXBalanceFetch = 0; // force refresh
     refreshAgentStatus();
 });
 document.getElementById('mode-switch-live')?.addEventListener('click', async () => {
@@ -2279,6 +2401,7 @@ document.getElementById('mode-switch-live')?.addEventListener('click', async () 
     if (!data.ok) {
         alert('Cannot switch to live: ' + (data.reason || 'Unknown error'));
     }
+    _lastOKXBalanceFetch = 0; // force refresh
     refreshAgentStatus();
 });
 
@@ -2355,7 +2478,7 @@ document.getElementById('cfg-apply-btn')?.addEventListener('click', async () => 
     const msgEl = document.getElementById('cfg-status-msg');
     const timeframe = document.getElementById('cfg-timeframe')?.value;
     const watchMode = document.getElementById('cfg-watch-mode')?.value || 'manual';
-    const symbolsRaw = document.getElementById('cfg-symbols')?.value?.trim();
+    const symbolsRaw = (document.getElementById('cfg-symbols-val')?.value || document.getElementById('cfg-symbols')?.value || '').trim();
     const tick = parseInt(document.getElementById('cfg-tick')?.value || '60');
     const posPct = parseFloat(document.getElementById('cfg-pos-pct')?.value || '5');
     const maxPos = parseInt(document.getElementById('cfg-max-pos')?.value || '3');
@@ -2381,8 +2504,8 @@ document.getElementById('cfg-apply-btn')?.addEventListener('click', async () => 
             if (msgEl) msgEl.innerHTML = `<span style="color:#26a69a">Applied: ${data.changes.join(', ')}</span>`;
             // Update symbols field with server's actual watch list
             if (data.watch_symbols) {
-                const symEl = document.getElementById('cfg-symbols');
-                if (symEl) symEl.value = data.watch_symbols.join(',');
+                const hiddenSym = document.getElementById('cfg-symbols-val');
+                if (hiddenSym) { hiddenSym.value = data.watch_symbols.join(','); initSymbolChips(); }
             }
         } else {
             if (msgEl) msgEl.innerHTML = '<span style="color:#787b86">No changes</span>';
@@ -2455,9 +2578,19 @@ async function refreshOKXStatus() {
 
 // (Data priority removed — auto-adaptive)
 
-// ── Refresh button ──
+// ── Refresh button (with loading guard and timeout) ──
 document.getElementById('data-refresh-btn')?.addEventListener('click', () => {
-    loadData();
+    const btn = document.getElementById('data-refresh-btn');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    // Abort any in-flight load, force fresh
+    if (_loadDataAbortController) _loadDataAbortController.abort();
+    _loadDataInFlight = false;
+    loadData().finally(() => {
+        btn.disabled = false;
+        btn.textContent = 'Refresh';
+    });
 });
 
 // (Quick command and Layout presets removed — not useful, caused refresh loops)
@@ -2545,30 +2678,7 @@ document.getElementById('preset-delete-btn')?.addEventListener('click', async ()
     } catch (e) { if (msg) msg.textContent = 'Error: ' + e.message; }
 });
 
-// ── Position Sizer (in Agent Dashboard, uses agent equity) ──
-function calcPositionSize() {
-    const entry = parseFloat(document.getElementById('ps-entry')?.value);
-    const stop = parseFloat(document.getElementById('ps-stop')?.value);
-    const riskPct = parseFloat(document.getElementById('ps-risk-pct')?.value);
-    const out = document.getElementById('ps-result');
-    if (!out) return;
-    // Get equity from agent status display
-    const eqEl = document.getElementById('agent-equity');
-    const equity = eqEl ? parseFloat(eqEl.textContent.replace(/[^0-9.]/g, '')) : NaN;
-    if (isNaN(entry) || isNaN(stop) || isNaN(riskPct) || entry === stop) {
-        out.textContent = 'Position: — | Risk: —';
-        return;
-    }
-    const bal = isNaN(equity) ? 10000 : equity;
-    const riskUsd = bal * riskPct / 100;
-    const distPct = Math.abs(entry - stop) / entry * 100;
-    const posSize = riskUsd / (Math.abs(entry - stop) / entry);
-    const contracts = posSize / entry;
-    out.textContent = `Size: $${posSize.toFixed(2)} (${contracts.toFixed(4)}) | Risk: $${riskUsd.toFixed(2)} (${distPct.toFixed(2)}%) | Equity: $${bal.toFixed(0)}`;
-}
-['ps-entry', 'ps-stop', 'ps-risk-pct'].forEach(id => {
-    document.getElementById(id)?.addEventListener('input', calcPositionSize);
-});
+// Position Sizer removed — user trades on phone
 
 // ── Initialize ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -2604,4 +2714,481 @@ document.addEventListener('DOMContentLoaded', () => {
             if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
         });
     });
+
+    // ── Symbol chips ──
+    initSymbolChips();
+
+    // ── Strategy description on config change ──
+    ['cfg-timeframe', 'cfg-watch-mode', 'cfg-pos-pct', 'cfg-max-pos', 'cfg-tick',
+     'rl-max-pos-pct', 'rl-max-exp-pct', 'rl-max-daily-loss', 'rl-max-dd', 'rl-max-positions', 'rl-cooldown'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateStrategyDescription);
+    });
+    updateStrategyDescription();
 });
+
+// ── Symbol Chips with Autocomplete ──
+let _symbolChipsReady = false;
+function initSymbolChips() {
+    const hiddenInput = document.getElementById('cfg-symbols-val');
+    const chipsContainer = document.getElementById('symbol-chips');
+    const textInput = document.getElementById('cfg-symbols');
+    if (!hiddenInput || !chipsContainer || !textInput) return;
+
+    // Create autocomplete dropdown (only once)
+    let acDropdown = document.getElementById('symbol-autocomplete');
+    if (!acDropdown) {
+        acDropdown = document.createElement('div');
+        acDropdown.id = 'symbol-autocomplete';
+        acDropdown.className = 'symbol-autocomplete';
+        textInput.parentNode.appendChild(acDropdown);
+    }
+
+    function renderChips() {
+        const symbols = hiddenInput.value.split(',').filter(s => s.trim());
+        chipsContainer.innerHTML = symbols.map(s =>
+            `<span class="symbol-chip">${formatTicker(s)}<span class="chip-x" data-sym="${s}">&times;</span></span>`
+        ).join('');
+        chipsContainer.querySelectorAll('.chip-x').forEach(x => {
+            x.addEventListener('click', () => {
+                const sym = x.dataset.sym;
+                const list = hiddenInput.value.split(',').filter(s => s.trim() && s !== sym);
+                hiddenInput.value = list.join(',');
+                renderChips();
+            });
+        });
+    }
+    renderChips();
+
+    // Only add event listeners once — subsequent calls just re-render chips
+    if (_symbolChipsReady) return;
+    _symbolChipsReady = true;
+
+    function addSymbol(val) {
+        val = val.trim().replace(/[\s,\/]+/g, '').toUpperCase();
+        if (!val) return;
+        // Match against allSymbols (exact or partial)
+        const exact = allSymbols.find(s => s === val);
+        const sym = exact || val;
+        const list = hiddenInput.value.split(',').filter(s => s.trim());
+        if (!list.includes(sym)) {
+            list.push(sym);
+            hiddenInput.value = list.join(',');
+            renderChips();
+        }
+        textInput.value = '';
+        acDropdown.style.display = 'none';
+    }
+
+    function showAutocomplete(query) {
+        const raw = query.toUpperCase().trim();
+        const joined = raw.replace(/[\s\/\-]+/g, '');
+        if (!joined || !allSymbols.length) { acDropdown.style.display = 'none'; return; }
+        const words = raw.split(/[\s\/\-]+/).filter(Boolean);
+        const current = hiddenInput.value.split(',').filter(s => s.trim());
+        const matches = allSymbols
+            .filter(s => !current.includes(s) && (s.includes(joined) || words.some(w => s.includes(w))))
+            .slice(0, 8);
+        if (!matches.length) { acDropdown.style.display = 'none'; return; }
+        acDropdown.innerHTML = matches.map(s =>
+            `<div class="symbol-ac-item" data-sym="${s}">${formatTicker(s)}</div>`
+        ).join('');
+        acDropdown.style.display = 'block';
+        acDropdown.querySelectorAll('.symbol-ac-item').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                addSymbol(item.dataset.sym);
+            });
+        });
+    }
+
+    textInput.addEventListener('input', () => showAutocomplete(textInput.value));
+    textInput.addEventListener('blur', () => { setTimeout(() => { acDropdown.style.display = 'none'; }, 200); });
+    textInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            addSymbol(textInput.value);
+        }
+    });
+}
+
+// ── Strategy Description Generator ──
+function updateStrategyDescription() {
+    const descEl = document.getElementById('strategy-description');
+    if (!descEl) return;
+
+    const tf = document.getElementById('cfg-timeframe')?.value || '4h';
+    const watchMode = document.getElementById('cfg-watch-mode')?.value || 'manual';
+    const posPct = document.getElementById('cfg-pos-pct')?.value || '5';
+    const maxPos = document.getElementById('cfg-max-pos')?.value || '3';
+    const tick = document.getElementById('cfg-tick')?.value || '60';
+    const maxPosPct = document.getElementById('rl-max-pos-pct')?.value || '5';
+    const maxDD = document.getElementById('rl-max-dd')?.value || '5';
+    const maxDailyLoss = document.getElementById('rl-max-daily-loss')?.value || '2';
+    const cooldown = document.getElementById('rl-cooldown')?.value || '3600';
+
+    const watchDesc = watchMode === 'manual'
+        ? '手动选择的交易对'
+        : `按成交量自动筛选 Top ${watchMode.replace('top', '')} 交易对`;
+    const tickNum = parseInt(tick, 10);
+    const cooldownNum = parseInt(cooldown, 10);
+    const tickDesc = tickNum < 60 ? `${tickNum}秒` : `${tickNum / 60}分钟`;
+    const cooldownDesc = cooldownNum >= 3600 ? `${(cooldownNum / 3600).toFixed(1)}小时` : `${(cooldownNum / 60).toFixed(0)}分钟`;
+
+    const desc = `📊 策略说明：\n` +
+        `• 分析周期：${tf} K线，每${tickDesc}扫描一次\n` +
+        `• 监控范围：${watchDesc}\n` +
+        `• 开仓：当MA5/MA8/EMA21均线排列+BB突破信号确认时买入\n` +
+        `• 仓位：每笔 ${posPct}% 资金，最多同时持 ${maxPos} 个仓位\n` +
+        `• 止损：单笔最大亏损 ${maxPosPct}%，日亏损上限 ${maxDailyLoss}%\n` +
+        `• 止盈：趋势反转或均线死叉时平仓\n` +
+        `• 风控：最大回撤 ${maxDD}%，平仓后冷却 ${cooldownDesc}\n` +
+        `• 卖出条件：止损触发 / 止盈信号 / 回撤超限自动清仓`;
+
+    descEl.textContent = desc;
+    descEl.style.display = 'block';
+}
+
+// ── Telegram Save Handler ──
+document.getElementById('tg-save-btn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('tg-status-msg');
+    const badge = document.getElementById('tg-status-badge');
+    const token = document.getElementById('tg-bot-token')?.value?.trim();
+    const chatId = document.getElementById('tg-chat-id')?.value?.trim();
+    if (!token || !chatId) {
+        if (msgEl) msgEl.innerHTML = '<span style="color:#ef5350">Token and Chat ID required</span>';
+        return;
+    }
+    const body = {
+        bot_token: token,
+        chat_id: chatId,
+        notify_signals: document.getElementById('tg-notify-signals')?.checked ?? true,
+        notify_fills: document.getElementById('tg-notify-fills')?.checked ?? true,
+        notify_errors: document.getElementById('tg-notify-errors')?.checked ?? false,
+        notify_daily: document.getElementById('tg-notify-daily')?.checked ?? false,
+    };
+    try {
+        if (msgEl) msgEl.textContent = 'Saving...';
+        const resp = await fetch(`${API_BASE}/api/agent/telegram-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            if (msgEl) msgEl.innerHTML = '<span style="color:#26a69a">Saved! Test message sent.</span>';
+            if (badge) { badge.textContent = 'ON'; badge.style.background = '#0088cc'; }
+            setTimeout(() => { if (msgEl) msgEl.textContent = ''; }, 3000);
+        } else {
+            if (msgEl) msgEl.innerHTML = `<span style="color:#ef5350">${data.reason || 'Failed'}</span>`;
+        }
+    } catch (e) {
+        if (msgEl) msgEl.innerHTML = `<span style="color:#ef5350">Error: ${e.message}</span>`;
+    }
+});
+
+// ── On-Chain Wallet Management ──
+const _onchainWallets = { my: [], watch: [], tokens: [] };
+
+function _saveOnchainWallets() {
+    try { localStorage.setItem('onchain_wallets', JSON.stringify(_onchainWallets)); } catch (_) {}
+}
+function _loadOnchainWallets() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('onchain_wallets') || '{}');
+        if (saved.my) _onchainWallets.my = saved.my;
+        if (saved.watch) _onchainWallets.watch = saved.watch;
+        if (saved.tokens) _onchainWallets.tokens = saved.tokens;
+    } catch (_) {}
+}
+
+function renderWalletList(listId, wallets, type) {
+    const el = document.getElementById(listId);
+    if (!el) return;
+    if (!wallets.length) { el.textContent = type === 'tokens' ? 'No tokens tracked' : 'No wallets added'; return; }
+    el.innerHTML = wallets.map((w, i) => `
+        <div class="wallet-entry">
+            <span class="wallet-entry-label">${w.label || (type === 'tokens' ? w.chain?.toUpperCase() : 'Wallet')}</span>
+            <span class="wallet-entry-addr" title="${w.address}">${w.address.slice(0, 6)}...${w.address.slice(-4)}</span>
+            <span class="wallet-entry-bal">${w.balance || '—'}</span>
+            <span class="wallet-entry-remove" data-type="${type}" data-idx="${i}">&times;</span>
+        </div>
+    `).join('');
+    el.querySelectorAll('.wallet-entry-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            _onchainWallets[btn.dataset.type].splice(parseInt(btn.dataset.idx), 1);
+            _saveOnchainWallets();
+            renderAllOnchainLists();
+        });
+    });
+}
+
+function renderAllOnchainLists() {
+    renderWalletList('my-wallets-list', _onchainWallets.my, 'my');
+    renderWalletList('watch-wallets-list', _onchainWallets.watch, 'watch');
+    renderWalletList('token-monitor-list', _onchainWallets.tokens, 'tokens');
+}
+
+// Address validation
+function isValidAddress(addr) {
+    if (!addr || addr.length < 26) return false;
+    // ETH-like: 0x + 40 hex chars
+    if (/^0x[0-9a-fA-F]{40}$/.test(addr)) return true;
+    // Solana: base58, 32-44 chars
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)) return true;
+    return false;
+}
+
+// Check if an address is a token contract (not a wallet) by querying the API
+async function isTokenContract(addr) {
+    try {
+        const chain = /^0x/i.test(addr) ? 'ethereum' : 'solana';
+        const resp = await fetch(`${API_BASE}/api/onchain/token/analyze/${encodeURIComponent(addr)}?network=${chain}`, { signal: AbortSignal.timeout(5000) });
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        // If the API returns token info (symbol, name, price), it's a token contract
+        if (data.overview?.token_symbol || data.overview?.token_name) return true;
+        return false;
+    } catch (_) {
+        return false; // If API is offline, allow the address (can't verify)
+    }
+}
+
+function showOnchainError(id, msg) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = msg; setTimeout(() => { el.textContent = ''; }, 4000); }
+}
+
+document.getElementById('my-wallet-add-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('my-wallet-add-btn');
+    const addr = document.getElementById('my-wallet-input')?.value?.trim();
+    const label = document.getElementById('my-wallet-label')?.value?.trim() || '';
+    if (!addr) { showOnchainError('my-wallet-error', 'Please paste a wallet address'); return; }
+    if (!isValidAddress(addr)) { showOnchainError('my-wallet-error', 'Invalid address — must be ETH (0x...) or SOL (base58)'); return; }
+    if (_onchainWallets.my.some(w => w.address === addr)) { showOnchainError('my-wallet-error', 'Wallet already added'); return; }
+    // Check if this is a token contract address
+    btn.disabled = true; btn.textContent = 'Checking...';
+    const isToken = await isTokenContract(addr);
+    btn.disabled = false; btn.textContent = 'Add Wallet';
+    if (isToken) { showOnchainError('my-wallet-error', 'This is a token contract, not a wallet. Use Token Monitor below to track tokens.'); return; }
+    _onchainWallets.my.push({ address: addr, label, balance: '—' });
+    _saveOnchainWallets(); renderAllOnchainLists();
+    trackWalletOnchain(addr);
+    document.getElementById('my-wallet-input').value = '';
+    document.getElementById('my-wallet-label').value = '';
+});
+
+document.getElementById('watch-wallet-add-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('watch-wallet-add-btn');
+    const addr = document.getElementById('watch-wallet-input')?.value?.trim();
+    const label = document.getElementById('watch-wallet-label')?.value?.trim() || '';
+    const group = document.getElementById('watch-track-group')?.value || 'default';
+    if (!addr) { showOnchainError('watch-wallet-error', 'Please paste a wallet address'); return; }
+    if (!isValidAddress(addr)) { showOnchainError('watch-wallet-error', 'Invalid address — must be ETH (0x...) or SOL (base58)'); return; }
+    if (_onchainWallets.watch.some(w => w.address === addr)) { showOnchainError('watch-wallet-error', 'Wallet already tracked'); return; }
+    // Check if this is a token contract address
+    btn.disabled = true; btn.textContent = 'Checking...';
+    const isToken = await isTokenContract(addr);
+    btn.disabled = false; btn.textContent = 'Add';
+    if (isToken) { showOnchainError('watch-wallet-error', 'This is a token contract, not a wallet. Use Token Monitor below to track tokens.'); return; }
+    _onchainWallets.watch.push({ address: addr, label, group, balance: '—' });
+    _saveOnchainWallets(); renderAllOnchainLists(); renderTrackGroups();
+    trackWalletOnchain(addr);
+    document.getElementById('watch-wallet-input').value = '';
+    document.getElementById('watch-wallet-label').value = '';
+});
+
+// Token name resolution on paste/input
+let _tokenResolveTimer = null;
+document.getElementById('token-address-input')?.addEventListener('input', (e) => {
+    clearTimeout(_tokenResolveTimer);
+    const nameEl = document.getElementById('token-resolve-name');
+    if (nameEl) nameEl.textContent = '';
+    _tokenResolveTimer = setTimeout(async () => {
+        const addr = e.target.value.trim();
+        if (!addr || addr.length < 26) return;
+        const chain = document.getElementById('token-chain-select')?.value || 'solana';
+        if (nameEl) nameEl.textContent = 'Resolving...';
+        try {
+            const resp = await fetch(`${API_BASE}/api/onchain/token/analyze/${encodeURIComponent(addr)}?network=${chain}`);
+            const data = await resp.json();
+            if (data.overview?.token_symbol) {
+                if (nameEl) nameEl.textContent = `${data.overview.token_symbol} — $${data.overview.price_usd?.toFixed(6) || '?'}`;
+                // Store for later use
+                e.target._resolvedData = data;
+            } else if (data.error) {
+                if (nameEl) { nameEl.textContent = data.offline ? '' : 'Token not found'; nameEl.style.color = 'var(--accent-red)'; }
+            }
+        } catch (_) {
+            if (nameEl) nameEl.textContent = '';
+        }
+    }, 500);
+});
+
+document.getElementById('token-add-btn')?.addEventListener('click', async () => {
+    const addrInput = document.getElementById('token-address-input');
+    const chainSelect = document.getElementById('token-chain-select');
+    const addr = addrInput?.value?.trim();
+    const chain = chainSelect?.value || 'solana';
+    if (!addr) { showOnchainError('token-error', 'Please paste a token contract address'); return; }
+    if (!isValidAddress(addr)) { showOnchainError('token-error', 'Invalid address format'); return; }
+    if (_onchainWallets.tokens.some(t => t.address === addr)) { showOnchainError('token-error', 'Token already monitored'); return; }
+
+    // Use resolved data if available
+    const resolved = addrInput._resolvedData;
+    const label = resolved?.overview?.token_symbol || chain.toUpperCase();
+    const price = resolved?.overview?.price_usd ? `$${resolved.overview.price_usd.toFixed(6)}` : 'Loading...';
+    _onchainWallets.tokens.push({ address: addr, chain, label, balance: price });
+    _saveOnchainWallets(); renderAllOnchainLists();
+    addrInput.value = '';
+    document.getElementById('token-resolve-name').textContent = '';
+    addrInput._resolvedData = null;
+
+    // Show token detail panel
+    if (resolved?.summary) {
+        const detailPanel = document.getElementById('token-detail-panel');
+        if (detailPanel) {
+            detailPanel.style.display = 'block';
+            detailPanel.innerHTML = `<strong>${label}</strong> on ${chain}<br><pre style="white-space:pre-wrap;font-size:10px;margin-top:4px;">${resolved.summary}</pre>`;
+        }
+    }
+
+    // If no resolved data, fetch now
+    if (!resolved) {
+        try {
+            const resp = await fetch(`${API_BASE}/api/onchain/token/analyze/${encodeURIComponent(addr)}?network=${chain}`);
+            const data = await resp.json();
+            if (data.overview) {
+                const tok = _onchainWallets.tokens.find(t => t.address === addr);
+                if (tok) {
+                    tok.label = data.overview.token_symbol || chain.toUpperCase();
+                    tok.balance = data.overview.price_usd ? `$${data.overview.price_usd.toFixed(6)}` : '—';
+                }
+                _saveOnchainWallets(); renderAllOnchainLists();
+                if (data.summary) {
+                    const detailPanel = document.getElementById('token-detail-panel');
+                    if (detailPanel) {
+                        detailPanel.style.display = 'block';
+                        detailPanel.innerHTML = `<strong>${tok?.label}</strong> on ${chain}<br><pre style="white-space:pre-wrap;font-size:10px;margin-top:4px;">${data.summary}</pre>`;
+                    }
+                }
+            }
+        } catch (_) {}
+    }
+});
+
+// Track Groups renderer
+function renderTrackGroups() {
+    const container = document.getElementById('track-groups-config');
+    if (!container) return;
+    const groups = {};
+    _onchainWallets.watch.forEach(w => {
+        const g = w.group || 'default';
+        if (!groups[g]) groups[g] = [];
+        groups[g].push(w);
+    });
+    if (Object.keys(groups).length === 0) {
+        container.innerHTML = '<span style="color:var(--text-muted);">No tracked wallets yet</span>';
+        return;
+    }
+    container.innerHTML = Object.entries(groups).map(([name, wallets]) =>
+        `<div class="track-group-item">
+            <h5>${name.toUpperCase()} (${wallets.length} wallets)</h5>
+            <div class="track-group-wallets">${wallets.map(w => `${w.label || w.address.slice(0,8)}...`).join(', ')}</div>
+        </div>`
+    ).join('');
+}
+
+_loadOnchainWallets();
+renderAllOnchainLists();
+
+// ── On-Chain API Integration ──
+let _onchainPollTimer = null;
+
+async function checkOnchainHealth() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/onchain/health`);
+        const data = await resp.json();
+        const dot = document.querySelector('.onchain-header-dot');
+        const badge = document.querySelector('.onchain-header-badge');
+        if (data.status === 'ok') {
+            if (dot) dot.style.background = 'var(--accent-green)';
+            if (badge) { badge.textContent = 'LIVE'; badge.style.background = 'rgba(0,230,118,0.15)'; badge.style.color = 'var(--accent-green)'; }
+        } else if (data.offline) {
+            if (dot) dot.style.background = 'var(--text-muted)';
+            if (badge) { badge.textContent = 'OFFLINE'; badge.style.background = 'rgba(107,114,128,0.15)'; badge.style.color = 'var(--text-muted)'; }
+        }
+    } catch (_) {}
+}
+
+async function fetchOnchainSignals() {
+    const feed = document.getElementById('onchain-feed');
+    if (!feed) return;
+    try {
+        const resp = await fetch(`${API_BASE}/api/onchain/signals/recommendations?limit=10`);
+        const data = await resp.json();
+        if (data.error) {
+            feed.innerHTML = `<div style="color:var(--text-muted);">${data.offline ? 'Smart Money API offline — start it on port 8002' : data.error}</div>`;
+            return;
+        }
+        if (Array.isArray(data) && data.length > 0) {
+            feed.innerHTML = data.map(r => {
+                const action = r.action || 'watch';
+                const colors = { buy: '#00e676', sell: '#ff1744', watch: '#ffd600', avoid: '#787b86' };
+                const color = colors[action] || '#787b86';
+                return `<div class="onchain-feed-item" style="border-left-color:${color}">
+                    <strong style="color:${color}">${action.toUpperCase()}</strong> ${r.signal?.token_symbol || '?'}
+                    <span style="color:var(--text-muted);font-size:9px;"> conf:${((r.signal?.confidence || 0) * 100).toFixed(0)}% risk:${r.signal?.risk_level || '?'}</span>
+                    <div style="color:var(--text-secondary);font-size:9px;margin-top:2px;">${r.reasoning || ''}</div>
+                </div>`;
+            }).join('');
+        } else if (Array.isArray(data)) {
+            feed.textContent = 'No signals yet — smart money analysis running...';
+        }
+    } catch (_) {
+        feed.textContent = 'Failed to fetch signals';
+    }
+}
+
+async function fetchSmartMoneyWallets() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/onchain/wallets/smart-money`);
+        const data = await resp.json();
+        if (Array.isArray(data) && data.length > 0) {
+            const count = document.getElementById('whale-alert-count');
+            if (count) count.textContent = data.length;
+        }
+    } catch (_) {}
+}
+
+// Track wallet via smart-money API
+async function trackWalletOnchain(address) {
+    try {
+        await fetch(`${API_BASE}/api/onchain/wallets/track/${encodeURIComponent(address)}`, { method: 'POST' });
+    } catch (_) {}
+}
+
+// Token analysis
+document.getElementById('onchain-refresh-btn')?.addEventListener('click', () => {
+    fetchOnchainSignals();
+    fetchSmartMoneyWallets();
+    checkOnchainHealth();
+});
+
+// Auto-poll when on-chain panel is open
+function startOnchainPolling() {
+    if (_onchainPollTimer) return;
+    checkOnchainHealth();
+    fetchOnchainSignals();
+    fetchSmartMoneyWallets();
+    _onchainPollTimer = setInterval(() => {
+        fetchOnchainSignals();
+    }, 15000);
+}
+function stopOnchainPolling() {
+    if (_onchainPollTimer) { clearInterval(_onchainPollTimer); _onchainPollTimer = null; }
+}
+
+// Polling is integrated directly into toggleOnchainPanel above
+

@@ -3,6 +3,7 @@ import time
 import json
 import logging
 from collections import deque
+from typing import Optional
 
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -1121,6 +1122,48 @@ async def api_agent_risk_limits(req: RiskLimitsRequest):
     }}
 
 
+@app.post("/api/agent/telegram-config")
+async def api_agent_telegram_config(request: Request):
+    """Save Telegram notification config and send a test message."""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON"}
+
+    bot_token = body.get("bot_token", "").strip()
+    chat_id = body.get("chat_id", "").strip()
+    if not bot_token or not chat_id:
+        return {"ok": False, "reason": "bot_token and chat_id required"}
+
+    # Store config in agent state
+    agent = get_agent()
+    agent._telegram_config = {
+        "bot_token": bot_token,
+        "chat_id": chat_id,
+        "notify_signals": body.get("notify_signals", True),
+        "notify_fills": body.get("notify_fills", True),
+        "notify_errors": body.get("notify_errors", False),
+        "notify_daily": body.get("notify_daily", False),
+    }
+
+    # Send test message
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                json={"chat_id": chat_id, "text": "✅ Crypto Agent connected! Notifications enabled.", "parse_mode": "HTML"},
+            )
+            if resp.status_code == 200:
+                print(f"[Telegram] Config saved, test message sent to {chat_id}")
+                return {"ok": True}
+            else:
+                err = resp.json().get("description", resp.text)
+                return {"ok": False, "reason": f"Telegram API error: {err}"}
+    except Exception as e:
+        return {"ok": False, "reason": f"Network error: {e}"}
+
+
 @app.get("/api/agent/audit-log")
 async def api_agent_audit_log(limit: int = Query(50, ge=1, le=500)):
     """Get recent entries from the trade audit log."""
@@ -1309,3 +1352,117 @@ async def serve_css():
 async def serve_js():
     return FileResponse(str(PROJECT_ROOT / "frontend" / "app.js"), media_type="application/javascript",
                         headers={"Cache-Control": "no-cache, must-revalidate"})
+
+
+# ── Smart Money / On-Chain Proxy Endpoints ──────────────────────────────────
+# Proxies requests to the smart-money API running on port 8002
+# (main server runs on 8001; smart-money service runs separately on 8002)
+SMART_MONEY_BASE = "http://127.0.0.1:8002"
+
+
+async def _sm_proxy(method: str, path: str, body: Optional[dict] = None):
+    """Proxy a request to the smart-money API."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            if method == "GET":
+                resp = await client.get(f"{SMART_MONEY_BASE}{path}")
+            elif method == "POST":
+                resp = await client.post(f"{SMART_MONEY_BASE}{path}", json=body)
+            elif method == "PUT":
+                resp = await client.put(f"{SMART_MONEY_BASE}{path}", json=body)
+            elif method == "DELETE":
+                resp = await client.delete(f"{SMART_MONEY_BASE}{path}")
+            else:
+                return {"error": f"Unsupported method: {method}"}
+            return resp.json()
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return {"error": "Smart Money API not running (port 8002)", "offline": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/onchain/health")
+async def api_onchain_health():
+    """Check if smart-money API is reachable."""
+    return await _sm_proxy("GET", "/health")
+
+
+@app.get("/api/onchain/wallets")
+async def api_onchain_wallets():
+    """List all analyzed wallet profiles."""
+    return await _sm_proxy("GET", "/wallets/")
+
+
+@app.get("/api/onchain/wallets/smart-money")
+async def api_onchain_smart_money():
+    """List wallets identified as smart money."""
+    return await _sm_proxy("GET", "/wallets/smart-money")
+
+
+@app.get("/api/onchain/wallets/{address}")
+async def api_onchain_wallet_detail(address: str):
+    """Get profile for a specific wallet address."""
+    return await _sm_proxy("GET", f"/wallets/{address}")
+
+
+@app.post("/api/onchain/wallets/track/{address}")
+async def api_onchain_track_wallet(address: str):
+    """Start tracking a wallet address."""
+    return await _sm_proxy("POST", f"/wallets/track/{address}")
+
+
+@app.delete("/api/onchain/wallets/track/{address}")
+async def api_onchain_untrack_wallet(address: str):
+    """Stop tracking a wallet."""
+    return await _sm_proxy("DELETE", f"/wallets/track/{address}")
+
+
+@app.get("/api/onchain/signals")
+async def api_onchain_signals(limit: int = Query(50, ge=1, le=200)):
+    """Get latest trading signals from smart money analysis."""
+    return await _sm_proxy("GET", f"/signals/?limit={limit}")
+
+
+@app.get("/api/onchain/signals/recommendations")
+async def api_onchain_recommendations(limit: int = Query(20, ge=1, le=200)):
+    """Get latest recommendations (signals + market context + action)."""
+    return await _sm_proxy("GET", f"/signals/recommendations?limit={limit}")
+
+
+@app.get("/api/onchain/signals/params")
+async def api_onchain_get_params():
+    """Get current analysis parameters."""
+    return await _sm_proxy("GET", "/signals/params")
+
+
+@app.put("/api/onchain/signals/params")
+async def api_onchain_update_params(request: Request):
+    """Update analysis parameters."""
+    body = await request.json()
+    return await _sm_proxy("PUT", "/signals/params", body)
+
+
+@app.get("/api/onchain/token/analyze/{token_address}")
+async def api_onchain_token_analyze(
+    token_address: str,
+    network: str = Query("solana"),
+    pool: str = Query(None),
+):
+    """Run full smart-money analysis on a live token."""
+    path = f"/token/analyze/{token_address}?network={network}"
+    if pool:
+        path += f"&pool={pool}"
+    return await _sm_proxy("GET", path)
+
+
+@app.get("/api/onchain/validator/backtest")
+async def api_onchain_backtest():
+    """Get latest backtest result."""
+    return await _sm_proxy("GET", "/validator/backtest")
+
+
+@app.get("/api/onchain/validator/high-confidence-wallets")
+async def api_onchain_high_confidence():
+    """Get wallets with high win rate."""
+    return await _sm_proxy("GET", "/validator/high-confidence-wallets")
