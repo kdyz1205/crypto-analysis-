@@ -356,6 +356,11 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
         result = await _download_ohlcv_binance(symbol, interval, days)
 
     _ohlcv_cache[cache_key] = (time.time(), days, result)
+    # Evict expired entries to prevent unbounded memory growth
+    now = time.time()
+    expired = [k for k, (ts, d, _) in _ohlcv_cache.items() if now - ts > _cache_ttl(k[1]) * 4]
+    for k in expired:
+        del _ohlcv_cache[k]
     return result
 
 

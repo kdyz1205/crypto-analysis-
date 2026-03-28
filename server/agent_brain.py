@@ -752,6 +752,7 @@ class AgentBrain:
                 # ── PHASE: ACT — Execute trade ──
                 self._cycle_phase = "execute"
                 size = signal["confidence"] * self.trader.risk.max_position_pct * self.trader.state.equity
+                equity_before = self.trader.state.equity
                 result = await self.trader.open_position(symbol, signal["action"], size)
                 if result["ok"]:
                     print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
@@ -768,7 +769,7 @@ class AgentBrain:
                         "volatility_regime": signal.get("volatility_regime"),
                         "market_regime": self.lessons.market_regime,
                         "mode": self.trader.state.mode,
-                        "equity_before": self.trader.state.equity + size,
+                        "equity_before": equity_before,
                         "pre_trade_checks": "all_passed",
                     })
                     self._last_signals[symbol] = signal

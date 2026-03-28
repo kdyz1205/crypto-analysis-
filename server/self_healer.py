@@ -205,11 +205,28 @@ Rules:
                 messages=[{"role": "user", "content": prompt}],
             )
             text = response.content[0].text.strip()
-            # Extract JSON from response
-            json_match = re.search(r'\{[\s\S]+\}', text)
-            if json_match:
-                import json
-                return json.loads(json_match.group(0))
+            # Extract JSON: try each '{' position to avoid greedy multi-object matches
+            import json as _json
+            for m in re.finditer(r'\{', text):
+                try:
+                    obj = _json.loads(text[m.start():])
+                    return obj
+                except _json.JSONDecodeError:
+                    pass
+                # Try finding the balanced closing brace
+                depth, end = 0, -1
+                for i, ch in enumerate(text[m.start():]):
+                    if ch == '{': depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end = m.start() + i + 1
+                            break
+                if end > 0:
+                    try:
+                        return _json.loads(text[m.start():end])
+                    except _json.JSONDecodeError:
+                        continue
         except Exception as e:
             print(f"[Healer] Claude call failed: {e}")
         return None
@@ -222,7 +239,7 @@ Rules:
         find_text = fix.get("find", "")
         replace_text = fix.get("replace", "")
 
-        if not file_rel or not find_text or file_rel not in PATCHABLE_FILES:
+        if not file_rel or not find_text or replace_text is None or file_rel not in PATCHABLE_FILES:
             print(f"[Healer] Fix rejected: file={file_rel} not in whitelist")
             return False
 
