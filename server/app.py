@@ -689,7 +689,7 @@ async def api_pattern_stats_line_similar(
         except Exception:
             return None
 
-    backtest_result = run_trendline_backtest(df, interval, get_patterns_at_t)
+    backtest_result = await asyncio.to_thread(run_trendline_backtest, df, interval, get_patterns_at_t)
     historical_signals = backtest_result.get("signals") or []
 
     similar_with_score = []

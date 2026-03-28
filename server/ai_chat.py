@@ -284,6 +284,7 @@ class AIChatEngine:
             "integer": "INTEGER",
             "number": "NUMBER",
             "boolean": "BOOLEAN",
+            "array": "ARRAY",
         }
 
         declarations = []
@@ -709,7 +710,7 @@ class AIChatEngine:
                 "losses": result.get("losses", 0),
                 "win_rate": result.get("win_rate", 0),
                 "total_pnl_pct": result.get("total_pnl_pct", 0),
-                "sharpe_ratio": result.get("sharpe_ratio"),
+                "sharpe_ratio": result.get("sharpe"),
                 "max_drawdown_pct": result.get("max_drawdown_pct"),
                 "profit_factor": result.get("profit_factor"),
                 "avg_win": result.get("avg_win", 0),

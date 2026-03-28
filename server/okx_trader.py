@@ -252,6 +252,8 @@ class OKXTrader:
             return {"ok": False, "reason": f"Cannot get price for {symbol}"}
 
         if self.state.mode == "paper":
+            if self.state.cash < size_usd:
+                return {"ok": False, "reason": f"Insufficient cash: {self.state.cash:.2f} < {size_usd:.2f}"}
             pos = Position(
                 symbol=symbol, side=side, size=size_usd,
                 entry_price=price, entry_time=time.time(),
@@ -297,8 +299,14 @@ class OKXTrader:
         self.state.daily_trades += 1
         if pnl_usd > 0:
             self.state.win_count += 1
-        else:
+        elif pnl_usd < 0:
             self.state.loss_count += 1
+
+        # In live mode, close on exchange FIRST before updating local state
+        if self.state.mode == "live":
+            live_result = await self._close_order_live(symbol, pos.side)
+            if not live_result.get("ok"):
+                return {"ok": False, "reason": f"Exchange close failed: {live_result.get('reason')}"}
 
         # Update equity: include size + unrealized PnL of remaining positions for consistency
         self.state.cash += pos.size + pnl_usd
@@ -310,9 +318,6 @@ class OKXTrader:
 
         del self.state.positions[symbol]
         self.state.last_trade_time[symbol] = time.time()
-
-        if self.state.mode == "live":
-            await self._close_order_live(symbol)
 
         return {"ok": True, "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2), "reason": reason, "exit_price": price}
 
@@ -438,7 +443,7 @@ class OKXTrader:
         print(f"[OKX LIVE] Order failed: {msg}")
         return {"ok": False, "reason": msg}
 
-    async def _close_order_live(self, symbol: str) -> dict:
+    async def _close_order_live(self, symbol: str, side: str = "") -> dict:
         """Close position on OKX by closing via the close-position API."""
         if not self.has_api_keys():
             return {"ok": False, "reason": "No API keys configured"}
@@ -446,10 +451,13 @@ class OKXTrader:
         inst_id = self._inst_id(symbol)
         # Use the close-position endpoint for simplicity
         path = "/api/v5/trade/close-position"
-        body = json.dumps({
+        close_body = {
             "instId": inst_id,
             "mgnMode": "cross",
-        })
+        }
+        if side:
+            close_body["posSide"] = side  # required for hedge mode
+        body = json.dumps(close_body)
 
         data = await self._okx_request("POST", path, body)
         if data.get("code") == "0":
@@ -465,13 +473,15 @@ class OKXTrader:
             pos_amt = abs(float(pos.get("pos", 0)))
             if pos_amt > 0:
                 close_side = "sell" if float(pos.get("pos", 0)) > 0 else "buy"
+                pos_side = "long" if float(pos.get("pos", 0)) > 0 else "short"
                 close_body = json.dumps({
                     "instId": inst_id,
                     "tdMode": "cross",
                     "side": close_side,
+                    "posSide": pos_side,
                     "ordType": "market",
-                    "sz": str(int(pos_amt)),
-                    "reduceOnly": True,
+                    "sz": str(pos_amt),
+                    "reduceOnly": "true",
                 })
                 close_data = await self._okx_request("POST", "/api/v5/trade/order", close_body)
                 if close_data.get("code") == "0":

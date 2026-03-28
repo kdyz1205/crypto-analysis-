@@ -310,6 +310,7 @@ class AgentBrain:
         self._signal_history: list[dict] = []  # all signals for UI review
         self.lessons = LessonsLedger()
         self._cycle_phase: str = "idle"  # current harness phase for UI
+        self._last_evolved_at: int = 0
         self._load_state()
 
     # ── State persistence ─────────────────────────────────────────────────
@@ -790,8 +791,10 @@ class AgentBrain:
         # ── PHASE: EVOLVE — mutate params if due ──
         self._cycle_phase = "evolve"
         if (self.trader.state.total_trades > 0 and
-                self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0):
+                self.trader.state.total_trades % EVOLVE_EVERY_N_TRADES == 0 and
+                self.trader.state.total_trades != self._last_evolved_at):
             self.evolve()
+            self._last_evolved_at = self.trader.state.total_trades
 
         # ── PHASE: CHECKPOINT ──
         self._cycle_phase = "checkpoint"

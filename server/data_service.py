@@ -398,7 +398,7 @@ async def _download_ohlcv_binance(symbol: str, interval: str, days: int = 30) ->
     pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
     pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
     numeric_cols = ["open", "high", "low", "close", "volume"]
-    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=1)
+    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=0)
 
     if API_ONLY:
         result = pl.from_pandas(pdf).select(["open_time", "open", "high", "low", "close", "volume"])
@@ -546,7 +546,7 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
     pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
     pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
     numeric_cols = ["open", "high", "low", "close", "volume"]
-    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=1)
+    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=0)
     pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
 
     if API_ONLY:
@@ -633,7 +633,7 @@ async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) ->
     pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
     pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
     numeric_cols = ["open", "high", "low", "close", "volume"]
-    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=1)
+    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=0)
     pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
 
     result = pl.from_pandas(pdf)
@@ -730,7 +730,9 @@ def _merge_and_save(existing_df: pl.DataFrame, new_df: pl.DataFrame, symbol: str
     )
     if "close_time" in df_out.columns and df_out["close_time"].dtype != pl.Utf8:
         df_out = df_out.with_columns(pl.col("close_time").cast(pl.Utf8))
-    df_out.write_csv(save_path)
+    # polars write_csv does not auto-compress from extension; use pandas to write gzip
+    import pandas as _pd
+    df_out.to_pandas().to_csv(save_path, index=False, compression="gzip")
 
     return combined
 
@@ -1063,6 +1065,7 @@ async def get_ohlcv_with_df(
 
     candles = []
     volume = []
+    timestamps = []
     for row in df.iter_rows(named=True):
         ts = int(row["open_time"].timestamp())
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
@@ -1070,8 +1073,43 @@ async def get_ohlcv_with_df(
         candles.append({"time": ts, "open": o, "high": h, "low": l, "close": c})
         color = "#26a69a80" if c >= o else "#ef535080"
         volume.append({"time": ts, "value": v, "color": color})
+        timestamps.append(ts)
 
-    result = {"candles": candles, "volume": volume}
+    # Compute V6 MA overlays (same as get_ohlcv so /api/chart also returns them)
+    from .backtest_service import _sma, _ema, _bb_upper as _bb_up
+
+    def _bb_lower_wdf(close, period, std_mult):
+        sma = _sma(close, period)
+        n = len(close)
+        bb = np.full(n, np.nan)
+        for i in range(period - 1, n):
+            window = close[i - period + 1 : i + 1]
+            bb[i] = sma[i] - std_mult * np.std(window)
+        return bb
+
+    close_arr = np.array([c["close"] for c in candles], dtype=float)
+    overlays = {}
+    if len(close_arr) >= 55:
+        ma5 = _sma(close_arr, 5)
+        ma8 = _sma(close_arr, 8)
+        ema21 = _ema(close_arr, 21)
+        ma55 = _sma(close_arr, 55)
+        bb_up = _bb_up(close_arr, 21, 2.5)
+        bb_lo = _bb_lower_wdf(close_arr, 21, 2.5)
+
+        def _to_line(arr, ts_list):
+            return [{"time": t, "value": round(float(v), 6)} for t, v in zip(ts_list, arr) if not np.isnan(v)]
+
+        overlays = {
+            "ma5": _to_line(ma5, timestamps),
+            "ma8": _to_line(ma8, timestamps),
+            "ema21": _to_line(ema21, timestamps),
+            "ma55": _to_line(ma55, timestamps),
+            "bb_upper": _to_line(bb_up, timestamps),
+            "bb_lower": _to_line(bb_lo, timestamps),
+        }
+
+    result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
     return df, result

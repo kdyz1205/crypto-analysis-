@@ -250,20 +250,21 @@ Rules:
         try:
             subprocess.run(
                 ["git", "add", "-A"],
-                cwd=PROJECT_ROOT, capture_output=True, timeout=15
+                cwd=PROJECT_ROOT, capture_output=True, timeout=15, check=True
             )
-            subprocess.run(
+            result = subprocess.run(
                 ["git", "commit", "-m", message],
                 cwd=PROJECT_ROOT, capture_output=True, timeout=15
             )
-            return True
+            return result.returncode == 0
         except Exception:
             return False
 
-    def _git_revert_last(self):
+    def _git_revert_uncommitted(self):
+        """Discard uncommitted changes to restore the snapshot state."""
         try:
             subprocess.run(
-                ["git", "revert", "--no-edit", "HEAD"],
+                ["git", "checkout", "--", "."],
                 cwd=PROJECT_ROOT, capture_output=True, timeout=15
             )
         except Exception:
@@ -291,7 +292,8 @@ Rules:
                 HEAL_LOG.write_text("time\tsig\troot_cause\tfile\tsuccess\n")
             with open(HEAL_LOG, "a", encoding="utf-8") as f:
                 ts = time.strftime("%Y-%m-%dT%H:%M:%S")
-                f.write(f"{ts}\t{sig[:60]}\t{root_cause[:100]}\t{file}\t{success}\n")
+                _s = lambda s: s.replace("\t", " ").replace("\n", " ").replace("\r", "")
+                f.write(f"{ts}\t{_s(sig[:60])}\t{_s(root_cause[:100])}\t{_s(file)}\t{success}\n")
         except Exception:
             pass
 
@@ -335,12 +337,17 @@ Rules:
         print(f"[Healer] Claude fix: {root_cause} -> patching {file_fixed}")
 
         # Commit before patching (safety snapshot)
-        self._git_commit(f"[auto-snapshot] before self-heal attempt {attempt}: {sig[:50]}")
+        snapshot_ok = self._git_commit(f"[auto-snapshot] before self-heal attempt {attempt}: {sig[:50]}")
+        if not snapshot_ok:
+            print("[Healer] Could not create safety snapshot, aborting")
+            self._error_buffer.lines.clear()
+            return
 
         # Apply the fix
         applied = self._apply_fix(fix)
         if not applied:
             self._log_heal(sig, root_cause, file_fixed, False)
+            self._error_buffer.lines.clear()
             return
 
         # Wait for uvicorn reload + health check
@@ -350,12 +357,12 @@ Rules:
             self._git_commit(f"[self-heal #{self._fix_count}] {root_cause[:80]}")
             print(f"[Healer] Fix verified! Total fixes: {self._fix_count}")
             self._log_heal(sig, root_cause, file_fixed, True)
-            # Clear error from buffer so we don't re-trigger
-            self._error_buffer.lines.clear()
         else:
-            print(f"[Healer] Fix broke things! Reverting...")
-            self._git_revert_last()
+            print(f"[Healer] Fix broke things! Reverting uncommitted changes...")
+            self._git_revert_uncommitted()
             self._log_heal(sig, root_cause, file_fixed, False)
+        # Clear error buffer after any heal attempt to avoid re-processing stale errors
+        self._error_buffer.lines.clear()
 
     async def _loop(self):
         """Background loop: check for errors every 30s."""
