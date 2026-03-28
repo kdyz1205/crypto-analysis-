@@ -12,7 +12,16 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [INFO] Starting crypto-analysis server...
+echo [INFO] Starting crypto-analysis server (auto-restart on crash)...
+echo [INFO] Close this window to stop the server.
+echo.
+
+:RESTART
+echo [%date% %time%] Starting server...
 python run.py
+echo.
+echo [%date% %time%] Server stopped. Restarting in 3 seconds... (Close window to quit)
+timeout /t 3 /nobreak >nul
+goto RESTART
 
 endlocal

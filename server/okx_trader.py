@@ -300,9 +300,12 @@ class OKXTrader:
         else:
             self.state.loss_count += 1
 
-        # Update equity
+        # Update equity: include size + unrealized PnL of remaining positions for consistency
         self.state.cash += pos.size + pnl_usd
-        self.state.equity = self.state.cash + sum(p.size for p in self.state.positions.values() if p.symbol != symbol)
+        self.state.equity = self.state.cash + sum(
+            p.size + p.size * p.unrealized_pnl / 100
+            for p in self.state.positions.values() if p.symbol != symbol
+        )
         self.state.peak_equity = max(self.state.peak_equity, self.state.equity)
 
         del self.state.positions[symbol]
@@ -311,7 +314,7 @@ class OKXTrader:
         if self.state.mode == "live":
             await self._close_order_live(symbol)
 
-        return {"ok": True, "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2), "reason": reason}
+        return {"ok": True, "pnl_pct": round(pnl_pct, 2), "pnl_usd": round(pnl_usd, 2), "reason": reason, "exit_price": price}
 
     async def update_positions(self):
         """Update unrealized PnL for all positions."""

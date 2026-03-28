@@ -77,7 +77,7 @@ def extract_features(
     bar_times[i] = open_time at bar i; atr_array same length as bars.
     """
     x1, x2 = int(line.x1), int(line.x2)
-    if x1 < 0 or x2 >= len(bar_times) or x2 <= x1:
+    if x1 < 0 or x1 >= len(bar_times) or x2 >= len(bar_times) or x2 <= x1:
         return None
     n_points = x2 - x1 + 1
     length_bars = n_points
@@ -297,7 +297,7 @@ def _signal_to_features(s: dict, timeframe: str) -> TrendLineFeatures:
         timeframe=timeframe,
         n_points=int(s.get("n_points", 0)),
         start_time=s.get("start_time", ""),
-        end_time=s.get("start_time", ""),
+        end_time=s.get("end_time", ""),
         slope=float(s.get("slope", 0)),
         touch_count=0,
         volatility_norm=float(s.get("volatility_norm", 0)),

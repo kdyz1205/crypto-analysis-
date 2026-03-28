@@ -41,15 +41,16 @@ class BacktestParams:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "BacktestParams":
+        defaults = cls()
         return cls(
-            mfi_period=int(d.get("mfi_period", 14)),
-            ma_fast=int(d.get("ma_fast", 8)),
-            ema_span=int(d.get("ema_span", 21)),
-            ma_slow=int(d.get("ma_slow", 55)),
-            atr_period=int(d.get("atr_period", 14)),
-            atr_sl_mult=float(d.get("atr_sl_mult", 1.0)),
-            bb_period=int(d.get("bb_period", 21)),
-            bb_std=float(d.get("bb_std", 2.2)),
+            mfi_period=int(d.get("mfi_period", defaults.mfi_period)),
+            ma_fast=int(d.get("ma_fast", defaults.ma_fast)),
+            ema_span=int(d.get("ema_span", defaults.ema_span)),
+            ma_slow=int(d.get("ma_slow", defaults.ma_slow)),
+            atr_period=int(d.get("atr_period", defaults.atr_period)),
+            atr_sl_mult=float(d.get("atr_sl_mult", defaults.atr_sl_mult)),
+            bb_period=int(d.get("bb_period", defaults.bb_period)),
+            bb_std=float(d.get("bb_std", defaults.bb_std)),
         )
 
 
@@ -72,9 +73,16 @@ def _ema(x: np.ndarray, span: int) -> np.ndarray:
     a = 2.0 / (span + 1)
     out = np.empty_like(x, dtype=float)
     out[:] = np.nan
-    out[0] = x[0]
-    for i in range(1, len(x)):
-        out[i] = a * x[i] + (1 - a) * out[i - 1]
+    # Find first non-NaN to seed the EMA (avoids propagating leading NaN)
+    first_valid = next((i for i, v in enumerate(x) if not np.isnan(v)), None)
+    if first_valid is None:
+        return out
+    out[first_valid] = x[first_valid]
+    for i in range(first_valid + 1, len(x)):
+        if np.isnan(x[i]):
+            out[i] = out[i - 1]  # hold last valid value
+        else:
+            out[i] = a * x[i] + (1 - a) * out[i - 1]
     return out
 
 
@@ -207,7 +215,7 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
         # Entry: MA stacking + MFI > 50 + RSI between 40-70 (momentum but not overbought)
         rsi_ok = 40 < rsi_arr[i] < 70
         if (close[i] > ma_fast[i] and ma_fast[i] > ema_arr[i] and ema_arr[i] > ma_slow[i]
-                and mfi_arr[i] > 50 and rsi_ok):
+                and mfi_arr[i] > 50 and rsi_ok and close[i] > 0):
             position = "long"
             entry_price = close[i]
             entry_idx = i

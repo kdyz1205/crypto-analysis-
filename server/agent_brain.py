@@ -260,7 +260,10 @@ class PreTradeChecklist:
         # 5. Stop loss must exist and be reasonable
         price = signal.get("price", 0)
         sl = signal.get("sl", 0)
-        if price > 0 and sl > 0:
+        action = signal.get("action")
+        if action in ("long", "short") and (not sl or sl <= 0):
+            failures.append("Missing or zero stop loss for entry signal")
+        elif price > 0 and sl > 0:
             sl_dist_pct = abs(price - sl) / price * 100
             if sl_dist_pct > 10:
                 failures.append(f"SL too far: {sl_dist_pct:.1f}% (max 10%)")
@@ -274,11 +277,12 @@ class PreTradeChecklist:
             if time.time() - last_time < SIGNAL_DEDUP_WINDOW_SEC:
                 failures.append(f"Duplicate signal suppressed (same {signal['action']} within {SIGNAL_DEDUP_WINDOW_SEC}s)")
 
-        # 7. No conflicting position
+        # 7. No conflicting position — any open position blocks a new entry signal
         if symbol in agent.trader.state.positions:
             pos = agent.trader.state.positions[symbol]
-            if signal.get("action") == pos.side:
-                failures.append(f"Already in {pos.side} position for {symbol}")
+            sig_action = signal.get("action")
+            if sig_action in ("long", "short"):
+                failures.append(f"Already in {pos.side} position for {symbol} — close it before entering {sig_action}")
 
         # 8. Consecutive loss protection
         recent = agent.trader.state.trade_history[-5:]
@@ -426,17 +430,17 @@ class AgentBrain:
             if pos.side == "long":
                 # Long SL: price < MA55
                 if price < ma55[i]:
-                    return {"action": "close", "confidence": 1.0, "reason": "Long SL: price < MA55"}
+                    return {"action": "close", "confidence": 1.0, "reason": "Long SL: price < MA55", "volatility_regime": volatility_regime}
                 # Long TP: price >= BB_upper
                 if price >= bb_up[i]:
-                    return {"action": "close", "confidence": 0.9, "reason": "Long TP: price hit BB_upper"}
+                    return {"action": "close", "confidence": 0.9, "reason": "Long TP: price hit BB_upper", "volatility_regime": volatility_regime}
             elif pos.side == "short":
                 # Short SL: price > MA55
                 if price > ma55[i]:
-                    return {"action": "close", "confidence": 1.0, "reason": "Short SL: price > MA55"}
+                    return {"action": "close", "confidence": 1.0, "reason": "Short SL: price > MA55", "volatility_regime": volatility_regime}
                 # Short TP: price <= BB_lower
                 if price <= bb_lo[i]:
-                    return {"action": "close", "confidence": 0.9, "reason": "Short TP: price hit BB_lower"}
+                    return {"action": "close", "confidence": 0.9, "reason": "Short TP: price hit BB_lower", "volatility_regime": volatility_regime}
             return None  # hold
 
         # ── Layer 1: Trend ordering ──
@@ -563,7 +567,7 @@ class AgentBrain:
                         side=pos.side,
                         pnl_pct=pnl_pct,
                         entry_price=pos.entry_price,
-                        exit_price=result.get("price", 0),
+                        exit_price=result.get("exit_price", 0),
                         regime=self.lessons.market_regime,
                         vol_regime=signal.get("volatility_regime", "unknown"),
                     )
@@ -574,7 +578,7 @@ class AgentBrain:
                         "reason": signal["reason"],
                         "pnl_pct": pnl_pct,
                         "pnl_usd": result.get("pnl_usd", 0),
-                        "exit_price": result.get("price", 0),
+                        "exit_price": result.get("exit_price", 0),
                         "mode": self.trader.state.mode,
                         "equity_after": self.trader.state.equity,
                         "market_regime": self.lessons.market_regime,
@@ -692,8 +696,9 @@ class AgentBrain:
         # Check consecutive losses — pause after 3 consecutive losses
         recent = self.trader.state.trade_history[-3:]
         if len(recent) >= 3 and all(t.pnl_usd < 0 for t in recent):
-            print(f"[Agent] 3 consecutive losses — pausing new entries until a win")
-            self.lessons.add("risk", "3 consecutive losses — auto-paused", symbol="ALL")
+            if not self.lessons.has_recent_warning("risk", lookback=3):
+                print(f"[Agent] 3 consecutive losses — pausing new entries until a win")
+                self.lessons.add("risk", "3 consecutive losses — auto-paused", symbol="ALL")
         else:
             # ── PHASE: SCAN — generate signals for all symbols ──
             self._cycle_phase = "scan"

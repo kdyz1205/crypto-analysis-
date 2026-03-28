@@ -192,7 +192,7 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
             pairs.append((symbol, vol_usd))
 
         pairs.sort(key=lambda x: x[1], reverse=True)
-        result = [p[0] for p in pairs[:max(top_n, 50)]]  # cache more than needed
+        result = [p[0] for p in pairs]  # cache full sorted list so any top_n can be served
         _top_vol_cache = (time.time(), result)
         print(f"[Data] Top {top_n} by volume: {', '.join(result[:top_n])}")
         return result[:top_n]
@@ -289,9 +289,20 @@ def _load_csv(path: Path) -> pl.DataFrame:
     df = df.select(have)
 
     if df["open_time"].dtype == pl.Utf8:
-        df = df.with_columns(
-            pl.col("open_time").str.to_datetime("%Y-%m-%d %H:%M:%S")
-        )
+        # Try multiple common datetime formats found in exported CSVs
+        parsed = None
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S%.f"):
+            try:
+                parsed = df.with_columns(
+                    pl.col("open_time").str.to_datetime(fmt)
+                )
+                break
+            except Exception:
+                continue
+        if parsed is None:
+            # Last-resort: let polars infer the format
+            parsed = df.with_columns(pl.col("open_time").str.to_datetime())
+        df = parsed
     for col in ["open", "high", "low", "close", "volume"]:
         if col in df.columns and df[col].dtype == pl.Utf8:
             df = df.with_columns(pl.col(col).cast(pl.Float64))
@@ -492,8 +503,8 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
             oldest_ts = int(rows_oldest_first[0][0])
             if oldest_ts <= OKX_START_TS_MS or oldest_ts <= target_oldest_ms:
                 break
-            # Guard: if oldest_ts didn't advance, we'd loop forever on duplicate data
-            if oldest_ts == prev_after_ts:
+            # Guard: if oldest_ts didn't advance vs last request's after_ts, we'd loop forever
+            if oldest_ts == after_ts:
                 if not use_history_endpoint:
                     # Switch to history endpoint and retry
                     use_history_endpoint = True
