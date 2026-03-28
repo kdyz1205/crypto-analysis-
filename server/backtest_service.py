@@ -224,7 +224,7 @@ def run_backtest(df: pl.DataFrame, params: BacktestParams | None = None) -> dict
             sl_price = ema_arr[i] - p.atr_sl_mult * atr_arr[i]
             tp_price = bb_upper[i]
 
-    if position is not None:
+    if position is not None and len(close) > 0 and entry_price > 0:
         pnl_pct = (close[-1] - entry_price) / entry_price * 100
         trades.append({
             "entry_idx": entry_idx, "exit_idx": len(close) - 1, "exit_reason": "EOD", "pnl_pct": pnl_pct,

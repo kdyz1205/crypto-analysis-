@@ -156,7 +156,8 @@ class LessonsLedger:
             return "unknown"
 
         slope_20 = _slope(ma20, 10, i)
-        atr_pct = atr[i] / close[i] * 100 if close[i] > 0 else 0
+        atr_val = atr[i] if not np.isnan(atr[i]) else 0
+        atr_pct = atr_val / close[i] * 100 if close[i] > 0 else 0
 
         if abs(slope_20) > 0.5 and atr_pct < 4.0:
             regime = "trending"
@@ -512,8 +513,9 @@ class AgentBrain:
 
         # ── Layer 5: Volume confirmation ──
         if vol is not None and len(vol) > 20:
-            vol_ma = np.mean(vol[max(0, i - 20):i]) if i >= 20 else np.mean(vol[:i+1])
-            if vol_ma > 0 and not np.isnan(vol[i]):
+            vol_slice = vol[max(0, i - 20):i] if i >= 20 else vol[:i+1]
+            vol_ma = np.nanmean(vol_slice) if len(vol_slice) > 0 else 0
+            if vol_ma > 0 and not np.isnan(vol_ma) and not np.isnan(vol[i]):
                 vol_ratio = vol[i] / vol_ma
                 if vol_ratio < 0.5:
                     # Very low volume — likely fake breakout

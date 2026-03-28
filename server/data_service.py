@@ -186,8 +186,11 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
             inst_id = t.get("instId", "")
             if not inst_id.endswith("-USDT-SWAP"):
                 continue
-            vol_base = float(t.get("volCcy24h", 0))
-            last_price = float(t.get("last", 0))
+            try:
+                vol_base = float(t.get("volCcy24h") or 0)
+                last_price = float(t.get("last") or 0)
+            except (TypeError, ValueError):
+                continue
             vol_usd = vol_base * last_price  # approximate USD notional
             base = inst_id.replace("-USDT-SWAP", "")
             symbol = f"{base}USDT"
@@ -822,7 +825,10 @@ async def _incremental_update(symbol: str, base_interval: str) -> pl.DataFrame:
         return existing_df
 
     # Gap detection: first new candle should be at most 1 interval after last existing
-    first_new_ms = int(new_df["open_time"].min().replace(tzinfo=timezone.utc).timestamp() * 1000)
+    first_new_dt = new_df["open_time"].min()
+    if first_new_dt is None:
+        return existing_df
+    first_new_ms = int(first_new_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
     expected_next_ms = last_ms + interval_ms
     if first_new_ms > expected_next_ms:
         # Gap detected — full re-download

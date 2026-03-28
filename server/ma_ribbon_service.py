@@ -239,6 +239,8 @@ def run_ribbon_backtest(
             continue
         entry = close_arr[i]
         exit_ = close_arr[j]
+        if entry <= 0:
+            continue
         ret_pct = (exit_ - entry) / entry * 100
         signals.append({
             "anchor_idx": i,

@@ -215,6 +215,8 @@ class OKXTrader:
             return False, self.state.shutdown_reason
 
         # Drawdown limit
+        if self.state.peak_equity <= 0:
+            self.state.peak_equity = max(self.state.equity, 1.0)
         dd = (self.state.peak_equity - self.state.equity) / self.state.peak_equity
         if dd > self.risk.max_drawdown_pct:
             self.state.is_alive = False

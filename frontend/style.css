@@ -373,6 +373,10 @@ body {
     height: calc(100vh - 44px);
 }
 
+#chart-area.drawing-mode {
+    cursor: crosshair;
+}
+
 #chart-left {
     width: 170px;
     min-width: 120px;

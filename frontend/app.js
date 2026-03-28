@@ -406,7 +406,7 @@ function onDrawLineFinalized(line) {
     fetchAssistSimilar(line).then((data) => {
         assistSimilarData = data;
         updateAssistPanelNotification();
-    });
+    }).catch(e => console.warn('Similar lines fetch failed:', e));
 }
 
 let lastDrawnLineForAssist = null;
@@ -750,6 +750,7 @@ async function loadData(isLiveUpdate = false) {
             lastCandle = lastCandles[lastCandles.length - 1];
             const last = lastCandle;
             const legend = document.getElementById('ohlc-legend');
+            if (!legend) return;
             const color = last.close >= last.open ? '#26a69a' : '#ef5350';
             legend.innerHTML =
                 `<span><span class="ohlc-label">O</span> <span style="color:${color}">${formatPrice(last.open)}</span></span>` +
@@ -1892,6 +1893,7 @@ async function sendChatMessage(text) {
     const messagesEl = document.getElementById('chat-messages');
     const sendBtn = document.getElementById('chat-send-btn');
     const inputEl = document.getElementById('chat-input');
+    if (!messagesEl || !sendBtn || !inputEl) { chatSending = false; return; }
 
     // Remove welcome message
     const welcome = messagesEl.querySelector('.chat-welcome');
@@ -1948,17 +1950,19 @@ async function sendChatMessage(text) {
             ).join('') + '<br>';
         }
 
-        // Simple markdown rendering (bold, code, pre)
-        let reply = data.reply || '';
+        // Simple markdown rendering (bold, code, pre) — escape HTML first
+        let reply = (data.reply || '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         reply = reply.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
         reply = reply.replace(/`([^`]+)`/g, '<code>$1</code>');
         reply = reply.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        reply = reply.replace(/\n/g, '<br>');
 
         assistMsg.innerHTML = toolBadgesHtml + reply;
         messagesEl.appendChild(assistMsg);
 
     } catch (e) {
-        thinkMsg.remove();
+        if (thinkMsg?.parentNode) thinkMsg.remove();
         const errMsg = document.createElement('div');
         errMsg.className = 'chat-msg assistant';
         errMsg.style.color = '#ef5350';
@@ -2003,8 +2007,9 @@ document.getElementById('chat-messages')?.addEventListener('click', (e) => {
 
 // Clear chat
 document.getElementById('chat-clear-btn')?.addEventListener('click', async () => {
-    await fetch(`${API_BASE}/api/chat/clear?session_id=default`, { method: 'POST' });
+    try { await fetch(`${API_BASE}/api/chat/clear?session_id=default`, { method: 'POST' }); } catch (_) {}
     const messagesEl = document.getElementById('chat-messages');
+    if (!messagesEl) return;
     messagesEl.innerHTML = `
         <div class="chat-welcome">
             <p>Chat cleared. Ask me anything!</p>
@@ -2060,7 +2065,7 @@ async function refreshAgentStatus() {
     _agentPollInFlight = true;
     try {
         const res = await fetch(`${API_BASE}/api/agent/status`);
-        if (!res.ok) return;
+        if (!res.ok) { _agentPollInFlight = false; return; }
         const d = await res.json();
         const $ = id => document.getElementById(id);
         const mode = (d.mode || 'paper').toLowerCase();
@@ -2436,10 +2441,14 @@ document.getElementById('mode-switch-paper')?.addEventListener('click', async ()
 });
 document.getElementById('mode-switch-live')?.addEventListener('click', async () => {
     if (!confirm('Switch to LIVE trading? This will use real money via OKX API.\n\nMake sure your API keys are configured.')) return;
-    const resp = await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'live' }) });
-    const data = await resp.json();
-    if (!data.ok) {
-        alert('Cannot switch to live: ' + (data.reason || 'Unknown error'));
+    try {
+        const resp = await fetch(`${API_BASE}/api/agent/config`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'live' }) });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert('Cannot switch to live: ' + (data.reason || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Failed to switch mode: ' + e.message);
     }
     _lastOKXBalanceFetch = 0; // force refresh
     refreshAgentStatus();

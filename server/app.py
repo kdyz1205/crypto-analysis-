@@ -303,7 +303,7 @@ async def api_chart(
         patterns = get_patterns_from_df(df, symbol, interval, end_time)
         return {**ohlcv, **patterns}
     except ValueError as e:
-        print(f"ValueError in /api/chart for {symbol} {interval}: {e}")
+        print(f"ValueError in /api/chart for {symbol} {interval}: {e}")  # noqa: W605
         raise HTTPException(400, str(e))
     except Exception as e:
         import traceback
@@ -713,7 +713,7 @@ async def api_pattern_stats_line_similar(
     out_lines = []
     for sim, s in similar_with_score[:max_lines]:
         xx1, xx2 = int(s["x1"]), int(s["x2"])
-        if xx1 < 0 or xx2 >= len(bar_times):
+        if xx1 < 0 or xx2 < 0 or xx1 >= len(bar_times) or xx2 >= len(bar_times):
             continue
         t1 = _to_unix_ts(bar_times[xx1])
         t2 = _to_unix_ts(bar_times[xx2])
@@ -1039,7 +1039,10 @@ async def api_get_presets():
 @app.post("/api/agent/strategy-presets/save")
 async def api_save_preset(request: Request):
     """Save current strategy params as a named preset."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON body"}
     name = body.get("name", "").strip()
     if not name:
         return {"ok": False, "reason": "Preset name is required"}
@@ -1054,7 +1057,10 @@ async def api_save_preset(request: Request):
 @app.post("/api/agent/strategy-presets/load")
 async def api_load_preset(request: Request):
     """Load a named preset into the active strategy."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON body"}
     name = body.get("name", "").strip()
     presets = _load_presets()
     if name not in presets:
@@ -1069,7 +1075,10 @@ async def api_load_preset(request: Request):
 @app.post("/api/agent/strategy-presets/delete")
 async def api_delete_preset(request: Request):
     """Delete a named preset."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON body"}
     name = body.get("name", "").strip()
     presets = _load_presets()
     if name in presets:
@@ -1161,7 +1170,10 @@ async def api_agent_telegram_config(request: Request):
                 print(f"[Telegram] Config saved, test message sent to {chat_id}")
                 return {"ok": True}
             else:
-                err = resp.json().get("description", resp.text)
+                try:
+                    err = resp.json().get("description", resp.text)
+                except Exception:
+                    err = resp.text
                 return {"ok": False, "reason": f"Telegram API error: {err}"}
     except Exception as e:
         return {"ok": False, "reason": f"Network error: {e}"}
@@ -1174,7 +1186,10 @@ async def api_agent_audit_log(limit: int = Query(50, ge=1, le=500)):
     if not TRADE_AUDIT_LOG.exists():
         return {"entries": []}
     try:
-        lines = TRADE_AUDIT_LOG.read_text(encoding="utf-8").strip().split("\n")
+        raw = TRADE_AUDIT_LOG.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {"entries": []}
+        lines = raw.split("\n")
         entries = []
         for line in lines[-limit:]:
             try:
@@ -1380,7 +1395,11 @@ async def _sm_proxy(method: str, path: str, body: Optional[dict] = None):
                 resp = await client.delete(f"{SMART_MONEY_BASE}{path}")
             else:
                 return {"error": f"Unsupported method: {method}"}
-            return resp.json()
+            resp.raise_for_status()
+            try:
+                return resp.json()
+            except Exception:
+                return {"error": f"Invalid JSON from smart-money API: {resp.text[:200]}"}
     except (httpx.ConnectError, httpx.TimeoutException):
         return {"error": "Smart Money API not running (port 8002)", "offline": True}
     except Exception as e:
@@ -1444,7 +1463,10 @@ async def api_onchain_get_params():
 @app.put("/api/onchain/signals/params")
 async def api_onchain_update_params(request: Request):
     """Update analysis parameters."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return {"ok": False, "reason": "Invalid JSON body"}
     return await _sm_proxy("PUT", "/signals/params", body)
 
 

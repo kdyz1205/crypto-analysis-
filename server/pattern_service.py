@@ -69,7 +69,7 @@ def _line_to_json(line, times, n: int, extend_bars: int = 0) -> dict:
         # Keep extension; y2 already from slope
         y2 = y1 + line.slope * (x2 - x1)
 
-    t1 = _ts(times[min(x1, n - 1)])
+    t1 = _ts(times[max(0, min(x1, n - 1))])
     # Time for x2: if x2 >= n, use last bar time + rough delta for display
     if x2 < n:
         t2 = _ts(times[x2])
@@ -120,12 +120,12 @@ def _triangle_to_structured(tri: TrianglePattern, times: list) -> dict:
     end_date = _date_str(times[end_idx])
     # High points: resistance line (time, price) at start/end
     high_points = [
-        {"time": _ts(times[int(res.x1)]), "value": float(res.y1)},
-        {"time": _ts(times[min(int(res.x2), n - 1)]), "value": float(res.y2)},
+        {"time": _ts(times[max(0, min(int(res.x1), n - 1))]), "value": float(res.y1)},
+        {"time": _ts(times[max(0, min(int(res.x2), n - 1))]), "value": float(res.y2)},
     ]
     low_points = [
-        {"time": _ts(times[int(sup.x1)]), "value": float(sup.y1)},
-        {"time": _ts(times[min(int(sup.x2), n - 1)]), "value": float(sup.y2)},
+        {"time": _ts(times[max(0, min(int(sup.x1), n - 1))]), "value": float(sup.y1)},
+        {"time": _ts(times[max(0, min(int(sup.x2), n - 1))]), "value": float(sup.y2)},
     ]
     return {
         "type": "triangle",

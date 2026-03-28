@@ -205,9 +205,13 @@ Rules:
                 messages=[{"role": "user", "content": prompt}],
             )
             text = response.content[0].text.strip()
-            # Extract JSON: try each '{' position to avoid greedy multi-object matches
+            # Extract JSON: try each '{' position (capped to prevent DoS)
             import json as _json
+            attempts = 0
             for m in re.finditer(r'\{', text):
+                attempts += 1
+                if attempts > 20:
+                    break
                 try:
                     obj = _json.loads(text[m.start():])
                     return obj
