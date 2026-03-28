@@ -1986,10 +1986,12 @@ function toggleOnchainPanel() {
     if (panel) panel.classList.toggle('hidden', !onchainPanelOpen);
     updateViewTabsUI();
     _adjustChartForPanels();
+    if (onchainPanelOpen) startOnchainPolling();
+    else stopOnchainPolling();
 }
 
-document.getElementById('tab-onchain')?.addEventListener('click', () => toggleOnchainPanel());
-document.getElementById('onchain-close')?.addEventListener('click', () => toggleOnchainPanel());
+document.getElementById('tab-onchain')?.addEventListener('click', toggleOnchainPanel);
+document.getElementById('onchain-close')?.addEventListener('click', toggleOnchainPanel);
 
 // ── Agent Dashboard ──
 let agentPanelOpen = false;
@@ -2829,8 +2831,10 @@ function updateStrategyDescription() {
     const watchDesc = watchMode === 'manual'
         ? '手动选择的交易对'
         : `按成交量自动筛选 Top ${watchMode.replace('top', '')} 交易对`;
-    const tickDesc = tick < 60 ? `${tick}秒` : `${tick / 60}分钟`;
-    const cooldownDesc = cooldown >= 3600 ? `${(cooldown / 3600).toFixed(1)}小时` : `${(cooldown / 60).toFixed(0)}分钟`;
+    const tickNum = parseInt(tick, 10);
+    const cooldownNum = parseInt(cooldown, 10);
+    const tickDesc = tickNum < 60 ? `${tickNum}秒` : `${tickNum / 60}分钟`;
+    const cooldownDesc = cooldownNum >= 3600 ? `${(cooldownNum / 3600).toFixed(1)}小时` : `${(cooldownNum / 60).toFixed(0)}分钟`;
 
     const desc = `📊 策略说明：\n` +
         `• 分析周期：${tf} K线，每${tickDesc}扫描一次\n` +
@@ -3186,11 +3190,5 @@ function stopOnchainPolling() {
     if (_onchainPollTimer) { clearInterval(_onchainPollTimer); _onchainPollTimer = null; }
 }
 
-// Hook into panel toggle
-const _origToggleOnchain = toggleOnchainPanel;
-toggleOnchainPanel = function() {
-    _origToggleOnchain();
-    if (onchainPanelOpen) startOnchainPolling();
-    else stopOnchainPolling();
-};
+// Polling is integrated directly into toggleOnchainPanel above
 

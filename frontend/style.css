@@ -1134,7 +1134,6 @@ body {
 
 /* ── AI Chat Panel ── */
 .chat-tab { color: #42a5f5 !important; font-weight: 600; }
-.onchain-tab { color: #00e676 !important; font-weight: 600; }
 .chat-panel {
     position: fixed;
     top: 44px;
