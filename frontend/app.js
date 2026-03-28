@@ -3125,7 +3125,7 @@ async function fetchOnchainSignals() {
         const resp = await fetch(`${API_BASE}/api/onchain/signals/recommendations?limit=10`);
         const data = await resp.json();
         if (data.error) {
-            feed.innerHTML = `<div style="color:var(--text-muted);">${data.offline ? 'Smart Money API offline — start it on port 8001' : data.error}</div>`;
+            feed.innerHTML = `<div style="color:var(--text-muted);">${data.offline ? 'Smart Money API offline — start it on port 8002' : data.error}</div>`;
             return;
         }
         if (Array.isArray(data) && data.length > 0) {

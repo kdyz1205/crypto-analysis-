@@ -468,7 +468,7 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
     if use_pagination:
         # Paginate: first page from /market/candles (recent), then /market/history-candles (older)
         after_ts = None  # first request gets latest
-        prev_after_ts = None  # guard against infinite loop on duplicate timestamps
+
         max_pages = 2000  # safety limit (~600k candles max)
         page_count = 0
         use_history_endpoint = False  # start with recent candles endpoint
@@ -510,7 +510,6 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
                     use_history_endpoint = True
                     continue
                 break
-            prev_after_ts = after_ts
             after_ts = oldest_ts  # next page: records earlier than this ts
             page_count += 1
             # After first page from /candles, switch to /history-candles for deeper history
