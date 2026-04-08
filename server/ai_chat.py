@@ -560,6 +560,61 @@ class AIChatEngine:
                     },
                 },
             },
+            {
+                "name": "save_memory",
+                "description": "Save a persistent memory that survives across sessions. Use for: user preferences, project facts, learned lessons, trade reasoning, long-term notes. Namespace groups related memories (e.g. 'user_pref', 'project', 'trade_lesson').",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "namespace": {"type": "string", "description": "Namespace like 'user_pref', 'project', 'trade_lesson'"},
+                        "key": {"type": "string", "description": "Short unique key within namespace"},
+                        "content": {"type": "string", "description": "The memory content as natural language"},
+                    },
+                    "required": ["namespace", "key", "content"],
+                },
+            },
+            {
+                "name": "recall_memory",
+                "description": "Retrieve memories from a namespace, or one specific memory by key. Always check memories before answering questions about user preferences or past reasoning.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "namespace": {"type": "string", "description": "Namespace to fetch"},
+                        "key": {"type": "string", "description": "Optional: specific memory key"},
+                    },
+                    "required": ["namespace"],
+                },
+            },
+            {
+                "name": "search_memory",
+                "description": "Substring search across ALL memory namespaces. Use to find relevant past context.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Substring to search for"},
+                    },
+                    "required": ["query"],
+                },
+            },
+            {
+                "name": "schedule_task",
+                "description": "Schedule a recurring task using natural language. Examples: 'every 15 minutes', 'every hour', 'daily 08:00', 'every 4 hours'. Available actions: 'daily_summary' (send equity/PnL report), 'agent_scan' (scan all symbols for signals), 'memory_note' (record periodic note).",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "Short human-readable task name"},
+                        "recurrence": {"type": "string", "description": "Natural language like 'every 15 minutes' or 'daily 08:00'"},
+                        "action": {"type": "string", "enum": ["daily_summary", "agent_scan", "memory_note"], "description": "Which handler to run"},
+                        "params": {"type": "object", "description": "Optional params for the handler", "default": {}},
+                    },
+                    "required": ["name", "recurrence", "action"],
+                },
+            },
+            {
+                "name": "list_schedules",
+                "description": "List all scheduled tasks currently active.",
+                "input_schema": {"type": "object", "properties": {}},
+            },
         ]
 
     # ── Tool execution ──
@@ -597,6 +652,23 @@ class AIChatEngine:
                 return self._tool_list_files(tool_input.get("directory", ""))
             elif tool_name == "git_snapshot":
                 return self._tool_git_snapshot(tool_input.get("message", "auto-snapshot before AI edit"))
+            elif tool_name == "save_memory":
+                return self._tool_save_memory(
+                    tool_input["namespace"], tool_input["key"], tool_input["content"]
+                )
+            elif tool_name == "recall_memory":
+                return self._tool_recall_memory(
+                    tool_input["namespace"], tool_input.get("key")
+                )
+            elif tool_name == "search_memory":
+                return self._tool_search_memory(tool_input["query"])
+            elif tool_name == "schedule_task":
+                return self._tool_schedule_task(
+                    tool_input["name"], tool_input["recurrence"],
+                    tool_input["action"], tool_input.get("params", {})
+                )
+            elif tool_name == "list_schedules":
+                return self._tool_list_schedules()
             else:
                 return json.dumps({"error": f"Unknown tool: {tool_name}"})
         except Exception as e:
@@ -939,6 +1011,50 @@ class AIChatEngine:
                 return json.dumps({"error": f"Git commit failed: {result.stderr}"})
         except Exception as e:
             return json.dumps({"error": f"Git snapshot failed: {e}"})
+
+    # ── Hermes-inspired memory + scheduler tools ──
+
+    def _tool_save_memory(self, namespace: str, key: str, content: str) -> str:
+        try:
+            from .core import memory as mem
+            entry = mem.save_memory(namespace, key, content)
+            return json.dumps({"ok": True, "namespace": namespace, "key": key, "entry": entry}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _tool_recall_memory(self, namespace: str, key: str | None = None) -> str:
+        try:
+            from .core import memory as mem
+            result = mem.get_memory(namespace, key)
+            if result is None:
+                return json.dumps({"ok": False, "reason": "not found"})
+            return json.dumps({"ok": True, "namespace": namespace, "key": key, "data": result}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _tool_search_memory(self, query: str) -> str:
+        try:
+            from .core import memory as mem
+            hits = mem.search_memory(query, limit=20)
+            return json.dumps({"ok": True, "query": query, "count": len(hits), "results": hits}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _tool_schedule_task(self, name: str, recurrence: str, action: str, params: dict) -> str:
+        try:
+            from .core import scheduler as sched
+            task = sched.create_task(name, recurrence, action, params or {})
+            return json.dumps({"ok": True, "task": task.to_dict()}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def _tool_list_schedules(self) -> str:
+        try:
+            from .core import scheduler as sched
+            tasks = sched.list_tasks()
+            return json.dumps({"ok": True, "count": len(tasks), "tasks": tasks}, default=str)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     # ── Chat with Claude ──
 

@@ -23,9 +23,10 @@ from .routers import (
     market, patterns, research,
     agent, risk, execution,
     ops, chat, onchain,
-    stream,
+    stream, memory, schedule,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
+from .core import scheduler as sched_core
 
 
 app = FastAPI(title="Crypto TA")
@@ -48,6 +49,46 @@ async def _startup():
     telegram_sub.register()
     sse_sub.register()
     print("[EventBus] Phase 3 subscribers registered")
+
+    # Hermes-inspired: register default scheduler handlers + start loop
+    from .core import memory as mem_core
+    from .core.events import bus as _bus, make_summary_daily
+
+    async def _handler_daily_summary(params: dict) -> str:
+        s = agent_inst.trader.state
+        positions = {sym: {"side": p.side, "pnl": p.unrealized_pnl} for sym, p in s.positions.items()}
+        await _bus.publish(make_summary_daily(
+            equity=s.equity, daily_pnl=s.daily_pnl,
+            total_trades=s.total_trades,
+            win_rate=(s.win_count / max(s.total_trades, 1)) * 100,
+            positions=positions,
+        ))
+        return f"Daily summary published: equity=${s.equity:.2f}"
+
+    async def _handler_agent_scan(params: dict) -> str:
+        try:
+            from .agent_brain import WATCH_SYMBOLS
+            count = 0
+            for sym in WATCH_SYMBOLS:
+                sig = await agent_inst.generate_signal(sym)
+                if sig:
+                    count += 1
+            return f"Scanned {len(WATCH_SYMBOLS)} symbols, found {count} signals"
+        except Exception as e:
+            return f"Scan failed: {e}"
+
+    async def _handler_memory_note(params: dict) -> str:
+        ns = params.get("namespace", "scheduled")
+        key = params.get("key", f"note_{int(asyncio.get_event_loop().time())}")
+        content = params.get("content", "scheduled memory note")
+        mem_core.save_memory(ns, key, content, params.get("metadata"))
+        return f"Saved memory {ns}/{key}"
+
+    sched_core.register_handler("daily_summary", _handler_daily_summary)
+    sched_core.register_handler("agent_scan", _handler_agent_scan)
+    sched_core.register_handler("memory_note", _handler_memory_note)
+    sched_core.start_scheduler()
+    print("[Scheduler] Started with 3 default handlers")
 
 
 @app.on_event("shutdown")
@@ -88,4 +129,6 @@ app.include_router(execution.router)    # /api/agent/okx-keys, okx-status
 app.include_router(chat.router)         # /api/chat/*
 app.include_router(onchain.router)      # /api/onchain/* (proxy to 8002)
 app.include_router(stream.router)       # /api/stream, /api/stream/status, /api/events/history
+app.include_router(memory.router)       # /api/memory/*  (Hermes persistent memory)
+app.include_router(schedule.router)     # /api/schedule/* (Hermes natural-language scheduler)
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
