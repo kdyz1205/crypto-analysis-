@@ -22,7 +22,7 @@ async function boot() {
   await initTicker('v2-symbol-select');
   initTimeframe('#v2-tf-group');
   await loadCurrent();
-  startLiveUpdates(10000);
+  startLiveUpdates(30000); // 30s instead of 10s to reduce load
 
   initDecisionRail();
 

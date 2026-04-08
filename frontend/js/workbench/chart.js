@@ -55,14 +55,16 @@ export function initChart(containerId = 'chart-container') {
     chart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
   });
 
-  // React to state changes
-  subscribe('market.symbol.changed', () => loadCurrent());
-  subscribe('market.interval.changed', () => loadCurrent());
+  // React to state changes — full reload (with patterns) on explicit change
+  subscribe('market.symbol.changed', () => loadCurrent(true));
+  subscribe('market.interval.changed', () => loadCurrent(true));
 
   return chart;
 }
 
-export async function loadCurrent() {
+let _lastPatternKey = null;
+
+export async function loadCurrent(forcePatterns = false) {
   const { currentSymbol, currentInterval } = marketState;
   if (!candleSeries) return;
 
@@ -111,8 +113,12 @@ export async function loadCurrent() {
       drawMAOverlays(chart, data.overlays, candleTimes);
     }
 
-    // Load S/R patterns in parallel
-    loadPatterns(currentSymbol, currentInterval);
+    // Load S/R patterns only on symbol/interval change (not every live tick)
+    const patternKey = `${currentSymbol}:${currentInterval}`;
+    if (forcePatterns || _lastPatternKey !== patternKey) {
+      _lastPatternKey = patternKey;
+      loadPatterns(currentSymbol, currentInterval);
+    }
 
     updateHeader(currentSymbol, currentInterval, lastPrice);
     console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);

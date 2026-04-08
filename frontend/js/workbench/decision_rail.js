@@ -220,11 +220,21 @@ async function render() {
   }
 }
 
+let lastRender = 0;
+const MIN_RENDER_GAP = 12000; // 12s minimum between renders
+
+async function safeRender() {
+  const now = Date.now();
+  if (now - lastRender < MIN_RENDER_GAP) return;
+  lastRender = now;
+  await render();
+}
+
 export function initDecisionRail() {
-  render();
-  pollTimer = setInterval(render, 8000);
-  subscribe('market.symbol.changed', render);
-  subscribe('market.interval.changed', render);
+  render().then(() => { lastRender = Date.now(); });
+  pollTimer = setInterval(safeRender, 30000); // every 30s instead of 8s
+  subscribe('market.symbol.changed', safeRender);
+  subscribe('market.interval.changed', safeRender);
 }
 
 export function stopDecisionRail() {

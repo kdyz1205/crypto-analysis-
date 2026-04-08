@@ -100,7 +100,7 @@ function startPolling() {
       setLastStatus(status);
       renderActive();
     } catch (err) { console.warn('[exec] poll failed:', err); }
-  }, 5000);
+  }, 15000); // was 5s → now 15s
 }
 
 function stopPolling() {
