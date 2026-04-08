@@ -49,6 +49,22 @@ async def serve_js():
     )
 
 
+@router.get("/js/{subpath:path}")
+async def serve_js_module(subpath: str):
+    """Serve Phase 2 ES modules from frontend/js/."""
+    # Prevent directory traversal
+    if ".." in subpath or subpath.startswith("/"):
+        return {"error": "invalid path"}
+    full_path = FRONTEND_DIR / "js" / subpath
+    if not full_path.is_file():
+        return {"error": "not found", "path": subpath}
+    return FileResponse(
+        str(full_path),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
+
+
 # ── Telegram Config ──────────────────────────────────────────────────────
 
 @router.post("/api/agent/telegram-config")
