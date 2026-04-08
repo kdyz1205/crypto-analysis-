@@ -1,0 +1,350 @@
+// ============================================================
+// MA Ribbon Multi-Timeframe Strategy
+// Price > MA5 > MA8 > EMA21 > MA55  →  Long
+// Price < MA5 < MA8 < EMA21 < MA55  →  Short
+// SL: ATR-based trailing | TP: RR or BB upper/lower
+// MTF: auto-selects confirmation TF based on chart TF
+// ============================================================
+//@version=5
+strategy(
+     title       = "MA Ribbon MTF Strategy [Price>MA5>MA8>EMA21>MA55]",
+     shorttitle  = "Ribbon MTF",
+     overlay     = true,
+     default_qty_type  = strategy.percent_of_equity,
+     default_qty_value = 10,
+     initial_capital   = 10000,
+     commission_type   = strategy.commission.percent,
+     commission_value  = 0.05,
+     slippage          = 2,
+     pyramiding        = 0,
+     calc_on_every_tick = false
+)
+
+// ══════════════════════════════════════════════════════════════
+// 1. INPUTS
+// ══════════════════════════════════════════════════════════════
+
+grp_ma   = "── MA Settings ──"
+ma5_len  = input.int(5,  "MA 5  period",  minval=1, group=grp_ma)
+ma8_len  = input.int(8,  "MA 8  period",  minval=1, group=grp_ma)
+ema21_len= input.int(21, "EMA 21 period", minval=1, group=grp_ma)
+ma55_len = input.int(55, "MA 55 period",  minval=1, group=grp_ma)
+
+grp_mtf  = "── Multi-Timeframe ──"
+mtf_on   = input.bool(true, "Enable MTF confirmation", group=grp_mtf)
+mtf_auto = input.bool(true, "Auto-select HTF", group=grp_mtf,
+             tooltip="1m→15m, 5m→1H, 15m→4H, 1H→1D, 4H→3D, 1D→1W")
+mtf_tf   = input.timeframe("240", "Manual HTF (if auto off)", group=grp_mtf)
+
+grp_sl   = "── Stop Loss ──"
+sl_mode  = input.string("ATR Trail", "SL Mode",
+             options=["ATR Trail","ATR Fixed","Swing","Pct"], group=grp_sl)
+atr_len  = input.int(14,  "ATR Period",       minval=1,   group=grp_sl)
+atr_mult = input.float(2.0,"ATR Multiplier",  minval=0.1, step=0.1, group=grp_sl)
+swing_lb = input.int(10,   "Swing Lookback",  minval=3,   group=grp_sl)
+pct_sl   = input.float(2.0,"Fixed SL %",      minval=0.1, step=0.1, group=grp_sl)
+
+grp_tp   = "── Take Profit ──"
+tp_mode  = input.string("RR 2:1", "TP Mode",
+             options=["RR 2:1","RR 3:1","RR 1.5:1","BB Upper/Lower","Pct","None"], group=grp_tp)
+bb_len   = input.int(20,   "BB Period",     minval=5,   group=grp_tp)
+bb_std   = input.float(2.0,"BB Std Dev",    minval=0.5, step=0.1, group=grp_tp)
+pct_tp   = input.float(4.0,"Fixed TP %",   minval=0.1, step=0.1, group=grp_tp)
+
+grp_filt = "── Filters ──"
+adx_on   = input.bool(true,  "ADX trend filter",     group=grp_filt)
+adx_len  = input.int(14,     "ADX Period",           group=grp_filt)
+adx_min  = input.float(20.0, "Min ADX for trend",    group=grp_filt, step=1.0)
+vol_on   = input.bool(true,  "Volume spike filter",  group=grp_filt)
+vol_mult = input.float(1.2,  "Volume > N× avg",      group=grp_filt, step=0.1)
+vol_len  = input.int(20,     "Volume avg period",    group=grp_filt)
+
+grp_vis  = "── Display ──"
+show_ma  = input.bool(true,  "Show MAs",         group=grp_vis)
+show_bb  = input.bool(false, "Show BB",          group=grp_vis)
+show_sl  = input.bool(true,  "Show SL line",     group=grp_vis)
+show_sig = input.bool(true,  "Show entry labels",group=grp_vis)
+
+// ══════════════════════════════════════════════════════════════
+// 2. AUTO HTF SELECTION
+// ══════════════════════════════════════════════════════════════
+
+f_auto_htf() =>
+    tf = timeframe.period
+    result = switch tf
+        "1"   => "15"
+        "3"   => "15"
+        "5"   => "60"
+        "15"  => "240"
+        "30"  => "240"
+        "60"  => "D"
+        "120" => "D"
+        "240" => "3D"
+        "D"   => "W"
+        "W"   => "M"
+        => "D"
+    result
+
+htf = mtf_auto ? f_auto_htf() : mtf_tf
+
+// ══════════════════════════════════════════════════════════════
+// 3. BASE TIMEFRAME INDICATORS
+// ══════════════════════════════════════════════════════════════
+
+ma5   = ta.sma(close, ma5_len)
+ma8   = ta.sma(close, ma8_len)
+ema21 = ta.ema(close, ema21_len)
+ma55  = ta.sma(close, ma55_len)
+
+// ATR
+atr   = ta.atr(atr_len)
+
+// ADX
+[diPlus, diMinus, adx_val] = ta.dmi(adx_len, adx_len)
+
+// Bollinger Bands
+[bb_lower, bb_mid, bb_upper] = ta.bb(close, bb_len, bb_std)
+
+// Volume filter
+vol_avg = ta.sma(volume, vol_len)
+
+// Swing high/low for SL
+swing_hi = ta.highest(high, swing_lb)
+swing_lo = ta.lowest(low,   swing_lb)
+
+// ══════════════════════════════════════════════════════════════
+// 4. RIBBON CONDITIONS (BASE TF)
+// ══════════════════════════════════════════════════════════════
+
+bull_ribbon = close > ma5 and ma5 > ma8 and ma8 > ema21 and ema21 > ma55
+bear_ribbon = close < ma5 and ma5 < ma8 and ma8 < ema21 and ema21 < ma55
+
+// ══════════════════════════════════════════════════════════════
+// 5. HTF RIBBON (request once, use security)
+// ══════════════════════════════════════════════════════════════
+
+htf_ma5   = request.security(syminfo.tickerid, htf, ta.sma(close, ma5_len),  lookahead=barmerge.lookahead_off)
+htf_ma8   = request.security(syminfo.tickerid, htf, ta.sma(close, ma8_len),  lookahead=barmerge.lookahead_off)
+htf_ema21 = request.security(syminfo.tickerid, htf, ta.ema(close, ema21_len),lookahead=barmerge.lookahead_off)
+htf_ma55  = request.security(syminfo.tickerid, htf, ta.sma(close, ma55_len), lookahead=barmerge.lookahead_off)
+htf_close = request.security(syminfo.tickerid, htf, close,                   lookahead=barmerge.lookahead_off)
+
+htf_bull = htf_close > htf_ma5 and htf_ma5 > htf_ma8 and htf_ma8 > htf_ema21 and htf_ema21 > htf_ma55
+htf_bear = htf_close < htf_ma5 and htf_ma5 < htf_ma8 and htf_ma8 < htf_ema21 and htf_ema21 < htf_ma55
+
+// ══════════════════════════════════════════════════════════════
+// 6. FILTERS
+// ══════════════════════════════════════════════════════════════
+
+adx_ok     = not adx_on  or adx_val > adx_min
+vol_ok     = not vol_on  or volume > vol_mult * vol_avg
+
+mtf_long   = not mtf_on  or htf_bull
+mtf_short  = not mtf_on  or htf_bear
+
+// ══════════════════════════════════════════════════════════════
+// 7. ENTRY SIGNALS
+// ══════════════════════════════════════════════════════════════
+
+// Ribbon just aligned (crossover-style: wasn't fully aligned last bar)
+long_entry  = bull_ribbon and not bull_ribbon[1] and adx_ok and vol_ok and mtf_long
+short_entry = bear_ribbon and not bear_ribbon[1] and adx_ok and vol_ok and mtf_short
+
+// Also allow re-entry if ribbon stayed aligned but we're flat
+long_cont   = bull_ribbon and strategy.position_size == 0 and adx_ok and vol_ok and mtf_long and ta.crossover(close, ma8)
+short_cont  = bear_ribbon and strategy.position_size == 0 and adx_ok and vol_ok and mtf_short and ta.crossunder(close, ma8)
+
+go_long  = long_entry  or long_cont
+go_short = short_entry or short_cont
+
+// ══════════════════════════════════════════════════════════════
+// 8. STOP LOSS CALCULATION
+// ══════════════════════════════════════════════════════════════
+
+var float sl_long  = na
+var float sl_short = na
+
+// On entry, set initial SL
+if go_long
+    sl_long := switch sl_mode
+        "ATR Trail" => close - atr_mult * atr
+        "ATR Fixed" => close - atr_mult * atr
+        "Swing"     => swing_lo - atr * 0.3
+        "Pct"       => close * (1 - pct_sl / 100)
+        => close - atr_mult * atr
+
+if go_short
+    sl_short := switch sl_mode
+        "ATR Trail" => close + atr_mult * atr
+        "ATR Fixed" => close + atr_mult * atr
+        "Swing"     => swing_hi + atr * 0.3
+        "Pct"       => close * (1 + pct_sl / 100)
+        => close + atr_mult * atr
+
+// Trail SL for long positions
+if strategy.position_size > 0 and sl_mode == "ATR Trail"
+    new_sl = close - atr_mult * atr
+    sl_long := math.max(sl_long, new_sl)
+
+// Trail SL for short positions
+if strategy.position_size < 0 and sl_mode == "ATR Trail"
+    new_sl = close + atr_mult * atr
+    sl_short := math.min(sl_short, new_sl)
+
+// ══════════════════════════════════════════════════════════════
+// 9. TAKE PROFIT CALCULATION
+// ══════════════════════════════════════════════════════════════
+
+f_tp_long(entry_p, sl_p) =>
+    sl_dist = entry_p - sl_p
+    switch tp_mode
+        "RR 2:1"       => entry_p + 2.0 * sl_dist
+        "RR 3:1"       => entry_p + 3.0 * sl_dist
+        "RR 1.5:1"     => entry_p + 1.5 * sl_dist
+        "BB Upper/Lower" => bb_upper
+        "Pct"          => entry_p * (1 + pct_tp / 100)
+        "None"         => na
+        => entry_p + 2.0 * sl_dist
+
+f_tp_short(entry_p, sl_p) =>
+    sl_dist = sl_p - entry_p
+    switch tp_mode
+        "RR 2:1"       => entry_p - 2.0 * sl_dist
+        "RR 3:1"       => entry_p - 3.0 * sl_dist
+        "RR 1.5:1"     => entry_p - 1.5 * sl_dist
+        "BB Upper/Lower" => bb_lower
+        "Pct"          => entry_p * (1 - pct_tp / 100)
+        "None"         => na
+        => entry_p - 2.0 * sl_dist
+
+// ══════════════════════════════════════════════════════════════
+// 10. STRATEGY EXECUTION
+// ══════════════════════════════════════════════════════════════
+
+// Exit on opposite ribbon
+exit_long  = strategy.position_size > 0 and bear_ribbon
+exit_short = strategy.position_size < 0 and bull_ribbon
+
+// === LONG ===
+if go_long
+    tp_l = f_tp_long(close, sl_long)
+    strategy.entry("Long", strategy.long, comment="▲ L")
+    strategy.exit("L-Exit", "Long",
+         stop   = sl_long,
+         limit  = tp_mode == "None" ? na : tp_l,
+         comment= "L-SL/TP")
+
+if exit_long
+    strategy.close("Long", comment="▲ Exit")
+
+// === SHORT ===
+if go_short
+    tp_s = f_tp_short(close, sl_short)
+    strategy.entry("Short", strategy.short, comment="▼ S")
+    strategy.exit("S-Exit", "Short",
+         stop   = sl_short,
+         limit  = tp_mode == "None" ? na : tp_s,
+         comment= "S-SL/TP")
+
+if exit_short
+    strategy.close("Short", comment="▼ Exit")
+
+// Update exit levels when SL trails
+if strategy.position_size > 0
+    tp_l = f_tp_long(strategy.position_avg_price, sl_long)
+    strategy.exit("L-Exit", "Long",
+         stop  = sl_long,
+         limit = tp_mode == "None" ? na : tp_l)
+
+if strategy.position_size < 0
+    tp_s = f_tp_short(strategy.position_avg_price, sl_short)
+    strategy.exit("S-Exit", "Short",
+         stop  = sl_short,
+         limit = tp_mode == "None" ? na : tp_s)
+
+// ══════════════════════════════════════════════════════════════
+// 11. VISUALS
+// ══════════════════════════════════════════════════════════════
+
+// ── MAs ──
+plot(show_ma ? ma5   : na, "MA 5",   color=color.new(color.yellow,0),  linewidth=1)
+plot(show_ma ? ma8   : na, "MA 8",   color=color.new(color.orange,0),  linewidth=1)
+plot(show_ma ? ema21 : na, "EMA 21", color=color.new(color.red,0),     linewidth=2)
+plot(show_ma ? ma55  : na, "MA 55",  color=color.new(color.fuchsia,0), linewidth=2)
+
+// ── HTF MAs (thinner, semi-transparent) ──
+plot(show_ma and mtf_on ? htf_ma5   : na, "HTF MA5",  color=color.new(color.yellow,60), linewidth=1, style=plot.style_circles)
+plot(show_ma and mtf_on ? htf_ema21 : na, "HTF EMA21",color=color.new(color.red,60),    linewidth=1, style=plot.style_circles)
+plot(show_ma and mtf_on ? htf_ma55  : na, "HTF MA55", color=color.new(color.fuchsia,60),linewidth=1, style=plot.style_circles)
+
+// ── Bollinger Bands ──
+bbU = plot(show_bb ? bb_upper : na, "BB Upper", color=color.new(color.blue,70))
+bbL = plot(show_bb ? bb_lower : na, "BB Lower", color=color.new(color.blue,70))
+fill(bbU, bbL, color=color.new(color.blue, 92))
+
+// ── Background color: ribbon state ──
+bgcolor(bull_ribbon ? color.new(color.green, 93) : bear_ribbon ? color.new(color.red, 93) : na,
+        title="Ribbon bg")
+
+// ── SL line ──
+plot(show_sl and strategy.position_size > 0  ? sl_long  : na, "SL Long",  color=color.new(color.red,0),   linewidth=1, style=plot.style_linebr)
+plot(show_sl and strategy.position_size < 0  ? sl_short : na, "SL Short", color=color.new(color.green,0), linewidth=1, style=plot.style_linebr)
+
+// ── Entry labels ──
+if show_sig and go_long
+    label.new(bar_index, low - atr, "▲ LONG\n" + str.tostring(close, "#.####"),
+              style=label.style_label_up, color=color.new(color.green,10),
+              textcolor=color.white, size=size.small)
+
+if show_sig and go_short
+    label.new(bar_index, high + atr, "▼ SHORT\n" + str.tostring(close, "#.####"),
+              style=label.style_label_down, color=color.new(color.red,10),
+              textcolor=color.white, size=size.small)
+
+// ── Info table (top-right) ──
+var table info = table.new(position.top_right, 2, 8,
+     bgcolor=color.new(color.black,70), border_color=color.gray, border_width=1, frame_width=1)
+
+if barstate.islast
+    ribbon_state = bull_ribbon ? "🟢 BULL" : bear_ribbon ? "🔴 BEAR" : "⚪ MIXED"
+    htf_state    = htf_bull    ? "🟢 BULL" : htf_bear    ? "🔴 BEAR" : "⚪ MIXED"
+    pos_txt      = strategy.position_size > 0 ? "LONG  " + str.tostring(strategy.position_size) :
+                   strategy.position_size < 0 ? "SHORT " + str.tostring(math.abs(strategy.position_size)) : "FLAT"
+
+    table.cell(info, 0, 0, "Ribbon MTF", text_color=color.white, text_size=size.small, bgcolor=color.new(color.navy,30))
+    table.cell(info, 1, 0, timeframe.period + " / " + htf, text_color=color.yellow, text_size=size.small, bgcolor=color.new(color.navy,30))
+
+    table.cell(info, 0, 1, "Base TF",  text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 1, ribbon_state, text_color=color.white, text_size=size.small)
+
+    table.cell(info, 0, 2, "HTF (" + htf + ")", text_color=color.gray, text_size=size.small)
+    table.cell(info, 1, 2, htf_state, text_color=color.white, text_size=size.small)
+
+    table.cell(info, 0, 3, "ADX",      text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 3, str.tostring(adx_val, "#.1") + (adx_ok ? " ✓" : " ✗"),
+               text_color=adx_ok ? color.green : color.red, text_size=size.small)
+
+    table.cell(info, 0, 4, "Position", text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 4, pos_txt,    text_color=color.white, text_size=size.small)
+
+    table.cell(info, 0, 5, "SL Mode",  text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 5, sl_mode,    text_color=color.orange, text_size=size.small)
+
+    table.cell(info, 0, 6, "TP Mode",  text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 6, tp_mode,    text_color=color.aqua,   text_size=size.small)
+
+    net_pnl = strategy.netprofit / strategy.initial_capital * 100
+    table.cell(info, 0, 7, "Net P&L",  text_color=color.gray,  text_size=size.small)
+    table.cell(info, 1, 7, str.tostring(net_pnl, "#.2") + "%",
+               text_color=net_pnl > 0 ? color.green : color.red, text_size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// 12. ALERTS
+// ══════════════════════════════════════════════════════════════
+
+alertcondition(go_long,  "Long Entry",  "MA Ribbon LONG — {{ticker}} {{interval}}")
+alertcondition(go_short, "Short Entry", "MA Ribbon SHORT — {{ticker}} {{interval}}")
+alertcondition(exit_long  or (strategy.position_size > 0 and ta.crossunder(close, sl_long)),
+               "Long Exit", "MA Ribbon Long EXIT — {{ticker}}")
+alertcondition(exit_short or (strategy.position_size < 0 and ta.crossover(close, sl_short)),
+               "Short Exit", "MA Ribbon Short EXIT — {{ticker}}")

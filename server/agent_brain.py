@@ -21,13 +21,16 @@ Pre-trade checklist (institutional-grade):
 - Pattern failure recognition persists across cycles
 """
 
+import os
 import time
 import asyncio
 import random
 import json
+import logging
 from pathlib import Path
 from datetime import datetime, timezone
 
+import httpx
 import numpy as np
 
 from .okx_trader import OKXTrader, AgentState, RiskLimits, Position
@@ -317,7 +320,54 @@ class AgentBrain:
         self.lessons = LessonsLedger()
         self._cycle_phase: str = "idle"  # current harness phase for UI
         self._last_evolved_at: int = 0
+        self._telegram_config: dict | None = None
         self._load_state()
+        self._load_telegram_config()
+
+    # ── Telegram notifications ────────────────────────────────────────────
+
+    def _load_telegram_config(self):
+        """Load Telegram config from environment variables."""
+        bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+        chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+        if bot_token and chat_id:
+            self._telegram_config = {
+                "bot_token": bot_token,
+                "chat_id": chat_id,
+                "notify_signals": True,
+                "notify_fills": True,
+                "notify_errors": True,
+                "notify_daily": True,
+            }
+            print(f"[Telegram] Config loaded from env: chat_id={chat_id}")
+
+    async def _notify_telegram(self, message: str, category: str = "general"):
+        """Send a notification to Telegram if configured."""
+        cfg = self._telegram_config
+        if not cfg:
+            return
+        # Check if this category is enabled
+        cat_map = {
+            "signal": "notify_signals",
+            "fill": "notify_fills",
+            "error": "notify_errors",
+            "daily": "notify_daily",
+        }
+        flag = cat_map.get(category, None)
+        if flag and not cfg.get(flag, True):
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"https://api.telegram.org/bot{cfg['bot_token']}/sendMessage",
+                    json={
+                        "chat_id": cfg["chat_id"],
+                        "text": message,
+                        "parse_mode": "HTML",
+                    },
+                )
+        except Exception as e:
+            print(f"[Telegram] Send failed: {e}")
 
     # ── State persistence ─────────────────────────────────────────────────
 
@@ -567,7 +617,18 @@ class AgentBrain:
                 result = await self.trader.close_position(symbol, signal["reason"])
                 if result["ok"]:
                     pnl_pct = result.get('pnl_pct', 0)
+                    pnl_usd = result.get('pnl_usd', 0)
                     print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={pnl_pct}%")
+
+                    # Telegram notification for position close
+                    emoji = "🟢" if pnl_usd >= 0 else "🔴"
+                    await self._notify_telegram(
+                        f"{emoji} <b>平仓 {symbol}</b>\n"
+                        f"原因: {signal['reason']}\n"
+                        f"盈亏: {pnl_pct:+.2f}% (${pnl_usd:+.2f})\n"
+                        f"💰 权益: ${self.trader.state.equity:.2f}",
+                        category="fill",
+                    )
 
                     # 举一反三: Learn from this trade
                     self.lessons.learn_from_trade(
@@ -763,6 +824,18 @@ class AgentBrain:
                 result = await self.trader.open_position(symbol, signal["action"], size)
                 if result["ok"]:
                     print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
+
+                    # Telegram notification for new position
+                    direction = "📈 做多" if signal["action"] == "long" else "📉 做空"
+                    await self._notify_telegram(
+                        f"{direction} <b>{symbol}</b>\n"
+                        f"价格: ${result['price']}\n"
+                        f"仓位: ${size:.0f} | 信心: {signal['confidence']:.0%}\n"
+                        f"止损: ${signal.get('sl', 0):.2f} | 止盈: ${signal.get('tp', 0):.2f}\n"
+                        f"策略: {signal.get('reason', '')[:80]}",
+                        category="fill",
+                    )
+
                     _audit_log({
                         "event": "open_position",
                         "symbol": symbol,
@@ -845,15 +918,59 @@ class AgentBrain:
             self.lessons.add("param", f"Avg PnL drifting negative ({avg_pnl:.2f}%) — params may need recalibration",
                            symbol="ALL")
 
+    async def _send_daily_summary(self):
+        """Send daily equity summary via Telegram."""
+        s = self.trader.state
+        positions_str = ""
+        for sym, pos in s.positions.items():
+            positions_str += f"\n  • {sym} {pos.side} PnL: ${pos.unrealized_pnl:+.2f}"
+        if not positions_str:
+            positions_str = "\n  无持仓"
+
+        win_rate = (s.win_count / max(s.total_trades, 1)) * 100
+        await self._notify_telegram(
+            f"📊 <b>每日报告</b>\n"
+            f"模式: {'模拟盘' if s.mode == 'paper' else '实盘'}\n"
+            f"💰 权益: ${s.equity:.2f}\n"
+            f"📈 今日盈亏: ${s.daily_pnl:+.2f}\n"
+            f"总盈亏: ${s.total_pnl_usd:+.2f}\n"
+            f"交易次数: {s.total_trades} | 胜率: {win_rate:.0f}%\n"
+            f"持仓:{positions_str}\n"
+            f"市场状态: {self.lessons.market_regime}",
+            category="daily",
+        )
+
     async def run_loop(self):
         self._running = True
         print(f"[Agent] Started V6 strategy. Mode={self.trader.state.mode} Equity=${self.trader.state.equity:.2f} Gen={self.trader.state.generation}")
 
+        # Send startup notification
+        await self._notify_telegram(
+            f"🚀 <b>交易机器人已启动</b>\n"
+            f"模式: {'模拟盘' if self.trader.state.mode == 'paper' else '实盘'}\n"
+            f"初始资金: ${self.trader.state.equity:.2f}\n"
+            f"监控币种: {', '.join(WATCH_SYMBOLS)}\n"
+            f"策略: V6 趋势跟踪 (Gen {self.trader.state.generation})\n"
+            f"扫描间隔: {TICK_INTERVAL_SEC}秒",
+            category="fill",
+        )
+
+        daily_summary_hour = -1  # track last daily summary hour
+
         while self._running:
             try:
                 await self.tick()
+
+                # Send daily summary once per day (at hour 8 UTC)
+                current_hour = datetime.now(timezone.utc).hour
+                if current_hour == 8 and daily_summary_hour != 8:
+                    daily_summary_hour = 8
+                    await self._send_daily_summary()
+                elif current_hour != 8:
+                    daily_summary_hour = current_hour
             except Exception as e:
                 print(f"[Agent] Tick error: {e}")
+                await self._notify_telegram(f"⚠️ Agent error: {e}", category="error")
             await asyncio.sleep(TICK_INTERVAL_SEC)
 
     def start(self):
