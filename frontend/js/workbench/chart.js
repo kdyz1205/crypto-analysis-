@@ -64,36 +64,46 @@ export async function loadCurrent() {
   if (!candleSeries) return;
 
   try {
+    // API returns: { candles: [{time,open,high,low,close}], volume: [{time,value}], overlays, pricePrecision }
     const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, 365);
-    const ohlcv = data.ohlcv || data;
-    if (!Array.isArray(ohlcv) || ohlcv.length === 0) {
-      console.warn('[chart] empty data');
+
+    const rawCandles = data.candles || [];
+    if (!Array.isArray(rawCandles) || rawCandles.length === 0) {
+      console.warn('[chart] empty candles for', currentSymbol, currentInterval);
       return;
     }
 
-    const candles = ohlcv.map((c) => ({
-      time: c.time || c[0],
-      open: c.open ?? c[1],
-      high: c.high ?? c[2],
-      low: c.low ?? c[3],
-      close: c.close ?? c[4],
-    }));
-    const volumes = ohlcv.map((c) => ({
-      time: c.time || c[0],
-      value: c.volume ?? c[5] ?? 0,
-      color: (c.close ?? c[4]) >= (c.open ?? c[1]) ? 'rgba(0,230,118,0.3)' : 'rgba(255,23,68,0.3)',
+    // LightweightCharts expects time as number (unix seconds) or 'YYYY-MM-DD' string
+    const candles = rawCandles.map((c) => ({
+      time: typeof c.time === 'string' ? Math.floor(new Date(c.time).getTime() / 1000) : c.time,
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close),
     }));
 
+    // Volume data: aligned with candles, color based on close vs open
+    const rawVolume = data.volume || [];
+    const volumes = rawVolume.map((v, i) => {
+      const c = rawCandles[i];
+      const isUp = c && Number(c.close) >= Number(c.open);
+      return {
+        time: typeof v.time === 'string' ? Math.floor(new Date(v.time).getTime() / 1000) : v.time,
+        value: Number(v.value || 0),
+        color: isUp ? 'rgba(0,230,118,0.4)' : 'rgba(255,23,68,0.4)',
+      };
+    });
+
     candleSeries.setData(candles);
-    volumeSeries.setData(volumes);
+    if (volumes.length > 0) volumeSeries.setData(volumes);
     chart.timeScale().fitContent();
 
     setCandles(candles);
     const lastPrice = candles[candles.length - 1].close;
-    setPrecision(inferPrecision(lastPrice));
+    setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
 
-    // Update header
     updateHeader(currentSymbol, currentInterval, lastPrice);
+    console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
   } catch (err) {
     console.error('[chart] load failed:', err);
   }
