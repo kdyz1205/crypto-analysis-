@@ -261,17 +261,102 @@ async function renderOps() {
   const container = $('[data-subtab="ops"]');
   if (!container) return;
 
-  let healer = null, okx = null;
-  try { healer = await opsSvc.getHealerStatus(); } catch {}
-  try { okx = await execSvc.getOkxStatus(); } catch {}
+  // Fetch all ops data in parallel
+  const [s, okx, healer, presetsResp, logsResp] = await Promise.all([
+    agentSvc.getStatus().catch(() => null),
+    execSvc.getOkxStatus().catch(() => null),
+    opsSvc.getHealerStatus().catch(() => null),
+    agentSvc.getPresets().catch(() => ({ presets: {} })),
+    opsSvc.getLogs(30, 'agent').catch(() => ({ logs: [] })),
+  ]);
+
+  const params = s?.strategy_params || {};
+  const presets = presetsResp?.presets || {};
+  const logs = logsResp?.logs || [];
+  const watchSymbols = s?.watch_symbols || [];
+  const tickInterval = s?.tick_interval_sec ?? 60;
+  const signalInterval = s?.signal_interval || '4h';
 
   setHtml(container, `
-    <h4>OKX Connection</h4>
+    <h4>Strategy Config</h4>
+    <form class="ops-form" id="v2-cfg-form">
+      <label>Timeframe
+        <select name="timeframe">
+          ${['5m','15m','1h','4h','1d'].map(tf => `<option value="${tf}" ${tf === signalInterval ? 'selected' : ''}>${tf}</option>`).join('')}
+        </select>
+      </label>
+      <label>Symbols (comma-separated)
+        <input type="text" name="symbols" value="${watchSymbols.join(',')}" placeholder="BTCUSDT,ETHUSDT,...">
+      </label>
+      <label>Tick Interval (sec)
+        <input type="number" name="tick_interval" value="${tickInterval}" min="10" max="600">
+      </label>
+      <label>Max Position %
+        <input type="number" name="max_position_pct" value="${(s?.risk_limits?.max_position_pct || 5).toFixed(1)}" step="0.5" min="0.5" max="25">
+      </label>
+      <label>Max Positions
+        <input type="number" name="max_positions" value="${s?.risk_limits?.max_positions || 3}" min="1" max="10">
+      </label>
+      <button type="submit" class="btn btn-primary">Apply Config</button>
+    </form>
+
+    <h4>Strategy Params (V6)</h4>
+    <form class="ops-form params-grid" id="v2-params-form">
+      ${Object.entries(params).map(([k, v]) => `
+        <label>${k}<input type="number" name="${k}" value="${v}" step="${typeof v === 'number' && !Number.isInteger(v) ? '0.01' : '1'}"></label>
+      `).join('')}
+      <button type="submit" class="btn btn-primary">Save Params</button>
+    </form>
+
+    <h4>Strategy Presets</h4>
     <div class="ops-section">
-      <p>Has keys: <strong>${okx?.has_keys ? 'YES' : 'NO'}</strong></p>
-      <p>Mode: <strong>${okx?.mode || '—'}</strong></p>
-      ${okx?.balance ? `<pre>${JSON.stringify(okx.balance, null, 2)}</pre>` : ''}
+      <div class="preset-row">
+        <select id="v2-preset-select">
+          <option value="">-- Select preset --</option>
+          ${Object.keys(presets).map(name => `<option value="${name}">${name}</option>`).join('')}
+        </select>
+        <button class="btn" id="v2-preset-load">Load</button>
+        <button class="btn" id="v2-preset-delete">Delete</button>
+      </div>
+      <div class="preset-row">
+        <input type="text" id="v2-preset-name" placeholder="New preset name">
+        <button class="btn btn-primary" id="v2-preset-save">Save Current</button>
+      </div>
+      <div class="muted" id="v2-preset-status"></div>
     </div>
+
+    <h4>OKX API Keys</h4>
+    <form class="ops-form" id="v2-okx-form">
+      <div class="muted">Status: ${okx?.has_keys ? '<span class="pnl-pos">Connected</span>' : 'No keys configured'}</div>
+      ${okx?.balance ? `<pre>${JSON.stringify(okx.balance, null, 2).slice(0, 300)}</pre>` : ''}
+      <label>API Key<input type="password" name="api_key" placeholder="${okx?.has_keys ? 'already set — fill to update' : 'enter key'}"></label>
+      <label>Secret<input type="password" name="secret"></label>
+      <label>Passphrase<input type="password" name="passphrase"></label>
+      <button type="submit" class="btn btn-primary">Save & Verify</button>
+    </form>
+
+    <h4>Telegram Notifications</h4>
+    <form class="ops-form" id="v2-tg-form">
+      <label>Bot Token<input type="password" name="bot_token" placeholder="token from @BotFather"></label>
+      <label>Chat ID<input type="text" name="chat_id" placeholder="your chat id"></label>
+      <div class="checkbox-row">
+        <label><input type="checkbox" name="notify_signals" checked> Signals</label>
+        <label><input type="checkbox" name="notify_fills" checked> Fills</label>
+        <label><input type="checkbox" name="notify_errors"> Errors</label>
+        <label><input type="checkbox" name="notify_daily"> Daily</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Save & Test</button>
+    </form>
+
+    <h4>Agent Logs</h4>
+    <div class="ops-section">
+      <div class="agent-logs-view">
+        ${logs.length === 0 ? '<div class="muted">No logs yet</div>' : logs.slice().reverse().map(l =>
+          `<div class="log-line"><span class="log-time">${l.time || ''}</span> <span class="log-msg">${(l.msg || '').replace(/</g, '&lt;')}</span></div>`
+        ).join('')}
+      </div>
+    </div>
+
     <h4>Self-Healer</h4>
     <div class="ops-section">
       <p>Running: <strong>${healer?.running ? 'YES' : 'NO'}</strong></p>
@@ -281,8 +366,106 @@ async function renderOps() {
     </div>
   `);
 
+  wireOpsForms();
+}
+
+function wireOpsForms() {
+  // Strategy config
+  on('#v2-cfg-form', 'submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      timeframe: fd.get('timeframe'),
+      symbols: (fd.get('symbols') || '').toString().split(',').map(s => s.trim()).filter(Boolean),
+      tick_interval: Number(fd.get('tick_interval')),
+      max_position_pct: Number(fd.get('max_position_pct')),
+      max_positions: Number(fd.get('max_positions')),
+    };
+    try {
+      await agentSvc.setStrategyConfig(body);
+      setStatusMsg('Config applied');
+      renderOps();
+    } catch (err) { setStatusMsg('Config failed: ' + err.message); }
+  });
+
+  // Strategy params
+  on('#v2-params-form', 'submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const params = {};
+    fd.forEach((v, k) => { params[k] = Number(v); });
+    try {
+      await agentSvc.setStrategyParams(params);
+      setStatusMsg('Params saved');
+    } catch (err) { setStatusMsg('Params failed: ' + err.message); }
+  });
+
+  // Presets
+  on('#v2-preset-load', 'click', async () => {
+    const name = $('#v2-preset-select')?.value;
+    if (!name) return;
+    try { await agentSvc.loadPreset(name); setPresetStatus('Loaded: ' + name); renderOps(); }
+    catch (err) { setPresetStatus('Load failed'); }
+  });
+  on('#v2-preset-delete', 'click', async () => {
+    const name = $('#v2-preset-select')?.value;
+    if (!name) return;
+    try { await agentSvc.deletePreset(name); setPresetStatus('Deleted: ' + name); renderOps(); }
+    catch (err) { setPresetStatus('Delete failed'); }
+  });
+  on('#v2-preset-save', 'click', async () => {
+    const name = $('#v2-preset-name')?.value.trim();
+    if (!name) { setPresetStatus('Enter a name'); return; }
+    try { await agentSvc.savePreset(name); setPresetStatus('Saved: ' + name); renderOps(); }
+    catch (err) { setPresetStatus('Save failed'); }
+  });
+
+  // OKX
+  on('#v2-okx-form', 'submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const api_key = fd.get('api_key')?.toString().trim();
+    const secret = fd.get('secret')?.toString().trim();
+    const passphrase = fd.get('passphrase')?.toString().trim();
+    if (!api_key || !secret || !passphrase) { setStatusMsg('All 3 OKX fields required'); return; }
+    try {
+      const r = await execSvc.setOkxKeys(api_key, secret, passphrase);
+      setStatusMsg(r.ok ? 'OKX verified' : 'OKX failed: ' + (r.reason || ''));
+      renderOps();
+    } catch (err) { setStatusMsg('OKX request failed: ' + err.message); }
+  });
+
+  // Telegram
+  on('#v2-tg-form', 'submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const body = {
+      bot_token: fd.get('bot_token'),
+      chat_id: fd.get('chat_id'),
+      notify_signals: fd.get('notify_signals') === 'on',
+      notify_fills: fd.get('notify_fills') === 'on',
+      notify_errors: fd.get('notify_errors') === 'on',
+      notify_daily: fd.get('notify_daily') === 'on',
+    };
+    try {
+      const r = await opsSvc.setTelegramConfig(body);
+      setStatusMsg(r.ok ? 'Telegram test message sent' : 'Telegram failed: ' + (r.reason || ''));
+    } catch (err) { setStatusMsg('Telegram failed: ' + err.message); }
+  });
+
+  // Healer
   on('#v2-healer-trigger', 'click', async () => {
     await opsSvc.triggerHealer();
     renderOps();
   });
+}
+
+function setStatusMsg(msg) {
+  console.log('[ops]', msg);
+  // Could add a toast here. For now console.
+}
+
+function setPresetStatus(msg) {
+  const el = $('#v2-preset-status');
+  if (el) el.textContent = msg;
 }

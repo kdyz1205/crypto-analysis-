@@ -19,20 +19,21 @@ export function initMAOverlays(chart) {
   return {};
 }
 
-export function drawMAOverlays(chart, overlays, candleTimes) {
+export function drawMAOverlays(chart, overlays, _candleTimes) {
   if (!chart || !overlays) return;
   for (const [key, cfg] of Object.entries(MA_COLORS)) {
     const arr = overlays[key];
     if (!Array.isArray(arr) || arr.length === 0) continue;
 
-    // Align overlay values with candle times
+    // API returns [{time, value}, ...] — pass through directly
     const data = arr
-      .map((value, idx) => {
-        const time = candleTimes[idx];
-        if (time == null || value == null) return null;
-        return { time, value: Number(value) };
-      })
-      .filter((x) => x && isFinite(x.value));
+      .map((pt) => ({
+        time: typeof pt.time === 'string'
+          ? Math.floor(new Date(pt.time).getTime() / 1000)
+          : pt.time,
+        value: Number(pt.value),
+      }))
+      .filter((x) => x.time != null && isFinite(x.value));
 
     if (!seriesRefs[key]) {
       seriesRefs[key] = chart.addLineSeries({
@@ -44,9 +45,11 @@ export function drawMAOverlays(chart, overlays, candleTimes) {
         title: cfg.title,
       });
     }
-    try { seriesRefs[key].setData(data); } catch (err) { console.warn('[ma] setData failed', key, err); }
+    try { seriesRefs[key].setData(data); }
+    catch (err) { console.warn('[ma] setData failed', key, err); }
     seriesRefs[key].applyOptions({ visible });
   }
+  console.log('[ma] drew', Object.keys(seriesRefs).length, 'MA series');
 }
 
 export function toggleMAOverlays() {

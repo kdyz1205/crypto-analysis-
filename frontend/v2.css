@@ -726,3 +726,98 @@ body.combat-mode .v2-chart-area { width: 100vw; height: 100vh; }
 /* combat mode should also hide chat + research */
 body.combat-mode .chat-dock,
 body.combat-mode .research-drawer { display: none !important; }
+
+/* ── Ops forms ── */
+.ops-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  background: rgba(255,255,255,0.03);
+  padding: 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.ops-form label {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--v2-muted);
+  gap: 4px;
+}
+.ops-form input,
+.ops-form select {
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+.ops-form button[type="submit"] {
+  grid-column: 1 / -1;
+}
+.ops-form pre {
+  grid-column: 1 / -1;
+  background: var(--v2-bg);
+  padding: 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  overflow-x: auto;
+  margin: 0;
+}
+
+/* Params grid — 3 columns tight */
+.ops-form.params-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+.ops-form.params-grid label { font-size: 10px; }
+.ops-form.params-grid input { padding: 4px 6px; font-size: 11px; }
+
+/* Preset row */
+.preset-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+.preset-row select,
+.preset-row input {
+  flex: 1;
+  background: var(--v2-bg);
+  border: 1px solid var(--v2-border);
+  color: var(--v2-text);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.preset-row button { flex-shrink: 0; }
+
+/* Telegram checkbox row */
+.checkbox-row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.checkbox-row label {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--v2-text);
+}
+
+/* Agent logs view */
+.agent-logs-view {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  background: var(--v2-bg);
+  border-radius: 4px;
+  padding: 8px;
+}
+.log-line { padding: 2px 0; color: var(--v2-text); }
+.log-time { color: var(--v2-muted); margin-right: 6px; }
+.log-msg { white-space: pre-wrap; word-wrap: break-word; }
