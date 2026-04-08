@@ -883,3 +883,72 @@ body.combat-mode .research-drawer { display: none !important; }
 .dr-meter.green .dr-meter-fill { background: var(--v2-green); }
 .dr-meter.yellow .dr-meter-fill { background: var(--v2-yellow); }
 .dr-meter.red .dr-meter-fill { background: var(--v2-red); }
+
+/* ── Boot status (top-right pills) ── */
+.boot-status {
+  position: fixed;
+  top: 8px;
+  right: 20px;
+  z-index: 9998;
+  display: flex;
+  gap: 5px;
+  pointer-events: none;
+  flex-wrap: wrap;
+  max-width: 50vw;
+  justify-content: flex-end;
+}
+.boot-pill {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: rgba(20, 28, 45, 0.85);
+  border: 1px solid var(--v2-border);
+  backdrop-filter: blur(6px);
+  color: var(--v2-muted);
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+}
+.boot-pill.boot-ok { color: var(--v2-green); border-color: rgba(0,230,118,0.3); }
+.boot-pill.boot-pending { color: var(--v2-muted); }
+.boot-pill.boot-error { color: var(--v2-red); border-color: rgba(255,23,68,0.3); }
+
+body.combat-mode .boot-status { display: none; }
+
+/* ── Chart skeleton ── */
+.chart-skeleton {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--v2-muted);
+  font-size: 12px;
+}
+.chart-skeleton .spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid var(--v2-border);
+  border-top-color: var(--v2-primary);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.chart-skeleton.error { color: var(--v2-red); }
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ── Decision rail loading skeleton ── */
+.dr-loading { opacity: 0.6; }
+.dr-skel-bar {
+  height: 8px;
+  background: linear-gradient(90deg, var(--v2-border) 0%, rgba(255,255,255,0.08) 50%, var(--v2-border) 100%);
+  background-size: 200% 100%;
+  animation: skel-pulse 1.4s ease-in-out infinite;
+  border-radius: 4px;
+  margin: 6px 0;
+}
+.dr-skel-bar.short { width: 60%; }
+@keyframes skel-pulse {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -200% 0; }
+}

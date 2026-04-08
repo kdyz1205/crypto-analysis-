@@ -230,9 +230,35 @@ async function safeRender() {
   await render();
 }
 
+function paintLoading() {
+  const container = $('#v2-decision-rail');
+  if (!container) return;
+  const loadingCard = (title) => `
+    <div class="dr-card dr-loading">
+      <h3>${title}</h3>
+      <div class="dr-skel-bar"></div>
+      <div class="dr-skel-bar short"></div>
+      <div class="dr-skel-bar"></div>
+    </div>
+  `;
+  container.innerHTML = [
+    loadingCard('Market State'),
+    loadingCard('Current Setup'),
+    loadingCard('Risk Gate'),
+    loadingCard('Trade Candidate'),
+    loadingCard('Agent'),
+  ].join('');
+}
+
 export function initDecisionRail() {
-  render().then(() => { lastRender = Date.now(); });
-  pollTimer = setInterval(safeRender, 30000); // every 30s instead of 8s
+  paintLoading();  // instant skeleton
+  // Fire actual render in the next tick to let UI paint first
+  setTimeout(() => {
+    render().then(() => { lastRender = Date.now(); }).catch((err) => {
+      console.error('[rail] initial render failed:', err);
+    });
+  }, 0);
+  pollTimer = setInterval(safeRender, 30000);
   subscribe('market.symbol.changed', safeRender);
   subscribe('market.interval.changed', safeRender);
 }

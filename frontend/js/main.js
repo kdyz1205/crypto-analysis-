@@ -1,4 +1,4 @@
-// frontend/js/main.js — Phase 2 + 4 module entry point
+// frontend/js/main.js — non-blocking boot: UI shell first, data async
 
 import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays } from './workbench/chart.js';
 import { initTicker } from './workbench/ticker.js';
@@ -7,44 +7,84 @@ import { initDecisionRail } from './workbench/decision_rail.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
 import { initCommandPalette, openPalette } from './command_palette/palette.js';
 import { initGlassbox } from './control/glassbox.js';
-import { initChatDock, openChatDock } from './control/chat.js';
-import { initResearchDrawer, openResearchDrawer } from './research/drawer.js';
+import { initChatDock } from './control/chat.js';
+import { initResearchDrawer } from './research/drawer.js';
 import { connectStream } from './services/stream.js';
+import { initBootStatus, markBoot } from './ui/boot_status.js';
 import { $, on } from './util/dom.js';
 import { subscribe } from './util/events.js';
 import { setChatDock, setResearchDrawer, uiState } from './state/ui.js';
 
-async function boot() {
-  console.log('[main] Trading OS v2 booting...');
+/**
+ * Boot philosophy: NEVER block the UI shell on a data fetch.
+ * Every init function is fire-and-forget. Each component shows its own
+ * skeleton/loading state until its data arrives. Failures are isolated.
+ */
+function boot() {
+  console.log('[main] Trading OS v2 booting (non-blocking)...');
 
-  // Workbench
-  initChart('chart-container');
-  await initTicker('v2-symbol-select');
-  initTimeframe('#v2-tf-group');
-  await loadCurrent();
-  startLiveUpdates(30000); // 30s instead of 10s to reduce load
+  // Boot status indicator (render immediately — no dependencies)
+  initBootStatus();
 
-  initDecisionRail();
+  // ── Synchronous UI shell (everything that doesn't need network) ──
+  // These functions set up DOM containers, event listeners, and skeletons.
+  // No awaits — they return instantly.
+  try {
+    initChart('chart-container');          // creates LightweightCharts shell
+    markBoot('chart', 'pending', 'creating chart');
+  } catch (err) { markBoot('chart', 'error', err.message); console.error('[boot] chart init failed:', err); }
 
-  // Execution Center
-  initExecutionPanel();
+  try {
+    initTimeframe('#v2-tf-group');          // sync button wiring
+  } catch (err) { console.error('[boot] timeframe init failed:', err); }
 
-  // Research Drawer (backtest, MA ribbon)
-  initResearchDrawer();
+  try {
+    initDecisionRail();                     // renders loading cards first
+    markBoot('rail', 'pending', 'loading cards');
+  } catch (err) { markBoot('rail', 'error', err.message); }
 
-  // Chat Dock (AI assistant with memory + scheduling)
-  initChatDock();
+  try {
+    initExecutionPanel();                   // builds panel shell, hidden
+    markBoot('exec', 'ok', 'panel ready');
+  } catch (err) { markBoot('exec', 'error', err.message); }
 
-  // Phase 4: Command palette
-  initCommandPalette();
+  try { initResearchDrawer(); } catch (err) { console.error('[boot] research drawer failed:', err); }
+  try { initChatDock(); } catch (err) { console.error('[boot] chat dock failed:', err); }
+  try { initCommandPalette(); } catch (err) { console.error('[boot] palette failed:', err); }
+  try { initGlassbox(); } catch (err) { console.error('[boot] glassbox failed:', err); }
 
-  // Phase 4: Glassbox (timeline) — consumes SSE events
-  initGlassbox();
+  // ── Wire header buttons (sync, no network) ──
+  wireHeaderButtons();
 
-  // Phase 3: Connect SSE stream
-  connectStream();
+  // ── Fire async data loads in parallel — non-blocking ──
 
-  // Wire header buttons
+  // 1. Load symbol list (fills the ticker dropdown)
+  initTicker('v2-symbol-select')
+    .then(() => markBoot('symbols', 'ok', 'loaded'))
+    .catch((err) => { markBoot('symbols', 'error', err.message); console.error('[boot] ticker:', err); });
+
+  // 2. Load initial chart data
+  loadCurrent(true)
+    .then(() => {
+      markBoot('chart', 'ok', 'data loaded');
+      markBoot('patterns', 'ok', 'loaded');
+      startLiveUpdates(30000);
+    })
+    .catch((err) => { markBoot('chart', 'error', err.message); console.error('[boot] chart data:', err); });
+
+  // 3. Connect SSE stream (long-lived, don't treat as loading)
+  try {
+    connectStream();
+    markBoot('stream', 'ok', 'connected');
+    subscribe('connected', () => markBoot('stream', 'ok', 'alive'));
+  } catch (err) {
+    markBoot('stream', 'error', err.message);
+  }
+
+  console.log('[main] Trading OS v2 shell mounted (data loading in background)');
+}
+
+function wireHeaderButtons() {
   on('#v2-exec-toggle', 'click', () => toggleExec());
   on('#v2-cmdk-btn', 'click', () => openPalette());
   on('#v2-research-btn', 'click', () => setResearchDrawer(!uiState.researchDrawerOpen));
@@ -54,7 +94,7 @@ async function boot() {
     $('#v2-ma-toggle')?.classList.toggle('active', visible);
   });
 
-  // Combat mode toggle with guaranteed-visible exit button
+  // Combat mode toggle with visible exit button
   const setCombatMode = (enabled) => {
     document.body.classList.toggle('combat-mode', enabled);
     window.dispatchEvent(new Event('resize'));
@@ -83,7 +123,6 @@ async function boot() {
       e.preventDefault();
       setCombatMode(!document.body.classList.contains('combat-mode'));
     }
-    // Esc always exits combat mode (if not in an input)
     if (e.key === 'Escape' && document.body.classList.contains('combat-mode')) {
       const t = e.target;
       if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) {
@@ -91,11 +130,6 @@ async function boot() {
       }
     }
   });
-
-  // Show a visual flash when we receive SSE events (debug)
-  subscribe('connected', () => console.log('[stream] connection confirmed'));
-
-  console.log('[main] Trading OS v2 ready');
 }
 
 document.addEventListener('DOMContentLoaded', boot);

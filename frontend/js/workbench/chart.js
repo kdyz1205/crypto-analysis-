@@ -20,10 +20,18 @@ export function initChart(containerId = 'chart-container') {
     console.error('[chart] container not found:', containerId);
     return;
   }
+
+  // Show skeleton immediately
+  el.innerHTML = '<div class="chart-skeleton"><div class="spinner"></div><div>Loading chart...</div></div>';
+
   if (typeof LightweightCharts === 'undefined') {
+    el.innerHTML = '<div class="chart-skeleton error"><div>Chart library failed to load</div><div class="muted">Check network</div></div>';
     console.error('[chart] LightweightCharts library not loaded');
     return;
   }
+
+  // Clear skeleton before creating chart
+  el.innerHTML = '';
 
   chart = LightweightCharts.createChart(el, {
     width: el.clientWidth,
@@ -66,7 +74,10 @@ let _lastPatternKey = null;
 
 export async function loadCurrent(forcePatterns = false) {
   const { currentSymbol, currentInterval } = marketState;
-  if (!candleSeries) return;
+  if (!candleSeries) {
+    console.warn('[chart] candleSeries not ready yet, skipping load');
+    return;
+  }
 
   try {
     // API returns: { candles: [{time,open,high,low,close}], volume: [{time,value}], overlays, pricePrecision }
