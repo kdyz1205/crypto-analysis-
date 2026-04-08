@@ -23,7 +23,9 @@ from .routers import (
     market, patterns, research,
     agent, risk, execution,
     ops, chat, onchain,
+    stream,
 )
+from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 
 
 app = FastAPI(title="Crypto TA")
@@ -40,6 +42,12 @@ async def _startup():
     print(f"[Agent] Initialized. Mode={agent_inst.trader.state.mode} Gen={agent_inst.trader.state.generation}")
     print(f"[AI Chat] Ready. API key={'set' if chat_inst._anthropic_client else 'NOT set'}")
     print(f"[Healer] Self-healing active. AI={'enabled' if healer_inst._client else 'disabled'}")
+
+    # Register Phase 3 event bus subscribers
+    audit_sub.register()
+    telegram_sub.register()
+    sse_sub.register()
+    print("[EventBus] Phase 3 subscribers registered")
 
 
 @app.on_event("shutdown")
@@ -79,4 +87,5 @@ app.include_router(risk.router)         # /api/agent/risk-limits
 app.include_router(execution.router)    # /api/agent/okx-keys, okx-status
 app.include_router(chat.router)         # /api/chat/*
 app.include_router(onchain.router)      # /api/onchain/* (proxy to 8002)
+app.include_router(stream.router)       # /api/stream, /api/stream/status, /api/events/history
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer

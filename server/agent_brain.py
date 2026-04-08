@@ -35,6 +35,13 @@ import numpy as np
 
 from .okx_trader import OKXTrader, AgentState, RiskLimits, Position
 from .backtest_service import _sma, _ema, _atr, _bb_upper
+from .core.events import (
+    bus,
+    make_signal_detected, make_signal_blocked,
+    make_position_opened, make_position_closed,
+    make_agent_started, make_agent_stopped,
+    make_agent_regime_changed, make_summary_daily,
+)
 
 
 def _bb_lower(close, period, std_mult):
@@ -620,6 +627,18 @@ class AgentBrain:
                     pnl_usd = result.get('pnl_usd', 0)
                     print(f"[Agent] Closed {symbol}: {signal['reason']} PnL={pnl_pct}%")
 
+                    # Phase 3: publish position.closed event
+                    try:
+                        await bus.publish(make_position_closed(
+                            symbol=symbol, side=pos.side,
+                            entry_price=pos.entry_price,
+                            exit_price=result.get("exit_price", 0),
+                            pnl_pct=pnl_pct, pnl_usd=pnl_usd,
+                            reason=signal["reason"],
+                        ))
+                    except Exception as e:
+                        print(f"[Agent] bus publish failed: {e}")
+
                     # Telegram notification for position close
                     emoji = "🟢" if pnl_usd >= 0 else "🔴"
                     await self._notify_telegram(
@@ -785,6 +804,21 @@ class AgentBrain:
                 signal["_ts"] = time.time()
                 signal["market_regime"] = self.lessons.market_regime
 
+                # Phase 3: publish signal.detected event
+                try:
+                    await bus.publish(make_signal_detected(
+                        symbol=symbol,
+                        side=signal.get("action"),
+                        confidence=signal.get("confidence", 0),
+                        reason=signal.get("reason", ""),
+                        price=signal.get("price", 0),
+                        sl=signal.get("sl", 0),
+                        tp=signal.get("tp", 0),
+                        regime=self.lessons.market_regime,
+                    ))
+                except Exception as e:
+                    print(f"[Agent] bus publish failed: {e}")
+
                 # ── 举一反三: Check if lessons warn against this regime/side ──
                 if self.lessons.should_skip_regime(signal["action"]):
                     reason = f"Lessons warn: {signal['action']} risky in {self.lessons.market_regime} regime"
@@ -805,6 +839,14 @@ class AgentBrain:
 
                 if not passed:
                     print(f"[Agent] {symbol} pre-trade BLOCKED: {'; '.join(failures)}")
+                    # Phase 3: publish signal.blocked event
+                    try:
+                        await bus.publish(make_signal_blocked(
+                            symbol=symbol, side=signal.get("action", "?"),
+                            block_reasons=failures,
+                        ))
+                    except Exception as e:
+                        print(f"[Agent] bus publish failed: {e}")
                     _audit_log({
                         "event": "signal_blocked",
                         "symbol": symbol,
@@ -824,6 +866,16 @@ class AgentBrain:
                 result = await self.trader.open_position(symbol, signal["action"], size)
                 if result["ok"]:
                     print(f"[Agent] Opened {signal['action'].upper()} {symbol} @ {result['price']} size=${size:.0f} conf={signal['confidence']}")
+
+                    # Phase 3: publish position.opened event
+                    try:
+                        await bus.publish(make_position_opened(
+                            symbol=symbol, side=signal["action"],
+                            size_usd=size, entry_price=result["price"],
+                            sl=signal.get("sl", 0), tp=signal.get("tp", 0),
+                        ))
+                    except Exception as e:
+                        print(f"[Agent] bus publish failed: {e}")
 
                     # Telegram notification for new position
                     direction = "📈 做多" if signal["action"] == "long" else "📉 做空"
@@ -943,6 +995,16 @@ class AgentBrain:
     async def run_loop(self):
         self._running = True
         print(f"[Agent] Started V6 strategy. Mode={self.trader.state.mode} Equity=${self.trader.state.equity:.2f} Gen={self.trader.state.generation}")
+
+        # Phase 3: publish agent.started event
+        try:
+            await bus.publish(make_agent_started(
+                mode=self.trader.state.mode,
+                equity=self.trader.state.equity,
+                generation=self.trader.state.generation,
+            ))
+        except Exception as e:
+            print(f"[Agent] bus publish failed: {e}")
 
         # Send startup notification
         await self._notify_telegram(
