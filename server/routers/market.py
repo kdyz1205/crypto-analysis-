@@ -195,6 +195,199 @@ async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     return {"symbols": symbols, "count": len(symbols)}
 
 
+@router.get("/market/snapshot")
+async def api_market_snapshot(symbol: str = Query(...), interval: str = Query("4h")):
+    """
+    Lightweight summary for Workbench top strip + Decision Rail.
+    Last price, change, volume, ATR, volatility regime, data freshness.
+    """
+    symbol = symbol.upper().replace("/", "")
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+
+    try:
+        df, _ = await get_ohlcv_with_df(symbol, interval, None, days=30)
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol}
+
+    if df is None or df.is_empty():
+        return {"error": "no data", "symbol": symbol}
+
+    close = df["close"].to_numpy().astype(float)
+    high = df["high"].to_numpy().astype(float)
+    low = df["low"].to_numpy().astype(float)
+    vol = df["volume"].to_numpy().astype(float) if "volume" in df.columns else None
+
+    last = float(close[-1]) if len(close) else 0
+    prev = float(close[-2]) if len(close) >= 2 else last
+    change_pct = ((last - prev) / prev * 100) if prev else 0
+
+    # ATR-14
+    from ..backtest_service import _atr
+    import numpy as np
+    atr_arr = _atr(high, low, close, 14)
+    atr_val = float(atr_arr[-1]) if len(atr_arr) and not np.isnan(atr_arr[-1]) else 0
+    atr_pct = (atr_val / last * 100) if last else 0
+
+    if atr_pct < 1.5:
+        regime = "low"
+    elif atr_pct < 4.0:
+        regime = "normal"
+    else:
+        regime = "high"
+
+    # Volume 24h approx
+    if vol is not None and len(vol):
+        bars_per_day = {"5m": 288, "15m": 96, "1h": 24, "4h": 6, "1d": 1}.get(interval, 6)
+        vol_24h = float(np.sum(vol[-bars_per_day:])) if len(vol) >= bars_per_day else float(np.sum(vol))
+    else:
+        vol_24h = 0
+
+    # Data freshness
+    try:
+        last_ts = int(df["open_time"].to_list()[-1].timestamp())
+        import time as _t
+        freshness = int(_t.time() - last_ts)
+    except Exception:
+        freshness = None
+
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "last_price": round(last, 6),
+        "change_pct": round(change_pct, 2),
+        "volume_24h": round(vol_24h, 2),
+        "atr": round(atr_val, 6),
+        "atr_pct": round(atr_pct, 3),
+        "volatility_regime": regime,
+        "data_freshness_sec": freshness,
+        "bars_count": len(close),
+    }
+
+
+@router.get("/market/structure-summary")
+async def api_market_structure_summary(symbol: str = Query(...), interval: str = Query("4h")):
+    """
+    Decision Rail Market State card: trend, MA alignment, BB position,
+    nearest support/resistance, ribbon score.
+    """
+    import numpy as np
+    from ..backtest_service import _sma, _ema, _atr, _bb_upper
+    from ..pattern_service import get_patterns_from_df
+
+    symbol = symbol.upper().replace("/", "")
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+
+    try:
+        df, _ = await get_ohlcv_with_df(symbol, interval, None, days=90)
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol}
+    if df is None or df.is_empty():
+        return {"error": "no data", "symbol": symbol}
+
+    close = df["close"].to_numpy().astype(float)
+    high = df["high"].to_numpy().astype(float)
+    low = df["low"].to_numpy().astype(float)
+
+    ma5 = _sma(close, 5)
+    ma8 = _sma(close, 8)
+    ema21 = _ema(close, 21)
+    ma55 = _sma(close, 55)
+    bb_up = _bb_upper(close, 21, 2.5)
+    atr = _atr(high, low, close, 14)
+
+    i = len(close) - 1
+    price = float(close[i])
+
+    # Trend based on slope of MA20
+    ma20 = _sma(close, 20)
+    if i >= 10 and not np.isnan(ma20[i]) and not np.isnan(ma20[i - 10]):
+        slope_pct = (ma20[i] - ma20[i - 10]) / ma20[i - 10] * 100
+    else:
+        slope_pct = 0
+
+    if slope_pct > 0.5: trend_label = "UPTREND"
+    elif slope_pct < -0.5: trend_label = "DOWNTREND"
+    else: trend_label = "SIDEWAYS"
+
+    # MA alignment
+    if not any(np.isnan([ma5[i], ma8[i], ema21[i], ma55[i]])):
+        if price > ma5[i] > ma8[i] > ema21[i] > ma55[i]:
+            ma_alignment = "BULL_ORDERED"
+        elif price < ma5[i] < ma8[i] < ema21[i] < ma55[i]:
+            ma_alignment = "BEAR_ORDERED"
+        elif price > ma55[i]:
+            ma_alignment = "ABOVE_MA55"
+        else:
+            ma_alignment = "BELOW_MA55"
+    else:
+        ma_alignment = "UNKNOWN"
+
+    # Ribbon score (simple: count how many MAs below price for long)
+    if not any(np.isnan([ma5[i], ma8[i], ema21[i], ma55[i]])):
+        below = sum(1 for m in [ma5[i], ma8[i], ema21[i], ma55[i]] if price > m)
+        ribbon_score = below  # 0-4
+    else:
+        ribbon_score = 0
+
+    # BB position
+    if not np.isnan(bb_up[i]):
+        bb_dist_pct = (bb_up[i] - price) / price * 100
+        bb_position = "AT_UPPER" if bb_dist_pct < 0.5 else "MID"
+    else:
+        bb_dist_pct = None
+        bb_position = "UNKNOWN"
+
+    # Nearest support/resistance via pattern_service
+    try:
+        patterns = get_patterns_from_df(df, symbol, interval)
+        supports = patterns.get("supportLines", [])
+        resists = patterns.get("resistanceLines", [])
+    except Exception:
+        supports = []
+        resists = []
+
+    def nearest(lines, direction):
+        """direction 'below' for support, 'above' for resistance."""
+        best = None
+        best_dist = float("inf")
+        for l in lines:
+            y = l.get("v2") or l.get("y2") or l.get("value")
+            if y is None: continue
+            y = float(y)
+            if direction == "below" and y < price:
+                dist = price - y
+            elif direction == "above" and y > price:
+                dist = y - price
+            else:
+                continue
+            if dist < best_dist:
+                best_dist = dist
+                best = y
+        return best, best_dist if best else None
+
+    nearest_support, sup_dist = nearest(supports, "below")
+    nearest_resist, res_dist = nearest(resists, "above")
+
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "price": round(price, 6),
+        "trend_label": trend_label,
+        "trend_slope_pct": round(slope_pct, 3),
+        "ma_alignment": ma_alignment,
+        "ribbon_score": ribbon_score,
+        "ribbon_max": 4,
+        "bb_position": bb_position,
+        "bb_distance_pct": round(bb_dist_pct, 3) if bb_dist_pct is not None else None,
+        "nearest_support": round(nearest_support, 6) if nearest_support else None,
+        "distance_to_support_pct": round((price - nearest_support) / price * 100, 2) if nearest_support else None,
+        "nearest_resistance": round(nearest_resist, 6) if nearest_resist else None,
+        "distance_to_resistance_pct": round((nearest_resist - price) / price * 100, 2) if nearest_resist else None,
+    }
+
+
 @router.get("/data-info")
 async def api_data_info(
     symbol: str = Query(...),

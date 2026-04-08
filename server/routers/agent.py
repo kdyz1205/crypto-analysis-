@@ -77,6 +77,235 @@ async def api_agent_status():
     return get_agent().get_status()
 
 
+@router.get("/summary")
+async def api_agent_summary():
+    """
+    Condensed runtime summary for Execution Overview / Glassbox.
+    Returns human-readable explanations, not raw state.
+    """
+    import time
+    agent = get_agent()
+    s = agent.trader.state
+    from ..agent_brain import WATCH_SYMBOLS, TICK_INTERVAL_SEC
+
+    signals = agent._last_signals or {}
+    blocked_signals = [sig for sig in signals.values() if sig.get("blocked")]
+    pending = [sig for sig in signals.values() if not sig.get("blocked") and sig.get("action") in ("long", "short")]
+
+    last_scan_at = max(
+        (sig.get("_ts", 0) for sig in signals.values()),
+        default=0,
+    )
+    now = time.time()
+    age_sec = int(now - last_scan_at) if last_scan_at else None
+    next_scan_eta = max(0, TICK_INTERVAL_SEC - (age_sec or 0)) if last_scan_at else TICK_INTERVAL_SEC
+
+    # Determine last action + last block reason
+    last_action = None
+    if s.trade_history:
+        last_t = s.trade_history[-1]
+        last_action = {
+            "symbol": last_t.symbol,
+            "side": last_t.side,
+            "pnl_pct": round(last_t.pnl_pct, 2),
+            "reason": last_t.reason,
+        }
+    last_block_reason = None
+    if blocked_signals:
+        b = blocked_signals[-1]
+        last_block_reason = "; ".join(b.get("block_reasons", [])[:2])
+
+    # Health score: simple composite
+    health = 100
+    if not s.is_alive: health -= 50
+    if not agent._running: health -= 20
+    if s.daily_pnl < 0 and abs(s.daily_pnl) > s.equity * 0.01: health -= 10
+    if (s.peak_equity - s.equity) / max(s.peak_equity, 1) > 0.03: health -= 10
+    health = max(0, min(100, health))
+
+    return {
+        "mode": s.mode,
+        "runtime_state": "RUNNING" if agent._running else ("SHUTDOWN" if not s.is_alive else "STOPPED"),
+        "current_phase": agent._cycle_phase,
+        "current_regime": agent.lessons.market_regime,
+        "regime_confidence": round(agent.lessons.regime_confidence, 2),
+        "watch_symbols_count": len(WATCH_SYMBOLS),
+        "active_positions_count": len(s.positions),
+        "pending_signals_count": len(pending),
+        "blocked_signals_count": len(blocked_signals),
+        "last_scan_age_sec": age_sec,
+        "next_scan_eta_sec": int(next_scan_eta),
+        "last_action": last_action,
+        "last_block_reason": last_block_reason,
+        "equity": round(s.equity, 2),
+        "daily_pnl": round(s.daily_pnl, 2),
+        "total_trades": s.total_trades,
+        "win_rate": round(s.win_count / max(s.total_trades, 1) * 100, 1),
+        "generation": s.generation,
+        "health_score": health,
+    }
+
+
+@router.get("/risk-state")
+async def api_agent_risk_state():
+    """
+    Current risk snapshot with state machine label, meters, and block reasons.
+    Used by v2 Risk sub-tab + Decision Rail Risk Gate card.
+    """
+    agent = get_agent()
+    s = agent.trader.state
+    r = agent.trader.risk
+
+    # Current usage (pct)
+    exposure_usd = sum(abs(p.size) for p in s.positions.values())
+    exposure_pct = (exposure_usd / max(s.equity, 1)) * 100
+    daily_loss_pct = max(0, -s.daily_pnl / max(s.equity, 1) * 100)
+    dd_pct = max(0, (s.peak_equity - s.equity) / max(s.peak_equity, 1) * 100)
+    positions_used = len(s.positions)
+
+    # Convert limits decimals to percentages
+    max_pos_pct = r.max_position_pct * 100
+    max_exp_pct = r.max_total_exposure_pct * 100
+    max_daily_loss = r.max_daily_loss_pct * 100
+    max_dd = r.max_drawdown_pct * 100
+
+    # State machine: NORMAL / WATCH / COOLDOWN / HALTED
+    state = "NORMAL"
+    reason = None
+    if not s.is_alive:
+        state = "HALTED"
+        reason = s.shutdown_reason or "Emergency shutdown"
+    elif dd_pct >= max_dd * 0.8:
+        state = "WATCH"
+        reason = f"Drawdown {dd_pct:.1f}% approaching limit {max_dd:.1f}%"
+    elif daily_loss_pct >= max_daily_loss * 0.7:
+        state = "WATCH"
+        reason = f"Daily loss {daily_loss_pct:.2f}% approaching limit {max_daily_loss:.2f}%"
+
+    # Cooldown check
+    import time
+    now = time.time()
+    cooldown_remaining = 0
+    for sym, last_ts in s.last_trade_time.items():
+        remaining = r.cooldown_seconds - (now - last_ts)
+        if remaining > cooldown_remaining:
+            cooldown_remaining = remaining
+    if cooldown_remaining > 0 and state == "NORMAL":
+        state = "COOLDOWN"
+        reason = f"Cooldown {int(cooldown_remaining)}s remaining"
+
+    # Consecutive loss check
+    recent = s.trade_history[-3:]
+    consec_losses = 0
+    for t in reversed(recent):
+        if t.pnl_usd < 0: consec_losses += 1
+        else: break
+
+    return {
+        "state": state,
+        "state_reason": reason,
+        "meters": {
+            "exposure": {"current": round(exposure_pct, 2), "max": round(max_exp_pct, 2), "unit": "%"},
+            "daily_loss": {"current": round(daily_loss_pct, 2), "max": round(max_daily_loss, 2), "unit": "%"},
+            "drawdown": {"current": round(dd_pct, 2), "max": round(max_dd, 2), "unit": "%"},
+            "positions": {"current": positions_used, "max": r.max_positions, "unit": ""},
+        },
+        "max_position_pct": round(max_pos_pct, 2),
+        "cooldown_remaining_sec": int(max(0, cooldown_remaining)),
+        "consecutive_losses": consec_losses,
+        "is_alive": s.is_alive,
+        "kill_switch_armed": not s.is_alive,
+    }
+
+
+@router.get("/risk-blocks/recent")
+async def api_agent_risk_blocks_recent(limit: int = 20):
+    """Return recent signals that were blocked, with reasons."""
+    agent = get_agent()
+    blocks = []
+    for symbol, sig in agent._last_signals.items():
+        if sig.get("blocked"):
+            blocks.append({
+                "symbol": symbol,
+                "side": sig.get("action"),
+                "confidence": sig.get("confidence"),
+                "block_reasons": sig.get("block_reasons", []),
+                "reason_codes": [r.split(":")[0].strip() for r in sig.get("block_reasons", [])],
+                "market_regime": sig.get("market_regime"),
+                "price": sig.get("price"),
+                "sl": sig.get("sl"),
+                "tp": sig.get("tp"),
+            })
+    return {"count": len(blocks), "blocks": blocks[:limit]}
+
+
+@router.get("/signal-candidates")
+async def api_agent_signal_candidates():
+    """
+    Standardized signal candidate pool with scores, states, and risk.
+    Consumed by Execution → Execution sub-tab and Decision Rail Trade Candidate card.
+    """
+    agent = get_agent()
+    s = agent.trader.state
+    candidates = []
+
+    for symbol, sig in agent._last_signals.items():
+        if not sig or sig.get("action") not in ("long", "short"):
+            continue
+
+        price = sig.get("price", 0)
+        sl = sig.get("sl", 0)
+        tp = sig.get("tp", 0)
+        confidence = sig.get("confidence", 0)
+
+        # Setup score = confidence * 100
+        setup_score = round(confidence * 100)
+
+        # Execution score: penalize blocked, low SL distance
+        exec_score = 100 if not sig.get("blocked") else 0
+        if price and sl:
+            sl_pct = abs(price - sl) / price * 100
+            if sl_pct < 0.5 or sl_pct > 8:
+                exec_score -= 20
+
+        # RR estimate
+        rr = None
+        if price and sl and tp:
+            risk = abs(price - sl)
+            reward = abs(tp - price)
+            if risk > 0:
+                rr = round(reward / risk, 2)
+
+        # Risk state (uses current agent state)
+        risk_state = "OK"
+        if sig.get("blocked"):
+            risk_state = "BLOCKED"
+        elif symbol in s.positions:
+            risk_state = "POSITION_EXISTS"
+
+        candidates.append({
+            "symbol": symbol,
+            "side": sig.get("action"),
+            "signal_state": "BLOCKED" if sig.get("blocked") else "READY",
+            "setup_score": setup_score,
+            "execution_score": max(0, exec_score),
+            "confidence": confidence,
+            "risk_state": risk_state,
+            "block_reason": "; ".join(sig.get("block_reasons", [])[:2]) or None,
+            "entry": price,
+            "stop": sl,
+            "target": tp,
+            "rr_estimate": rr,
+            "reason": sig.get("reason"),
+            "market_regime": sig.get("market_regime"),
+            "source_strategy": "V6",
+        })
+
+    # Sort by setup_score descending
+    candidates.sort(key=lambda x: -x["setup_score"])
+    return {"count": len(candidates), "candidates": candidates}
+
+
 @router.post("/start")
 async def api_agent_start():
     """Start the agent background loop."""

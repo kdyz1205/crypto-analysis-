@@ -53,6 +53,7 @@ function wireEvents() {
   subscribe('agent.subtab.changed', (tab) => {
     $$('.exec-tab', root).forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $$('.exec-subtab', root).forEach((s) => s.classList.toggle('hidden', s.dataset.subtab !== tab));
+    paintLoading();
     renderActive();
   });
 }
@@ -64,8 +65,21 @@ function switchSubTab(tab) {
 export function openPanel() {
   setPanelOpen(true);
   show('#v2-execution-panel');
-  renderActive();
+  // Paint loading state synchronously so the panel is never blank
+  paintLoading();
+  renderActive().catch((err) => {
+    console.error('[exec] render failed:', err);
+    const container = $(`[data-subtab="${agentState.activeSubTab}"]`);
+    if (container) setHtml(container, `<div class="muted">Error loading: ${err.message || err}</div>`);
+  });
   startPolling();
+}
+
+function paintLoading() {
+  const container = $(`[data-subtab="${agentState.activeSubTab}"]`);
+  if (container && !container.innerHTML.trim()) {
+    setHtml(container, '<div class="muted" style="padding:40px;text-align:center">Loading...</div>');
+  }
 }
 
 export function closePanel() {
@@ -96,22 +110,39 @@ function stopPolling() {
 
 async function renderActive() {
   const tab = agentState.activeSubTab;
-  switch (tab) {
-    case 'overview': return renderOverview();
-    case 'execution': return renderExecution();
-    case 'risk': return renderRisk();
-    case 'ops': return renderOps();
+  try {
+    switch (tab) {
+      case 'overview': await renderOverview(); break;
+      case 'execution': await renderExecution(); break;
+      case 'risk': await renderRisk(); break;
+      case 'ops': await renderOps(); break;
+    }
+  } catch (err) {
+    console.error(`[exec] render ${tab} failed:`, err);
+    const container = $(`[data-subtab="${tab}"]`);
+    if (container) {
+      setHtml(container, `<div class="muted" style="padding:20px">
+        <strong>Render error:</strong> ${err.message || err}<br>
+        <button class="btn" onclick="location.reload()">Reload page</button>
+      </div>`);
+    }
   }
 }
 
 async function renderOverview() {
   const container = $('[data-subtab="overview"]');
-  if (!container) return;
-  const s = agentState.lastStatus || await agentSvc.getStatus();
+  if (!container) {
+    console.warn('[exec] overview container not found');
+    return;
+  }
+  console.log('[exec] renderOverview starting...');
+  const s = await agentSvc.getStatus();
   setLastStatus(s);
+  console.log('[exec] renderOverview got status:', s);
 
   const mode = s.mode?.toUpperCase() || '—';
-  $('#v2-exec-mode') && ($('#v2-exec-mode').textContent = mode);
+  const modeBadge = $('#v2-exec-mode');
+  if (modeBadge) modeBadge.textContent = mode;
 
   const positions = Object.values(s.positions || {});
   const trades = s.recent_trades || [];
@@ -209,12 +240,20 @@ async function renderExecution() {
 async function renderRisk() {
   const container = $('[data-subtab="risk"]');
   if (!container) return;
-  const s = agentState.lastStatus || await agentSvc.getStatus();
+  const s = await agentSvc.getStatus();
   const r = s.risk_limits || {};
 
-  // Calculate usage meters
-  const dailyLossPct = Math.max(0, -s.daily_pnl / s.equity * 100);
-  const ddPct = Math.max(0, (s.peak_equity - s.equity) / s.peak_equity * 100);
+  // Backend stores limits as decimals (0.05 for 5%). Convert to percent.
+  const maxPosPct = (r.max_position_pct ?? 0.05) * 100;
+  const maxExpPct = (r.max_total_exposure_pct ?? 0.15) * 100;
+  const maxDailyLossPct = (r.max_daily_loss_pct ?? 0.02) * 100;
+  const maxDrawdownPct = (r.max_drawdown_pct ?? 0.05) * 100;
+  const maxPositions = r.max_positions ?? 3;
+  const cooldown = r.cooldown_seconds ?? 3600;
+
+  // Current usage (percent)
+  const dailyLossPct = Math.max(0, -(s.daily_pnl ?? 0) / (s.equity || 1) * 100);
+  const ddPct = Math.max(0, ((s.peak_equity || 0) - (s.equity || 0)) / (s.peak_equity || 1) * 100);
   const positionsUsed = Object.keys(s.positions || {}).length;
 
   const meter = (label, cur, max, unit = '%') => {
@@ -224,7 +263,7 @@ async function renderRisk() {
       <div class="meter ${cls}">
         <div class="meter-label">${label}</div>
         <div class="meter-bar"><div class="meter-fill" style="width:${pct}%"></div></div>
-        <div class="meter-value">${cur.toFixed(2)}${unit} / ${Number(max).toFixed(2)}${unit}</div>
+        <div class="meter-value">${Number(cur).toFixed(2)}${unit} / ${Number(max).toFixed(2)}${unit}</div>
       </div>
     `;
   };
@@ -232,18 +271,18 @@ async function renderRisk() {
   setHtml(container, `
     <h4>Live risk meters</h4>
     <div class="risk-meters">
-      ${meter('Daily Loss', dailyLossPct, r.max_daily_loss_pct)}
-      ${meter('Drawdown', ddPct, r.max_drawdown_pct)}
-      ${meter('Positions', positionsUsed, r.max_positions, '')}
+      ${meter('Daily Loss', dailyLossPct, maxDailyLossPct)}
+      ${meter('Drawdown', ddPct, maxDrawdownPct)}
+      ${meter('Positions', positionsUsed, maxPositions, '')}
     </div>
     <h4>Risk limits config</h4>
     <form class="risk-form" id="v2-risk-form">
-      <label>Max Position %<input type="number" name="max_position_pct" value="${r.max_position_pct ?? 5}" step="0.5"></label>
-      <label>Max Exposure %<input type="number" name="max_total_exposure_pct" value="${r.max_total_exposure_pct ?? 15}" step="1"></label>
-      <label>Max Daily Loss %<input type="number" name="max_daily_loss_pct" value="${r.max_daily_loss_pct ?? 2}" step="0.1"></label>
-      <label>Max Drawdown %<input type="number" name="max_drawdown_pct" value="${r.max_drawdown_pct ?? 5}" step="1"></label>
-      <label>Max Positions<input type="number" name="max_positions" value="${r.max_positions ?? 3}" step="1"></label>
-      <label>Cooldown (s)<input type="number" name="cooldown_seconds" value="${r.cooldown_seconds ?? 3600}" step="60"></label>
+      <label>Max Position %<input type="number" name="max_position_pct" value="${maxPosPct.toFixed(1)}" step="0.5"></label>
+      <label>Max Exposure %<input type="number" name="max_total_exposure_pct" value="${maxExpPct.toFixed(1)}" step="1"></label>
+      <label>Max Daily Loss %<input type="number" name="max_daily_loss_pct" value="${maxDailyLossPct.toFixed(2)}" step="0.1"></label>
+      <label>Max Drawdown %<input type="number" name="max_drawdown_pct" value="${maxDrawdownPct.toFixed(1)}" step="1"></label>
+      <label>Max Positions<input type="number" name="max_positions" value="${maxPositions}" step="1"></label>
+      <label>Cooldown (s)<input type="number" name="cooldown_seconds" value="${cooldown}" step="60"></label>
       <button type="submit" class="btn btn-primary">Save</button>
     </form>
   `);

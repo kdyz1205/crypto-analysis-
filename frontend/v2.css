@@ -821,3 +821,65 @@ body.combat-mode .research-drawer { display: none !important; }
 .log-line { padding: 2px 0; color: var(--v2-text); }
 .log-time { color: var(--v2-muted); margin-right: 6px; }
 .log-msg { white-space: pre-wrap; word-wrap: break-word; }
+
+/* ── Combat exit button (floating, visible only in combat-mode) ── */
+.combat-exit-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  background: rgba(255, 23, 68, 0.9);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+.combat-exit-btn:hover { background: rgba(255, 23, 68, 1); }
+.combat-exit-btn.hidden { display: none; }
+
+/* ── Decision Rail — multi-card layout ── */
+.v2-decision-rail .dr-card {
+  margin-bottom: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
+  border-left: 2px solid var(--v2-primary);
+}
+.v2-decision-rail .dr-card h3 {
+  margin: 0 0 10px 0;
+  font-size: 11px;
+  color: var(--v2-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.v2-decision-rail .dr-row {
+  padding: 4px 0;
+  font-size: 12px;
+}
+.dr-summary { border-left-color: var(--v2-muted); }
+
+.dr-meter {
+  margin: 6px 0;
+}
+.dr-meter-label {
+  font-size: 10px;
+  color: var(--v2-muted);
+  margin-bottom: 2px;
+}
+.dr-meter-bar {
+  height: 4px;
+  background: var(--v2-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dr-meter-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+.dr-meter.green .dr-meter-fill { background: var(--v2-green); }
+.dr-meter.yellow .dr-meter-fill { background: var(--v2-yellow); }
+.dr-meter.red .dr-meter-fill { background: var(--v2-red); }

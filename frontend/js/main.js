@@ -53,17 +53,42 @@ async function boot() {
     const visible = toggleMAOverlays();
     $('#v2-ma-toggle')?.classList.toggle('active', visible);
   });
-  on('#v2-combat-btn', 'click', () => {
-    document.body.classList.toggle('combat-mode');
+
+  // Combat mode toggle with guaranteed-visible exit button
+  const setCombatMode = (enabled) => {
+    document.body.classList.toggle('combat-mode', enabled);
     window.dispatchEvent(new Event('resize'));
+    const exitBtn = $('#v2-combat-exit');
+    if (exitBtn) exitBtn.classList.toggle('hidden', !enabled);
+  };
+
+  on('#v2-combat-btn', 'click', () => {
+    setCombatMode(!document.body.classList.contains('combat-mode'));
   });
 
-  // F11 / Ctrl+. for combat mode
+  // Floating exit button (visible only in combat mode)
+  if (!$('#v2-combat-exit')) {
+    const exitBtn = document.createElement('button');
+    exitBtn.id = 'v2-combat-exit';
+    exitBtn.className = 'combat-exit-btn hidden';
+    exitBtn.innerHTML = '✕ Exit Combat (Esc)';
+    exitBtn.title = 'Exit combat mode';
+    document.body.appendChild(exitBtn);
+    exitBtn.addEventListener('click', () => setCombatMode(false));
+  }
+
+  // Keyboard: F11 / Ctrl+. toggle, Esc exit
   document.addEventListener('keydown', (e) => {
     if (e.key === 'F11' || (e.ctrlKey && e.key === '.')) {
       e.preventDefault();
-      document.body.classList.toggle('combat-mode');
-      window.dispatchEvent(new Event('resize'));
+      setCombatMode(!document.body.classList.contains('combat-mode'));
+    }
+    // Esc always exits combat mode (if not in an input)
+    if (e.key === 'Escape' && document.body.classList.contains('combat-mode')) {
+      const t = e.target;
+      if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) {
+        setCombatMode(false);
+      }
     }
   });
 
