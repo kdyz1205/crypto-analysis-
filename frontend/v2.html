@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trading OS v2</title>
+  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="/v2.css" />
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body class="v2-body">
+
+  <!-- ─── Top Header ─────────────────────────────────────── -->
+  <header class="v2-header">
+    <div class="v2-brand">Trading OS</div>
+
+    <div class="v2-symbol-group">
+      <select id="v2-symbol-select" class="v2-select"></select>
+    </div>
+
+    <div class="v2-tf-group" id="v2-tf-group">
+      <button class="v2-tf-btn" data-tf="5m">5m</button>
+      <button class="v2-tf-btn" data-tf="15m">15m</button>
+      <button class="v2-tf-btn" data-tf="1h">1h</button>
+      <button class="v2-tf-btn active" data-tf="4h">4h</button>
+      <button class="v2-tf-btn" data-tf="1d">1d</button>
+    </div>
+
+    <div class="v2-chart-header" id="chart-header-v2">—</div>
+
+    <div class="v2-header-actions">
+      <button class="btn btn-primary" id="v2-exec-toggle">Execution Center</button>
+      <a href="/" class="btn">Back to v1</a>
+    </div>
+  </header>
+
+  <!-- ─── Workbench Main ────────────────────────────────── -->
+  <main class="v2-workbench">
+    <div class="v2-chart-area">
+      <div id="chart-container" class="v2-chart-container"></div>
+    </div>
+
+    <aside class="v2-decision-rail" id="v2-decision-rail">
+      <div class="dr-card"><h3>Decision Rail</h3><p>Loading...</p></div>
+    </aside>
+  </main>
+
+  <!-- ─── Execution Center (hidden by default) ──────────── -->
+  <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
+
+  <!-- ─── Module entry ─────────────────────────────────── -->
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

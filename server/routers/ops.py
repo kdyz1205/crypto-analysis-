@@ -31,6 +31,32 @@ async def index():
     )
 
 
+@router.get("/v2")
+async def index_v2():
+    """Phase 2 preview — new layered UI (v2). Old UI at /."""
+    return FileResponse(
+        str(FRONTEND_DIR / "v2.html"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@router.get("/v2.html")
+async def index_v2_html():
+    return FileResponse(
+        str(FRONTEND_DIR / "v2.html"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@router.get("/v2.css")
+async def serve_v2_css():
+    return FileResponse(
+        str(FRONTEND_DIR / "v2.css"),
+        media_type="text/css",
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
+
+
 @router.get("/style.css")
 async def serve_css():
     return FileResponse(
