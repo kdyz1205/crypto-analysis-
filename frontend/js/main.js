@@ -1,15 +1,18 @@
 // frontend/js/main.js — Phase 2 + 4 module entry point
 
-import { initChart, loadCurrent, startLiveUpdates } from './workbench/chart.js';
+import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays } from './workbench/chart.js';
 import { initTicker } from './workbench/ticker.js';
 import { initTimeframe } from './workbench/timeframe.js';
 import { initDecisionRail } from './workbench/decision_rail.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
 import { initCommandPalette, openPalette } from './command_palette/palette.js';
 import { initGlassbox } from './control/glassbox.js';
+import { initChatDock, openChatDock } from './control/chat.js';
+import { initResearchDrawer, openResearchDrawer } from './research/drawer.js';
 import { connectStream } from './services/stream.js';
 import { $, on } from './util/dom.js';
 import { subscribe } from './util/events.js';
+import { setChatDock, setResearchDrawer, uiState } from './state/ui.js';
 
 async function boot() {
   console.log('[main] Trading OS v2 booting...');
@@ -26,6 +29,12 @@ async function boot() {
   // Execution Center
   initExecutionPanel();
 
+  // Research Drawer (backtest, MA ribbon)
+  initResearchDrawer();
+
+  // Chat Dock (AI assistant with memory + scheduling)
+  initChatDock();
+
   // Phase 4: Command palette
   initCommandPalette();
 
@@ -38,6 +47,12 @@ async function boot() {
   // Wire header buttons
   on('#v2-exec-toggle', 'click', () => toggleExec());
   on('#v2-cmdk-btn', 'click', () => openPalette());
+  on('#v2-research-btn', 'click', () => setResearchDrawer(!uiState.researchDrawerOpen));
+  on('#v2-chat-btn', 'click', () => setChatDock(!uiState.chatDockOpen));
+  on('#v2-ma-toggle', 'click', () => {
+    const visible = toggleMAOverlays();
+    $('#v2-ma-toggle')?.classList.toggle('active', visible);
+  });
   on('#v2-combat-btn', 'click', () => {
     document.body.classList.toggle('combat-mode');
     window.dispatchEvent(new Event('resize'));

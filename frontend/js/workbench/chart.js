@@ -4,7 +4,10 @@ import { $ } from '../util/dom.js';
 import { marketState, setCandles, setPrecision, setIntervalTF, setSymbol } from '../state/market.js';
 import { subscribe } from '../util/events.js';
 import * as marketSvc from '../services/market.js';
+import * as patternsSvc from '../services/patterns.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
+import { drawMAOverlays, toggleMAOverlays as toggleMA } from './ma_overlay.js';
+import { drawPatterns, drawZones, clearPatternLines } from './patterns.js';
 
 let chart = null;
 let candleSeries = null;
@@ -102,11 +105,35 @@ export async function loadCurrent() {
     const lastPrice = candles[candles.length - 1].close;
     setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
 
+    // MA ribbon + BB overlays from same response
+    if (data.overlays) {
+      const candleTimes = candles.map((c) => c.time);
+      drawMAOverlays(chart, data.overlays, candleTimes);
+    }
+
+    // Load S/R patterns in parallel
+    loadPatterns(currentSymbol, currentInterval);
+
     updateHeader(currentSymbol, currentInterval, lastPrice);
     console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
   } catch (err) {
     console.error('[chart] load failed:', err);
   }
+}
+
+async function loadPatterns(symbol, interval) {
+  try {
+    const data = await patternsSvc.getPatterns(symbol, interval, 90, 'full');
+    clearPatternLines(chart);
+    drawPatterns(chart, data.supportLines || [], data.resistanceLines || [], 8);
+    drawZones(chart, data.consolidationZones || []);
+  } catch (err) {
+    console.warn('[patterns] load failed:', err);
+  }
+}
+
+export function toggleMAOverlays() {
+  return toggleMA();
 }
 
 function updateHeader(symbol, interval, price) {
