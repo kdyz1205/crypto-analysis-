@@ -29,8 +29,10 @@
     <div class="v2-chart-header" id="chart-header-v2">—</div>
 
     <div class="v2-header-actions">
+      <button class="btn" id="v2-cmdk-btn" title="Ctrl+K">⌘K</button>
+      <button class="btn" id="v2-combat-btn" title="F11 / Ctrl+.">⛶</button>
       <button class="btn btn-primary" id="v2-exec-toggle">Execution Center</button>
-      <a href="/" class="btn">Back to v1</a>
+      <a href="/" class="btn">v1</a>
     </div>
   </header>
 
@@ -45,7 +47,16 @@
     </aside>
   </main>
 
-  <!-- ─── Execution Center (hidden by default) ──────────── -->
+  <!-- ─── Glassbox Timeline (bottom dock) ───────────────── -->
+  <section class="v2-glassbox-dock">
+    <div class="glass-header">
+      <span class="glass-title">Agent Glassbox</span>
+      <span class="glass-hint">Live event stream · Ctrl+K to command</span>
+    </div>
+    <div id="v2-glassbox" class="glass-timeline"></div>
+  </section>
+
+  <!-- ─── Execution Center (slide-out) ──────────────────── -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
   <!-- ─── Module entry ─────────────────────────────────── -->
