@@ -13,7 +13,7 @@ def calculate_resistance_short_score(candles, line: Trendline, config: StrategyC
     atr_value = float(atr.iloc[current_index])
     close_price = float(df.iloc[current_index]["close"])
     line_value = project_price(line.slope, line.intercept, current_index)
-    projected_next = line.projected_price_next
+    projected_next = project_price(line.slope, line.intercept, current_index + 1)
 
     touch_strength = min(line.confirming_touch_count / 5.0, 1.0)
     fit_tightness = clamp(1.0 - float(line.score_components.get("normalized_mean_residual", 1.0)))
@@ -61,7 +61,7 @@ def calculate_support_long_score(candles, line: Trendline, config: StrategyConfi
     atr_value = float(atr.iloc[current_index])
     close_price = float(df.iloc[current_index]["close"])
     line_value = project_price(line.slope, line.intercept, current_index)
-    projected_next = line.projected_price_next
+    projected_next = project_price(line.slope, line.intercept, current_index + 1)
 
     touch_strength = min(line.confirming_touch_count / 5.0, 1.0)
     fit_tightness = clamp(1.0 - float(line.score_components.get("normalized_mean_residual", 1.0)))

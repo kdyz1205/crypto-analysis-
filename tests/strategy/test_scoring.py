@@ -1,3 +1,4 @@
+from dataclasses import replace
 import math
 
 import pandas as pd
@@ -91,3 +92,37 @@ def test_factor_scores_are_clamped_and_explicit() -> None:
     assert short_components["TrendContext"] == 0.0
     assert short_components["ConfluenceScore"] == 0.0
     assert long_components["VolumeFailure"] == 0.0
+
+
+def test_factor_uses_dynamic_projected_next_from_bar_index() -> None:
+    candles = _candles_for_scoring()
+    config = StrategyConfig()
+    stale_projection_line = replace(_base_line("resistance"), projected_price_next=999.0)
+
+    score_at_bar_5, components = calculate_resistance_short_score(
+        candles,
+        score_line(candles, stale_projection_line, config),
+        config,
+        bar_index=5,
+    )
+
+    assert 0.0 <= score_at_bar_5 <= 1.0
+    assert components["DistanceCompression"] < 1.0
+
+
+def test_score_line_marks_expired_when_too_old() -> None:
+    candles = _candles_for_scoring()
+    config = StrategyConfig(max_fresh_bars=1)
+
+    expired_line = score_line(candles, replace(_base_line("resistance"), bars_since_last_confirming_touch=5), config)
+
+    assert expired_line.state == "expired"
+
+
+def test_score_line_marks_invalidated_when_reason_present() -> None:
+    candles = _candles_for_scoring()
+    config = StrategyConfig()
+
+    invalidated_line = score_line(candles, replace(_base_line("resistance"), invalidation_reason="break_distance"), config)
+
+    assert invalidated_line.state == "invalidated"

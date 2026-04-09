@@ -20,40 +20,24 @@ def build_candidate_lines(
     atr = calculate_atr(df, cfg.atr_period)
     current_index = len(df) - 1
 
-    raw_lines: list[Trendline] = []
-    raw_lines.extend(
-        _build_side_candidates(
-            df,
-            atr,
-            pivots,
-            side="resistance",
-            pivot_kind="high",
-            config=cfg,
-            symbol=symbol,
-            timeframe=timeframe,
-            current_index=current_index,
-        )
-    )
-    raw_lines.extend(
-        _build_side_candidates(
-            df,
-            atr,
-            pivots,
-            side="support",
-            pivot_kind="low",
-            config=cfg,
-            symbol=symbol,
-            timeframe=timeframe,
-            current_index=current_index,
-        )
-    )
-
     from .scoring import score_lines
 
-    scored_lines = score_lines(df, raw_lines, cfg)
     selected: list[Trendline] = []
     for side in ("resistance", "support"):
-        side_lines = [line for line in scored_lines if line.side == side]
+        pivot_kind = "high" if side == "resistance" else "low"
+        side_lines = _build_side_candidates(
+            df,
+            atr,
+            pivots,
+            side=side,
+            pivot_kind=pivot_kind,
+            config=cfg,
+            symbol=symbol,
+            timeframe=timeframe,
+            current_index=current_index,
+        )
+        side_lines = _pre_score_prune_candidates(side_lines, cfg)
+        side_lines = score_lines(df, side_lines, cfg)
         side_lines = _merge_similar_lines(df, side_lines, cfg, current_index=current_index)
         side_lines.sort(key=_line_sort_key)
         selected.extend(side_lines[: cfg.max_candidate_lines_per_side])
@@ -251,6 +235,21 @@ def _merge_similar_lines(df, lines: Sequence[Trendline], config: StrategyConfig,
             kept.append(candidate)
 
     return kept
+
+
+def _pre_score_prune_candidates(lines: Sequence[Trendline], config: StrategyConfig) -> list[Trendline]:
+    ranked = sorted(
+        lines,
+        key=lambda line: (
+            -line.confirming_touch_count,
+            -line.recent_bar_touch_count,
+            line.bars_since_last_confirming_touch,
+            line.non_touch_cross_count,
+            sum(line.residuals),
+            line.line_id,
+        ),
+    )
+    return ranked[: config.max_candidate_lines_per_side]
 
 
 def _dedupe_touch_refs(refs: Sequence[tuple], min_spacing_bars: int) -> list[tuple]:

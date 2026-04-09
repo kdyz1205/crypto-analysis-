@@ -22,7 +22,7 @@ def generate_pre_limit_signals(candles, lines: Sequence[Trendline], config: Stra
         atr_value = float(atr.iloc[current_index])
         close_price = float(df.iloc[current_index]["close"])
         arm_distance = cfg.arm_distance(atr_value, close_price)
-        projected_next = line.projected_price_next
+        projected_next = project_price(line.slope, line.intercept, current_index + 1)
         if abs(close_price - projected_next) > arm_distance:
             continue
 
@@ -240,10 +240,9 @@ def prioritize_signals(signals: Sequence[StrategySignal], config: StrategyConfig
         key=lambda signal: (
             -signal.score,
             -signal.confirming_touch_count,
-            signal.bars_since_last_confirming_touch,
-            -cfg.timeframe_rank(signal.timeframe),
             signal.distance_to_line,
             -cfg.trigger_rank(signal.trigger_mode),
+            signal.bars_since_last_confirming_touch,
             signal.line_id,
         ),
     )
@@ -255,6 +254,12 @@ def resolve_signal_conflicts(
     *,
     active_directions: Mapping[str, str] | None = None,
 ) -> list[StrategySignal]:
+    """Minimal stage-3 conflict filter.
+
+    This only prevents obvious same-symbol duplicates and reverse conflicts against
+    already-active directions. Full position/order-aware arbitration belongs to the
+    later execution and risk layers, not this pure strategy core.
+    """
     active = active_directions or {}
     resolved: list[StrategySignal] = []
     seen_symbols: set[str] = set()

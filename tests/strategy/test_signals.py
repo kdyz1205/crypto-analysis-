@@ -43,6 +43,38 @@ def _confirmed_resistance_line() -> Trendline:
     )
 
 
+def _confirmed_support_line() -> Trendline:
+    return Trendline(
+        line_id="sup-line",
+        side="support",
+        symbol="TEST",
+        timeframe="1h",
+        state="confirmed",
+        anchor_pivot_ids=("a", "b"),
+        confirming_touch_pivot_ids=("a", "b", "c", "d"),
+        anchor_indices=(0, 10),
+        anchor_prices=(0.90, 1.00),
+        slope=0.01,
+        intercept=0.90,
+        confirming_touch_indices=(0, 4, 8, 10),
+        bar_touch_indices=(0, 4, 8, 10),
+        confirming_touch_count=4,
+        bar_touch_count=4,
+        recent_bar_touch_count=1,
+        residuals=(0.002, 0.002, 0.002, 0.002),
+        score=82.0,
+        score_components={"normalized_mean_residual": 0.1},
+        projected_price_current=1.01,
+        projected_price_next=1.02,
+        latest_confirming_touch_index=10,
+        latest_confirming_touch_price=1.00,
+        bars_since_last_confirming_touch=1,
+        recent_test_count=1,
+        non_touch_cross_count=0,
+        invalidation_reason=None,
+    )
+
+
 def _pre_limit_candles() -> pd.DataFrame:
     return pd.DataFrame(
         {
@@ -86,6 +118,49 @@ def _failed_breakout_candles() -> pd.DataFrame:
     )
 
 
+def _pre_limit_long_candles() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "timestamp": list(range(12)),
+            "open": [1.00] * 12,
+            "high": [1.04] * 12,
+            "low": [0.98] * 12,
+            "close": [1.00] * 11 + [1.015],
+            "volume": [100] * 12,
+        }
+    )
+
+
+def _rejection_long_candles() -> pd.DataFrame:
+    closes = [1.00] * 11 + [1.06]
+    highs = [1.04] * 11 + [1.07]
+    opens = [1.00] * 11 + [1.02]
+    lows = [0.98] * 11 + [0.97]
+    return pd.DataFrame(
+        {
+            "timestamp": list(range(12)),
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": [100] * 12,
+        }
+    )
+
+
+def _failed_breakout_long_candles() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "timestamp": list(range(12)),
+            "open": [1.00] * 10 + [1.00, 1.05],
+            "high": [1.04] * 10 + [1.05, 1.10],
+            "low": [0.98] * 10 + [0.97, 1.02],
+            "close": [1.00] * 10 + [1.04, 1.08],
+            "volume": [100] * 12,
+        }
+    )
+
+
 def test_generate_pre_limit_signal() -> None:
     signals = generate_pre_limit_signals(_pre_limit_candles(), [_confirmed_resistance_line()], StrategyConfig())
     assert [signal.signal_type for signal in signals] == ["PRE_LIMIT_SHORT"]
@@ -99,6 +174,21 @@ def test_generate_rejection_signal() -> None:
 def test_generate_failed_breakout_signal() -> None:
     signals = generate_failed_breakout_signals(_failed_breakout_candles(), [_confirmed_resistance_line()], StrategyConfig())
     assert [signal.signal_type for signal in signals] == ["FAILED_BREAKOUT_SHORT"]
+
+
+def test_generate_pre_limit_long_signal() -> None:
+    signals = generate_pre_limit_signals(_pre_limit_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    assert [signal.signal_type for signal in signals] == ["PRE_LIMIT_LONG"]
+
+
+def test_generate_rejection_long_signal() -> None:
+    signals = generate_rejection_signals(_rejection_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    assert [signal.signal_type for signal in signals] == ["REJECTION_LONG"]
+
+
+def test_generate_failed_breakout_long_signal() -> None:
+    signals = generate_failed_breakout_signals(_failed_breakout_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    assert [signal.signal_type for signal in signals] == ["FAILED_BREAKOUT_LONG"]
 
 
 def test_prioritize_and_resolve_same_symbol_conflicts() -> None:
@@ -177,3 +267,55 @@ def test_prioritize_and_resolve_same_symbol_conflicts() -> None:
 
     resolved = resolve_signal_conflicts(prioritized)
     assert [signal.signal_id for signal in resolved] == ["high", "other"]
+
+
+def test_prioritize_signals_follows_spec_order_without_timeframe_override() -> None:
+    signals = [
+        StrategySignal(
+            signal_id="closer",
+            line_id="line-a",
+            symbol="AAA",
+            timeframe="1h",
+            signal_type="PRE_LIMIT_SHORT",
+            direction="short",
+            trigger_mode="pre_limit",
+            timestamp=1,
+            trigger_bar_index=10,
+            score=0.80,
+            priority_rank=None,
+            entry_price=1.0,
+            stop_price=1.1,
+            tp_price=0.8,
+            risk_reward=2.0,
+            confirming_touch_count=4,
+            bars_since_last_confirming_touch=5,
+            distance_to_line=0.01,
+            line_side="resistance",
+            reason_code="pre_limit_short",
+        ),
+        StrategySignal(
+            signal_id="better-timeframe",
+            line_id="line-b",
+            symbol="BBB",
+            timeframe="4h",
+            signal_type="REJECTION_SHORT",
+            direction="short",
+            trigger_mode="rejection",
+            timestamp=2,
+            trigger_bar_index=10,
+            score=0.80,
+            priority_rank=None,
+            entry_price=1.0,
+            stop_price=1.1,
+            tp_price=0.8,
+            risk_reward=2.0,
+            confirming_touch_count=4,
+            bars_since_last_confirming_touch=1,
+            distance_to_line=0.02,
+            line_side="resistance",
+            reason_code="rejection_short",
+        ),
+    ]
+
+    prioritized = prioritize_signals(signals, StrategyConfig())
+    assert [signal.signal_id for signal in prioritized] == ["closer", "better-timeframe"]
