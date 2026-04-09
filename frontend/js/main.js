@@ -66,9 +66,9 @@ function boot() {
   // 2. Load initial chart data first. Strategy overlays and execution state
   // are more useful than opening the long-lived SSE stream immediately.
   loadCurrent(true)
-    .then(() => {
+    .then((result) => {
+      if (!result?.ok || result.stale) return;
       markBoot('chart', 'ok', 'data loaded');
-      markBoot('patterns', 'ok', 'loaded');
       startLiveUpdates(30000);
       setTimeout(() => {
         refreshDecisionRail()
@@ -90,6 +90,7 @@ function boot() {
     })
     .catch((err) => {
       markBoot('chart', 'error', err.message);
+      markBoot('patterns', 'error', 'chart load failed');
       console.error('[boot] chart data:', err);
       try {
         connectStream();
