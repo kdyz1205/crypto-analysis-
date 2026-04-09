@@ -104,6 +104,7 @@ def _seed_intent(signal: StrategySignal):
 
 def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.delenv("CONFIRM_LIVE_TRADING", raising=False)
     live_execution_router.live_engine = LiveExecutionEngine(adapter_provider=lambda: _FakeAdapter())
     intent = _seed_intent(_signal())
@@ -113,13 +114,25 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
     status_response = client.get("/api/live-execution/status")
     assert status_response.status_code == 200
     assert status_response.json()["status"]["api_key_ready"] is True
+    assert status_response.json()["status"]["enabled_flags"]["dry_run"] is True
 
     preview_response = client.post(
         "/api/live-execution/preview",
         json={"order_intent_id": intent.order_intent_id, "mode": "demo"},
     )
     assert preview_response.status_code == 200
-    assert preview_response.json()["result"]["ok"] is True
+    assert preview_response.json()["result"]["reason"] == "reconciliation_required"
+
+    reconcile = client.post("/api/live-execution/reconcile", json={"mode": "demo"})
+    assert reconcile.status_code == 200
+    assert reconcile.json()["reconciliation"]["blocked"] is False
+
+    preview_after_reconcile = client.post(
+        "/api/live-execution/preview",
+        json={"order_intent_id": intent.order_intent_id, "mode": "demo"},
+    )
+    assert preview_after_reconcile.status_code == 200
+    assert preview_after_reconcile.json()["result"]["ok"] is True
 
     submit_without_confirm = client.post(
         "/api/live-execution/submit",
@@ -136,13 +149,10 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
     assert submit_demo.json()["result"]["ok"] is True
     assert submit_demo.json()["result"]["exchange_order_id"] == "ord-demo-1"
 
-    reconcile = client.post("/api/live-execution/reconcile", json={"mode": "demo"})
-    assert reconcile.status_code == 200
-    assert reconcile.json()["reconciliation"]["blocked"] is False
-
 
 def test_live_execution_router_blocks_non_whitelist_and_live_without_confirm_flag(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.delenv("CONFIRM_LIVE_TRADING", raising=False)
     live_execution_router.live_engine = LiveExecutionEngine(adapter_provider=lambda: _FakeAdapter())
     non_whitelist_intent = _seed_intent(_signal(symbol="ETHUSDT"))
@@ -154,9 +164,11 @@ def test_live_execution_router_blocks_non_whitelist_and_live_without_confirm_fla
         json={"order_intent_id": non_whitelist_intent.order_intent_id, "mode": "demo"},
     )
     assert blocked_symbol.status_code == 200
-    assert blocked_symbol.json()["result"]["reason"] == "symbol_not_whitelisted"
+    assert blocked_symbol.json()["result"]["reason"] == "reconciliation_required"
 
     allowed_intent = _seed_intent(_signal())
+    reconcile_live = client.post("/api/live-execution/reconcile", json={"mode": "live"})
+    assert reconcile_live.status_code == 200
     live_preview = client.post(
         "/api/live-execution/preview",
         json={"order_intent_id": allowed_intent.order_intent_id, "mode": "live"},
@@ -164,10 +176,21 @@ def test_live_execution_router_blocks_non_whitelist_and_live_without_confirm_fla
     assert live_preview.status_code == 200
     assert live_preview.json()["result"]["reason"] == "confirm_live_trading_disabled"
 
+    reconcile_demo = client.post("/api/live-execution/reconcile", json={"mode": "demo"})
+    assert reconcile_demo.status_code == 200
+    non_whitelist_after_reconcile = _seed_intent(_signal(symbol="ETHUSDT"))
+    blocked_symbol_after_reconcile = client.post(
+        "/api/live-execution/preview",
+        json={"order_intent_id": non_whitelist_after_reconcile.order_intent_id, "mode": "demo"},
+    )
+    assert blocked_symbol_after_reconcile.status_code == 200
+    assert blocked_symbol_after_reconcile.json()["result"]["reason"] == "symbol_not_whitelisted"
+
 
 def test_live_execution_router_reconcile_reports_blocked_state(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
     monkeypatch.setenv("CONFIRM_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "false")
     live_execution_router.live_engine = LiveExecutionEngine(
         adapter_provider=lambda: _FakeAdapter(reconcile_blocked=True)
     )
@@ -179,4 +202,3 @@ def test_live_execution_router_reconcile_reports_blocked_state(monkeypatch) -> N
     payload = reconcile.json()["reconciliation"]
     assert payload["blocked"] is True
     assert payload["reason"] == "exchange_positions_detected"
-

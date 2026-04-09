@@ -34,8 +34,9 @@ class LiveExecutionEngine:
 
     def get_status(self) -> dict[str, Any]:
         adapter = self._adapter_provider()
+        enabled_flags = self._enabled_flags()
         return {
-            "enabled_flags": self._enabled_flags(),
+            "enabled_flags": enabled_flags,
             "default_mode": self.config.default_mode,
             "api_key_ready": adapter.has_api_keys(),
             "whitelist": {
@@ -48,9 +49,12 @@ class LiveExecutionEngine:
                 "max_live_notional": self.config.max_live_notional,
             },
             "reconciliation": {mode: report for mode, report in self.reconciliation_by_mode.items()},
+            "reconciliation_required_by_mode": {
+                mode: self.reconciliation_by_mode.get(mode) is None for mode in self.reconciliation_by_mode
+            },
             "last_preview_result": self.last_preview_result,
             "last_submission_result": self.last_submission_result,
-            "blocked_reason": self._blocked_reason(),
+            "blocked_reason": self._blocked_reason(enabled_flags, adapter.has_api_keys()),
         }
 
     async def preview_live_submission(self, intent: OrderIntent, mode: LiveMode | None = None) -> dict[str, Any]:
@@ -159,9 +163,6 @@ class LiveExecutionEngine:
 
     async def _build_preview(self, intent: OrderIntent, mode: LiveMode) -> dict[str, Any]:
         reconciliation = self.reconciliation_by_mode.get(mode)
-        if reconciliation is None:
-            reconciliation = await self.reconcile_startup(mode)
-
         notional = float(intent.entry_price) * float(intent.quantity)
         reasons = self._gating_reasons_for_intent(intent, mode, reconciliation)
         result = self._result_base(intent, mode)
@@ -197,8 +198,17 @@ class LiveExecutionEngine:
             reasons.append("enable_live_trading_disabled")
         if mode == "live" and not flags["confirm_live_trading"]:
             reasons.append("confirm_live_trading_disabled")
+        if mode == "live" and flags["dry_run"]:
+            reasons.append("dry_run_enabled")
         if not adapter.has_api_keys():
             reasons.append("api_keys_missing")
+        if reconciliation is None:
+            reasons.append("reconciliation_required")
+        else:
+            if reconciliation.get("blocked"):
+                reasons.append(reconciliation.get("reason") or "reconciliation_blocked")
+            if len(reconciliation.get("positions", [])) >= self.config.max_live_positions:
+                reasons.append("max_live_positions_reached")
         if intent.status not in {"approved", "submitted"}:
             reasons.append(f"intent_status_not_live_eligible:{intent.status}")
         if intent.symbol.upper() not in self.config.allowed_symbols:
@@ -209,13 +219,6 @@ class LiveExecutionEngine:
             reasons.append("trigger_mode_not_whitelisted")
         if float(intent.entry_price) * float(intent.quantity) > self.config.max_live_notional:
             reasons.append("live_notional_cap_exceeded")
-        if reconciliation is None:
-            reasons.append("reconciliation_required")
-        else:
-            if reconciliation.get("blocked"):
-                reasons.append(reconciliation.get("reason") or "reconciliation_blocked")
-            if len(reconciliation.get("positions", [])) >= self.config.max_live_positions:
-                reasons.append("max_live_positions_reached")
         return reasons
 
     def _gating_reasons_for_close(self, mode: LiveMode) -> list[str]:
@@ -226,6 +229,8 @@ class LiveExecutionEngine:
             reasons.append("enable_live_trading_disabled")
         if mode == "live" and not flags["confirm_live_trading"]:
             reasons.append("confirm_live_trading_disabled")
+        if mode == "live" and flags["dry_run"]:
+            reasons.append("dry_run_enabled")
         if not adapter.has_api_keys():
             reasons.append("api_keys_missing")
         return reasons
@@ -234,9 +239,21 @@ class LiveExecutionEngine:
         return {
             "enable_live_trading": os.environ.get("ENABLE_LIVE_TRADING", "false").lower() == "true",
             "confirm_live_trading": os.environ.get("CONFIRM_LIVE_TRADING", "false").lower() == "true",
+            "dry_run": os.environ.get("DRY_RUN", "true").lower() == "true",
         }
 
-    def _blocked_reason(self) -> str:
+    def _blocked_reason(self, enabled_flags: dict[str, bool], api_key_ready: bool) -> str:
+        if not enabled_flags["enable_live_trading"]:
+            return "enable_live_trading_disabled"
+        if not api_key_ready:
+            return "api_keys_missing"
+        if enabled_flags["dry_run"]:
+            return "dry_run_enabled"
+        if not enabled_flags["confirm_live_trading"]:
+            return "confirm_live_trading_disabled"
+        for mode, report in self.reconciliation_by_mode.items():
+            if report is None:
+                return f"reconciliation_required:{mode}"
         for report in self.reconciliation_by_mode.values():
             if report and report.get("blocked"):
                 return str(report.get("reason") or "reconciliation_blocked")

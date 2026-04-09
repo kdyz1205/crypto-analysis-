@@ -725,7 +725,7 @@ class PositionState:
 
 输出：
 
-- live adapter
+- gated live bridge
 - 对账与恢复逻辑
 - 环境变量门控
 
@@ -737,6 +737,11 @@ class PositionState:
   - `DRY_RUN=false`
   - `CONFIRM_LIVE_TRADING=true`
 - 所有 live order 都经过 risk engine
+- 第一版允许先走最小 `OKX demo/live bridge`，前提是：
+  - 只消费已通过 paper risk 审批的 `OrderIntent`
+  - 手动 `preview -> reconcile -> submit`
+  - 单 symbol / 单 timeframe / 低并发
+- `Bitget live adapter` 仍保留为后续阶段，不阻塞当前最小 live bridge 收口
 
 主要风险：
 
@@ -754,7 +759,7 @@ class PositionState:
 | 4 replay | 纯核心 | `replay/state_machine` | 逐 bar 无偷看未来 | 实时/回测双写 |
 | 5 图表 | replay/snapshot API | v2 overlays | 前端只渲染 | 前后端职责反转 |
 | 6 paper | signal + risk + execution types | paper engine | 全链路可模拟 | 订单幂等缺失 |
-| 7 live | 稳定 paper + Bitget adapter | gated live engine | 默认关闭且可验证 | 误发真实订单 |
+| 7 live | 稳定 paper + live bridge adapter | gated live engine | 默认关闭且可验证 | 误发真实订单 |
 
 ## 对当前仓库的关键判断
 
@@ -800,7 +805,7 @@ class PositionState:
 3. 单独新增 `server/strategy` 纯核心。
 4. 单独新增 `server/routers/strategy.py` 给 v2 图表用。
 5. 单独新增 `server/execution` 与 `server/risk`，先跑 paper。
-6. paper 跑稳后，再接 Bitget live adapter。
+6. paper 跑稳后，先接默认关闭的最小 live bridge；Bitget live adapter 作为后续执行通道增强。
 
 ### 暂不建议做的事
 

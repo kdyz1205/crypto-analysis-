@@ -655,6 +655,7 @@ function renderLiveBridgeSection(status, error, paperState) {
   const whitelist = status.whitelist || {};
   const limits = status.limits || {};
   const reconciliation = status.reconciliation || {};
+  const reconciliationRequired = status.reconciliation_required_by_mode || {};
   const selectedMode = status.default_mode || 'demo';
   const reconcileDemo = reconciliation.demo || {};
   const reconcileLive = reconciliation.live || {};
@@ -662,8 +663,22 @@ function renderLiveBridgeSection(status, error, paperState) {
   const intents = getLiveEligibleIntents(paperState);
   const defaultIntent = intents[0] || null;
   const busy = isLiveBridgeBusy();
+  const submitDemoBlocked =
+    busy ||
+    !defaultIntent ||
+    !status.api_key_ready ||
+    !enabledFlags.enable_live_trading ||
+    !!reconciliationRequired.demo ||
+    !!reconcileDemo.blocked;
   const submitLiveBlocked =
-    busy || !defaultIntent || !status.api_key_ready || !enabledFlags.enable_live_trading || !enabledFlags.confirm_live_trading;
+    busy ||
+    !defaultIntent ||
+    !status.api_key_ready ||
+    !enabledFlags.enable_live_trading ||
+    !enabledFlags.confirm_live_trading ||
+    enabledFlags.dry_run ||
+    !!reconciliationRequired.live ||
+    !!reconcileLive.blocked;
 
   return `
     <section class="paper-section">
@@ -677,6 +692,7 @@ function renderLiveBridgeSection(status, error, paperState) {
         <div class="stat"><div class="stat-label">Default Mode</div><div class="stat-value">${escapeHtml(String(selectedMode).toUpperCase())}</div></div>
         <div class="stat"><div class="stat-label">Enable Flag</div><div class="stat-value">${enabledFlags.enable_live_trading ? 'ON' : 'OFF'}</div></div>
         <div class="stat"><div class="stat-label">Confirm Flag</div><div class="stat-value">${enabledFlags.confirm_live_trading ? 'ON' : 'OFF'}</div></div>
+        <div class="stat"><div class="stat-label">DRY_RUN</div><div class="stat-value">${enabledFlags.dry_run ? 'TRUE' : 'FALSE'}</div></div>
         <div class="stat"><div class="stat-label">Live Slots</div><div class="stat-value">${limits.max_live_positions ?? '-'}</div></div>
         <div class="stat"><div class="stat-label">Max Notional</div><div class="stat-value">${formatUsd(limits.max_live_notional)}</div></div>
         <div class="stat"><div class="stat-label">Blocked Reason</div><div class="stat-value">${escapeHtml(status.blocked_reason || '-')}</div></div>
@@ -693,16 +709,17 @@ function renderLiveBridgeSection(status, error, paperState) {
         <div>
           <h4>Reconciliation</h4>
           <div class="paper-note">
-            <span>Demo: ${reconcileDemo.blocked ? 'BLOCKED' : reconcileDemo.ok ? 'OK' : 'NOT RUN'}</span>
-            <span>Live: ${reconcileLive.blocked ? 'BLOCKED' : reconcileLive.ok ? 'OK' : 'NOT RUN'}</span>
+            <span>Demo: ${reconciliationRequired.demo ? 'REQUIRED' : reconcileDemo.blocked ? 'BLOCKED' : reconcileDemo.ok ? 'OK' : 'NOT RUN'}</span>
+            <span>Live: ${reconciliationRequired.live ? 'REQUIRED' : reconcileLive.blocked ? 'BLOCKED' : reconcileLive.ok ? 'OK' : 'NOT RUN'}</span>
           </div>
         </div>
       </div>
+      ${enabledFlags.dry_run ? '<div class="paper-note paper-note-danger">Live mode remains hard-blocked while DRY_RUN=true. Demo submit is still available after reconciliation.</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <div class="paper-actions live-actions">
         <button class="btn" id="v2-live-reconcile-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.reconciling ? 'Reconciling...' : 'Reconcile'}</button>
         <button class="btn" id="v2-live-preview-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.previewing ? 'Previewing...' : 'Preview selected intent'}</button>
-        <button class="btn" id="v2-live-submit-demo-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.submittingDemo ? 'Submitting demo...' : 'Submit to demo'}</button>
+        <button class="btn" id="v2-live-submit-demo-btn" ${submitDemoBlocked ? 'disabled' : ''}>${liveBridgeState.submittingDemo ? 'Submitting demo...' : 'Submit to demo'}</button>
         <button class="btn btn-danger" id="v2-live-submit-live-btn" ${submitLiveBlocked ? 'disabled' : ''}>${liveBridgeState.submittingLive ? 'Submitting live...' : 'Submit to live'}</button>
         <button class="btn" id="v2-live-close-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.closing ? 'Closing...' : 'Close live position'}</button>
       </div>

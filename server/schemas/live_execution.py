@@ -66,6 +66,7 @@ class LiveExecutionStatusModel(BaseModel):
     whitelist: LiveExecutionWhitelistModel
     limits: LiveExecutionLimitsModel
     reconciliation: dict[str, LiveExecutionReconciliationModel | None]
+    reconciliation_required_by_mode: dict[str, bool] = Field(default_factory=dict)
     last_preview_result: LiveExecutionResultModel | None = None
     last_submission_result: LiveExecutionResultModel | None = None
     blocked_reason: str = ""
