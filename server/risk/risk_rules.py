@@ -6,6 +6,7 @@ from ..execution.types import (
     KillSwitchState,
     PaperAccountSummary,
     PaperExecutionConfig,
+    PaperOrder,
     PaperPosition,
     RiskDecision,
 )
@@ -24,10 +25,12 @@ def evaluate_signal_risk(
     *,
     current_bar: int,
     cooldowns: Mapping[str, int] | None = None,
+    pending_orders: Sequence[PaperOrder] | None = None,
     kill_switch: KillSwitchState | None = None,
 ) -> RiskDecision:
     stop_distance = abs(float(signal.entry_price) - float(signal.stop_price))
     risk_amount = float(account.equity) * float(config.risk_per_trade)
+    pending_orders = tuple(order for order in (pending_orders or ()) if order.status == "pending")
 
     if kill_switch is not None and kill_switch.blocked:
         return RiskDecision(
@@ -73,7 +76,8 @@ def evaluate_signal_risk(
             exposure_after_fill=float(account.total_exposure),
         )
 
-    if account.open_position_count >= config.max_concurrent_positions:
+    reserved_slot_count = max(int(account.open_position_count), len(open_positions)) + len(pending_orders)
+    if reserved_slot_count >= config.max_concurrent_positions:
         return RiskDecision(
             signal_id=signal.signal_id,
             approved=False,
@@ -85,7 +89,8 @@ def evaluate_signal_risk(
         )
 
     same_symbol_positions = [position for position in open_positions if position.symbol == signal.symbol and position.status == "open"]
-    if len(same_symbol_positions) >= config.max_positions_per_symbol:
+    same_symbol_pending_orders = [order for order in pending_orders if order.symbol == signal.symbol]
+    if (len(same_symbol_positions) + len(same_symbol_pending_orders)) >= config.max_positions_per_symbol:
         return RiskDecision(
             signal_id=signal.signal_id,
             approved=False,
@@ -110,6 +115,20 @@ def evaluate_signal_risk(
             exposure_after_fill=float(account.total_exposure),
         )
 
+    if (not config.allow_multiple_same_direction_per_symbol) and any(
+        order.symbol == signal.symbol and order.side == signal.direction and order.status == "pending"
+        for order in pending_orders
+    ):
+        return RiskDecision(
+            signal_id=signal.signal_id,
+            approved=False,
+            blocking_reason="same_symbol_direction_pending_blocked",
+            risk_amount=risk_amount,
+            proposed_quantity=0.0,
+            stop_distance=stop_distance,
+            exposure_after_fill=float(account.total_exposure),
+        )
+
     cooldowns = cooldowns or {}
     scope_key = cooldown_scope_key(signal.symbol, signal.timeframe, signal.direction)
     cooldown_until = cooldowns.get(scope_key)
@@ -125,7 +144,9 @@ def evaluate_signal_risk(
         )
 
     proposed_quantity = risk_amount / stop_distance
-    exposure_after_fill = float(account.total_exposure) + (proposed_quantity * float(signal.entry_price))
+    pending_exposure = sum(float(order.quantity) * float(order.price) for order in pending_orders)
+    reserved_exposure = float(account.total_exposure) + pending_exposure
+    exposure_after_fill = reserved_exposure + (proposed_quantity * float(signal.entry_price))
     if exposure_after_fill > (account.equity * config.max_total_exposure):
         return RiskDecision(
             signal_id=signal.signal_id,

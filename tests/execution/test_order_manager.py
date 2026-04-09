@@ -92,3 +92,14 @@ def test_order_manager_fills_limit_order_when_next_bar_covers_price() -> None:
     assert len(fills) == 1
     assert fills[0].fill_price == 100.0
     assert fills[0].signal_id == "sig-1"
+
+
+def test_order_manager_cancel_updates_bar_when_provided() -> None:
+    manager = PaperOrderManager()
+    intent = manager.create_order_intent_from_signal(_signal(), _decision(), PaperExecutionConfig(), current_bar=1, current_ts=1)
+    order = manager.submit_paper_order(intent)
+    assert order is not None
+    cancelled = manager.cancel_paper_order(order.order_id, "manual_cancel", current_bar=4)
+    assert cancelled is not None
+    assert cancelled.status == "cancelled"
+    assert cancelled.updated_at_bar == 4

@@ -86,13 +86,33 @@ class PaperExecutionEngine:
             self._roll_day(timestamp)
             fills = self.order_manager.advance_orders_for_bar(current_bar, bar, timestamp)
             for fill in fills:
-                self.position_manager.open_from_fill(
+                can_open, blocking_reason = self.position_manager.can_open_fill(
+                    fill,
+                    allow_multiple_same_direction_per_symbol=self.config.allow_multiple_same_direction_per_symbol,
+                )
+                if not can_open:
+                    self.order_manager.reject_filled_order(
+                        fill.order_id,
+                        fill.fill_id,
+                        blocking_reason or "position_open_rejected",
+                        current_bar=current_bar,
+                    )
+                    continue
+
+                opened_position = self.position_manager.open_from_fill(
                     fill,
                     self.order_manager,
                     current_bar=current_bar,
                     current_ts=timestamp,
                     allow_multiple_same_direction_per_symbol=self.config.allow_multiple_same_direction_per_symbol,
                 )
+                if opened_position is None:
+                    self.order_manager.reject_filled_order(
+                        fill.order_id,
+                        fill.fill_id,
+                        "position_open_failed",
+                        current_bar=current_bar,
+                    )
 
             closed_positions = self.position_manager.advance_positions_for_bar(current_bar, bar, timestamp)
             for position in closed_positions:
@@ -117,6 +137,7 @@ class PaperExecutionEngine:
                     self.config,
                     current_bar=current_bar,
                     cooldowns=self.cooldowns,
+                    pending_orders=self.order_manager.get_open_orders(),
                     kill_switch=self.kill_switch.snapshot(),
                 )
                 intent = self.order_manager.create_order_intent_from_signal(

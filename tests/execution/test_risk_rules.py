@@ -2,6 +2,7 @@ from server.execution.types import (
     KillSwitchState,
     PaperAccountSummary,
     PaperExecutionConfig,
+    PaperOrder,
     PaperPosition,
 )
 from server.risk.risk_rules import cooldown_scope_key, evaluate_signal_risk
@@ -78,6 +79,27 @@ def _position(symbol: str = "BTCUSDT", direction: str = "short") -> PaperPositio
         tp_price=90.0,
         status="open",
         opened_at_bar=1,
+    )
+
+
+def _pending_order(symbol: str = "BTCUSDT", side: str = "short", *, quantity: float = 6.0, price: float = 100.0) -> PaperOrder:
+    return PaperOrder(
+        order_id="order-1",
+        line_id="line-1",
+        client_order_id="client-1",
+        signal_id="sig-order",
+        symbol=symbol,
+        timeframe="1h",
+        side=side,
+        order_type="limit",
+        trigger_mode="pre_limit",
+        price=price,
+        quantity=quantity,
+        filled_quantity=0.0,
+        avg_fill_price=0.0,
+        status="pending",
+        created_at_bar=1,
+        updated_at_bar=1,
     )
 
 
@@ -163,3 +185,30 @@ def test_risk_respects_kill_switch() -> None:
     )
     assert decision.approved is False
     assert decision.blocking_reason == "manual_block"
+
+
+def test_risk_blocks_same_symbol_when_pending_order_already_reserves_slot() -> None:
+    decision = evaluate_signal_risk(
+        _signal(),
+        _account(),
+        [],
+        PaperExecutionConfig(),
+        current_bar=5,
+        pending_orders=[_pending_order("BTCUSDT", "short")],
+    )
+    assert decision.approved is False
+    assert decision.blocking_reason == "max_positions_per_symbol_hit"
+
+
+def test_risk_counts_pending_orders_in_total_exposure() -> None:
+    config = PaperExecutionConfig(max_total_exposure=0.1)
+    decision = evaluate_signal_risk(
+        _signal(symbol="ETHUSDT"),
+        _account(),
+        [],
+        config,
+        current_bar=5,
+        pending_orders=[_pending_order("BTCUSDT", "short", quantity=6.0, price=100.0)],
+    )
+    assert decision.approved is False
+    assert decision.blocking_reason == "max_total_exposure_hit"

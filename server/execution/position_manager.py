@@ -30,6 +30,23 @@ class PaperPositionManager:
     def get_closed_trade_count(self) -> int:
         return len(self._closed_positions)
 
+    def can_open_fill(
+        self,
+        fill: PaperFill,
+        *,
+        allow_multiple_same_direction_per_symbol: bool,
+    ) -> tuple[bool, str]:
+        existing_id = self._position_id_by_signal_id.get(fill.signal_id)
+        if existing_id is not None:
+            return True, ""
+
+        if not allow_multiple_same_direction_per_symbol:
+            for position in self.get_open_positions():
+                if position.symbol == fill.symbol and position.direction == fill.side:
+                    return False, "same_symbol_direction_open_blocked"
+
+        return True, ""
+
     def open_from_fill(
         self,
         fill: PaperFill,
@@ -39,18 +56,20 @@ class PaperPositionManager:
         current_ts: Any,
         allow_multiple_same_direction_per_symbol: bool,
     ) -> PaperPosition | None:
-        existing_id = self._position_id_by_signal_id.get(fill.signal_id)
-        if existing_id is not None:
-            return self._positions_by_id.get(existing_id)
-
         intent = order_manager.get_intent(fill.signal_id)
         if intent is None:
             return None
 
-        if not allow_multiple_same_direction_per_symbol:
-            for position in self.get_open_positions():
-                if position.symbol == fill.symbol and position.direction == fill.side:
-                    return None
+        can_open, _ = self.can_open_fill(
+            fill,
+            allow_multiple_same_direction_per_symbol=allow_multiple_same_direction_per_symbol,
+        )
+        if not can_open:
+            return None
+
+        existing_id = self._position_id_by_signal_id.get(fill.signal_id)
+        if existing_id is not None:
+            return self._positions_by_id.get(existing_id)
 
         position = PaperPosition(
             position_id=stable_execution_id("position", fill.signal_id),

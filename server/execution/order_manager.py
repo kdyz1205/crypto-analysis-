@@ -126,12 +126,17 @@ class PaperOrderManager:
         self._intents_by_client_order_id[intent.client_order_id] = updated_intent
         return order
 
-    def cancel_paper_order(self, order_id: str, reason: str) -> PaperOrder | None:
+    def cancel_paper_order(self, order_id: str, reason: str, *, current_bar: int | None = None) -> PaperOrder | None:
         order = self._orders_by_id.get(order_id)
         if order is None or order.status != "pending":
             return order
 
-        updated = replace(order, status="cancelled", reason=reason, updated_at_bar=order.updated_at_bar)
+        updated = replace(
+            order,
+            status="cancelled",
+            reason=reason,
+            updated_at_bar=(order.updated_at_bar if current_bar is None else current_bar),
+        )
         self._orders_by_id[order_id] = updated
         intent = self._intents_by_signal_id.get(order.signal_id)
         if intent is not None:
@@ -158,7 +163,32 @@ class PaperOrderManager:
                 self._intents_by_client_order_id[intent.client_order_id] = updated_intent
         return expired
 
+    def reject_filled_order(self, order_id: str, fill_id: str, reason: str, *, current_bar: int) -> PaperOrder | None:
+        order = self._orders_by_id.get(order_id)
+        if order is None:
+            return None
+
+        updated = replace(
+            order,
+            status="rejected",
+            reason=reason,
+            filled_quantity=0.0,
+            avg_fill_price=0.0,
+            updated_at_bar=current_bar,
+        )
+        self._orders_by_id[order_id] = updated
+        intent = self._intents_by_signal_id.get(order.signal_id)
+        if intent is not None:
+            updated_intent = replace(intent, status="rejected", reason=reason)
+            self._intents_by_signal_id[order.signal_id] = updated_intent
+            self._intents_by_client_order_id[intent.client_order_id] = updated_intent
+        self._recent_fills = [fill for fill in self._recent_fills if fill.fill_id != fill_id]
+        return updated
+
     def advance_orders_for_bar(self, current_bar: int, bar: dict[str, Any], timestamp: Any) -> list[PaperFill]:
+        # Paper mode semantics:
+        # - market orders fill on the next bar open
+        # - limit orders fill on the next bar if that bar range covers the limit price
         fills: list[PaperFill] = []
         for order in list(self._orders_by_id.values()):
             if order.status != "pending" or current_bar <= order.created_at_bar:
