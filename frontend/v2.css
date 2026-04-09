@@ -130,6 +130,9 @@ body.v2-body {
 .btn:hover { border-color: var(--v2-primary); }
 .btn.btn-primary { background: var(--v2-primary); border-color: var(--v2-primary); color: white; }
 .btn.btn-primary:hover { background: #1e4fcc; }
+.btn.btn-danger { background: rgba(255, 23, 68, 0.15); border-color: rgba(255, 23, 68, 0.45); color: #ff9aac; }
+.btn.btn-danger:hover { background: rgba(255, 23, 68, 0.25); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; border-color: var(--v2-border); }
 .btn.active { background: var(--v2-primary); color: white; border-color: var(--v2-primary); }
 
 /* ── Workbench main layout ── */
@@ -418,11 +421,21 @@ body.v2-body {
   color: #ff9aac;
 }
 
+.paper-note-danger {
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.24);
+  color: #ffd86b;
+}
+
 .paper-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
   margin-bottom: 12px;
+}
+
+.live-actions .btn {
+  min-width: 118px;
 }
 
 .paper-form {

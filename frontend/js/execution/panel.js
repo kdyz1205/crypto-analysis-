@@ -21,11 +21,22 @@ import * as riskSvc from '../services/risk.js';
 import * as execSvc from '../services/execution.js';
 import * as opsSvc from '../services/ops.js';
 import * as paperExecSvc from '../services/paper_execution.js';
+import * as liveExecSvc from '../services/live_execution.js';
 import { formatPct, formatPrice, formatUsd, pnlColorClass } from '../util/format.js';
 
 const PANEL_POLL_MS = 15000;
 
 let pollTimer = null;
+const liveBridgeState = {
+  status: null,
+  lastError: null,
+  loading: false,
+  reconciling: false,
+  previewing: false,
+  submittingDemo: false,
+  submittingLive: false,
+  closing: false,
+};
 
 export function initExecutionPanel() {
   buildShell();
@@ -111,7 +122,7 @@ function startPolling() {
   stopPolling();
   pollTimer = setInterval(async () => {
     if (!agentState.panelOpen) return;
-    await Promise.allSettled([refreshAgentStatus(), loadPaperExecutionState()]);
+    await Promise.allSettled([refreshAgentStatus(), loadPaperExecutionState(), loadLiveExecutionStatus()]);
     if (agentState.activeSubTab === 'risk' && !paperExecutionState.config) {
       await loadPaperExecutionConfig().catch(() => null);
     }
@@ -197,6 +208,23 @@ async function loadPaperExecutionConfig(force = true) {
   }
 }
 
+async function loadLiveExecutionStatus(force = true) {
+  if (!force && liveBridgeState.status) return liveBridgeState.status;
+  if (liveBridgeState.loading) return liveBridgeState.status;
+  liveBridgeState.loading = true;
+  try {
+    const status = await liveExecSvc.getLiveExecutionStatus();
+    liveBridgeState.status = status;
+    liveBridgeState.lastError = null;
+    return status;
+  } catch (err) {
+    liveBridgeState.lastError = safeErrorMessage(err);
+    throw err;
+  } finally {
+    liveBridgeState.loading = false;
+  }
+}
+
 async function renderOverview(useCached = false) {
   const container = $('[data-subtab="overview"]');
   if (!container) return;
@@ -241,6 +269,7 @@ async function renderExecution(useCached = false) {
 
   let agentError = null;
   let paperError = null;
+  let liveError = null;
 
   if (!useCached || !agentState.lastStatus) {
     try {
@@ -256,20 +285,30 @@ async function renderExecution(useCached = false) {
       paperError = safeErrorMessage(err);
     }
   }
+  if (!useCached || !liveBridgeState.status) {
+    try {
+      await loadLiveExecutionStatus(!useCached);
+    } catch (err) {
+      liveError = safeErrorMessage(err);
+    }
+  }
 
   const status = agentState.lastStatus;
   const paperState = paperExecutionState.state;
+  const liveStatus = liveBridgeState.status;
 
   setHtml(
     container,
     [
       renderAgentExecutionSection(status, agentError),
       renderPaperExecutionSection(paperState, paperError || paperExecutionState.lastError, paperExecutionState.lastStepResult),
+      renderLiveBridgeSection(liveStatus, liveError || liveBridgeState.lastError, paperState),
     ].join(''),
   );
 
   wireLegacyExecutionControls();
   wirePaperExecutionControls();
+  wireLiveBridgeControls();
 }
 
 async function renderRisk(useCached = false) {
@@ -605,6 +644,140 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
       </div>
     </section>
   `;
+}
+
+function renderLiveBridgeSection(status, error, paperState) {
+  if (!status) {
+    return renderUnavailableSection('Live Bridge', error || 'Live bridge status unavailable');
+  }
+
+  const enabledFlags = status.enabled_flags || {};
+  const whitelist = status.whitelist || {};
+  const limits = status.limits || {};
+  const reconciliation = status.reconciliation || {};
+  const selectedMode = status.default_mode || 'demo';
+  const reconcileDemo = reconciliation.demo || {};
+  const reconcileLive = reconciliation.live || {};
+  const latestResult = status.last_submission_result || status.last_preview_result || null;
+  const intents = getLiveEligibleIntents(paperState);
+  const defaultIntent = intents[0] || null;
+  const busy = isLiveBridgeBusy();
+  const submitLiveBlocked =
+    busy || !defaultIntent || !status.api_key_ready || !enabledFlags.enable_live_trading || !enabledFlags.confirm_live_trading;
+
+  return `
+    <section class="paper-section">
+      <div class="paper-section-header">
+        <h4>Live Bridge</h4>
+        <span class="paper-badge ${status.api_key_ready ? 'is-ok' : 'is-danger'}">
+          ${status.api_key_ready ? 'OKX READY' : 'OKX KEYS MISSING'}
+        </span>
+      </div>
+      <div class="exec-stats-grid">
+        <div class="stat"><div class="stat-label">Default Mode</div><div class="stat-value">${escapeHtml(String(selectedMode).toUpperCase())}</div></div>
+        <div class="stat"><div class="stat-label">Enable Flag</div><div class="stat-value">${enabledFlags.enable_live_trading ? 'ON' : 'OFF'}</div></div>
+        <div class="stat"><div class="stat-label">Confirm Flag</div><div class="stat-value">${enabledFlags.confirm_live_trading ? 'ON' : 'OFF'}</div></div>
+        <div class="stat"><div class="stat-label">Live Slots</div><div class="stat-value">${limits.max_live_positions ?? '-'}</div></div>
+        <div class="stat"><div class="stat-label">Max Notional</div><div class="stat-value">${formatUsd(limits.max_live_notional)}</div></div>
+        <div class="stat"><div class="stat-label">Blocked Reason</div><div class="stat-value">${escapeHtml(status.blocked_reason || '-')}</div></div>
+      </div>
+      <div class="paper-subgrid">
+        <div>
+          <h4>Whitelist</h4>
+          <div class="paper-note">
+            <span>Symbols: ${escapeHtml((whitelist.symbols || []).join(', ') || '-')}</span>
+            <span>Timeframes: ${escapeHtml((whitelist.timeframes || []).join(', ') || '-')}</span>
+            <span>Trigger modes: ${escapeHtml((whitelist.trigger_modes || []).join(', ') || '-')}</span>
+          </div>
+        </div>
+        <div>
+          <h4>Reconciliation</h4>
+          <div class="paper-note">
+            <span>Demo: ${reconcileDemo.blocked ? 'BLOCKED' : reconcileDemo.ok ? 'OK' : 'NOT RUN'}</span>
+            <span>Live: ${reconcileLive.blocked ? 'BLOCKED' : reconcileLive.ok ? 'OK' : 'NOT RUN'}</span>
+          </div>
+        </div>
+      </div>
+      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
+      <div class="paper-actions live-actions">
+        <button class="btn" id="v2-live-reconcile-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.reconciling ? 'Reconciling...' : 'Reconcile'}</button>
+        <button class="btn" id="v2-live-preview-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.previewing ? 'Previewing...' : 'Preview selected intent'}</button>
+        <button class="btn" id="v2-live-submit-demo-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.submittingDemo ? 'Submitting demo...' : 'Submit to demo'}</button>
+        <button class="btn btn-danger" id="v2-live-submit-live-btn" ${submitLiveBlocked ? 'disabled' : ''}>${liveBridgeState.submittingLive ? 'Submitting live...' : 'Submit to live'}</button>
+        <button class="btn" id="v2-live-close-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.closing ? 'Closing...' : 'Close live position'}</button>
+      </div>
+      <form class="paper-form" id="v2-live-bridge-form">
+        <label>
+          Intent
+          <select name="order_intent_id" ${busy || !defaultIntent ? 'disabled' : ''}>
+            ${renderLiveIntentOptions(intents)}
+          </select>
+        </label>
+        <label>
+          Mode
+          <select name="mode" ${busy ? 'disabled' : ''}>
+            <option value="demo" ${selectedMode === 'demo' ? 'selected' : ''}>demo</option>
+            <option value="live" ${selectedMode === 'live' ? 'selected' : ''}>live</option>
+          </select>
+        </label>
+        <label>
+          Close Symbol
+          <input type="text" name="close_symbol" value="${escapeHtml(defaultIntent?.symbol || marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} />
+        </label>
+        <label>
+          Preview Intent
+          <input type="text" value="${escapeHtml(defaultIntent ? describeIntent(defaultIntent) : 'No live-eligible paper intents')}" disabled />
+        </label>
+      </form>
+      ${latestResult ? renderLiveResult(latestResult) : '<div class="paper-note">No live preview or submit result yet.</div>'}
+    </section>
+  `;
+}
+
+function renderLiveIntentOptions(intents) {
+  if (!intents.length) {
+    return '<option value="">No approved/submitted intents</option>';
+  }
+  return intents
+    .map(
+      (intent) =>
+        `<option value="${escapeHtml(intent.order_intent_id)}">${escapeHtml(describeIntent(intent))}</option>`,
+    )
+    .join('');
+}
+
+function renderLiveResult(result) {
+  const blocked = result.blocked || !result.ok;
+  return `
+    <div class="paper-note ${blocked ? 'paper-note-danger' : ''}">
+      <strong>${blocked ? 'Blocked' : 'Accepted'}</strong>
+      <span>${escapeHtml(result.reason || 'OK')}</span>
+      <span>${escapeHtml(String(result.mode || '').toUpperCase())} | ${escapeHtml(result.symbol || '-')} | ${escapeHtml(String(result.side || '-').toUpperCase())}</span>
+      <span>Notional: ${formatUsd(result.submitted_notional ?? result.would_submit_notional)}</span>
+      <span>Exchange Order: ${escapeHtml(result.exchange_order_id || '-')}</span>
+    </div>
+  `;
+}
+
+function getLiveEligibleIntents(paperState) {
+  return [...(paperState?.intents || [])]
+    .filter((intent) => ['approved', 'submitted'].includes(intent.status))
+    .sort((left, right) => (right.created_at_bar ?? -1) - (left.created_at_bar ?? -1));
+}
+
+function describeIntent(intent) {
+  return `${intent.symbol} ${String(intent.side || '-').toUpperCase()} ${intent.trigger_mode} ${intent.status}`;
+}
+
+function isLiveBridgeBusy() {
+  return !!(
+    liveBridgeState.loading ||
+    liveBridgeState.reconciling ||
+    liveBridgeState.previewing ||
+    liveBridgeState.submittingDemo ||
+    liveBridgeState.submittingLive ||
+    liveBridgeState.closing
+  );
 }
 
 function renderAgentRiskSection(status, error) {
@@ -1101,6 +1274,88 @@ function wirePaperExecutionControls() {
   });
 }
 
+function wireLiveBridgeControls() {
+  on('#v2-live-reconcile-btn', 'click', async () => {
+    await runLiveBridgeAction('reconciling', async () => {
+      const form = $('#v2-live-bridge-form');
+      const mode = form instanceof HTMLFormElement ? readLiveMode(form) : 'demo';
+      await liveExecSvc.reconcileLiveExecution({ mode });
+      await loadLiveExecutionStatus(true);
+    });
+    renderExecution(true).catch((err) => renderTabError('execution', err));
+  });
+
+  on('#v2-live-preview-btn', 'click', async () => {
+    const form = $('#v2-live-bridge-form');
+    if (!(form instanceof HTMLFormElement)) return;
+    await runLiveBridgeAction('previewing', async () => {
+      const result = await liveExecSvc.previewLiveExecution({
+        order_intent_id: readSelectedIntentId(form),
+        mode: readLiveMode(form),
+      });
+      liveBridgeState.lastError = null;
+      if (liveBridgeState.status) {
+        liveBridgeState.status = { ...liveBridgeState.status, last_preview_result: result };
+      }
+    });
+    renderExecution(true).catch((err) => renderTabError('execution', err));
+  });
+
+  on('#v2-live-submit-demo-btn', 'click', async () => {
+    const form = $('#v2-live-bridge-form');
+    if (!(form instanceof HTMLFormElement)) return;
+    await runLiveBridgeAction('submittingDemo', async () => {
+      const result = await liveExecSvc.submitLiveExecution({
+        order_intent_id: readSelectedIntentId(form),
+        mode: 'demo',
+        confirm: true,
+      });
+      if (liveBridgeState.status) {
+        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
+      }
+      liveBridgeState.lastError = null;
+      await loadLiveExecutionStatus(true);
+    });
+    renderExecution(true).catch((err) => renderTabError('execution', err));
+  });
+
+  on('#v2-live-submit-live-btn', 'click', async () => {
+    const form = $('#v2-live-bridge-form');
+    if (!(form instanceof HTMLFormElement)) return;
+    await runLiveBridgeAction('submittingLive', async () => {
+      const result = await liveExecSvc.submitLiveExecution({
+        order_intent_id: readSelectedIntentId(form),
+        mode: 'live',
+        confirm: true,
+      });
+      if (liveBridgeState.status) {
+        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
+      }
+      liveBridgeState.lastError = null;
+      await loadLiveExecutionStatus(true);
+    });
+    renderExecution(true).catch((err) => renderTabError('execution', err));
+  });
+
+  on('#v2-live-close-btn', 'click', async () => {
+    const form = $('#v2-live-bridge-form');
+    if (!(form instanceof HTMLFormElement)) return;
+    await runLiveBridgeAction('closing', async () => {
+      const result = await liveExecSvc.closeLiveExecution({
+        symbol: String(new FormData(form).get('close_symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
+        mode: readLiveMode(form),
+        confirm: true,
+      });
+      if (liveBridgeState.status) {
+        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
+      }
+      liveBridgeState.lastError = null;
+      await loadLiveExecutionStatus(true);
+    });
+    renderExecution(true).catch((err) => renderTabError('execution', err));
+  });
+}
+
 function wireLegacyRiskForm() {
   on('#v2-risk-form', 'submit', async (event) => {
     event.preventDefault();
@@ -1303,6 +1558,33 @@ async function runPaperAction(setter, fn) {
   } finally {
     setter(false);
     renderActive(true).catch((err) => console.warn('[exec] paper mutation post-render failed:', err));
+  }
+}
+
+function readSelectedIntentId(form) {
+  const value = String(new FormData(form).get('order_intent_id') || '').trim();
+  if (!value) {
+    throw new Error('No live-eligible paper intent selected');
+  }
+  return value;
+}
+
+function readLiveMode(form) {
+  const value = String(new FormData(form).get('mode') || 'demo').trim().toLowerCase();
+  return value === 'live' ? 'live' : 'demo';
+}
+
+async function runLiveBridgeAction(flag, fn) {
+  if (isLiveBridgeBusy()) return;
+  liveBridgeState[flag] = true;
+  renderActive(true).catch((err) => console.warn('[exec] live bridge pre-render failed:', err));
+  try {
+    await fn();
+  } catch (err) {
+    liveBridgeState.lastError = safeErrorMessage(err);
+  } finally {
+    liveBridgeState[flag] = false;
+    renderActive(true).catch((err) => console.warn('[exec] live bridge post-render failed:', err));
   }
 }
 

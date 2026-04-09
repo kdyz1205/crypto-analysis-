@@ -24,7 +24,7 @@ from .routers import (
     agent, risk, execution,
     ops, chat, onchain,
     stream, memory, schedule,
-    strategy, paper_execution,
+    strategy, paper_execution, live_execution,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
@@ -125,6 +125,7 @@ app.include_router(market.router)       # /api/symbols, /api/ohlcv, /api/chart, 
 app.include_router(patterns.router)     # /api/patterns, /api/pattern-stats/*
 app.include_router(strategy.router)     # /api/strategy/config, snapshot, replay
 app.include_router(paper_execution.router)  # /api/paper-execution/*
+app.include_router(live_execution.router)  # /api/live-execution/*
 app.include_router(research.router)     # /api/backtest, /api/ma-ribbon*
 app.include_router(agent.router)        # /api/agent/status, start, stop, config, strategy*, signals, audit-log, lessons
 app.include_router(risk.router)         # /api/agent/risk-limits
