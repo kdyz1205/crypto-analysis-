@@ -508,11 +508,6 @@ async function renderExecution(useCached = false) {
     loading: liveBridgeState.loading || (!liveBridgeState.status && !liveBridgeState.lastError),
   });
 
-  // Keep paper rendering isolated: agent/live refresh runs independently and
-  // must never gate the paper section paint path.
-  void refreshAgentExecutionSection(!useCached).catch(() => null);
-  void refreshLiveExecutionSection(!useCached).catch(() => null);
-
   let paperError = null;
   try {
     await loadPaperExecutionState(!useCached);
@@ -525,6 +520,11 @@ async function renderExecution(useCached = false) {
     paperExecutionState.lastStepResult,
     { loading: false },
   );
+
+  // Keep paper rendering isolated: agent/live refresh runs independently and
+  // only start after the paper section has had a chance to render.
+  void refreshAgentExecutionSection(!useCached).catch(() => null);
+  void refreshLiveExecutionSection(!useCached).catch(() => null);
 }
 
 async function renderRisk(useCached = false) {
