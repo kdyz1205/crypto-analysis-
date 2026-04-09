@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, is_dataclass
+from typing import Any, Mapping, Sequence
+
+from .config import StrategyConfig
+from .pivots import detect_pivots
+from .signals import (
+    generate_failed_breakout_signals,
+    generate_pre_limit_signals,
+    generate_rejection_signals,
+    prioritize_signals,
+    resolve_signal_conflicts,
+)
+from .state_machine import (
+    LineStateSnapshot,
+    SignalStateSnapshot,
+    advance_line_states,
+    build_signal_state_snapshots,
+)
+from .trendlines import detect_trendlines
+from .types import Pivot, StrategySignal, Trendline, ensure_candles_df
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaySnapshot:
+    bar_index: int
+    timestamp: Any
+    pivots: tuple[Pivot, ...]
+    candidate_lines: tuple[Trendline, ...]
+    active_lines: tuple[LineStateSnapshot, ...]
+    line_states: tuple[LineStateSnapshot, ...]
+    signals: tuple[StrategySignal, ...]
+    signal_states: tuple[SignalStateSnapshot, ...]
+    invalidations: tuple[LineStateSnapshot, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_safe(asdict(self))
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayResult:
+    symbol: str
+    timeframe: str
+    snapshots: tuple[ReplaySnapshot, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _json_safe(asdict(self))
+
+
+def replay_strategy(
+    candles,
+    config: StrategyConfig | None = None,
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    enabled_trigger_modes: Sequence[str] | None = None,
+    active_directions: Mapping[str, str] | None = None,
+) -> ReplayResult:
+    cfg = config or StrategyConfig()
+    df = ensure_candles_df(candles)
+    previous_line_states: dict[str, str] = {}
+    snapshots: list[ReplaySnapshot] = []
+
+    for bar_index in range(len(df)):
+        window = df.iloc[: bar_index + 1].reset_index(drop=True)
+        pivots = tuple(detect_pivots(window, cfg))
+        detection = detect_trendlines(window, pivots, cfg, symbol=symbol, timeframe=timeframe)
+        prioritized_signals, selected_signals = _generate_signals_for_bar(
+            window,
+            detection.active_lines,
+            cfg,
+            enabled_trigger_modes=enabled_trigger_modes,
+            active_directions=active_directions,
+        )
+        signal_states = build_signal_state_snapshots(
+            prioritized_signals,
+            selected_signals,
+            active_directions=active_directions,
+        )
+        line_states = advance_line_states(
+            window,
+            detection.candidate_lines,
+            selected_signals,
+            cfg,
+            previous_states=previous_line_states,
+            bar_index=bar_index,
+        )
+        previous_line_states = {state.line_id: state.state for state in line_states}
+
+        active_lines = tuple(
+            state for state in line_states if state.state in {"confirmed", "armed", "triggered"}
+        )
+        invalidations = tuple(
+            state for state in line_states if state.state in {"invalidated", "expired"}
+        )
+        snapshots.append(
+            ReplaySnapshot(
+                bar_index=bar_index,
+                timestamp=window.iloc[bar_index]["timestamp"],
+                pivots=pivots,
+                candidate_lines=detection.candidate_lines,
+                active_lines=active_lines,
+                line_states=line_states,
+                signals=selected_signals,
+                signal_states=signal_states,
+                invalidations=invalidations,
+            )
+        )
+
+    return ReplayResult(
+        symbol=symbol,
+        timeframe=timeframe,
+        snapshots=tuple(snapshots),
+    )
+
+
+def iter_replay_snapshots(
+    candles,
+    config: StrategyConfig | None = None,
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    enabled_trigger_modes: Sequence[str] | None = None,
+    active_directions: Mapping[str, str] | None = None,
+):
+    result = replay_strategy(
+        candles,
+        config,
+        symbol=symbol,
+        timeframe=timeframe,
+        enabled_trigger_modes=enabled_trigger_modes,
+        active_directions=active_directions,
+    )
+    yield from result.snapshots
+
+
+def _generate_signals_for_bar(
+    candles,
+    lines: Sequence[Trendline],
+    config: StrategyConfig,
+    *,
+    enabled_trigger_modes: Sequence[str] | None,
+    active_directions: Mapping[str, str] | None,
+) -> tuple[tuple[StrategySignal, ...], tuple[StrategySignal, ...]]:
+    enabled = set(("pre_limit", "rejection", "failed_breakout") if enabled_trigger_modes is None else enabled_trigger_modes)
+    detected: list[StrategySignal] = []
+
+    if "pre_limit" in enabled:
+        detected.extend(generate_pre_limit_signals(candles, lines, config))
+    if "rejection" in enabled:
+        detected.extend(generate_rejection_signals(candles, lines, config))
+    if "failed_breakout" in enabled:
+        detected.extend(generate_failed_breakout_signals(candles, lines, config))
+
+    prioritized = tuple(prioritize_signals(detected, config))
+    selected = tuple(resolve_signal_conflicts(prioritized, active_directions=active_directions))
+    return prioritized, selected
+
+
+def _json_safe(value: Any) -> Any:
+    if is_dataclass(value):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "isoformat") and not isinstance(value, (str, bytes)):
+        try:
+            return value.isoformat()
+        except TypeError:
+            pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+__all__ = [
+    "ReplayResult",
+    "ReplaySnapshot",
+    "iter_replay_snapshots",
+    "replay_strategy",
+]
