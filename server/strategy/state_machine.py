@@ -11,7 +11,7 @@ LineLifecycleState = Literal["candidate", "confirmed", "armed", "triggered", "in
 SignalLifecycleState = Literal["detected", "active", "suppressed", "expired", "consumed"]
 
 LINE_TRANSITIONS: dict[LineLifecycleState, set[LineLifecycleState]] = {
-    "candidate": {"confirmed", "invalidated", "expired"},
+    "candidate": {"confirmed", "armed", "triggered", "invalidated", "expired"},
     "confirmed": {"candidate", "armed", "triggered", "invalidated", "expired"},
     "armed": {"candidate", "confirmed", "triggered", "invalidated", "expired"},
     "triggered": {"invalidated", "expired", "closed"},

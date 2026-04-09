@@ -103,6 +103,31 @@ def test_line_state_progresses_confirmed_to_armed_to_triggered() -> None:
     assert triggered_snapshot.signal_ids == tuple(signal.signal_id for signal in selected_signals)
 
 
+def test_line_state_allows_candidate_to_armed_and_triggered_in_same_snapshot() -> None:
+    config = StrategyConfig()
+    line = _confirmed_resistance_line()
+
+    armed_snapshot = advance_line_states(
+        _armed_candles(),
+        [line],
+        [],
+        config,
+        previous_states={line.line_id: "candidate"},
+    )[0]
+    assert armed_snapshot.previous_state == "candidate"
+    assert armed_snapshot.state == "armed"
+
+    triggered_snapshot = advance_line_states(
+        _armed_candles(),
+        [line],
+        generate_pre_limit_signals(_armed_candles(), [line], config),
+        config,
+        previous_states={line.line_id: "candidate"},
+    )[0]
+    assert triggered_snapshot.previous_state == "candidate"
+    assert triggered_snapshot.state == "triggered"
+
+
 def test_line_state_marks_invalidated_and_expired() -> None:
     config = StrategyConfig()
     line = _confirmed_resistance_line()
