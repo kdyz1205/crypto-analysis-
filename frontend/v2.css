@@ -37,6 +37,8 @@ body.v2-body {
   gap: 20px;
   height: 56px;
   flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
 .v2-brand {
@@ -90,12 +92,26 @@ body.v2-body {
   flex: 1;
   text-align: center;
   font-family: 'Courier New', monospace;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-header-status-slot {
+  flex: 0 1 380px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
 }
 
 .v2-header-actions {
   display: flex;
   gap: 10px;
   margin-left: auto;
+  flex: 0 0 auto;
 }
 
 /* ── Buttons ── */
@@ -886,20 +902,34 @@ body.combat-mode .research-drawer { display: none !important; }
 
 /* ── Boot status (top-right pills) ── */
 .boot-status {
+  position: static;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  justify-content: flex-end;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.boot-status::-webkit-scrollbar {
+  display: none;
+}
+
+.boot-status.boot-status-floating {
   position: fixed;
   top: 8px;
   right: 20px;
   z-index: 9998;
-  display: flex;
-  gap: 5px;
-  pointer-events: none;
-  flex-wrap: wrap;
   max-width: 50vw;
-  justify-content: flex-end;
+  pointer-events: none;
 }
 .boot-pill {
-  font-size: 10px;
-  padding: 2px 7px;
+  font-size: 9px;
+  padding: 2px 6px;
   border-radius: 10px;
   background: rgba(20, 28, 45, 0.85);
   border: 1px solid var(--v2-border);
@@ -907,6 +937,7 @@ body.combat-mode .research-drawer { display: none !important; }
   color: var(--v2-muted);
   font-family: 'Courier New', monospace;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 .boot-pill.boot-ok { color: var(--v2-green); border-color: rgba(0,230,118,0.3); }
 .boot-pill.boot-pending { color: var(--v2-muted); }

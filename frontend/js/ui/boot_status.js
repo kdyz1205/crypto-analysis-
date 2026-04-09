@@ -31,7 +31,13 @@ export function initBootStatus() {
   root = document.createElement('div');
   root.id = 'v2-boot-status';
   root.className = 'boot-status';
-  document.body.appendChild(root);
+  const mountPoint = $('#v2-boot-status-slot');
+  if (mountPoint) {
+    mountPoint.appendChild(root);
+  } else {
+    root.classList.add('boot-status-floating');
+    document.body.appendChild(root);
+  }
   for (const { key } of COMPONENTS) state.set(key, { state: 'pending', detail: '' });
   render();
 }
