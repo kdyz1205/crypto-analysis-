@@ -1,0 +1,351 @@
+from __future__ import annotations
+
+from dataclasses import asdict, replace
+from typing import Any
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException, Query
+
+from ..data_service import get_ohlcv_with_df
+from ..schemas.strategy import (
+    StrategyConfigResponse,
+    StrategyLineModel,
+    StrategyLineStateModel,
+    StrategyPivotModel,
+    StrategyReplayResponse,
+    StrategySignalModel,
+    StrategySignalStateModel,
+    StrategySnapshotModel,
+    StrategySnapshotResponse,
+    StrategyTouchPointModel,
+    serialize_config_response,
+)
+from ..strategy import StrategyConfig, replay_strategy
+
+router = APIRouter(prefix="/api/strategy", tags=["strategy"])
+
+VALID_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+DEFAULT_DAYS_BY_INTERVAL = {
+    "5m": 7,
+    "15m": 21,
+    "1h": 120,
+    "4h": 365,
+    "1d": 365,
+}
+
+
+@router.get("/config", response_model=StrategyConfigResponse)
+async def api_strategy_config(
+    symbol: str | None = Query(None, description="Optional symbol for precision-aware config"),
+    interval: str = Query("4h", description="5m, 15m, 1h, 4h, 1d"),
+):
+    if interval not in VALID_INTERVALS:
+        raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+
+    normalized_symbol = _normalize_symbol(symbol) if symbol else None
+    cfg = StrategyConfig()
+    price_precision: int | None = None
+
+    if normalized_symbol:
+        try:
+            _, market_payload, price_precision, cfg = await _load_strategy_inputs(
+                normalized_symbol,
+                interval,
+                end_time=None,
+                days=DEFAULT_DAYS_BY_INTERVAL.get(interval, 120),
+                analysis_bars=None,
+            )
+            if market_payload:
+                price_precision = market_payload.get("pricePrecision", price_precision)
+        except Exception:
+            # Config should still be available even if market lookup fails.
+            pass
+
+    return serialize_config_response(
+        cfg,
+        symbol=normalized_symbol,
+        interval=interval,
+        price_precision=price_precision,
+    )
+
+
+@router.get("/snapshot", response_model=StrategySnapshotResponse)
+async def api_strategy_snapshot(
+    symbol: str = Query(..., description="e.g. HYPEUSDT"),
+    interval: str = Query("4h", description="5m, 15m, 1h, 4h, 1d"),
+    end_time: str | None = Query(None, description="Replay end time, ISO format"),
+    days: int | None = Query(None, description="Days of data to load before analysis"),
+    analysis_bars: int = Query(500, ge=120, le=2000, description="Max bars sent through replay/strategy core"),
+):
+    if interval not in VALID_INTERVALS:
+        raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+
+    normalized_symbol = _normalize_symbol(symbol)
+    requested_days = days or DEFAULT_DAYS_BY_INTERVAL.get(interval, 120)
+
+    try:
+        candles_df, _, price_precision, cfg = await _load_strategy_inputs(
+            normalized_symbol,
+            interval,
+            end_time=end_time,
+            days=requested_days,
+            analysis_bars=analysis_bars,
+        )
+        replay_result = replay_strategy(candles_df, cfg, symbol=normalized_symbol, timeframe=interval)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+    if not replay_result.snapshots:
+        raise HTTPException(404, "No strategy snapshot available")
+
+    snapshot_payload = _serialize_snapshot(
+        replay_result.snapshots[-1],
+        candles_df,
+    )
+    return StrategySnapshotResponse(
+        symbol=normalized_symbol,
+        interval=interval,
+        barCount=int(len(candles_df)),
+        analysisBarCount=int(len(candles_df)),
+        pricePrecision=price_precision,
+        tickSize=float(cfg.tick_size),
+        config=asdict(cfg),
+        snapshot=snapshot_payload,
+    )
+
+
+@router.get("/replay", response_model=StrategyReplayResponse)
+async def api_strategy_replay(
+    symbol: str = Query(..., description="e.g. HYPEUSDT"),
+    interval: str = Query("4h", description="5m, 15m, 1h, 4h, 1d"),
+    end_time: str | None = Query(None, description="Replay end time, ISO format"),
+    days: int | None = Query(None, description="Days of data to load before analysis"),
+    analysis_bars: int = Query(500, ge=120, le=2000, description="Max bars sent through replay/strategy core"),
+    tail: int | None = Query(None, ge=1, le=500, description="Optional number of latest snapshots to return"),
+):
+    if interval not in VALID_INTERVALS:
+        raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+
+    normalized_symbol = _normalize_symbol(symbol)
+    requested_days = days or DEFAULT_DAYS_BY_INTERVAL.get(interval, 120)
+
+    try:
+        candles_df, _, price_precision, cfg = await _load_strategy_inputs(
+            normalized_symbol,
+            interval,
+            end_time=end_time,
+            days=requested_days,
+            analysis_bars=analysis_bars,
+        )
+        replay_result = replay_strategy(candles_df, cfg, symbol=normalized_symbol, timeframe=interval)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+    snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
+    snapshot_payloads = [_serialize_snapshot(snapshot, candles_df) for snapshot in snapshots]
+    return StrategyReplayResponse(
+        symbol=normalized_symbol,
+        interval=interval,
+        barCount=int(len(candles_df)),
+        analysisBarCount=int(len(candles_df)),
+        snapshotCount=len(snapshot_payloads),
+        pricePrecision=price_precision,
+        tickSize=float(cfg.tick_size),
+        config=asdict(cfg),
+        snapshots=snapshot_payloads,
+    )
+
+
+async def _load_strategy_inputs(
+    symbol: str,
+    interval: str,
+    *,
+    end_time: str | None,
+    days: int,
+    analysis_bars: int | None,
+) -> tuple[pd.DataFrame, dict[str, Any], int | None, StrategyConfig]:
+    polars_df, market_payload = await get_ohlcv_with_df(symbol, interval, end_time, days)
+    if polars_df is None or polars_df.is_empty():
+        raise ValueError(f"No data for {symbol} {interval}")
+
+    candles_df = _standardize_strategy_candles(polars_df)
+    if analysis_bars is not None and len(candles_df) > analysis_bars:
+        candles_df = candles_df.iloc[-analysis_bars:].reset_index(drop=True)
+
+    price_precision = market_payload.get("pricePrecision") if isinstance(market_payload, dict) else None
+    cfg = _config_with_market_precision(StrategyConfig(), price_precision)
+    return candles_df, market_payload, price_precision, cfg
+
+
+def _standardize_strategy_candles(polars_df) -> pd.DataFrame:
+    pdf = polars_df.select(["open_time", "open", "high", "low", "close", "volume"]).to_pandas()
+    pdf = pdf.rename(columns={"open_time": "timestamp"})
+    pdf["timestamp"] = pdf["timestamp"].map(lambda value: int(pd.Timestamp(value).timestamp()))
+    for column in ("open", "high", "low", "close", "volume"):
+        pdf[column] = pd.to_numeric(pdf[column], errors="raise")
+    return pdf[["timestamp", "open", "high", "low", "close", "volume"]].reset_index(drop=True)
+
+
+def _config_with_market_precision(config: StrategyConfig, price_precision: int | None) -> StrategyConfig:
+    if price_precision is None:
+        return config
+    tick_size = 1.0 if int(price_precision) <= 0 else float(10 ** (-int(price_precision)))
+    return replace(config, tick_size=tick_size)
+
+
+def _normalize_symbol(symbol: str | None) -> str:
+    if not symbol:
+        raise ValueError("symbol is required")
+    normalized = symbol.upper().replace("/", "")
+    return normalized if normalized.endswith("USDT") else f"{normalized}USDT"
+
+
+def _serialize_snapshot(snapshot, candles_df: pd.DataFrame) -> StrategySnapshotModel:
+    timestamps = candles_df["timestamp"].tolist()
+    current_index = snapshot.bar_index
+    current_time = timestamps[current_index]
+    next_time = _next_timestamp(timestamps, current_index)
+    line_state_map = {state.line_id: state for state in snapshot.line_states}
+    active_line_ids = {state.line_id for state in snapshot.active_lines}
+
+    candidate_lines = [
+        _serialize_line(
+            line,
+            line_state_map.get(line.line_id),
+            timestamps=timestamps,
+            current_time=current_time,
+            next_time=next_time,
+        )
+        for line in snapshot.candidate_lines
+    ]
+    active_lines = [line for line in candidate_lines if line.line_id in active_line_ids]
+
+    return StrategySnapshotModel(
+        bar_index=snapshot.bar_index,
+        timestamp=snapshot.timestamp,
+        pivots=[StrategyPivotModel.model_validate(asdict(pivot)) for pivot in snapshot.pivots],
+        candidate_lines=candidate_lines,
+        active_lines=active_lines,
+        line_states=[
+            StrategyLineStateModel.model_validate(asdict(state)) for state in snapshot.line_states
+        ],
+        touch_points=_serialize_touch_points(snapshot.candidate_lines, candles_df),
+        signals=[StrategySignalModel.model_validate(asdict(signal)) for signal in snapshot.signals],
+        signal_states=[
+            StrategySignalStateModel.model_validate(asdict(signal_state))
+            for signal_state in snapshot.signal_states
+        ],
+        invalidations=[
+            StrategyLineStateModel.model_validate(asdict(state)) for state in snapshot.invalidations
+        ],
+        orders=[],
+    )
+
+
+def _serialize_line(line, line_state, *, timestamps: list[int], current_time: int, next_time: int) -> StrategyLineModel:
+    state = line_state.state if line_state is not None else line.state
+    invalidation_reason = (
+        line_state.invalidation_reason
+        if line_state is not None and line_state.invalidation_reason is not None
+        else line.invalidation_reason
+    )
+    return StrategyLineModel(
+        line_id=line.line_id,
+        symbol=line.symbol,
+        timeframe=line.timeframe,
+        side=line.side,
+        state=state,
+        t_start=timestamps[line.anchor_indices[0]],
+        t_end=current_time,
+        price_start=float(line.anchor_prices[0]),
+        price_end=float(line.projected_price_current),
+        slope=float(line.slope),
+        intercept=float(line.intercept),
+        anchor_indices=list(line.anchor_indices),
+        anchor_prices=[float(price) for price in line.anchor_prices],
+        anchor_timestamps=[timestamps[index] for index in line.anchor_indices],
+        confirming_touch_indices=list(line.confirming_touch_indices),
+        bar_touch_indices=list(line.bar_touch_indices),
+        touch_count=int(line.confirming_touch_count),
+        confirming_touch_count=int(line.confirming_touch_count),
+        bar_touch_count=int(line.bar_touch_count),
+        line_score=float(line.score),
+        score_components={key: float(value) for key, value in dict(line.score_components).items()},
+        projected_price_current=float(line.projected_price_current),
+        projected_price_next=float(line.projected_price_next),
+        projected_time_current=current_time,
+        projected_time_next=next_time,
+        is_active=state in {"confirmed", "armed", "triggered"},
+        is_invalidated=state in {"invalidated", "expired"},
+        invalidation_reason=invalidation_reason,
+    )
+
+
+def _serialize_touch_points(lines, candles_df: pd.DataFrame) -> list[StrategyTouchPointModel]:
+    timestamps = candles_df["timestamp"].tolist()
+    rows = candles_df.to_dict("records")
+    points: list[StrategyTouchPointModel] = []
+    seen: set[tuple[str, int, str]] = set()
+
+    for line in lines:
+        for index in line.confirming_touch_indices:
+            key = (line.line_id, int(index), "confirming")
+            if key in seen or index >= len(rows):
+                continue
+            seen.add(key)
+            price = float(rows[index]["high"] if line.side == "resistance" else rows[index]["low"])
+            line_value = (line.slope * index) + line.intercept
+            points.append(
+                StrategyTouchPointModel(
+                    line_id=line.line_id,
+                    timestamp=timestamps[index],
+                    bar_index=int(index),
+                    price=price,
+                    touch_type="confirming",
+                    residual=abs(price - line_value),
+                    is_confirming_touch=True,
+                    side=line.side,
+                )
+            )
+        for index in line.bar_touch_indices:
+            key = (line.line_id, int(index), "bar")
+            if key in seen or index >= len(rows):
+                continue
+            seen.add(key)
+            price = float(rows[index]["high"] if line.side == "resistance" else rows[index]["low"])
+            line_value = (line.slope * index) + line.intercept
+            points.append(
+                StrategyTouchPointModel(
+                    line_id=line.line_id,
+                    timestamp=timestamps[index],
+                    bar_index=int(index),
+                    price=price,
+                    touch_type="bar",
+                    residual=abs(price - line_value),
+                    is_confirming_touch=False,
+                    side=line.side,
+                )
+            )
+
+    points.sort(key=lambda point: (point.timestamp, point.line_id, point.touch_type))
+    return points
+
+
+def _next_timestamp(timestamps: list[int], current_index: int) -> int:
+    current_time = timestamps[current_index]
+    if current_index > 0:
+        delta = current_time - timestamps[current_index - 1]
+        if delta > 0:
+            return current_time + delta
+    if len(timestamps) > 1:
+        delta = timestamps[1] - timestamps[0]
+        if delta > 0:
+            return current_time + delta
+    return current_time
+
+
+__all__ = ["router"]

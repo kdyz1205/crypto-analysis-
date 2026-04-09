@@ -952,3 +952,52 @@ body.combat-mode .boot-status { display: none; }
   0%, 100% { background-position: 200% 0; }
   50% { background-position: -200% 0; }
 }
+
+.strategy-layer-panel {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 35;
+  width: 208px;
+  padding: 10px 12px;
+  border: 1px solid rgba(42, 53, 72, 0.9);
+  background: rgba(10, 14, 23, 0.88);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.strategy-layer-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-primary);
+  margin-bottom: 8px;
+}
+
+.strategy-layer-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.strategy-layer-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.strategy-layer-option input {
+  margin: 0;
+  accent-color: var(--v2-primary);
+}
+
+.strategy-layer-meta {
+  margin-top: 8px;
+  color: var(--v2-muted);
+  font-size: 10px;
+}
