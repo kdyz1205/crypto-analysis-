@@ -1,5 +1,7 @@
 import { fetchJson } from '../util/fetch.js';
 
+let activeStepController = null;
+
 export async function getPaperExecutionState() {
   const response = await fetchJson('/api/paper-execution/state');
   return response.state;
@@ -27,11 +29,18 @@ export async function resetPaperExecution(payload = {}) {
 }
 
 export async function stepPaperExecution(payload) {
-  return fetchJson('/api/paper-execution/step', {
-    method: 'POST',
-    body: payload,
-    timeout: 120000,
-  });
+  activeStepController?.abort();
+  activeStepController = new AbortController();
+  try {
+    return await fetchJson('/api/paper-execution/step', {
+      method: 'POST',
+      body: payload,
+      timeout: 120000,
+      signal: activeStepController.signal,
+    });
+  } finally {
+    activeStepController = null;
+  }
 }
 
 export async function setPaperKillSwitch(payload) {
@@ -40,4 +49,9 @@ export async function setPaperKillSwitch(payload) {
     body: payload,
   });
   return response.state;
+}
+
+export function abortPaperExecutionStep() {
+  activeStepController?.abort();
+  activeStepController = null;
 }

@@ -5,7 +5,9 @@ export const paperExecutionState = {
   lastStepResult: null,
   loadingState: false,
   loadingConfig: false,
-  mutating: false,
+  stepping: false,
+  resetting: false,
+  killSwitchUpdating: false,
   autoRefreshEnabled: false,
 };
 
@@ -37,6 +39,18 @@ export function setPaperExecutionLoadingConfig(loading) {
   paperExecutionState.loadingConfig = !!loading;
 }
 
-export function setPaperExecutionMutating(loading) {
-  paperExecutionState.mutating = !!loading;
+export function setPaperExecutionStepping(loading) {
+  paperExecutionState.stepping = !!loading;
+}
+
+export function setPaperExecutionResetting(loading) {
+  paperExecutionState.resetting = !!loading;
+}
+
+export function setPaperExecutionKillSwitchUpdating(loading) {
+  paperExecutionState.killSwitchUpdating = !!loading;
+}
+
+export function isPaperExecutionBusy() {
+  return !!(paperExecutionState.stepping || paperExecutionState.resetting || paperExecutionState.killSwitchUpdating);
 }

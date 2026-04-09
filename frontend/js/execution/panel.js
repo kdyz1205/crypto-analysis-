@@ -2,13 +2,16 @@ import { $, $$, setHtml, on, show, hide } from '../util/dom.js';
 import { agentState, setActiveSubTab, setPanelOpen, setLastStatus } from '../state/agent.js';
 import {
   clearPaperExecutionError,
+  isPaperExecutionBusy,
   paperExecutionState,
   setPaperExecutionConfig,
   setPaperExecutionError,
+  setPaperExecutionKillSwitchUpdating,
   setPaperExecutionLastStep,
   setPaperExecutionLoadingConfig,
   setPaperExecutionLoadingState,
-  setPaperExecutionMutating,
+  setPaperExecutionResetting,
+  setPaperExecutionStepping,
   setPaperExecutionState,
 } from '../state/paper_execution.js';
 import { marketState } from '../state/market.js';
@@ -556,6 +559,14 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
   const cooldowns = state.cooldowns || {};
   const currentSymbol = marketState.currentSymbol || 'HYPEUSDT';
   const currentInterval = marketState.currentInterval || '4h';
+  const busy = isPaperExecutionBusy();
+  const stepDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
+  const resetDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
+  const killDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
+  const stepLabel = paperExecutionState.stepping ? 'Stepping...' : 'Step once';
+  const resetLabel = paperExecutionState.resetting ? 'Resetting...' : 'Reset paper';
+  const killOnLabel = paperExecutionState.killSwitchUpdating && killSwitch.blocked ? 'Updating...' : 'Kill switch on';
+  const killOffLabel = paperExecutionState.killSwitchUpdating && !killSwitch.blocked ? 'Updating...' : 'Kill switch off';
 
   return `
     <section class="paper-section">
@@ -564,18 +575,18 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
         <span class="paper-badge ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">${killSwitch.blocked ? 'Blocked' : 'Interactive'}</span>
       </div>
       <div class="paper-actions">
-        <button class="btn btn-primary" id="v2-paper-step-btn">Step once</button>
-        <button class="btn" id="v2-paper-reset-btn">Reset paper</button>
-        <button class="btn ${killSwitch.blocked ? '' : 'active'}" id="v2-paper-kill-on">Kill switch on</button>
-        <button class="btn ${killSwitch.blocked ? 'active' : ''}" id="v2-paper-kill-off">Kill switch off</button>
+        <button class="btn btn-primary" id="v2-paper-step-btn" ${stepDisabled ? 'disabled' : ''}>${stepLabel}</button>
+        <button class="btn" id="v2-paper-reset-btn" ${resetDisabled ? 'disabled' : ''}>${resetLabel}</button>
+        <button class="btn ${killSwitch.blocked ? '' : 'active'}" id="v2-paper-kill-on" ${killDisabled ? 'disabled' : ''}>${killOnLabel}</button>
+        <button class="btn ${killSwitch.blocked ? 'active' : ''}" id="v2-paper-kill-off" ${killDisabled ? 'disabled' : ''}>${killOffLabel}</button>
       </div>
       <form class="paper-form" id="v2-paper-step-form">
-        <label>Symbol<input type="text" name="symbol" value="${escapeHtml(currentSymbol)}" /></label>
-        <label>Interval<input type="text" name="interval" value="${escapeHtml(currentInterval)}" /></label>
-        <label>Bar Index<input type="number" name="bar_index" placeholder="auto next bar" /></label>
-        <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" /></label>
+        <label>Symbol<input type="text" name="symbol" value="${escapeHtml(currentSymbol)}" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Interval<input type="text" name="interval" value="${escapeHtml(currentInterval)}" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Bar Index<input type="number" name="bar_index" placeholder="auto next bar" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${stepDisabled ? 'disabled' : ''} /></label>
       </form>
-      ${paperExecutionState.mutating ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
+      ${busy ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       ${renderPaperLastStep(lastStepResult)}
       <div class="paper-subgrid">
@@ -646,28 +657,30 @@ function renderPaperRiskSection(config, error) {
     return renderUnavailableSection('Paper Risk Config', error || 'Paper risk config unavailable');
   }
 
+  const busy = isPaperExecutionBusy() || paperExecutionState.loadingConfig;
+
   return `
     <section class="paper-section">
       <div class="paper-section-header">
-        <h4>Paper Risk Config</h4>
+        <h4>Paper Execution Risk Config</h4>
         <span class="paper-badge is-ok">/api/paper-execution/config</span>
       </div>
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <form class="paper-form paper-risk-form" id="v2-paper-risk-form">
-        <label>Risk Per Trade<input type="number" name="risk_per_trade" value="${Number(config.risk_per_trade).toFixed(4)}" step="0.0005" /></label>
-        <label>Max Concurrent Positions<input type="number" name="max_concurrent_positions" value="${config.max_concurrent_positions}" step="1" /></label>
-        <label>Max Positions Per Symbol<input type="number" name="max_positions_per_symbol" value="${config.max_positions_per_symbol}" step="1" /></label>
-        <label>Max Total Exposure<input type="number" name="max_total_exposure" value="${Number(config.max_total_exposure).toFixed(2)}" step="0.05" /></label>
-        <label>Max Daily Loss<input type="number" name="max_daily_loss" value="${Number(config.max_daily_loss).toFixed(4)}" step="0.001" /></label>
-        <label>Max Consecutive Losses<input type="number" name="max_consecutive_losses" value="${config.max_consecutive_losses}" step="1" /></label>
-        <label>Cancel After Bars<input type="number" name="cancel_after_bars" value="${config.cancel_after_bars}" step="1" /></label>
-        <label>Cooldown Bars After Loss<input type="number" name="cooldown_bars_after_loss" value="${config.cooldown_bars_after_loss}" step="1" /></label>
-        <label>Starting Equity<input type="number" name="starting_equity" value="${Number(config.starting_equity).toFixed(2)}" step="100" /></label>
+        <label>Risk Per Trade<input type="number" name="risk_per_trade" value="${Number(config.risk_per_trade).toFixed(4)}" step="0.0005" ${busy ? 'disabled' : ''} /></label>
+        <label>Max Concurrent Positions<input type="number" name="max_concurrent_positions" value="${config.max_concurrent_positions}" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Max Positions Per Symbol<input type="number" name="max_positions_per_symbol" value="${config.max_positions_per_symbol}" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Max Total Exposure<input type="number" name="max_total_exposure" value="${Number(config.max_total_exposure).toFixed(2)}" step="0.05" ${busy ? 'disabled' : ''} /></label>
+        <label>Max Daily Loss<input type="number" name="max_daily_loss" value="${Number(config.max_daily_loss).toFixed(4)}" step="0.001" ${busy ? 'disabled' : ''} /></label>
+        <label>Max Consecutive Losses<input type="number" name="max_consecutive_losses" value="${config.max_consecutive_losses}" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Cancel After Bars<input type="number" name="cancel_after_bars" value="${config.cancel_after_bars}" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Cooldown Bars After Loss<input type="number" name="cooldown_bars_after_loss" value="${config.cooldown_bars_after_loss}" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Starting Equity<input type="number" name="starting_equity" value="${Number(config.starting_equity).toFixed(2)}" step="100" ${busy ? 'disabled' : ''} /></label>
         <label class="paper-checkbox">
-          <input type="checkbox" name="allow_multiple_same_direction_per_symbol" ${config.allow_multiple_same_direction_per_symbol ? 'checked' : ''} />
+          <input type="checkbox" name="allow_multiple_same_direction_per_symbol" ${config.allow_multiple_same_direction_per_symbol ? 'checked' : ''} ${busy ? 'disabled' : ''} />
           Allow multiple same-direction positions per symbol
         </label>
-        <button type="submit" class="btn btn-primary">Save Paper Config</button>
+        <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${paperExecutionState.loadingConfig ? 'Loading...' : 'Save Paper Config'}</button>
       </form>
     </section>
   `;
@@ -1032,7 +1045,7 @@ function wirePaperExecutionControls() {
   on('#v2-paper-step-btn', 'click', async () => {
     const form = $('#v2-paper-step-form');
     if (!(form instanceof HTMLFormElement)) return;
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionStepping, async () => {
       const result = await paperExecSvc.stepPaperExecution(readStepPayload(form));
       setPaperExecutionLastStep(result);
       setPaperExecutionState(result.state);
@@ -1046,7 +1059,7 @@ function wirePaperExecutionControls() {
     event.preventDefault();
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionStepping, async () => {
       const result = await paperExecSvc.stepPaperExecution(readStepPayload(form));
       setPaperExecutionLastStep(result);
       setPaperExecutionState(result.state);
@@ -1057,7 +1070,7 @@ function wirePaperExecutionControls() {
   });
 
   on('#v2-paper-reset-btn', 'click', async () => {
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionResetting, async () => {
       const state = await paperExecSvc.resetPaperExecution();
       setPaperExecutionState(state);
       if (state?.config) setPaperExecutionConfig(state.config);
@@ -1068,7 +1081,7 @@ function wirePaperExecutionControls() {
   });
 
   on('#v2-paper-kill-on', 'click', async () => {
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionKillSwitchUpdating, async () => {
       const state = await paperExecSvc.setPaperKillSwitch({ blocked: true, reason: 'manual_frontend_toggle' });
       setPaperExecutionState(state);
       if (state?.config) setPaperExecutionConfig(state.config);
@@ -1078,7 +1091,7 @@ function wirePaperExecutionControls() {
   });
 
   on('#v2-paper-kill-off', 'click', async () => {
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionKillSwitchUpdating, async () => {
       const state = await paperExecSvc.setPaperKillSwitch({ blocked: false, reason: '' });
       setPaperExecutionState(state);
       if (state?.config) setPaperExecutionConfig(state.config);
@@ -1121,7 +1134,7 @@ function wirePaperRiskForm() {
       allow_multiple_same_direction_per_symbol: formData.get('allow_multiple_same_direction_per_symbol') === 'on',
     };
 
-    await runPaperMutation(async () => {
+    await runPaperAction(setPaperExecutionLoadingConfig, async () => {
       const config = await paperExecSvc.setPaperExecutionConfig(payload);
       setPaperExecutionConfig(config);
       if (paperExecutionState.state) {
@@ -1279,16 +1292,16 @@ function readStepPayload(form) {
   return payload;
 }
 
-async function runPaperMutation(fn) {
-  if (paperExecutionState.mutating) return;
-  setPaperExecutionMutating(true);
+async function runPaperAction(setter, fn) {
+  if (isPaperExecutionBusy()) return;
+  setter(true);
   renderActive(true).catch((err) => console.warn('[exec] paper mutation pre-render failed:', err));
   try {
     await fn();
   } catch (err) {
     setPaperExecutionError(safeErrorMessage(err));
   } finally {
-    setPaperExecutionMutating(false);
+    setter(false);
     renderActive(true).catch((err) => console.warn('[exec] paper mutation post-render failed:', err));
   }
 }
