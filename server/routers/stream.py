@@ -5,8 +5,8 @@ Delivers every event published to the bus to connected clients in real time.
 Consumed by the frontend Decision Rail, Glassbox, and (future) the Telegram bot.
 """
 
+import asyncio
 import json
-import queue as thread_queue
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
@@ -17,16 +17,16 @@ from ..subscribers.sse_broadcast import add_client, remove_client, client_count
 router = APIRouter(tags=["stream"])
 
 
-def _event_generator(queue: thread_queue.Queue):
+async def _event_generator(queue: asyncio.Queue):
     try:
         # Initial connected message so clients know the stream is live
         yield f"event: connected\ndata: {json.dumps({'ok': True})}\n\n"
         while True:
             try:
-                event = queue.get(timeout=20)
+                event = await asyncio.wait_for(queue.get(), timeout=20)
                 data = json.dumps(event.to_dict(), default=str)
                 yield f"event: {event.type}\ndata: {data}\n\n"
-            except thread_queue.Empty:
+            except asyncio.TimeoutError:
                 # keepalive ping
                 yield f"event: ping\ndata: {{}}\n\n"
     finally:
