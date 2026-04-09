@@ -79,3 +79,23 @@ def test_strategy_replay_route_supports_tail(monkeypatch) -> None:
     payload = response.json()
     assert payload["snapshotCount"] == 2
     assert len(payload["snapshots"]) == 2
+
+
+def test_strategy_snapshot_route_offloads_heavy_work(monkeypatch) -> None:
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days):
+        return _sample_polars_df(), {"pricePrecision": 4}
+
+    offload_calls = []
+
+    async def fake_to_thread(func, *args, **kwargs):
+        offload_calls.append(getattr(func, "__name__", str(func)))
+        return func(*args, **kwargs)
+
+    monkeypatch.setattr(strategy_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
+    monkeypatch.setattr(strategy_router.asyncio, "to_thread", fake_to_thread)
+
+    client = TestClient(_build_app())
+    response = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120")
+
+    assert response.status_code == 200
+    assert offload_calls == ["_build_strategy_snapshot_response"]

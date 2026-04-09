@@ -1,4 +1,5 @@
 import os
+import asyncio
 import polars as pl
 import httpx
 import time
@@ -16,6 +17,8 @@ from .market import (
 # In-memory TTL cache for download_ohlcv results
 # Key: (symbol, interval) — days are handled by slicing/invalidation
 _ohlcv_cache: dict[tuple, tuple[float, int, pl.DataFrame]] = {}  # (ts, days, df)
+_ohlcv_inflight: dict[tuple, tuple[int, asyncio.Task[pl.DataFrame]]] = {}
+_ohlcv_inflight_lock = asyncio.Lock()
 OHLCV_CACHE_TTL_SHORT = 300   # 5 minutes — for short intervals (5m, 15m, 1h)
 OHLCV_CACHE_TTL_HEAVY = 600   # 10 minutes — for heavy intervals (4h, 1d)
 
@@ -432,19 +435,68 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
                 return cached_result
             # More days requested than cached — invalidate and re-fetch below
 
-    if EXCHANGE.lower() == "bitget":
-        result = await _download_ohlcv_bitget(symbol, interval, days)
-    elif EXCHANGE.lower() == "okx":
-        result = await _download_ohlcv_okx(symbol, interval, days)
-    else:
-        result = await _download_ohlcv_binance(symbol, interval, days)
+    async def _run_download(requested_days: int) -> pl.DataFrame:
+        if EXCHANGE.lower() == "bitget":
+            return await _download_ohlcv_bitget(symbol, interval, requested_days)
+        if EXCHANGE.lower() == "okx":
+            return await _download_ohlcv_okx(symbol, interval, requested_days)
+        return await _download_ohlcv_binance(symbol, interval, requested_days)
 
-    _ohlcv_cache[cache_key] = (time.time(), days, result)
+    task: asyncio.Task[pl.DataFrame] | None = None
+    task_days = days
+
+    async with _ohlcv_inflight_lock:
+        inflight = _ohlcv_inflight.get(cache_key)
+        if inflight is not None:
+            inflight_days, inflight_task = inflight
+            task = inflight_task
+            task_days = inflight_days
+        else:
+            task = asyncio.create_task(_run_download(days))
+            _ohlcv_inflight[cache_key] = (days, task)
+
+    try:
+        result = await task
+
+        if days > task_days:
+            # A smaller in-flight request completed first. Re-check cache and fall through
+            # to a larger download if the requested lookback still is not satisfied.
+            cached = _ohlcv_cache.get(cache_key)
+            if cached is not None:
+                _, cached_days, cached_result = cached
+                if days <= cached_days:
+                    if days < cached_days and not cached_result.is_empty():
+                        import datetime as _dt
+                        cutoff = cached_result["open_time"].max() - _dt.timedelta(days=days)
+                        return cached_result.filter(pl.col("open_time") >= cutoff)
+                    return cached_result
+            async with _ohlcv_inflight_lock:
+                current = _ohlcv_inflight.get(cache_key)
+                if current is None or current[1] is task:
+                    task = asyncio.create_task(_run_download(days))
+                    _ohlcv_inflight[cache_key] = (days, task)
+                    task_days = days
+                else:
+                    task_days, task = current
+            result = await task
+
+        _ohlcv_cache[cache_key] = (time.time(), task_days, result)
+    finally:
+        async with _ohlcv_inflight_lock:
+            current = _ohlcv_inflight.get(cache_key)
+            if current is not None and current[1] is task:
+                _ohlcv_inflight.pop(cache_key, None)
+
     # Evict expired entries to prevent unbounded memory growth
     now = time.time()
     expired = [k for k, (ts, d, _) in _ohlcv_cache.items() if now - ts > _cache_ttl(k[1]) * 4]
     for k in expired:
         del _ohlcv_cache[k]
+
+    if days < task_days and not result.is_empty():
+        import datetime as _dt
+        cutoff = result["open_time"].max() - _dt.timedelta(days=days)
+        return result.filter(pl.col("open_time") >= cutoff)
     return result
 
 

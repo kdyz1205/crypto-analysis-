@@ -7,13 +7,14 @@ import { subscribe } from '../util/events.js';
 import { fetchJson } from '../util/fetch.js';
 
 let pollTimer = null;
+const DECISION_RAIL_TIMEOUT_MS = 4000;
 
 async function fetchAll(symbol, interval) {
   const [structure, summary, risk, candidates] = await Promise.all([
-    fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`).catch(() => null),
-    fetchJson('/api/agent/summary').catch(() => null),
-    fetchJson('/api/agent/risk-state').catch(() => null),
-    fetchJson('/api/agent/signal-candidates').catch(() => null),
+    fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
+    fetchJson('/api/agent/summary', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
+    fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
+    fetchJson('/api/agent/signal-candidates', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
   ]);
   return { structure, summary, risk, candidates };
 }
@@ -252,12 +253,6 @@ function paintLoading() {
 
 export function initDecisionRail() {
   paintLoading();  // instant skeleton
-  // Fire actual render in the next tick to let UI paint first
-  setTimeout(() => {
-    render().then(() => { lastRender = Date.now(); }).catch((err) => {
-      console.error('[rail] initial render failed:', err);
-    });
-  }, 0);
   pollTimer = setInterval(safeRender, 30000);
   subscribe('market.symbol.changed', safeRender);
   subscribe('market.interval.changed', safeRender);
@@ -265,4 +260,8 @@ export function initDecisionRail() {
 
 export function stopDecisionRail() {
   if (pollTimer) clearInterval(pollTimer);
+}
+
+export async function refreshDecisionRail() {
+  await safeRender();
 }

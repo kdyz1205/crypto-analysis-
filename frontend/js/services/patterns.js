@@ -1,10 +1,10 @@
 // frontend/js/services/patterns.js
 import { fetchJson } from '../util/fetch.js';
 
-export const getPatterns = (symbol, interval, days = 30, mode = 'full', endTime = null) => {
+export const getPatterns = (symbol, interval, days = 30, mode = 'full', endTime = null, requestOptions = {}) => {
   const params = new URLSearchParams({ symbol, interval, days: String(days), mode });
   if (endTime) params.set('end_time', endTime);
-  return fetchJson(`/api/patterns?${params}`);
+  return fetchJson(`/api/patterns?${params}`, requestOptions);
 };
 
 export const getPatternStatsBacktest = (symbol, interval, days = 365) =>

@@ -1,0 +1,63 @@
+[AI Chat] CLAUDE_CODE_CLI_MODE=False BRIDGE_MODE=None
+[OKX] API key loaded (live trading available)
+[Agent] Loaded state: gen=0 equity=10000.00 trades=0
+[Telegram] Config loaded from env: chat_id=6357154428
+[AI Chat] Anthropic client initialized
+[Agent] Initialized. Mode=paper Gen=0
+[AI Chat] Ready. API key=set
+[Healer] Self-healing active. AI=enabled
+[AuditSubscriber] Registered for 7 event prefixes
+[TelegramSubscriber] Registered for chat_id=6357154428
+[SSESubscriber] Registered broadcast for 7 event prefixes
+[EventBus] Phase 3 subscribers registered
+[Scheduler] Started with 3 default handlers
+[Healer] Started. Watching for errors...
+[Scheduler] Loop started (0 tasks loaded)
+INFO:     127.0.0.1:49734 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49737 - "GET /v2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55997 - "GET /api/paper-execution/state HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /v2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /v2.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/main.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/workbench/chart.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/workbench/ticker.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/workbench/timeframe.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/workbench/decision_rail.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/execution/panel.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/command_palette/palette.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/control/glassbox.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/control/chat.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/research/drawer.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/util/dom.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/ui/boot_status.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/services/stream.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/util/events.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/state/ui.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/state/market.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/services/market.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/state/strategy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/services/patterns.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/services/strategy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/util/format.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/workbench/ma_overlay.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/workbench/patterns.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/workbench/overlays/trendline_overlay.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/workbench/overlays/signal_overlay.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/workbench/overlays/order_overlay.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/util/fetch.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/command_palette/fuzzy.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/state/agent.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/state/paper_execution.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/command_palette/commands.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/services/agent.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/services/risk.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62915 - "GET /js/services/paper_execution.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /js/services/ops.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61438 - "GET /js/services/execution.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49844 - "GET /js/services/live_execution.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57372 - "GET /js/services/chat.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /js/services/research.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63063 - "GET /api/symbols HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /api/ohlcv?symbol=HYPEUSDT&interval=4h&days=365 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50949 - "GET /api/strategy/config?symbol=HYPEUSDT&interval=4h HTTP/1.1" 200 OK

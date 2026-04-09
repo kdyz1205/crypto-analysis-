@@ -26,7 +26,7 @@ async def health_check():
 @router.get("/")
 async def index():
     return FileResponse(
-        str(FRONTEND_DIR / "index.html"),
+        str(FRONTEND_DIR / "v2.html"),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 

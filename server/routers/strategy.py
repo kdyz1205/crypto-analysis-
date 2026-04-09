@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -91,29 +92,21 @@ async def api_strategy_snapshot(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
-        replay_result = replay_strategy(candles_df, cfg, symbol=normalized_symbol, timeframe=interval)
+        response = await asyncio.to_thread(
+            _build_strategy_snapshot_response,
+            candles_df,
+            cfg,
+            normalized_symbol,
+            interval,
+            price_precision,
+        )
+        return response
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
-
-    if not replay_result.snapshots:
-        raise HTTPException(404, "No strategy snapshot available")
-
-    snapshot_payload = _serialize_snapshot(
-        replay_result.snapshots[-1],
-        candles_df,
-    )
-    return StrategySnapshotResponse(
-        symbol=normalized_symbol,
-        interval=interval,
-        barCount=int(len(candles_df)),
-        analysisBarCount=int(len(candles_df)),
-        pricePrecision=price_precision,
-        tickSize=float(cfg.tick_size),
-        config=asdict(cfg),
-        snapshot=snapshot_payload,
-    )
 
 
 @router.get("/replay", response_model=StrategyReplayResponse)
@@ -139,25 +132,20 @@ async def api_strategy_replay(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
-        replay_result = replay_strategy(candles_df, cfg, symbol=normalized_symbol, timeframe=interval)
+        response = await asyncio.to_thread(
+            _build_strategy_replay_response,
+            candles_df,
+            cfg,
+            normalized_symbol,
+            interval,
+            price_precision,
+            tail,
+        )
+        return response
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
-
-    snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
-    snapshot_payloads = [_serialize_snapshot(snapshot, candles_df) for snapshot in snapshots]
-    return StrategyReplayResponse(
-        symbol=normalized_symbol,
-        interval=interval,
-        barCount=int(len(candles_df)),
-        analysisBarCount=int(len(candles_df)),
-        snapshotCount=len(snapshot_payloads),
-        pricePrecision=price_precision,
-        tickSize=float(cfg.tick_size),
-        config=asdict(cfg),
-        snapshots=snapshot_payloads,
-    )
 
 
 async def _load_strategy_inputs(
@@ -202,6 +190,57 @@ def _normalize_symbol(symbol: str | None) -> str:
         raise ValueError("symbol is required")
     normalized = symbol.upper().replace("/", "")
     return normalized if normalized.endswith("USDT") else f"{normalized}USDT"
+
+
+def _build_strategy_snapshot_response(
+    candles_df: pd.DataFrame,
+    cfg: StrategyConfig,
+    symbol: str,
+    interval: str,
+    price_precision: int | None,
+) -> StrategySnapshotResponse:
+    replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
+    if not replay_result.snapshots:
+        raise LookupError("No strategy snapshot available")
+
+    snapshot_payload = _serialize_snapshot(
+        replay_result.snapshots[-1],
+        candles_df,
+    )
+    return StrategySnapshotResponse(
+        symbol=symbol,
+        interval=interval,
+        barCount=int(len(candles_df)),
+        analysisBarCount=int(len(candles_df)),
+        pricePrecision=price_precision,
+        tickSize=float(cfg.tick_size),
+        config=asdict(cfg),
+        snapshot=snapshot_payload,
+    )
+
+
+def _build_strategy_replay_response(
+    candles_df: pd.DataFrame,
+    cfg: StrategyConfig,
+    symbol: str,
+    interval: str,
+    price_precision: int | None,
+    tail: int | None,
+) -> StrategyReplayResponse:
+    replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
+    snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
+    snapshot_payloads = [_serialize_snapshot(snapshot, candles_df) for snapshot in snapshots]
+    return StrategyReplayResponse(
+        symbol=symbol,
+        interval=interval,
+        barCount=int(len(candles_df)),
+        analysisBarCount=int(len(candles_df)),
+        snapshotCount=len(snapshot_payloads),
+        pricePrecision=price_precision,
+        tickSize=float(cfg.tick_size),
+        config=asdict(cfg),
+        snapshots=snapshot_payloads,
+    )
 
 
 def _serialize_snapshot(snapshot, candles_df: pd.DataFrame) -> StrategySnapshotModel:

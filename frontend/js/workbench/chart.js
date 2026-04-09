@@ -22,6 +22,7 @@ let strategyLayerPanel = null;
 let strategyRequestSeq = 0;
 let lastPatternKey = null;
 let lastStrategyConfigKey = null;
+const OVERLAY_REQUEST_TIMEOUT_MS = 4000;
 
 export function initChart(containerId = 'chart-container') {
   const el = $('#' + containerId);
@@ -131,16 +132,22 @@ export async function loadCurrent(forcePatterns = false) {
       drawMAOverlays(chart, data.overlays, candleTimes);
     }
 
-    const overlayLoads = [loadStrategy(currentSymbol, currentInterval)];
-    const patternKey = `${currentSymbol}:${currentInterval}`;
-    if (forcePatterns || lastPatternKey !== patternKey) {
-      lastPatternKey = patternKey;
-      overlayLoads.push(loadPatterns(currentSymbol, currentInterval));
-    }
-    await Promise.allSettled(overlayLoads);
-
     updateHeader(currentSymbol, currentInterval, lastPrice);
     console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
+
+    const patternKey = `${currentSymbol}:${currentInterval}`;
+    const shouldLoadPatterns = forcePatterns || lastPatternKey !== patternKey;
+    if (shouldLoadPatterns) {
+      lastPatternKey = patternKey;
+    }
+    setTimeout(() => {
+      void (async () => {
+        await loadStrategy(currentSymbol, currentInterval);
+        if (shouldLoadPatterns) {
+          await loadPatterns(currentSymbol, currentInterval);
+        }
+      })();
+    }, 2000);
   } catch (err) {
     console.error('[chart] load failed:', err);
   }
@@ -148,7 +155,7 @@ export async function loadCurrent(forcePatterns = false) {
 
 async function loadPatterns(symbol, interval) {
   try {
-    const data = await patternsSvc.getPatterns(symbol, interval, 90, 'full');
+    const data = await patternsSvc.getPatterns(symbol, interval, 90, 'full', null, { timeout: OVERLAY_REQUEST_TIMEOUT_MS });
     clearPatternLines(chart);
     drawPatterns(chart, data.supportLines || [], data.resistanceLines || [], 8);
     drawZones(chart, data.consolidationZones || []);
@@ -163,8 +170,15 @@ async function loadStrategy(symbol, interval) {
     const configKey = `${symbol}:${interval}`;
     const shouldFetchConfig = lastStrategyConfigKey !== configKey;
     const [config, snapshotEnvelope] = await Promise.all([
-      shouldFetchConfig ? strategySvc.getStrategyConfig(symbol, interval) : Promise.resolve(strategyState.config),
-      strategySvc.getStrategySnapshot(symbol, interval, { analysisBars: 500 }),
+      shouldFetchConfig
+        ? strategySvc.getStrategyConfig(symbol, interval, { timeout: OVERLAY_REQUEST_TIMEOUT_MS })
+        : Promise.resolve(strategyState.config),
+      strategySvc.getStrategySnapshot(
+        symbol,
+        interval,
+        { analysisBars: 500 },
+        { timeout: OVERLAY_REQUEST_TIMEOUT_MS },
+      ),
     ]);
     if (requestId !== strategyRequestSeq) return;
     if (shouldFetchConfig && config) {

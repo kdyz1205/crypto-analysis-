@@ -2,6 +2,7 @@
 Market data routes: symbols, OHLCV, chart overlays, top volume, data info.
 """
 
+import asyncio
 import csv
 import logging
 
@@ -258,10 +259,6 @@ async def api_market_structure_summary(symbol: str = Query(...), interval: str =
     Decision Rail Market State card: trend, MA alignment, BB position,
     nearest support/resistance, ribbon score.
     """
-    import numpy as np
-    from ..backtest_service import _sma, _ema, _atr, _bb_upper
-    from ..pattern_service import get_patterns_from_df
-
     symbol = symbol.upper().replace("/", "")
     if not symbol.endswith("USDT"):
         symbol += "USDT"
@@ -272,6 +269,17 @@ async def api_market_structure_summary(symbol: str = Query(...), interval: str =
         return {"error": str(e), "symbol": symbol}
     if df is None or df.is_empty():
         return {"error": "no data", "symbol": symbol}
+
+    try:
+        return await asyncio.to_thread(_build_structure_summary, df, symbol, interval)
+    except Exception as e:
+        return {"error": str(e), "symbol": symbol}
+
+
+def _build_structure_summary(df, symbol: str, interval: str) -> dict:
+    import numpy as np
+    from ..backtest_service import _sma, _ema, _atr, _bb_upper
+    from ..pattern_service import get_patterns_from_df
 
     close = df["close"].to_numpy().astype(float)
     high = df["high"].to_numpy().astype(float)

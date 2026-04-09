@@ -6,6 +6,7 @@ Serves both Market Workbench (live detection) and Research Lab (historical analy
 import asyncio
 import logging
 import sys
+from functools import partial
 
 from fastapi import APIRouter, Query, HTTPException
 
@@ -77,8 +78,17 @@ async def api_patterns(
         if API_ONLY:
             use_days = max(days, 365)
             df, _ = await get_ohlcv_with_df(symbol, interval, end_time, use_days)
-            return get_patterns_from_df(df, symbol, interval, end_time, mode=mode)
-        return get_patterns(symbol, interval, end_time, days, mode=mode)
+            return await asyncio.to_thread(
+                get_patterns_from_df,
+                df,
+                symbol,
+                interval,
+                end_time,
+                mode,
+            )
+        return await asyncio.to_thread(
+            partial(get_patterns, symbol, interval, end_time, days, mode=mode)
+        )
     except ValueError as e:
         print(f"Pattern API (no data): {e}")
         return empty_response

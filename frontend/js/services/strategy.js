@@ -12,13 +12,13 @@ function buildParams(symbol, interval, options = {}) {
   return params;
 }
 
-export const getStrategyConfig = (symbol, interval) => {
+export const getStrategyConfig = (symbol, interval, requestOptions = {}) => {
   const params = new URLSearchParams({ symbol, interval });
-  return fetchJson(`/api/strategy/config?${params}`);
+  return fetchJson(`/api/strategy/config?${params}`, requestOptions);
 };
 
-export const getStrategySnapshot = (symbol, interval, options = {}) =>
-  fetchJson(`/api/strategy/snapshot?${buildParams(symbol, interval, options)}`);
+export const getStrategySnapshot = (symbol, interval, options = {}, requestOptions = {}) =>
+  fetchJson(`/api/strategy/snapshot?${buildParams(symbol, interval, options)}`, requestOptions);
 
-export const getStrategyReplay = (symbol, interval, options = {}) =>
-  fetchJson(`/api/strategy/replay?${buildParams(symbol, interval, options)}`);
+export const getStrategyReplay = (symbol, interval, options = {}, requestOptions = {}) =>
+  fetchJson(`/api/strategy/replay?${buildParams(symbol, interval, options)}`, requestOptions);

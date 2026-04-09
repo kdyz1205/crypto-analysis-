@@ -1,7 +1,7 @@
 // frontend/js/services/agent.js
 import { fetchJson } from '../util/fetch.js';
 
-export const getStatus = () => fetchJson('/api/agent/status');
+export const getStatus = (requestOptions = {}) => fetchJson('/api/agent/status', requestOptions);
 export const start = () => fetchJson('/api/agent/start', { method: 'POST' });
 export const stop = () => fetchJson('/api/agent/stop', { method: 'POST' });
 export const revive = () => fetchJson('/api/agent/revive', { method: 'POST' });

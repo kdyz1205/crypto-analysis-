@@ -3,7 +3,7 @@
 import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays } from './workbench/chart.js';
 import { initTicker } from './workbench/ticker.js';
 import { initTimeframe } from './workbench/timeframe.js';
-import { initDecisionRail } from './workbench/decision_rail.js';
+import { initDecisionRail, refreshDecisionRail } from './workbench/decision_rail.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
 import { initCommandPalette, openPalette } from './command_palette/palette.js';
 import { initGlassbox } from './control/glassbox.js';
@@ -63,23 +63,42 @@ function boot() {
     .then(() => markBoot('symbols', 'ok', 'loaded'))
     .catch((err) => { markBoot('symbols', 'error', err.message); console.error('[boot] ticker:', err); });
 
-  // 2. Load initial chart data
+  // 2. Load initial chart data first. Strategy overlays and execution state
+  // are more useful than opening the long-lived SSE stream immediately.
   loadCurrent(true)
     .then(() => {
       markBoot('chart', 'ok', 'data loaded');
       markBoot('patterns', 'ok', 'loaded');
       startLiveUpdates(30000);
+      setTimeout(() => {
+        refreshDecisionRail()
+          .then(() => markBoot('rail', 'ok', 'loaded'))
+          .catch((err) => {
+            markBoot('rail', 'error', err.message);
+            console.error('[boot] decision rail:', err);
+          });
+      }, 5000);
+      setTimeout(() => {
+        try {
+          connectStream();
+          markBoot('stream', 'pending', 'connecting');
+          subscribe('connected', () => markBoot('stream', 'ok', 'alive'));
+        } catch (err) {
+          markBoot('stream', 'error', err.message);
+        }
+      }, 10000);
     })
-    .catch((err) => { markBoot('chart', 'error', err.message); console.error('[boot] chart data:', err); });
-
-  // 3. Connect SSE stream (long-lived, don't treat as loading)
-  try {
-    connectStream();
-    markBoot('stream', 'ok', 'connected');
-    subscribe('connected', () => markBoot('stream', 'ok', 'alive'));
-  } catch (err) {
-    markBoot('stream', 'error', err.message);
-  }
+    .catch((err) => {
+      markBoot('chart', 'error', err.message);
+      console.error('[boot] chart data:', err);
+      try {
+        connectStream();
+        markBoot('stream', 'pending', 'connecting');
+        subscribe('connected', () => markBoot('stream', 'ok', 'alive'));
+      } catch (streamErr) {
+        markBoot('stream', 'error', streamErr.message);
+      }
+    });
 
   console.log('[main] Trading OS v2 shell mounted (data loading in background)');
 }
