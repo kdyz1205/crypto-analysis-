@@ -3,7 +3,7 @@
 import { $ } from '../util/dom.js';
 import { marketState, setCandles, setPrecision } from '../state/market.js';
 import { strategyState, setStrategyConfig, setStrategyError, setStrategySnapshot, clearStrategySnapshot, clearStrategyReplay, getCurrentStrategySnapshot, setStrategyLayerVisible } from '../state/strategy.js';
-import { subscribe } from '../util/events.js';
+import { publish, subscribe } from '../util/events.js';
 import * as marketSvc from '../services/market.js';
 import * as patternsSvc from '../services/patterns.js';
 import * as strategySvc from '../services/strategy.js';
@@ -150,6 +150,11 @@ export async function loadCurrent(forcePatterns = false) {
 
     updateHeader(currentSymbol, currentInterval, lastPrice);
     console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
+    publish('chart.load.succeeded', {
+      symbol: currentSymbol,
+      interval: currentInterval,
+      loadSeq,
+    });
 
     const patternKey = `${currentSymbol}:${currentInterval}`;
     const shouldLoadPatterns = forcePatterns || lastPatternKey !== patternKey;

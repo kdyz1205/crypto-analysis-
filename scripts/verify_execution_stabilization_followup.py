@@ -167,6 +167,116 @@ BOOT_FAILURE_PRELOAD = (
 )
 
 
+STALE_FIRST_LOAD_BOOT_PRELOAD = (
+    _lightweight_charts_stub()
+    + """
+(() => {
+  window.__eventSourceCount = 0;
+  window.__intervalLog = [];
+  window.__requestLog = [];
+
+  const originalSetInterval = window.setInterval.bind(window);
+  window.setInterval = (fn, delay, ...args) => {
+    window.__intervalLog.push({
+      delay,
+      source: String(fn),
+    });
+    return originalSetInterval(fn, delay, ...args);
+  };
+
+  window.EventSource = class MockEventSource {
+    constructor(url) {
+      this.url = url;
+      window.__eventSourceCount += 1;
+      setTimeout(() => this.onopen && this.onopen(), 10);
+    }
+    addEventListener() {}
+    close() {}
+  };
+
+  const jsonResponse = (payload, status = 200) =>
+    Promise.resolve(new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+  const candlesPayload = (symbol) => ({
+    candles: [
+      { time: 1711929600, open: 1.0, high: 2.0, low: 0.5, close: symbol === 'AAAUSDT' ? 2.2 : 1.2 },
+      { time: 1711944000, open: 1.2, high: 2.2, low: 1.0, close: symbol === 'AAAUSDT' ? 2.4 : 1.8 },
+      { time: 1711958400, open: 1.8, high: 2.4, low: 1.4, close: symbol === 'AAAUSDT' ? 2.6 : 2.0 },
+    ],
+    volume: [],
+    overlays: {},
+    pricePrecision: 2,
+  });
+
+  const strategyConfig = {
+    layerDefaults: {
+      trendlines: true,
+      touchMarkers: true,
+      projectedLine: true,
+      signalMarkers: true,
+      invalidationMarkers: true,
+      orderMarkers: false,
+    },
+    tickSize: 0.01,
+  };
+
+  const strategySnapshot = {
+    snapshot: {
+      candidate_lines: [],
+      active_lines: [],
+      line_states: [],
+      touch_points: [],
+      signals: [],
+      signal_states: [],
+      invalidations: [],
+      orders: [],
+    },
+  };
+
+  window.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (url.includes('/api/symbols')) return jsonResponse(['HYPEUSDT', 'AAAUSDT']);
+    if (url.includes('/api/ohlcv')) {
+      const parsed = new URL(url, window.location.origin);
+      const symbol = parsed.searchParams.get('symbol');
+      const delay = symbol === 'HYPEUSDT' ? 2500 : 100;
+      window.__requestLog.push(`ohlcv:${symbol}`);
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(new Response(JSON.stringify(candlesPayload(symbol)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })), delay);
+      });
+    }
+    if (url.includes('/api/strategy/config')) return jsonResponse(strategyConfig);
+    if (url.includes('/api/strategy/snapshot')) return jsonResponse(strategySnapshot);
+    if (url.includes('/api/patterns')) {
+      const parsed = new URL(url, window.location.origin);
+      const symbol = parsed.searchParams.get('symbol');
+      window.__requestLog.push(`patterns:${symbol}`);
+      return jsonResponse({
+        supportLines: [{ t1: 1711929600, t2: 1711958400, v1: symbol === 'AAAUSDT' ? 111 : 99, v2: symbol === 'AAAUSDT' ? 111 : 99 }],
+        resistanceLines: [],
+        consolidationZones: [],
+        patterns: [],
+        currentTrend: 0,
+        trendLabel: 'SIDEWAYS',
+        trendSlope: 0,
+      });
+    }
+    if (url.includes('/api/agent/summary')) return jsonResponse({});
+    if (url.includes('/api/agent/risk-state')) return jsonResponse({});
+    if (url.includes('/api/agent/signal-candidates')) return jsonResponse({ count: 0, candidates: [] });
+    return jsonResponse({});
+  };
+})();
+"""
+)
+
+
 STALE_OVERLAY_PRELOAD = (
     _lightweight_charts_stub()
     + """
@@ -329,6 +439,52 @@ def verify_boot_failure(base_url: str) -> VerificationResult:
     return VerificationResult("boot_failure", passed, details)
 
 
+def verify_stale_first_load_boot_recovery(base_url: str) -> VerificationResult:
+    driver = _build_driver(STALE_FIRST_LOAD_BOOT_PRELOAD)
+    try:
+      driver.get(f"{base_url}/v2")
+      time.sleep(1.0)
+      driver.execute_script(
+          """
+          const select = document.getElementById('v2-symbol-select');
+          select.value = 'AAAUSDT';
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+          """
+      )
+      time.sleep(13)
+      details = driver.execute_script(
+          """
+          const pills = document.querySelectorAll('#v2-boot-status .boot-pill');
+          const intervalLog = window.__intervalLog || [];
+          return {
+            chartClass: pills[1]?.className || '',
+            chartTitle: pills[1]?.title || '',
+            patternsClass: pills[2]?.className || '',
+            patternsTitle: pills[2]?.title || '',
+            streamClass: pills[4]?.className || '',
+            streamTitle: pills[4]?.title || '',
+            eventSourceCount: window.__eventSourceCount || 0,
+            liveUpdateIntervalCount: intervalLog.filter((entry) => entry.source.includes('loadCurrent')).length,
+            intervalLog,
+            requestLog: window.__requestLog || [],
+          };
+          """
+      )
+    finally:
+      driver.quit()
+
+    request_log = details["requestLog"]
+    passed = (
+        "boot-ok" in details["chartClass"]
+        and "boot-ok" in details["patternsClass"]
+        and details["eventSourceCount"] == 1
+        and details["liveUpdateIntervalCount"] == 1
+        and any(entry == "ohlcv:HYPEUSDT" for entry in request_log)
+        and any(entry == "ohlcv:AAAUSDT" for entry in request_log)
+    )
+    return VerificationResult("stale_first_load_boot_recovery", passed, details)
+
+
 def verify_stale_overlay_guard(base_url: str) -> VerificationResult:
     driver = _build_driver(STALE_OVERLAY_PRELOAD)
     try:
@@ -377,6 +533,7 @@ def main() -> int:
         base_url = f"http://127.0.0.1:{port}"
         results = [
             verify_boot_failure(base_url),
+            verify_stale_first_load_boot_recovery(base_url),
             verify_stale_overlay_guard(base_url),
         ]
     finally:
