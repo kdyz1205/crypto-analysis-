@@ -353,19 +353,25 @@ class Trendline:
     side: Literal["resistance", "support"]
     state: Literal["candidate", "confirmed", "armed", "triggered", "invalidated", "closed"]
     anchor_pivot_ids: list[str]
-    touch_pivot_ids: list[str]
+    confirming_touch_pivot_ids: list[str]
     x1: int
     y1: float
     x2: int
     y2: float
     slope: float
     intercept: float
-    touch_count: int
+    confirming_touch_count: int
+    recent_bar_touch_count: int
     score: float
     tolerance_abs: float
     confirmed_at_index: int | None
     invalidated_at_index: int | None
 ```
+
+关键点：
+
+- `anchor_pivot_ids` 与 `confirming_touch_pivot_ids` 都只允许引用已确认 pivot。
+- 任意普通 `bar touch` 不得直接写入结构确认字段，只能用于 armed / trigger 相关状态。
 
 ### 4. ProjectedLinePrice
 
@@ -545,6 +551,11 @@ class PositionState:
 ## 分阶段实施顺序
 
 以下顺序以“最小侵入、便于 review”为原则，和当前仓库最匹配。
+其中需要额外冻结一条执行纪律：
+
+1. `Bitget-first` 指的是系统最终接入与实盘执行优先支持 Bitget。
+2. 但纯策略核心必须保持交易所无关，因此阶段 3 不应被 Bitget adapter 阻塞。
+3. 更稳的推进法是：先用当前已标准化的历史 candles 完成纯策略核心，再补 Bitget adapter，并将其接入统一 schema。
 
 ### 阶段 2：冻结策略规格
 
@@ -569,35 +580,12 @@ class PositionState:
 - 规则定义不严导致后续实现阶段频繁返工
 - 未明确 future leak 约束
 
-### 阶段 2.5：Bitget 数据接入与标准化
-
-输入：
-
-- 当前 `server/data_service.py`
-- Bitget 行情接口返回格式
-
-输出：
-
-- Bitget market adapter
-- 统一 candles / symbol info / precision schema
-
-验收标准：
-
-- 能从 Bitget 拉取历史和近实时 candles
-- 输出格式与后续策略核心完全解耦，不把 Bitget 特殊字段泄漏进策略层
-- `/api/ohlcv` 或等效内部入口可用同一 schema 返回数据
-
-主要风险：
-
-- 直接把 Bitget 字段结构渗透进策略函数
-- 数据源切换时前端或 replay 使用了不同 schema
-
 ### 阶段 3：实现纯策略核心
 
 输入：
 
 - `docs/strategy_spec.md`
-- 标准化后的 candles schema
+- 当前仓库已标准化的 candles schema
 
 输出：
 
@@ -614,6 +602,36 @@ class PositionState:
 
 - 直接调用 `sr_patterns.py` 导致边界模糊
 - pivot 确认仍然偷偷看未来
+
+说明：
+
+- 若阶段 3 需要行情样本，优先使用当前仓库已经能返回的标准 OHLCV schema。
+- 阶段 3 只冻结纯函数输入/输出边界，不等待 Bitget adapter 完成。
+
+### 阶段 3.5：Bitget 数据接入与标准化
+
+输入：
+
+- 当前 `server/data_service.py`
+- Bitget 行情接口返回格式
+- 阶段 3 已冻结的策略输入 schema
+
+输出：
+
+- Bitget market adapter
+- 统一 candles / symbol info / precision schema
+
+验收标准：
+
+- 能从 Bitget 拉取历史和近实时 candles
+- 输出格式与策略核心完全解耦，不把 Bitget 特殊字段泄漏进策略层
+- `/api/ohlcv` 或等效内部入口可用同一 schema 返回数据
+- 阶段 3 的纯策略核心无需改签名即可直接消费 Bitget 标准化结果
+
+主要风险：
+
+- 直接把 Bitget 字段结构渗透进策略函数
+- 数据源切换时前端或 replay 使用了不同 schema
 
 ### 阶段 4：实现逐 bar 历史回放器
 

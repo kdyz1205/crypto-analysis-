@@ -165,6 +165,37 @@ L(t) = m * (t - t1) + p1
 
 - `lookback_bars = 300`
 
+#### 4.3.4 候选线剪枝与去重
+
+v1 必须在候选线生成阶段就做剪枝，避免两点枚举导致候选线数量爆炸、相似线堆积和结果不稳定。
+
+默认规则：
+
+1. 同一 side 下，每个最新 pivot 只允许向前回看最近 `max_anchor_combinations_per_pivot` 个可用 anchor。
+2. 若两条候选线的 slope 差异不超过 `line_merge_slope_eps`，且当前 bar 的 projected price 差异不超过 `line_merge_price_eps(t)`，则视为相似线，只保留 `line_score` 更高的一条。
+3. 同一 side 在任意时刻最多保留 `max_candidate_lines_per_side` 条候选线进入评分阶段。
+4. 进入 active pool 的线最多保留 `max_active_lines_per_side` 条。
+5. 若某条线在非 touch 条件下被实体穿越超过 `max_non_touch_crosses` 次，则该线不得继续留在候选池。
+
+定义：
+
+```text
+line_merge_price_eps(t) = max(
+  merge_price_atr_mult * ATR(t),
+  merge_price_pct * close[t]
+)
+```
+
+默认参数：
+
+- `max_anchor_combinations_per_pivot = 8`
+- `max_candidate_lines_per_side = 50`
+- `max_active_lines_per_side = 5`
+- `line_merge_slope_eps = 0.0005`
+- `merge_price_atr_mult = 0.10`
+- `merge_price_pct = 0.001`
+- `max_non_touch_crosses = 2`
+
 ### 4.4 Touch 容差定义
 
 趋势线不是一根绝对零厚度的像素线，必须定义容差带。
@@ -231,20 +262,33 @@ close[t] >= L(t) - close_touch_slack
 
 若两个 touch 的 bar 距离小于该阈值，则仅保留更接近趋势线的一次。
 
+#### 4.7.1 v1 中 touch 的角色划分
+
+为避免 pivot、普通触线 bar、确认 touch 混用，v1 明确冻结如下边界：
+
+1. `anchor pivot` 必须来自已确认 pivot。
+2. `confirming touch` 也必须来自已确认 pivot，且仅它能参与结构确认、残差计算、line score。
+3. `bar touch` 可以来自任意已收盘 bar 命中容差带，但它只用于 `ARMED`、`REJECTION`、`FAILED_BREAKOUT` 等交易触发，不用于把线从 `CANDIDATE` 升级到 `CONFIRMED`。
+
+因此：
+
+- 结构确认统计使用 `confirming_touch_count`
+- 交易触发统计使用 `bar_touch`
+
 ### 4.8 三次确认定义
 
 一条候选趋势线从 `CANDIDATE` 升级为 `CONFIRMED`，必须同时满足：
 
-1. `touch_count >= min_touches`
+1. `confirming_touch_count >= min_touches`
 2. `min_touches = 3`
-3. 任意相邻两次 touch 间隔 `>= min_touch_spacing_bars`
+3. 任意相邻两次 `confirming touch` 间隔 `>= min_touch_spacing_bars`
 4. 线的最大残差 `<= max_line_error`
 5. 在确认前未发生明确失效
 
 其中残差定义为：
 
 ```text
-residual_i = abs(pivot_price_i - L(t_i))
+residual_i = abs(confirming_pivot_price_i - L(t_i))
 ```
 
 最大允许残差：
@@ -281,7 +325,7 @@ line_score =
 #### touch_score
 
 ```text
-touch_score = min(touch_count / 5, 1)
+touch_score = min(confirming_touch_count / 5, 1)
 ```
 
 #### fit_score
@@ -292,24 +336,55 @@ fit_score = 1 - normalized_mean_residual
 
 #### spacing_score
 
-touch 分布越均匀越高，过度集中越低。
+```text
+spacing_score = clamp(mean_confirming_touch_gap / target_touch_gap, 0, 1)
+```
+
+默认：
+
+- `target_touch_gap = 12`
 
 #### recency_score
 
-最近一次 touch 离当前 bar 越近越高。
+```text
+recency_score = clamp(1 - bars_since_last_confirming_touch / max_fresh_bars, 0, 1)
+```
 
 #### slope_score
 
-斜率过平或过陡都降分。
-建议对 `abs(m)` 设置合理区间评分。
+```text
+slope_score =
+  1, if min_slope_abs <= abs(m) <= max_slope_abs
+  0, otherwise
+```
+
+默认：
+
+- `min_slope_abs = 0.0001`
+- `max_slope_abs = 0.0200`
 
 #### cleanliness_score
 
-若线附近存在大量穿越、来回噪音，则降分。
+```text
+cleanliness_score = clamp(1 - non_touch_cross_count / cleanliness_cross_cap, 0, 1)
+```
+
+默认：
+
+- `cleanliness_cross_cap = 3`
 
 #### breakout_risk_penalty
 
-若近阶段对该线测试过多、逼近动能增强、压缩过久，则增加突破风险惩罚。
+```text
+breakout_risk_penalty = clamp(recent_test_count / breakout_risk_test_cap, 0, 1)
+```
+
+其中 `recent_test_count` 定义为最近 `recent_test_window_bars` 内对同一条线的 `bar touch` 次数。
+
+默认：
+
+- `recent_test_window_bars = 30`
+- `breakout_risk_test_cap = 4`
 
 默认确认阈值：
 
@@ -321,20 +396,29 @@ line_score >= 60
 
 这套模型不是单纯“碰线就做”，而是一个结构事件评分系统。
 
+### 5.0 v1 因子冻结原则
+
+为避免阶段 3 实现时由代码自行发明公式，v1 只保留可直接公式化的因子项，复杂上下文项先冻结为 `0` 或降级为简化版本：
+
+- `VolumeFailure = 0`
+- `TrendContext = 0`
+- `ConfluenceScore = 0`
+- `FreshnessScore = clamp(1 - bars_since_last_confirming_touch / max_fresh_bars, 0, 1)`
+- `BreakoutRisk = clamp(recent_test_count / breakout_risk_test_cap, 0, 1)`
+
+后续版本如需启用量能、高周期趋势、VWAP 共振等项，必须先补正式公式和测试，再提高规格版本。
+
 ### 5.1 做空因子：ResistanceShortScore
 
 定义：
 
 ```text
 ResistanceShortScore(t) =
-  0.18 * TouchStrength
-+ 0.14 * FitTightness
-+ 0.18 * RejectionStrength
-+ 0.12 * DistanceCompression
-+ 0.08 * VolumeFailure
-+ 0.10 * TrendContext
-+ 0.12 * ConfluenceScore
-+ 0.08 * FreshnessScore
+  0.26 * TouchStrength
++ 0.20 * FitTightness
++ 0.26 * RejectionStrength
++ 0.16 * DistanceCompression
++ 0.12 * FreshnessScore
 - 0.15 * BreakoutRisk
 ```
 
@@ -344,43 +428,57 @@ ResistanceShortScore(t) =
 
 ##### TouchStrength
 
-touch 越多越高，但 5 次以上不再继续线性加分。
+```text
+TouchStrength = min(confirming_touch_count / 5, 1)
+```
 
 ##### FitTightness
 
-触点对线的残差越小越高。
+```text
+FitTightness = clamp(1 - normalized_mean_residual, 0, 1)
+```
 
 ##### RejectionStrength
 
 当前触线 bar 的拒绝程度：
 
-- 上影线越长越高
-- `close` 越远离线下方越高
-- 高点触线但收盘回落越高
+```text
+RejectionStrength = clamp(
+  0.6 * wick_score + 0.4 * close_reclaim_score,
+  0,
+  1
+)
+```
+
+其中：
+
+```text
+wick_score = clamp(upper_wick_ratio / rejection_wick_ratio_cap, 0, 1)
+close_reclaim_score = clamp((L(t) - close[t]) / rejection_close_norm, 0, 1)
+rejection_close_norm = max(0.12 * ATR(t), 0.0015 * close[t])
+```
 
 ##### DistanceCompression
 
-当前价格与 projected resistance 越近，分越高。
-
-##### VolumeFailure
-
-冲线时量能放大但收盘站不住，分越高。
-
-##### TrendContext
-
-更高周期趋势偏空、价格位于关键均线下方、结构为 lower highs/lower lows，则加分。
-
-##### ConfluenceScore
-
-若阻力线与前高、整数关口、VWAP、Anchored VWAP、高周期阻力共振，则加分。
+```text
+DistanceCompression = clamp(
+  1 - abs(close[t] - projected_resistance_next) / arm_distance,
+  0,
+  1
+)
+```
 
 ##### FreshnessScore
 
-线过旧降分，较新结构加分。
+```text
+FreshnessScore = clamp(1 - bars_since_last_confirming_touch / max_fresh_bars, 0, 1)
+```
 
 ##### BreakoutRisk
 
-近阶段测试越多、压缩越极端、靠近时动量越强，则突破风险越高，减分越大。
+```text
+BreakoutRisk = clamp(recent_test_count / breakout_risk_test_cap, 0, 1)
+```
 
 ### 5.2 做多因子：SupportLongScore
 
@@ -388,15 +486,18 @@ touch 越多越高，但 5 次以上不再继续线性加分。
 
 ```text
 SupportLongScore(t) =
-  0.18 * TouchStrength
-+ 0.14 * FitTightness
-+ 0.18 * RejectionStrength
-+ 0.12 * DistanceCompression
-+ 0.08 * VolumeFailure
-+ 0.10 * TrendContext
-+ 0.12 * ConfluenceScore
-+ 0.08 * FreshnessScore
+  0.26 * TouchStrength
++ 0.20 * FitTightness
++ 0.26 * RejectionStrength
++ 0.16 * DistanceCompression
++ 0.12 * FreshnessScore
 - 0.15 * BreakdownRisk
+```
+
+其中 `RejectionStrength`、`DistanceCompression`、`FreshnessScore` 与做空对称定义，`BreakdownRisk` 使用相同的简化公式：
+
+```text
+BreakdownRisk = clamp(recent_test_count / breakout_risk_test_cap, 0, 1)
 ```
 
 ### 5.3 因子筛选阈值
@@ -561,7 +662,7 @@ trigger_buffer = max(0.02 * ATR(t), tick_size)
 
 满足：
 
-- `touch_count >= 3`
+- `confirming_touch_count >= 3`
 - `line_score >= confirm_threshold`
 - 未失效
 
@@ -595,7 +696,7 @@ trigger_buffer = max(0.02 * ATR(t), tick_size)
 
 满足：
 
-- `bars_since_last_touch > max_fresh_bars`
+- `bars_since_last_confirming_touch > max_fresh_bars`
 - 结构过旧
 
 ##### `TRIGGERED -> CLOSED`
@@ -642,6 +743,23 @@ signal_id = hash(
 
 ## 8. 下单规则
 
+### 8.0 同 symbol 信号优先级与冲突处理
+
+当同一 `symbol` / `timeframe` 上同时存在多条候选线或多个待执行信号时，v1 固定使用以下排序：
+
+1. `score` 更高者优先
+2. `confirming_touch_count` 更多者优先
+3. 当前价格到目标线的距离更近者优先
+4. `trigger_mode` 优先级按 `failed_breakout > rejection > pre_limit`
+5. 最近一次 confirming touch 更新更近者优先
+6. 若仍并列，则按稳定排序键 `line_id` 升序
+
+冲突处理规则：
+
+1. 同一 `symbol` 同时只允许一个活跃方向仓位。
+2. 若已有持仓，则反向新信号默认阻塞，不做同 bar 反手。
+3. 若已有待成交订单，则低优先级信号不得抢占，除非高优先级信号已触发显式撤单条件。
+
 ### 8.1 下单前置条件
 
 任何订单提交前，必须满足：
@@ -676,15 +794,26 @@ position_size = risk_amount / abs(entry_price - stop_price)
 
 ### 8.3 止损规则
 
+#### 8.3.0 按触发模式拆分止损源
+
+v1 明确不同 trigger mode 的止损参照物，禁止实现时自行推断：
+
+- `pre_limit`
+  - 做空：`stop_source = max(projected_line_price, latest_confirming_touch_high)`
+  - 做多：`stop_source = min(projected_line_price, latest_confirming_touch_low)`
+- `rejection`
+  - 做空：`stop_source = rejection_bar_high`
+  - 做多：`stop_source = rejection_bar_low`
+- `failed_breakout`
+  - 做空：`stop_source = breakout_failure_bar_high`
+  - 做多：`stop_source = breakout_failure_bar_low`
+
 #### 做空
 
 默认止损：
 
 ```text
-stop_price = max(
-  rejection_bar_high,
-  projected_line_price + stop_buffer
-)
+stop_price = stop_source + stop_buffer
 ```
 
 其中：
@@ -705,7 +834,9 @@ stop_buffer = max(
 
 #### 做多
 
-对称定义。
+```text
+stop_price = stop_source - stop_buffer
+```
 
 ### 8.4 止盈规则
 
@@ -748,6 +879,15 @@ v1 可以先不实现 trailing。
 
 - `cancel_after_bars = 3`
 
+### 8.6 同 bar 冲突成交规则
+
+K 线回测与 paper trading 无法知道同一 bar 内部真实成交顺序时，v1 统一采用保守最差成交规则：
+
+1. 若同一 bar 内同时可达 `entry` 与 `stop`，则按“先成交 entry，再触发 stop”处理。
+2. 若同一 bar 内同时可达 `entry` 与 `tp`，仍按保守原则，不允许假设先到达 tp。
+3. 若同一 bar 内同时可达 `entry`、`stop`、`tp`，则按最不利顺序处理，即视为 `entry -> stop`。
+4. 该规则必须同时用于 backtest、replay 导出和 paper trading fill simulation。
+
 ## 9. 风控规则
 
 ### 9.1 基础风险约束
@@ -769,6 +909,16 @@ v1 可以先不实现 trailing。
 - `max_daily_loss = 0.02`
 - `max_consecutive_losses = 3`
 - `cooldown_bars_after_loss = 10`
+
+### 9.1.1 冷却期定义
+
+v1 将冷却期固定为可执行规则，避免执行层和回测层理解不一致：
+
+- `cooldown_scope = symbol + timeframe + direction`
+- `cooldown_trigger = stopped_out or invalidated_after_entry`
+- `cooldown_bars = cooldown_bars_after_loss`
+- `tp_close` 不触发 cooldown
+- 未成交订单取消、未入场信号失效，不触发 cooldown
 
 ### 9.2 禁开仓条件
 
@@ -833,7 +983,7 @@ break_distance = max(
 当：
 
 ```text
-bars_since_last_touch > max_fresh_bars
+bars_since_last_confirming_touch > max_fresh_bars
 ```
 
 则线进入 `EXPIRED`。
@@ -882,7 +1032,8 @@ v1 默认：
 1. 限价单：若下一 bar 的价格区间包含委托价，则视为成交
 2. 市价单：按下一 bar 开盘价加滑点成交
 3. 止损：触及则按最差合理价格成交
-4. 允许未来版本加入部分成交模拟
+4. 同 bar 的 `entry / stop / tp` 冲突一律按 8.6 的保守最差成交规则处理
+5. 允许未来版本加入部分成交模拟
 
 ### 11.5 回测与实时一致性
 
@@ -894,6 +1045,13 @@ v1 默认：
 - `update_line_state`
 - `generate_signal`
 - `compute_order_plan`
+
+并且必须共享同一套：
+
+- 候选线剪枝 / 去重规则
+- 信号优先级规则
+- 冷却期规则
+- 同 bar 冲突成交规则
 
 禁止：
 
@@ -967,7 +1125,9 @@ v1 默认：
 - `price_end`
 - `slope`
 - `intercept`
-- `touch_count`
+- `bar_touch_count`
+- `confirming_touch_count`
+- `recent_bar_touch_count`
 - `line_score`
 - `projected_price_current`
 - `projected_price_next`
@@ -994,6 +1154,7 @@ v1 默认：
 - `timestamp`
 - `trigger_bar_index`
 - `score`
+- `priority_rank`
 - `entry_mode`
 - `entry_price`
 - `stop_price`
@@ -1016,6 +1177,7 @@ v1 默认：
 - `avg_fill_price`
 - `stop_price`
 - `tp_price`
+- `cooldown_scope`
 - `created_at`
 - `updated_at`
 
@@ -1033,6 +1195,7 @@ v1 默认：
 - `tp_price`
 - `linked_signal_id`
 - `opened_at`
+- `close_reason`
 
 ### 13.6 前端图层要求
 
@@ -1132,6 +1295,19 @@ line_error_pct = 0.003
 min_touches = 3
 min_touch_spacing_bars = 5
 confirm_threshold = 60
+max_anchor_combinations_per_pivot = 8
+max_candidate_lines_per_side = 50
+max_active_lines_per_side = 5
+line_merge_slope_eps = 0.0005
+merge_price_atr_mult = 0.10
+merge_price_pct = 0.001
+max_non_touch_crosses = 2
+target_touch_gap = 12
+min_slope_abs = 0.0001
+max_slope_abs = 0.0200
+cleanliness_cross_cap = 3
+recent_test_window_bars = 30
+breakout_risk_test_cap = 4
 
 arm_atr_mult = 0.20
 arm_pct = 0.003
@@ -1154,6 +1330,9 @@ max_daily_loss = 0.02
 max_consecutive_losses = 3
 cancel_after_bars = 3
 cooldown_bars_after_loss = 10
+cooldown_scope = symbol + timeframe + direction
+same_bar_conflict_policy = conservative_worst_case
+trigger_mode_priority = failed_breakout > rejection > pre_limit
 ```
 
 ## 16. 给 Codex / Cursor 的直接执行指令
