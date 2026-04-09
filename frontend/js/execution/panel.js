@@ -25,8 +25,15 @@ import * as liveExecSvc from '../services/live_execution.js';
 import { formatPct, formatPrice, formatUsd, pnlColorClass } from '../util/format.js';
 
 const PANEL_POLL_MS = 15000;
+const AGENT_STATUS_TIMEOUT_MS = 4000;
 
 let pollTimer = null;
+let paperStatePromise = null;
+let paperConfigPromise = null;
+const agentPanelState = {
+  loading: false,
+  lastError: null,
+};
 const liveBridgeState = {
   status: null,
   lastError: null,
@@ -118,13 +125,201 @@ function paintLoading() {
   }
 }
 
+function hasExecutionShell(container = $('[data-subtab="execution"]')) {
+  return !!container?.querySelector('#v2-exec-paper-section');
+}
+
+function renderLoadingSection(title, message) {
+  return `
+    <section class="paper-section">
+      <div class="paper-section-header">
+        <h4>${escapeHtml(title)}</h4>
+        <span class="paper-badge is-muted">Loading</span>
+      </div>
+      <div class="paper-note">${escapeHtml(message)}</div>
+    </section>
+  `;
+}
+
+function renderExecutionShell() {
+  return [
+    '<div id="v2-exec-paper-section">',
+    renderLoadingSection('Paper Orders / Positions', 'Loading paper execution...'),
+    '</div>',
+    '<div id="v2-exec-agent-section">',
+    renderLoadingSection('Agent Execution', 'Loading agent execution...'),
+    '</div>',
+    '<div id="v2-exec-live-section">',
+    renderLoadingSection('Live Bridge', 'Loading live bridge...'),
+    '</div>',
+  ].join('');
+}
+
+function ensureExecutionShell(container = $('[data-subtab="execution"]')) {
+  if (!container || hasExecutionShell(container)) return container;
+  setHtml(container, renderExecutionShell());
+  return container;
+}
+
+function patchExecutionModeBadge(status = agentState.lastStatus) {
+  const modeBadge = $('#v2-exec-mode');
+  if (!modeBadge) return;
+  modeBadge.textContent = status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
+}
+
+function patchAgentExecutionSection(status, error, options = {}) {
+  const section = $('#v2-exec-agent-section');
+  if (!section) return;
+  if (status) {
+    setHtml(section, renderAgentExecutionSection(status, error));
+  } else if (options.loading) {
+    setHtml(section, renderLoadingSection('Agent Execution', 'Loading agent execution...'));
+  } else {
+    setHtml(section, renderUnavailableSection('Agent Execution', error || 'Agent execution unavailable'));
+  }
+  wireLegacyExecutionControls();
+}
+
+function patchPaperExecutionSection(state, error, lastStepResult = paperExecutionState.lastStepResult, options = {}) {
+  const section = $('#v2-exec-paper-section');
+  if (!section) return;
+  if (state) {
+    setHtml(section, renderPaperExecutionSection(state, error, lastStepResult));
+  } else if (options.loading) {
+    setHtml(section, renderLoadingSection('Paper Orders / Positions', 'Loading paper execution...'));
+  } else {
+    setHtml(section, renderUnavailableSection('Paper Orders / Positions', error || 'Paper execution state unavailable'));
+  }
+  wirePaperExecutionControls();
+}
+
+function patchLiveBridgeSection(status, error, paperState = paperExecutionState.state, options = {}) {
+  const section = $('#v2-exec-live-section');
+  if (!section) return;
+  if (status) {
+    setHtml(section, renderLiveBridgeSection(status, error, paperState));
+  } else if (options.loading) {
+    setHtml(section, renderLoadingSection('Live Bridge', 'Loading live bridge...'));
+  } else {
+    setHtml(section, renderUnavailableSection('Live Bridge', error || 'Live bridge status unavailable'));
+  }
+  wireLiveBridgeControls();
+}
+
+function isExecutionTabVisible() {
+  return agentState.panelOpen && agentState.activeSubTab === 'execution';
+}
+
+function repaintExecutionSections({ paper = false, agent = false, live = false } = {}) {
+  if (!isExecutionTabVisible()) return false;
+  ensureExecutionShell();
+  if (paper) {
+    patchPaperExecutionSection(
+      paperExecutionState.state,
+      paperExecutionState.lastError,
+      paperExecutionState.lastStepResult,
+      { loading: paperExecutionState.loadingState && !paperExecutionState.state },
+    );
+  }
+  if (agent) {
+    patchExecutionModeBadge();
+    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
+      loading: agentPanelState.loading && !agentState.lastStatus,
+    });
+  }
+  if (live) {
+    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
+      loading: liveBridgeState.loading && !liveBridgeState.status,
+    });
+  }
+  return true;
+}
+
+async function refreshAgentExecutionSection(force = true) {
+  if (!ensureExecutionShell()) return agentState.lastStatus;
+  if (agentPanelState.loading) {
+    patchExecutionModeBadge();
+    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
+      loading: !agentState.lastStatus,
+    });
+    return agentState.lastStatus;
+  }
+  if (!force && agentState.lastStatus) {
+    patchExecutionModeBadge(agentState.lastStatus);
+    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError);
+    return agentState.lastStatus;
+  }
+
+  agentPanelState.loading = true;
+  patchExecutionModeBadge();
+  patchAgentExecutionSection(agentState.lastStatus, null, { loading: !agentState.lastStatus });
+  try {
+    const status = await refreshAgentStatus();
+    agentPanelState.lastError = null;
+    patchExecutionModeBadge(status);
+    patchAgentExecutionSection(status, null);
+    return status;
+  } catch (err) {
+    const message = safeErrorMessage(err);
+    agentPanelState.lastError = message;
+    patchExecutionModeBadge();
+    patchAgentExecutionSection(agentState.lastStatus, message);
+    throw err;
+  } finally {
+    agentPanelState.loading = false;
+  }
+}
+
+async function refreshLiveExecutionSection(force = true) {
+  if (!ensureExecutionShell()) return liveBridgeState.status;
+  if (liveBridgeState.loading) {
+    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
+      loading: !liveBridgeState.status,
+    });
+    return liveBridgeState.status;
+  }
+  if (!force && liveBridgeState.status) {
+    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state);
+    return liveBridgeState.status;
+  }
+
+  patchLiveBridgeSection(liveBridgeState.status, null, paperExecutionState.state, {
+    loading: !liveBridgeState.status,
+  });
+  try {
+    const status = await loadLiveExecutionStatus(force);
+    patchLiveBridgeSection(status, null, paperExecutionState.state);
+    return status;
+  } catch (err) {
+    patchLiveBridgeSection(liveBridgeState.status, safeErrorMessage(err), paperExecutionState.state);
+    throw err;
+  }
+}
+
 function startPolling() {
   stopPolling();
   pollTimer = setInterval(async () => {
     if (!agentState.panelOpen) return;
-    await Promise.allSettled([refreshAgentStatus(), loadPaperExecutionState(), loadLiveExecutionStatus()]);
+    let paperError = null;
+    try {
+      await loadPaperExecutionState(true);
+    } catch (err) {
+      paperError = safeErrorMessage(err);
+    }
     if (agentState.activeSubTab === 'risk' && !paperExecutionState.config) {
       await loadPaperExecutionConfig().catch(() => null);
+    }
+    if (agentState.activeSubTab === 'execution') {
+      ensureExecutionShell();
+      patchPaperExecutionSection(
+        paperExecutionState.state,
+        paperError || paperExecutionState.lastError,
+        paperExecutionState.lastStepResult,
+        { loading: paperExecutionState.loadingState && !paperExecutionState.state },
+      );
+      void refreshAgentExecutionSection(true).catch(() => null);
+      void refreshLiveExecutionSection(true).catch(() => null);
+      return;
     }
     renderActive(true).catch((err) => console.warn('[exec] poll render failed:', err));
   }, PANEL_POLL_MS);
@@ -166,46 +361,80 @@ function renderTabError(tab, err) {
 }
 
 async function refreshAgentStatus() {
-  const status = await agentSvc.getStatus();
+  const status = await agentSvc.getStatus({ timeout: AGENT_STATUS_TIMEOUT_MS });
   setLastStatus(status);
   return status;
 }
 
+function ensureAgentStatusLoaded() {
+  if (agentPanelState.loading) return;
+  agentPanelState.loading = true;
+  if (isExecutionTabVisible()) {
+    repaintExecutionSections({ agent: true });
+  }
+  refreshAgentStatus()
+    .then(() => {
+      agentPanelState.lastError = null;
+    })
+    .catch((err) => {
+      agentPanelState.lastError = safeErrorMessage(err);
+    })
+    .finally(() => {
+      agentPanelState.loading = false;
+      if (agentState.panelOpen) {
+        if (agentState.activeSubTab === 'execution' && hasExecutionShell()) {
+          patchExecutionModeBadge();
+          patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError);
+        } else {
+          renderActive(true).catch((err) => console.warn('[exec] agent refresh render failed:', err));
+        }
+      }
+    });
+}
+
 async function loadPaperExecutionState(force = true) {
   if (!force && paperExecutionState.state) return paperExecutionState.state;
-  if (paperExecutionState.loadingState) return paperExecutionState.state;
+  if (paperExecutionState.loadingState && paperStatePromise) return paperStatePromise;
   setPaperExecutionLoadingState(true);
-  try {
-    const state = await paperExecSvc.getPaperExecutionState();
-    setPaperExecutionState(state);
-    if (!paperExecutionState.config && state?.config) {
-      setPaperExecutionConfig(state.config);
+  paperStatePromise = (async () => {
+    try {
+      const state = await paperExecSvc.getPaperExecutionState();
+      setPaperExecutionState(state);
+      if (!paperExecutionState.config && state?.config) {
+        setPaperExecutionConfig(state.config);
+      }
+      clearPaperExecutionError();
+      return state;
+    } catch (err) {
+      setPaperExecutionError(safeErrorMessage(err));
+      throw err;
+    } finally {
+      setPaperExecutionLoadingState(false);
+      paperStatePromise = null;
     }
-    clearPaperExecutionError();
-    return state;
-  } catch (err) {
-    setPaperExecutionError(safeErrorMessage(err));
-    throw err;
-  } finally {
-    setPaperExecutionLoadingState(false);
-  }
+  })();
+  return paperStatePromise;
 }
 
 async function loadPaperExecutionConfig(force = true) {
   if (!force && paperExecutionState.config) return paperExecutionState.config;
-  if (paperExecutionState.loadingConfig) return paperExecutionState.config;
+  if (paperExecutionState.loadingConfig && paperConfigPromise) return paperConfigPromise;
   setPaperExecutionLoadingConfig(true);
-  try {
-    const config = await paperExecSvc.getPaperExecutionConfig();
-    setPaperExecutionConfig(config);
-    clearPaperExecutionError();
-    return config;
-  } catch (err) {
-    setPaperExecutionError(safeErrorMessage(err));
-    throw err;
-  } finally {
-    setPaperExecutionLoadingConfig(false);
-  }
+  paperConfigPromise = (async () => {
+    try {
+      const config = await paperExecSvc.getPaperExecutionConfig();
+      setPaperExecutionConfig(config);
+      clearPaperExecutionError();
+      return config;
+    } catch (err) {
+      setPaperExecutionError(safeErrorMessage(err));
+      throw err;
+    } finally {
+      setPaperExecutionLoadingConfig(false);
+      paperConfigPromise = null;
+    }
+  })();
+  return paperConfigPromise;
 }
 
 async function loadLiveExecutionStatus(force = true) {
@@ -232,13 +461,6 @@ async function renderOverview(useCached = false) {
   let agentError = null;
   let paperError = null;
 
-  if (!useCached || !agentState.lastStatus) {
-    try {
-      await refreshAgentStatus();
-    } catch (err) {
-      agentError = safeErrorMessage(err);
-    }
-  }
   if (!useCached || !paperExecutionState.state) {
     try {
       await loadPaperExecutionState(!useCached);
@@ -246,8 +468,12 @@ async function renderOverview(useCached = false) {
       paperError = safeErrorMessage(err);
     }
   }
+  if (!useCached || !agentState.lastStatus) {
+    ensureAgentStatusLoaded();
+  }
 
   const status = agentState.lastStatus;
+  agentError = agentPanelState.lastError || (agentPanelState.loading && !status ? 'Loading agent status...' : agentError);
   const paperState = paperExecutionState.state;
   const modeBadge = $('#v2-exec-mode');
   if (modeBadge) {
@@ -267,48 +493,38 @@ async function renderExecution(useCached = false) {
   const container = $('[data-subtab="execution"]');
   if (!container) return;
 
-  let agentError = null;
-  let paperError = null;
-  let liveError = null;
-
-  if (!useCached || !agentState.lastStatus) {
-    try {
-      await refreshAgentStatus();
-    } catch (err) {
-      agentError = safeErrorMessage(err);
-    }
-  }
-  if (!useCached || !paperExecutionState.state) {
-    try {
-      await loadPaperExecutionState(!useCached);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
-    }
-  }
-  if (!useCached || !liveBridgeState.status) {
-    try {
-      await loadLiveExecutionStatus(!useCached);
-    } catch (err) {
-      liveError = safeErrorMessage(err);
-    }
-  }
-
-  const status = agentState.lastStatus;
-  const paperState = paperExecutionState.state;
-  const liveStatus = liveBridgeState.status;
-
-  setHtml(
-    container,
-    [
-      renderAgentExecutionSection(status, agentError),
-      renderPaperExecutionSection(paperState, paperError || paperExecutionState.lastError, paperExecutionState.lastStepResult),
-      renderLiveBridgeSection(liveStatus, liveError || liveBridgeState.lastError, paperState),
-    ].join(''),
+  ensureExecutionShell(container);
+  patchExecutionModeBadge();
+  patchPaperExecutionSection(
+    paperExecutionState.state,
+    paperExecutionState.lastError,
+    paperExecutionState.lastStepResult,
+    { loading: !paperExecutionState.state },
   );
+  patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
+    loading: agentPanelState.loading || !agentState.lastStatus,
+  });
+  patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
+    loading: liveBridgeState.loading || (!liveBridgeState.status && !liveBridgeState.lastError),
+  });
 
-  wireLegacyExecutionControls();
-  wirePaperExecutionControls();
-  wireLiveBridgeControls();
+  // Keep paper rendering isolated: agent/live refresh runs independently and
+  // must never gate the paper section paint path.
+  void refreshAgentExecutionSection(!useCached).catch(() => null);
+  void refreshLiveExecutionSection(!useCached).catch(() => null);
+
+  let paperError = null;
+  try {
+    await loadPaperExecutionState(!useCached);
+  } catch (err) {
+    paperError = safeErrorMessage(err);
+  }
+  patchPaperExecutionSection(
+    paperExecutionState.state,
+    paperError || paperExecutionState.lastError,
+    paperExecutionState.lastStepResult,
+    { loading: false },
+  );
 }
 
 async function renderRisk(useCached = false) {
@@ -318,13 +534,6 @@ async function renderRisk(useCached = false) {
   let agentError = null;
   let paperError = null;
 
-  if (!useCached || !agentState.lastStatus) {
-    try {
-      await refreshAgentStatus();
-    } catch (err) {
-      agentError = safeErrorMessage(err);
-    }
-  }
   if (!useCached || !paperExecutionState.state) {
     try {
       await loadPaperExecutionState(!useCached);
@@ -339,7 +548,11 @@ async function renderRisk(useCached = false) {
       paperError = safeErrorMessage(err);
     }
   }
+  if (!useCached || !agentState.lastStatus) {
+    ensureAgentStatusLoaded();
+  }
 
+  agentError = agentPanelState.lastError || (agentPanelState.loading && !agentState.lastStatus ? 'Loading agent status...' : agentError);
   setHtml(
     container,
     [
@@ -369,7 +582,7 @@ async function renderOps(useCached = false) {
   }
 
   const [statusResult, okxResult, healerResult, presetsResult, logsResult] = await Promise.allSettled([
-    refreshAgentStatus(),
+    agentState.lastStatus ? Promise.resolve(agentState.lastStatus) : agentSvc.getStatus({ timeout: AGENT_STATUS_TIMEOUT_MS }),
     execSvc.getOkxStatus(),
     opsSvc.getHealerStatus(),
     agentSvc.getPresets(),
@@ -565,6 +778,7 @@ function renderAgentExecutionSection(status, error) {
         <button class="btn ${status.mode === 'paper' ? 'active' : ''}" id="v2-paper-btn">Paper</button>
         <button class="btn ${status.mode === 'live' ? 'active' : ''}" id="v2-live-btn">Live</button>
       </div>
+      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <h4>Current signals</h4>
       <div class="signals-list">
         ${entries.length === 0
@@ -1202,32 +1416,44 @@ function wireLegacyExecutionControls() {
   on('#v2-start-btn', 'click', async () => {
     await agentSvc.start();
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] start refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] start refresh failed:', err));
+    }
   });
   on('#v2-stop-btn', 'click', async () => {
     await agentSvc.stop();
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] stop refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] stop refresh failed:', err));
+    }
   });
   on('#v2-revive-btn', 'click', async () => {
     await agentSvc.revive();
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] revive refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] revive refresh failed:', err));
+    }
   });
   on('#v2-scan-btn', 'click', async () => {
     await agentSvc.getSignals();
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] signal refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] signal refresh failed:', err));
+    }
   });
   on('#v2-paper-btn', 'click', async () => {
     await agentSvc.setConfig({ mode: 'paper' });
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
+    }
   });
   on('#v2-live-btn', 'click', async () => {
     await agentSvc.setConfig({ mode: 'live' });
     await refreshAgentStatus().catch(() => null);
-    renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
+    if (!repaintExecutionSections({ agent: true })) {
+      renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
+    }
   });
 }
 
@@ -1242,7 +1468,6 @@ function wirePaperExecutionControls() {
       if (result.state?.config) setPaperExecutionConfig(result.state.config);
       clearPaperExecutionError();
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-paper-step-form', 'submit', async (event) => {
@@ -1256,7 +1481,6 @@ function wirePaperExecutionControls() {
       if (result.state?.config) setPaperExecutionConfig(result.state.config);
       clearPaperExecutionError();
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-paper-reset-btn', 'click', async () => {
@@ -1267,7 +1491,6 @@ function wirePaperExecutionControls() {
       setPaperExecutionLastStep(null);
       clearPaperExecutionError();
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-paper-kill-on', 'click', async () => {
@@ -1277,7 +1500,6 @@ function wirePaperExecutionControls() {
       if (state?.config) setPaperExecutionConfig(state.config);
       clearPaperExecutionError();
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-paper-kill-off', 'click', async () => {
@@ -1287,7 +1509,6 @@ function wirePaperExecutionControls() {
       if (state?.config) setPaperExecutionConfig(state.config);
       clearPaperExecutionError();
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 }
 
@@ -1299,7 +1520,6 @@ function wireLiveBridgeControls() {
       await liveExecSvc.reconcileLiveExecution({ mode });
       await loadLiveExecutionStatus(true);
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-live-preview-btn', 'click', async () => {
@@ -1315,7 +1535,6 @@ function wireLiveBridgeControls() {
         liveBridgeState.status = { ...liveBridgeState.status, last_preview_result: result };
       }
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-live-submit-demo-btn', 'click', async () => {
@@ -1333,7 +1552,6 @@ function wireLiveBridgeControls() {
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-live-submit-live-btn', 'click', async () => {
@@ -1351,7 +1569,6 @@ function wireLiveBridgeControls() {
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 
   on('#v2-live-close-btn', 'click', async () => {
@@ -1369,7 +1586,6 @@ function wireLiveBridgeControls() {
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
     });
-    renderExecution(true).catch((err) => renderTabError('execution', err));
   });
 }
 
@@ -1567,14 +1783,18 @@ function readStepPayload(form) {
 async function runPaperAction(setter, fn) {
   if (isPaperExecutionBusy()) return;
   setter(true);
-  renderActive(true).catch((err) => console.warn('[exec] paper mutation pre-render failed:', err));
+  if (!repaintExecutionSections({ paper: true, live: true })) {
+    renderActive(true).catch((err) => console.warn('[exec] paper mutation pre-render failed:', err));
+  }
   try {
     await fn();
   } catch (err) {
     setPaperExecutionError(safeErrorMessage(err));
   } finally {
     setter(false);
-    renderActive(true).catch((err) => console.warn('[exec] paper mutation post-render failed:', err));
+    if (!repaintExecutionSections({ paper: true, live: true })) {
+      renderActive(true).catch((err) => console.warn('[exec] paper mutation post-render failed:', err));
+    }
   }
 }
 
@@ -1594,14 +1814,18 @@ function readLiveMode(form) {
 async function runLiveBridgeAction(flag, fn) {
   if (isLiveBridgeBusy()) return;
   liveBridgeState[flag] = true;
-  renderActive(true).catch((err) => console.warn('[exec] live bridge pre-render failed:', err));
+  if (!repaintExecutionSections({ live: true })) {
+    renderActive(true).catch((err) => console.warn('[exec] live bridge pre-render failed:', err));
+  }
   try {
     await fn();
   } catch (err) {
     liveBridgeState.lastError = safeErrorMessage(err);
   } finally {
     liveBridgeState[flag] = false;
-    renderActive(true).catch((err) => console.warn('[exec] live bridge post-render failed:', err));
+    if (!repaintExecutionSections({ live: true })) {
+      renderActive(true).catch((err) => console.warn('[exec] live bridge post-render failed:', err));
+    }
   }
 }
 

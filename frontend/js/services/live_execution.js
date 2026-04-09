@@ -1,7 +1,9 @@
 import { fetchJson } from '../util/fetch.js';
 
 export async function getLiveExecutionStatus() {
-  const response = await fetchJson('/api/live-execution/status');
+  const response = await fetchJson('/api/live-execution/status', {
+    timeout: 5000,
+  });
   return response.status;
 }
 
