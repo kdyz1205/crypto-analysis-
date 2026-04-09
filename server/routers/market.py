@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, HTTPException
 
 from ..core.config import PROJECT_ROOT
 from ..data_service import (
-    load_symbols, load_okx_swap_symbols, get_ohlcv, get_ohlcv_with_df, API_ONLY,
+    load_symbols, load_swap_symbols, get_symbol_metadata, get_ohlcv, get_ohlcv_with_df, API_ONLY,
 )
 from ..pattern_service import get_patterns_from_df
 
@@ -71,60 +71,47 @@ async def get_symbols_route(include_extended: bool = Query(False, description="I
     from_data = _symbols_from_data_folder()
     from_info_csv = _symbols_from_ticker_info_csv() if include_extended else []
 
-    if EXCHANGE.lower() == "okx":
-        try:
-            swap_symbols = await load_okx_swap_symbols()
-            if swap_symbols and len(swap_symbols) > 0:
-                api_symbols = sorted(swap_symbols.keys())
-            else:
-                api_symbols = []
-        except Exception as e:
-            print(f"Warning: Failed to load OKX symbols: {e}")
-            api_symbols = []
+    try:
+        api_symbols = []
+        if EXCHANGE.lower() in {"okx", "bitget"}:
+            swap_symbols = await load_swap_symbols()
+            api_symbols = sorted(swap_symbols.keys()) if swap_symbols else []
+        else:
+            api_symbols = load_symbols() or []
+
         combined = sorted(set(api_symbols) | set(s.upper() for s in from_data) | set(from_info_csv))
         if not combined and not include_extended:
             fallback = _symbols_from_ticker_info_csv()
             if fallback:
                 return fallback
         return combined if combined else (from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
-    else:
-        try:
-            file_symbols = load_symbols()
-            combined = sorted(set(file_symbols or []) | set(s.upper() for s in from_data) | set(from_info_csv))
-            if not combined and not include_extended:
-                fallback = _symbols_from_ticker_info_csv()
-                if fallback:
-                    return fallback
-            return combined if combined else (from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
-        except Exception as e:
-            print(f"Warning: Failed to load symbols: {e}")
-            return from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT']
+    except Exception as e:
+        print(f"Warning: Failed to load {EXCHANGE.upper()} symbols: {e}")
+        return from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT']
 
 
 @router.get("/symbol-info")
 async def get_symbol_info(symbol: str = Query(...)):
     """Return metadata for a specific symbol (e.g., price precision)."""
-    from ..data_service import EXCHANGE, load_okx_swap_symbols
-
     symbol = symbol.upper().replace("/", "")
     if not symbol.endswith("USDT"):
         symbol += "USDT"
 
-    if EXCHANGE.lower() == "okx":
-        swap_symbols = await load_okx_swap_symbols()
-        if symbol in swap_symbols:
-            info = swap_symbols[symbol]
-            tick_sz = info["tickSz"]
+    info = await get_symbol_metadata(symbol)
+    if info:
+        precision = info.get("pricePrecision")
+        if precision is None:
+            tick_sz = info.get("tickSz")
             if "." in str(tick_sz):
-                precision = len(str(tick_sz).split(".")[1])
+                precision = len(str(tick_sz).rstrip("0").split(".")[1])
             else:
                 precision = 0
-            return {
-                "symbol": symbol,
-                "instId": info["instId"],
-                "pricePrecision": precision,
-                "tickSz": tick_sz,
-            }
+        return {
+            "symbol": symbol,
+            "instId": info.get("instId", symbol),
+            "pricePrecision": precision,
+            "tickSz": info.get("tickSz"),
+        }
 
     return {"symbol": symbol, "pricePrecision": None}
 

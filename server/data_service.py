@@ -1,9 +1,17 @@
+import os
 import polars as pl
 import httpx
 import time
 import numpy as np
 from datetime import timezone
 from pathlib import Path
+
+from .market import (
+    BitgetPublicClient,
+    bitget_candles_to_records,
+    bitget_contracts_to_symbol_map,
+    bitget_tickers_to_volume_symbols,
+)
 
 # In-memory TTL cache for download_ohlcv results
 # Key: (symbol, interval) — days are handled by slicing/invalidation
@@ -37,15 +45,16 @@ def _get_http_client() -> httpx.AsyncClient:
     return _http_client
 
 # Data source configuration
-# - exchange: 'binance' or 'okx'
+# - exchange: 'binance', 'okx', or 'bitget'
 # - offline_only: when True, never call any exchange API and use only local CSVs
 # - api_only: when True (and not offline_only), never read from CSV; always fetch latest from API for fullest data
-EXCHANGE = "okx"
+EXCHANGE = os.environ.get("DATA_EXCHANGE", "bitget").lower()
 OFFLINE_ONLY = False
 # Default to hybrid mode so app remains usable when exchange APIs are blocked/rate-limited.
 # - False: prefer local CSV + incremental API tail when available
 # - True: always call API for latest/fullest data
 API_ONLY = False
+BITGET_PRODUCT_TYPE = os.environ.get("BITGET_PRODUCT_TYPE", "usdt-futures").lower()
 
 CSV_COLUMNS = [
     "open_time", "open", "high", "low", "close", "volume",
@@ -94,6 +103,7 @@ OKX_START_TS_MS = 1609459200000  # 2021-01-01 00:00:00 UTC
 
 # Cache for OKX swap symbols with precision
 _okx_swap_cache: dict[str, dict] | None = None
+_bitget_swap_cache: dict[str, dict] | None = None
 
 
 async def load_okx_swap_symbols() -> dict[str, dict]:
@@ -149,13 +159,74 @@ async def load_okx_swap_symbols() -> dict[str, dict]:
         return {}
 
 
+async def load_bitget_swap_symbols() -> dict[str, dict]:
+    """Fetch Bitget USDT futures contracts and normalize them to the shared symbol schema."""
+    global _bitget_swap_cache
+
+    if _bitget_swap_cache is not None:
+        return _bitget_swap_cache
+
+    try:
+        client = BitgetPublicClient(
+            http_client=_get_http_client(),
+            product_type=BITGET_PRODUCT_TYPE,
+        )
+        rows = await client.get_contracts()
+        result = bitget_contracts_to_symbol_map(rows)
+        _bitget_swap_cache = result
+        return result
+    except Exception as e:
+        print(f"Warning: Failed to load Bitget futures symbols: {e}")
+        _bitget_swap_cache = {}
+        return {}
+
+
+async def load_swap_symbols() -> dict[str, dict]:
+    """Load swap/perpetual symbols for the configured exchange."""
+    exchange = EXCHANGE.lower()
+    if exchange == "okx":
+        return await load_okx_swap_symbols()
+    if exchange == "bitget":
+        return await load_bitget_swap_symbols()
+    return {}
+
+
+def _price_precision_from_tick_size(tick_size: str | None) -> int | None:
+    if tick_size in (None, ""):
+        return None
+    tick_str = str(tick_size)
+    if "." not in tick_str:
+        return 0
+    return len(tick_str.rstrip("0").split(".")[1])
+
+
+async def get_symbol_metadata(symbol: str) -> dict | None:
+    metadata = await load_swap_symbols()
+    symbol_upper = symbol.upper()
+    if symbol_upper in metadata:
+        return metadata[symbol_upper]
+    return None
+
+
+async def get_symbol_price_precision(symbol: str) -> int | None:
+    metadata = await get_symbol_metadata(symbol)
+    if metadata is None:
+        return None
+    if metadata.get("pricePrecision") is not None:
+        try:
+            return int(metadata["pricePrecision"])
+        except (TypeError, ValueError):
+            pass
+    return _price_precision_from_tick_size(metadata.get("tickSz"))
+
+
 _top_vol_cache: tuple[float, list[str]] | None = None
 TOP_VOL_CACHE_TTL = 600  # 10 minutes
 
 
 async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
     """
-    Fetch top N USDT perpetual swap symbols by 24h trading volume from OKX.
+    Fetch top N USDT perpetual swap symbols by 24h trading volume from the configured exchange.
     Returns list like ['BTCUSDT', 'ETHUSDT', ...] sorted by volume descending.
     Cached for 10 minutes.
     """
@@ -166,38 +237,44 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
             return cached_list[:top_n]
 
     try:
-        # OKX tickers endpoint returns 24h volume for all instruments
-        client = _get_http_client()
-        resp = await client.get(
-            "https://www.okx.com/api/v5/market/tickers",
-            params={"instType": "SWAP"}
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        if EXCHANGE.lower() == "bitget":
+            client = BitgetPublicClient(
+                http_client=_get_http_client(),
+                product_type=BITGET_PRODUCT_TYPE,
+            )
+            rows = await client.get_tickers()
+            result = bitget_tickers_to_volume_symbols(rows, top_n=max(top_n, 50))
+        else:
+            client = _get_http_client()
+            resp = await client.get(
+                "https://www.okx.com/api/v5/market/tickers",
+                params={"instType": "SWAP"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
-        if data.get("code") != "0" or not data.get("data"):
-            print(f"[Data] Failed to fetch OKX tickers: {data.get('msg', 'unknown')}")
-            return []
+            if data.get("code") != "0" or not data.get("data"):
+                print(f"[Data] Failed to fetch OKX tickers: {data.get('msg', 'unknown')}")
+                return []
 
-        # Filter USDT swaps and sort by 24h USD notional volume
-        # volCcy24h = volume in base currency, multiply by last price for USD value
-        pairs = []
-        for t in data["data"]:
-            inst_id = t.get("instId", "")
-            if not inst_id.endswith("-USDT-SWAP"):
-                continue
-            try:
-                vol_base = float(t.get("volCcy24h") or 0)
-                last_price = float(t.get("last") or 0)
-            except (TypeError, ValueError):
-                continue
-            vol_usd = vol_base * last_price  # approximate USD notional
-            base = inst_id.replace("-USDT-SWAP", "")
-            symbol = f"{base}USDT"
-            pairs.append((symbol, vol_usd))
+            pairs = []
+            for t in data["data"]:
+                inst_id = t.get("instId", "")
+                if not inst_id.endswith("-USDT-SWAP"):
+                    continue
+                try:
+                    vol_base = float(t.get("volCcy24h") or 0)
+                    last_price = float(t.get("last") or 0)
+                except (TypeError, ValueError):
+                    continue
+                vol_usd = vol_base * last_price
+                base = inst_id.replace("-USDT-SWAP", "")
+                symbol = f"{base}USDT"
+                pairs.append((symbol, vol_usd))
 
-        pairs.sort(key=lambda x: x[1], reverse=True)
-        result = [p[0] for p in pairs]  # cache full sorted list so any top_n can be served
+            pairs.sort(key=lambda x: x[1], reverse=True)
+            result = [p[0] for p in pairs]
+
         _top_vol_cache = (time.time(), result)
         print(f"[Data] Top {top_n} by volume: {', '.join(result[:top_n])}")
         return result[:top_n]
@@ -211,11 +288,11 @@ def load_symbols() -> list[str]:
     """
     Load available symbols based on EXCHANGE setting.
     
-    For OKX, this returns an empty list (use load_okx_swap_symbols() instead).
+    For OKX/Bitget, this returns an empty list (use load_swap_symbols() instead).
     For Binance, reads from the symbols file.
     """
-    if EXCHANGE.lower() == "okx":
-        # OKX symbols are loaded dynamically via API
+    if EXCHANGE.lower() in {"okx", "bitget"}:
+        # Perp symbols are loaded dynamically via API
         return []
     
     if not SYMBOLS_FILE.exists():
@@ -355,7 +432,9 @@ async def download_ohlcv(symbol: str, interval: str, days: int = 30) -> pl.DataF
                 return cached_result
             # More days requested than cached — invalidate and re-fetch below
 
-    if EXCHANGE.lower() == "okx":
+    if EXCHANGE.lower() == "bitget":
+        result = await _download_ohlcv_bitget(symbol, interval, days)
+    elif EXCHANGE.lower() == "okx":
         result = await _download_ohlcv_okx(symbol, interval, days)
     else:
         result = await _download_ohlcv_binance(symbol, interval, days)
@@ -439,6 +518,84 @@ def _okx_rows_to_records(rows: list) -> list:
             ts_ms, o, h, l, c, vol, ts_ms, quote_vol, 0, 0.0, 0.0, 0,
         ])
     return records
+
+
+_BITGET_INTERVAL_MAP = {"5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D"}
+_BITGET_INTERVAL_MS = {
+    "5m": 5 * 60 * 1000,
+    "15m": 15 * 60 * 1000,
+    "1h": 60 * 60 * 1000,
+    "4h": 4 * 60 * 60 * 1000,
+    "1d": 24 * 60 * 60 * 1000,
+}
+_BITGET_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000
+BITGET_CANDLES_PAGE_LIMIT = 200
+
+
+async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> pl.DataFrame:
+    """Download OHLCV data from Bitget USDT futures and normalize to the shared schema."""
+    import asyncio
+    import pandas as pd
+
+    granularity = _BITGET_INTERVAL_MAP.get(interval)
+    if granularity is None:
+        raise ValueError(f"Unsupported interval for Bitget: {interval}")
+
+    client = BitgetPublicClient(
+        http_client=_get_http_client(),
+        product_type=BITGET_PRODUCT_TYPE,
+    )
+    end_ms = int(time.time() * 1000)
+    start_ms = end_ms - days * 24 * 60 * 60 * 1000
+    cursor_end = end_ms
+    all_records: list[list[float | int]] = []
+
+    max_pages = 400
+    page_count = 0
+    while cursor_end > start_ms and page_count < max_pages:
+        window_start = max(start_ms, cursor_end - _BITGET_MAX_RANGE_MS)
+        rows = await client.get_candles(
+            symbol.upper(),
+            granularity,
+            start_time=window_start,
+            end_time=cursor_end,
+            limit=BITGET_CANDLES_PAGE_LIMIT,
+            history=True,
+        )
+        if not rows:
+            break
+
+        records = bitget_candles_to_records(rows)
+        all_records.extend(records)
+        oldest_ts = min(int(row[0]) for row in rows)
+        if oldest_ts <= start_ms:
+            break
+        if oldest_ts >= cursor_end:
+            break
+        cursor_end = oldest_ts - 1
+        page_count += 1
+        await asyncio.sleep(0.06)
+
+    if not all_records:
+        raise ValueError(f"No data returned for {symbol} {interval}")
+
+    pdf = pd.DataFrame(all_records, columns=CSV_COLUMNS)
+    pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
+    pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
+    numeric_cols = ["open", "high", "low", "close", "volume"]
+    pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=0)
+    pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
+
+    if API_ONLY:
+        result = pl.from_pandas(pdf).select(["open_time", "open", "high", "low", "close", "volume"])
+        if result["open_time"].dtype == pl.Datetime("ns"):
+            result = result.with_columns(pl.col("open_time").cast(pl.Datetime("us")))
+        return result.sort("open_time")
+
+    DATA_DIR.mkdir(exist_ok=True)
+    save_path = DATA_DIR / f"{symbol.lower()}_{interval}.csv.gz"
+    pdf.to_csv(save_path, index=False, compression="gzip")
+    return _load_csv(save_path)
 
 
 async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.DataFrame:
@@ -667,8 +824,78 @@ async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) ->
     return result.sort("open_time")
 
 
+async def _fetch_candles_since_bitget(symbol: str, interval: str, start_ms: int) -> pl.DataFrame:
+    """Fetch Bitget futures candles from start_ms to now for incremental updates."""
+    import asyncio as _asyncio
+    import pandas as pd
+
+    granularity = _BITGET_INTERVAL_MAP.get(interval)
+    if granularity is None:
+        return pl.DataFrame()
+
+    end_ms = int(time.time() * 1000)
+    cursor_end = end_ms
+    all_records: list[list[float | int]] = []
+    client = BitgetPublicClient(
+        http_client=_get_http_client(),
+        product_type=BITGET_PRODUCT_TYPE,
+    )
+
+    for _ in range(100):
+        if cursor_end <= start_ms:
+            break
+        window_start = max(start_ms, cursor_end - _BITGET_MAX_RANGE_MS)
+        rows = await client.get_candles(
+            symbol.upper(),
+            granularity,
+            start_time=window_start,
+            end_time=cursor_end,
+            limit=BITGET_CANDLES_PAGE_LIMIT,
+            history=True,
+        )
+        if not rows:
+            break
+
+        for row in rows:
+            ts_ms = int(row[0])
+            if ts_ms >= start_ms:
+                all_records.extend(bitget_candles_to_records([row]))
+
+        oldest_ts = min(int(row[0]) for row in rows)
+        if oldest_ts <= start_ms or oldest_ts >= cursor_end:
+            break
+        cursor_end = oldest_ts - 1
+        await _asyncio.sleep(0.06)
+
+    if not all_records:
+        return pl.DataFrame()
+
+    pdf = pd.DataFrame(all_records, columns=CSV_COLUMNS)
+    pdf["open_time"] = pd.to_datetime(pdf["open_time"], unit="ms")
+    pdf["close_time"] = pd.to_datetime(pdf["close_time"], unit="ms")
+    for col in ["open", "high", "low", "close", "volume"]:
+        pdf[col] = pd.to_numeric(pdf[col])
+    pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
+
+    result = pl.from_pandas(pdf)
+    casts = []
+    if result["open_time"].dtype == pl.Datetime("ns"):
+        casts.append(pl.col("open_time").cast(pl.Datetime("us")))
+    if "close_time" in result.columns and result["close_time"].dtype != pl.Utf8:
+        casts.append(pl.col("close_time").cast(pl.Utf8))
+    for col in ["open", "high", "low", "close", "volume", "quote_asset_volume",
+                "taker_buy_quote_asset_volume"]:
+        if col in result.columns and result[col].dtype != pl.Float64:
+            casts.append(pl.col(col).cast(pl.Float64))
+    if casts:
+        result = result.with_columns(casts)
+    return result.sort("open_time")
+
+
 async def _fetch_candles_since(symbol: str, interval: str, start_ms: int) -> pl.DataFrame:
     """Fetch candles from the configured exchange from start_ms to now."""
+    if EXCHANGE.lower() == "bitget":
+        return await _fetch_candles_since_bitget(symbol, interval, start_ms)
     if EXCHANGE.lower() == "okx":
         return await _fetch_candles_since_okx(symbol, interval, start_ms)
     end_ms = int(time.time() * 1000)
@@ -930,21 +1157,7 @@ async def get_ohlcv(
         end_dt = pl.Series([end_time]).str.to_datetime("%Y-%m-%dT%H:%M")[0]
         df = df.filter(pl.col("open_time") <= end_dt)
 
-    # Get price precision for OKX symbols
-    price_precision = None
-    if EXCHANGE.lower() == "okx":
-        try:
-            swap_symbols = await load_okx_swap_symbols()
-            symbol_upper = symbol.upper()
-            if symbol_upper in swap_symbols:
-                tick_sz = swap_symbols[symbol_upper]["tickSz"]
-                # OKX-style: decimal places from tickSz ("0.1"->1, "0.01"->2, "0.0001"->4, "1"->0)
-                if "." in str(tick_sz):
-                    price_precision = len(str(tick_sz).split(".")[1])
-                else:
-                    price_precision = 0
-        except Exception:
-            pass
+    price_precision = await get_symbol_price_precision(symbol)
     
     # Convert to lightweight-charts format
     candles = []
@@ -1075,19 +1288,7 @@ async def get_ohlcv_with_df(
         end_dt = pl.Series([end_time]).str.to_datetime("%Y-%m-%dT%H:%M")[0]
         df = df.filter(pl.col("open_time") <= end_dt)
 
-    price_precision = None
-    if EXCHANGE.lower() == "okx":
-        try:
-            swap_symbols = await load_okx_swap_symbols()
-            symbol_upper = symbol.upper()
-            if symbol_upper in swap_symbols:
-                tick_sz = swap_symbols[symbol_upper]["tickSz"]
-                if "." in str(tick_sz):
-                    price_precision = len(str(tick_sz).split(".")[1])
-                else:
-                    price_precision = 0
-        except Exception:
-            pass
+    price_precision = await get_symbol_price_precision(symbol)
 
     candles = []
     volume = []
