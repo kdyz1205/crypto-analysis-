@@ -1,6 +1,6 @@
 """Pure strategy core for trendline detection and signal generation."""
 
-from .config import StrategyConfig
+from .config import StrategyConfig, apply_strategy_overrides
 from .display_filter import (
     DisplayLineMeta,
     build_display_line_meta,
@@ -46,6 +46,7 @@ __all__ = [
     "SignalStateSnapshot",
     "StrategyConfig",
     "advance_line_states",
+    "apply_strategy_overrides",
     "build_display_line_meta",
     "build_latest_snapshot",
     "build_tail_snapshots",

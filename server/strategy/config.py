@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Mapping
 
 import numpy as np
@@ -232,8 +232,16 @@ class StrategyConfig:
         return 0
 
 
+def apply_strategy_overrides(config: StrategyConfig, **changes) -> StrategyConfig:
+    filtered = {key: value for key, value in changes.items() if value is not None}
+    if not filtered:
+        return config
+    return replace(config, **filtered)
+
+
 __all__ = [
     "StrategyConfig",
+    "apply_strategy_overrides",
     "calculate_atr",
     "clamp",
 ]

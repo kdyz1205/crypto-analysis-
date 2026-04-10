@@ -75,11 +75,15 @@ def _build_app() -> FastAPI:
 
 
 def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None:
+    captured = {}
+
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
         return _sample_polars_df(), {"pricePrecision": 2}
 
     def fake_build_latest_snapshot(candles_df, strategy_cfg, *, symbol="", timeframe="", **kwargs):
         bar_index = len(candles_df) - 1
+        captured["lookback_bars"] = strategy_cfg.lookback_bars
+        captured["enabled_trigger_modes"] = tuple(kwargs.get("enabled_trigger_modes") or ())
         return ReplaySnapshot(
             bar_index=bar_index,
             timestamp=bar_index + 1,
@@ -116,13 +120,23 @@ def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None
 
     step_response = client.post(
         "/api/paper-execution/step",
-        json={"symbol": "BTCUSDT", "interval": "1h", "bar_index": 0, "analysis_bars": 120},
+        json={
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "bar_index": 0,
+            "analysis_bars": 120,
+            "trigger_modes": ["pre_limit"],
+            "lookback_bars": 80,
+            "strategy_window_bars": 100,
+        },
     )
     assert step_response.status_code == 200
     step_payload = step_response.json()
     assert step_payload["stream"] == "BTCUSDT:1h"
     assert step_payload["lastProcessedBar"] == 0
     assert step_payload["state"]["account"]["open_order_count"] == 1
+    assert captured["lookback_bars"] == 80
+    assert captured["enabled_trigger_modes"] == ("pre_limit",)
 
     reset_response = client.post("/api/paper-execution/reset", json={"starting_equity": 12000})
     assert reset_response.status_code == 200

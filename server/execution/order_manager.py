@@ -19,12 +19,13 @@ def make_client_order_id(signal: StrategySignal) -> str:
 
 
 class PaperOrderManager:
-    def __init__(self) -> None:
+    def __init__(self, *, max_fill_history: int | None = 100) -> None:
         self._intents_by_signal_id: dict[str, OrderIntent] = {}
         self._intents_by_client_order_id: dict[str, OrderIntent] = {}
         self._orders_by_id: dict[str, PaperOrder] = {}
         self._order_id_by_signal_id: dict[str, str] = {}
         self._recent_fills: list[PaperFill] = []
+        self._max_fill_history = max_fill_history
 
     def reset(self) -> None:
         self._intents_by_signal_id.clear()
@@ -61,8 +62,10 @@ class PaperOrderManager:
             if order.status == "pending"
         ]
 
-    def get_recent_fills(self) -> list[PaperFill]:
-        return list(self._recent_fills[-20:])
+    def get_recent_fills(self, limit: int | None = 20) -> list[PaperFill]:
+        if limit is None:
+            return list(self._recent_fills)
+        return list(self._recent_fills[-limit:])
 
     def create_order_intent_from_signal(
         self,
@@ -252,7 +255,8 @@ class PaperOrderManager:
                 filled_at_ts=timestamp,
             )
             self._recent_fills.append(fill)
-            self._recent_fills = self._recent_fills[-100:]
+            if self._max_fill_history is not None:
+                self._recent_fills = self._recent_fills[-self._max_fill_history :]
             fills.append(fill)
         return fills
 

@@ -1,4 +1,4 @@
-from .types import RuntimeInstanceConfig, RuntimeInstanceRecord, RuntimeInstanceStatus, RuntimeMode, RuntimeState
+from .types import RuntimeInstanceConfig, RuntimeInstanceRecord, RuntimeInstanceStatus, RuntimeMode, RuntimeState, RuntimeStrategyConfig
 from .manager import SubaccountRuntimeManager
 
 __all__ = [
@@ -7,5 +7,6 @@ __all__ = [
     "RuntimeInstanceStatus",
     "RuntimeMode",
     "RuntimeState",
+    "RuntimeStrategyConfig",
     "SubaccountRuntimeManager",
 ]

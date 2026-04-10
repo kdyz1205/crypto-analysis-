@@ -56,6 +56,7 @@ def augment_snapshot_with_manual_signals(
     timeframe: str,
     drawings: Sequence[ManualTrendline] | None = None,
     active_directions: Mapping[str, str] | None = None,
+    enabled_trigger_modes: Sequence[str] | None = None,
 ) -> ReplaySnapshot:
     cfg = config or StrategyConfig()
     df = ensure_candles_df(candles)
@@ -72,9 +73,13 @@ def augment_snapshot_with_manual_signals(
     auto_active_lines = select_active_lines(snapshot.candidate_lines, cfg)
     combined_lines = tuple(auto_active_lines) + tuple(manual_lines)
     detected = []
-    detected.extend(generate_pre_limit_signals(df, combined_lines, cfg))
-    detected.extend(generate_rejection_signals(df, combined_lines, cfg))
-    detected.extend(generate_failed_breakout_signals(df, combined_lines, cfg))
+    enabled = set(("pre_limit", "rejection", "failed_breakout") if enabled_trigger_modes is None else enabled_trigger_modes)
+    if "pre_limit" in enabled:
+        detected.extend(generate_pre_limit_signals(df, combined_lines, cfg))
+    if "rejection" in enabled:
+        detected.extend(generate_rejection_signals(df, combined_lines, cfg))
+    if "failed_breakout" in enabled:
+        detected.extend(generate_failed_breakout_signals(df, combined_lines, cfg))
     prioritized = tuple(prioritize_signals(detected, cfg))
     selected = tuple(resolve_signal_conflicts(prioritized, active_directions=active_directions))
     signal_states = build_signal_state_snapshots(

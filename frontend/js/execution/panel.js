@@ -989,7 +989,11 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
         <label>Interval<input type="text" name="interval" value="${escapeHtml(currentInterval)}" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Bar Index<input type="number" name="bar_index" placeholder="auto next bar" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>Strategy Window<input type="number" name="strategy_window_bars" value="100" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
       </form>
+      <div class="paper-note">Validated paper preset currently uses <strong>pre_limit</strong> with lookback 80 and strategy window 100. Backtest-positive scope is the 1h high-beta cluster, not every market.</div>
       ${busy ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       ${renderPaperLastStep(lastStepResult)}
@@ -1142,6 +1146,9 @@ function renderRuntimeExecutionSection(instances, error) {
         <label>Symbol<input type="text" name="symbol" value="${escapeHtml(marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} /></label>
         <label>Interval<input type="text" name="timeframe" value="${escapeHtml(marketState.currentInterval || '4h')}" ${busy ? 'disabled' : ''} /></label>
         <label>Subaccount<input type="text" name="subaccount_label" placeholder="paper-a" ${busy ? 'disabled' : ''} /></label>
+        <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${busy ? 'disabled' : ''} /></label>
+        <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
+        <label>Strategy Window<input type="number" name="window_bars" value="100" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
         <label>
           Live Mode
           <select name="live_mode" ${busy ? 'disabled' : ''}>
@@ -1152,7 +1159,7 @@ function renderRuntimeExecutionSection(instances, error) {
         </label>
         <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${runtimePanelState.creating ? 'Creating...' : 'Create instance'}</button>
       </form>
-      <div class="paper-note">Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
+      <div class="paper-note">Validated runtime preset currently defaults to <strong>pre_limit</strong>, lookback 80, and strategy window 100. Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
       <div class="paper-subgrid">
         ${records.length === 0 ? '<div class="paper-empty">No runtime instances configured yet.</div>' : records.map((record) => renderRuntimeInstanceRow(record)).join('')}
       </div>
@@ -1190,6 +1197,9 @@ function renderRuntimeInstanceRow(record) {
         <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
         <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
         <span class="muted">equity ${formatUsd(account.equity)}</span>
+        <span class="muted">modes ${(record.config.strategy_config?.enabled_trigger_modes || ['pre_limit']).join(',')}</span>
+        <span class="muted">lookback ${record.config.strategy_config?.lookback_bars ?? '-'}</span>
+        <span class="muted">window ${record.config.strategy_config?.window_bars ?? '-'}</span>
       </div>
       <div class="paper-actions">
         <button class="btn" data-runtime-action="${record.status.runtime_state === 'running' ? 'stop' : 'start'}" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${actionLabel}</button>
@@ -2077,10 +2087,17 @@ function readStepPayload(form) {
   const interval = String(formData.get('interval') || marketState.currentInterval || '4h').trim();
   const barIndexRaw = String(formData.get('bar_index') || '').trim();
   const analysisBarsRaw = String(formData.get('analysis_bars') || '500').trim();
+  const triggerModes = String(formData.get('trigger_modes') || 'pre_limit')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
   const payload = {
     symbol,
     interval,
     analysis_bars: Number(analysisBarsRaw || 500),
+    trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],
+    lookback_bars: Number(formData.get('lookback_bars') || 80),
+    strategy_window_bars: Number(formData.get('strategy_window_bars') || 100),
   };
   if (barIndexRaw !== '') {
     payload.bar_index = Number(barIndexRaw);
@@ -2121,12 +2138,21 @@ function readLiveMode(form) {
 
 function readRuntimeCreatePayload(form) {
   const formData = new FormData(form);
+  const triggerModes = String(formData.get('trigger_modes') || 'pre_limit')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
   return {
     label: String(formData.get('label') || '').trim() || `${marketState.currentSymbol || 'BTCUSDT'} ${marketState.currentInterval || '4h'}`,
     symbol: String(formData.get('symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
     timeframe: String(formData.get('timeframe') || marketState.currentInterval || '4h').trim(),
     subaccount_label: String(formData.get('subaccount_label') || '').trim(),
     live_mode: String(formData.get('live_mode') || 'disabled').trim(),
+    strategy_config: {
+      enabled_trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],
+      lookback_bars: Number(formData.get('lookback_bars') || 80),
+      window_bars: Number(formData.get('window_bars') || 100),
+    },
   };
 }
 

@@ -26,8 +26,14 @@ from ..execution.types import (
     dataclass_to_dict,
     stable_execution_id,
 )
-from ..strategy import ReplayResult, StrategyConfig, build_latest_snapshot
-from ..runtime.types import RuntimeInstanceConfig, RuntimeInstanceRecord, RuntimeInstanceStatus, RuntimeMode
+from ..strategy import ReplayResult, StrategyConfig, apply_strategy_overrides, build_latest_snapshot
+from ..runtime.types import (
+    RuntimeInstanceConfig,
+    RuntimeInstanceRecord,
+    RuntimeInstanceStatus,
+    RuntimeMode,
+    RuntimeStrategyConfig,
+)
 
 DATA_DIR = PROJECT_ROOT / "data"
 RUNTIME_STORE_PATH = DATA_DIR / "subaccount_runtime_instances.json"
@@ -98,11 +104,13 @@ class SubaccountRuntimeManager:
         auto_live_submit: bool = False,
         notes: str = "",
         paper_config: PaperExecutionConfig | None = None,
+        strategy_config: RuntimeStrategyConfig | None = None,
     ) -> RuntimeInstanceRecord:
         self._ensure_loaded()
         normalized_symbol = _normalize_symbol(symbol)
         normalized_timeframe = _normalize_interval(timeframe)
         instance_id = stable_execution_id("runtime", normalized_symbol, normalized_timeframe, label, datetime.now(timezone.utc).timestamp())
+        strategy_config = _normalize_strategy_config(strategy_config or RuntimeStrategyConfig())
         config = RuntimeInstanceConfig(
             instance_id=instance_id,
             label=label.strip() or instance_id,
@@ -119,6 +127,7 @@ class SubaccountRuntimeManager:
             auto_live_submit=bool(auto_live_submit),
             notes=notes,
             paper_config=paper_config or PaperExecutionConfig(),
+            strategy_config=strategy_config,
         )
         paper_engine = PaperExecutionEngine(config=config.paper_config)
         live_engine = LiveExecutionEngine(adapter_provider=self.adapter_provider, config=LiveBridgeConfig.from_env())
@@ -149,6 +158,9 @@ class SubaccountRuntimeManager:
         paper_cfg_changes = changes.pop("paper_config", None)
         if paper_cfg_changes:
             config = replace(config, paper_config=replace(config.paper_config, **paper_cfg_changes))
+        strategy_cfg_changes = changes.pop("strategy_config", None)
+        if strategy_cfg_changes:
+            config = replace(config, strategy_config=_normalize_strategy_config(replace(config.strategy_config, **strategy_cfg_changes)))
 
         config = replace(config, **{key: value for key, value in changes.items() if value is not None})
         record.config = config
@@ -227,6 +239,8 @@ class SubaccountRuntimeManager:
                         record.config.timeframe,
                         start_bar=max(0, last_processed + 1),
                         end_bar=target_bar,
+                        enabled_trigger_modes=record.config.strategy_config.enabled_trigger_modes,
+                        strategy_window_bars=record.config.strategy_config.window_bars,
                     )
                     engine.step(
                         record.config.symbol,
@@ -407,7 +421,15 @@ async def _load_runtime_inputs(config: RuntimeInstanceConfig) -> tuple[pd.DataFr
         candles_df = candles_df.iloc[-config.analysis_bars:].reset_index(drop=True)
 
     price_precision = market_payload.get("pricePrecision") if isinstance(market_payload, dict) else None
-    return candles_df, _config_with_market_precision(StrategyConfig(), price_precision)
+    strategy_cfg = _config_with_market_precision(StrategyConfig(), price_precision)
+    return candles_df, apply_strategy_overrides(
+        strategy_cfg,
+        lookback_bars=config.strategy_config.lookback_bars,
+        min_touches=config.strategy_config.min_touches,
+        confirm_threshold=config.strategy_config.confirm_threshold,
+        score_threshold=config.strategy_config.score_threshold,
+        rr_target=config.strategy_config.rr_target,
+    )
 
 
 def _standardize_strategy_candles(polars_df) -> pd.DataFrame:
@@ -434,19 +456,29 @@ def _build_step_replay_result(
     *,
     start_bar: int,
     end_bar: int,
+    enabled_trigger_modes: tuple[str, ...] | list[str] | None = None,
+    strategy_window_bars: int | None = None,
 ) -> tuple[ReplayResult, int]:
     if end_bar < start_bar:
         return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple()), start_bar
     snapshots = []
     for current_bar in range(start_bar, end_bar + 1):
-        prefix = candles_df.iloc[: current_bar + 1].reset_index(drop=True)
-        snapshot = build_latest_snapshot(prefix, strategy_cfg, symbol=symbol, timeframe=interval)
+        prefix_start = max(0, current_bar - strategy_window_bars + 1) if strategy_window_bars else 0
+        prefix = candles_df.iloc[prefix_start : current_bar + 1].reset_index(drop=True)
+        snapshot = build_latest_snapshot(
+            prefix,
+            strategy_cfg,
+            symbol=symbol,
+            timeframe=interval,
+            enabled_trigger_modes=enabled_trigger_modes,
+        )
         snapshot = augment_snapshot_with_manual_signals(
             snapshot,
             prefix,
             strategy_cfg,
             symbol=symbol,
             timeframe=interval,
+            enabled_trigger_modes=enabled_trigger_modes,
         )
         snapshots.append(snapshot)
     return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple(snapshots)), start_bar
@@ -471,6 +503,7 @@ def _runtime_record_from_dict(payload: dict[str, Any]) -> RuntimeInstanceRecord:
         auto_live_submit=bool(config_payload.get("auto_live_submit", False)),
         notes=config_payload.get("notes", ""),
         paper_config=PaperExecutionConfig(**paper_config_payload),
+        strategy_config=_normalize_strategy_config(RuntimeStrategyConfig(**dict(config_payload.get("strategy_config") or {}))),
     )
     status_payload = dict(payload.get("status") or {})
     paper_state_payload = status_payload.get("paper_state")
@@ -525,6 +558,13 @@ def _normalize_history_mode(history_mode: str) -> str:
 
 def _utc_iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_strategy_config(config: RuntimeStrategyConfig) -> RuntimeStrategyConfig:
+    return replace(
+        config,
+        enabled_trigger_modes=tuple(config.enabled_trigger_modes or ("pre_limit",)),
+    )
 
 
 __all__ = ["SubaccountRuntimeManager"]

@@ -8,10 +8,11 @@ from .types import PaperFill, PaperPosition, stable_execution_id
 
 
 class PaperPositionManager:
-    def __init__(self) -> None:
+    def __init__(self, *, max_closed_history: int | None = 100) -> None:
         self._positions_by_id: dict[str, PaperPosition] = {}
         self._position_id_by_signal_id: dict[str, str] = {}
         self._closed_positions: list[PaperPosition] = []
+        self._max_closed_history = max_closed_history
 
     def reset(self) -> None:
         self._positions_by_id.clear()
@@ -36,11 +37,28 @@ class PaperPositionManager:
             if position.status == "open"
         ]
 
-    def get_recent_closed_positions(self) -> list[PaperPosition]:
-        return list(self._closed_positions[-20:])
+    def get_recent_closed_positions(self, limit: int | None = 20) -> list[PaperPosition]:
+        if limit is None:
+            return list(self._closed_positions)
+        return list(self._closed_positions[-limit:])
 
     def get_closed_trade_count(self) -> int:
         return len(self._closed_positions)
+
+    def force_close_positions(
+        self,
+        current_bar: int,
+        exit_price: float,
+        timestamp: Any,
+        *,
+        reason: str = "final_mark",
+    ) -> list[PaperPosition]:
+        closed_positions: list[PaperPosition] = []
+        for position in list(self.get_open_positions()):
+            closed_positions.append(
+                self._close_position(position, float(exit_price), current_bar, timestamp, reason)
+            )
+        return closed_positions
 
     def can_open_fill(
         self,
@@ -165,7 +183,8 @@ class PaperPositionManager:
         )
         self._positions_by_id[position.position_id] = updated
         self._closed_positions.append(updated)
-        self._closed_positions = self._closed_positions[-100:]
+        if self._max_closed_history is not None:
+            self._closed_positions = self._closed_positions[-self._max_closed_history :]
         return updated
 
     @staticmethod

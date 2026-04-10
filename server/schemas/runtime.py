@@ -5,6 +5,18 @@ from pydantic import BaseModel, ConfigDict, Field
 from .paper_execution import PaperExecutionConfigModel, PaperExecutionStateModel
 
 
+class RuntimeStrategyConfigModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    enabled_trigger_modes: list[str] = Field(default_factory=lambda: ["pre_limit"])
+    lookback_bars: int | None = 80
+    min_touches: int | None = None
+    confirm_threshold: float | None = None
+    score_threshold: float | None = None
+    rr_target: float | None = None
+    window_bars: int | None = 100
+
+
 class RuntimeInstanceConfigModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -23,6 +35,7 @@ class RuntimeInstanceConfigModel(BaseModel):
     auto_live_submit: bool
     notes: str = ""
     paper_config: PaperExecutionConfigModel
+    strategy_config: RuntimeStrategyConfigModel
 
 
 class RuntimeInstanceStatusModel(BaseModel):
@@ -73,6 +86,7 @@ class RuntimeInstanceCreateRequest(BaseModel):
     auto_live_submit: bool = False
     notes: str = ""
     paper_config: PaperExecutionConfigModel | None = None
+    strategy_config: RuntimeStrategyConfigModel | None = None
 
 
 class RuntimeInstanceUpdateRequest(BaseModel):
@@ -90,6 +104,7 @@ class RuntimeInstanceUpdateRequest(BaseModel):
     auto_live_submit: bool | None = None
     notes: str | None = None
     paper_config: PaperExecutionConfigModel | None = None
+    strategy_config: RuntimeStrategyConfigModel | None = None
 
 
 class RuntimeTickRequest(BaseModel):
@@ -123,6 +138,7 @@ __all__ = [
     "RuntimeInstanceListResponse",
     "RuntimeInstanceModel",
     "RuntimeInstanceResponse",
+    "RuntimeStrategyConfigModel",
     "RuntimeInstanceUpdateRequest",
     "RuntimeKillSwitchRequest",
     "RuntimeTickRequest",

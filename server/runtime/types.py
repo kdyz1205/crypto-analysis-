@@ -10,6 +10,17 @@ RuntimeState = Literal["stopped", "running", "blocked"]
 
 
 @dataclass(slots=True)
+class RuntimeStrategyConfig:
+    enabled_trigger_modes: tuple[str, ...] = ("pre_limit",)
+    lookback_bars: int | None = 80
+    min_touches: int | None = None
+    confirm_threshold: float | None = None
+    score_threshold: float | None = None
+    rr_target: float | None = None
+    window_bars: int | None = 100
+
+
+@dataclass(slots=True)
 class RuntimeInstanceConfig:
     instance_id: str
     label: str
@@ -26,6 +37,7 @@ class RuntimeInstanceConfig:
     auto_live_submit: bool = False
     notes: str = ""
     paper_config: PaperExecutionConfig = field(default_factory=PaperExecutionConfig)
+    strategy_config: RuntimeStrategyConfig = field(default_factory=RuntimeStrategyConfig)
 
 
 @dataclass(slots=True)
@@ -53,4 +65,5 @@ __all__ = [
     "RuntimeInstanceStatus",
     "RuntimeMode",
     "RuntimeState",
+    "RuntimeStrategyConfig",
 ]

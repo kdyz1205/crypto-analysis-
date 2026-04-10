@@ -15,10 +15,16 @@ from .types import PaperAccountSummary, PaperExecutionConfig, PaperExecutionStat
 
 
 class PaperExecutionEngine:
-    def __init__(self, config: PaperExecutionConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: PaperExecutionConfig | None = None,
+        *,
+        max_fill_history: int | None = 100,
+        max_closed_history: int | None = 100,
+    ) -> None:
         self.config = config or PaperExecutionConfig()
-        self.order_manager = PaperOrderManager()
-        self.position_manager = PaperPositionManager()
+        self.order_manager = PaperOrderManager(max_fill_history=max_fill_history)
+        self.position_manager = PaperPositionManager(max_closed_history=max_closed_history)
         self.kill_switch = PaperKillSwitch()
         self.realized_pnl = 0.0
         self.daily_realized_pnl = 0.0

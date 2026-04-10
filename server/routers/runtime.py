@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..execution import PaperExecutionConfig
 from ..execution.types import dataclass_to_dict
-from ..runtime import SubaccountRuntimeManager
+from ..runtime import RuntimeStrategyConfig, SubaccountRuntimeManager
 from ..schemas.runtime import (
     RuntimeEventsResponse,
     RuntimeInstanceCreateRequest,
@@ -27,6 +27,7 @@ async def api_runtime_instances():
 @router.post("/instances", response_model=RuntimeInstanceResponse)
 async def api_runtime_create_instance(req: RuntimeInstanceCreateRequest):
     paper_config = PaperExecutionConfig(**req.paper_config.model_dump()) if req.paper_config is not None else None
+    strategy_config = RuntimeStrategyConfig(**req.strategy_config.model_dump()) if req.strategy_config is not None else None
     record = runtime_manager.create_instance(
         label=req.label,
         symbol=req.symbol,
@@ -42,6 +43,7 @@ async def api_runtime_create_instance(req: RuntimeInstanceCreateRequest):
         auto_live_submit=req.auto_live_submit,
         notes=req.notes,
         paper_config=paper_config,
+        strategy_config=strategy_config,
     )
     return {"instance": dataclass_to_dict(record)}
 
@@ -51,7 +53,9 @@ async def api_runtime_update_instance(instance_id: str, req: RuntimeInstanceUpda
     try:
         changes = {key: value for key, value in req.model_dump().items() if value is not None}
         if "paper_config" in changes and changes["paper_config"] is not None:
-            changes["paper_config"] = changes["paper_config"]
+            changes["paper_config"] = changes["paper_config"].model_dump()
+        if "strategy_config" in changes and changes["strategy_config"] is not None:
+            changes["strategy_config"] = changes["strategy_config"].model_dump()
         record = runtime_manager.update_instance(instance_id, **changes)
     except KeyError as exc:
         raise HTTPException(404, f"Unknown runtime instance: {instance_id}") from exc

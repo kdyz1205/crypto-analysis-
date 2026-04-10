@@ -18,7 +18,7 @@ from ..schemas.paper_execution import (
     PaperExecutionStepResponse,
     PaperKillSwitchRequest,
 )
-from ..strategy import ReplayResult, StrategyConfig, build_latest_snapshot
+from ..strategy import ReplayResult, StrategyConfig, apply_strategy_overrides, build_latest_snapshot
 
 router = APIRouter(prefix="/api/paper-execution", tags=["paper-execution"])
 
@@ -80,6 +80,14 @@ async def api_paper_execution_step(req: PaperExecutionStepRequest):
             requested_days,
             req.analysis_bars,
         )
+        strategy_cfg = apply_strategy_overrides(
+            strategy_cfg,
+            lookback_bars=req.lookback_bars,
+            min_touches=req.min_touches,
+            confirm_threshold=req.confirm_threshold,
+            score_threshold=req.score_threshold,
+            rr_target=req.rr_target,
+        )
         stream_key = f"{normalized_symbol}:{req.interval}"
         last_processed = paper_engine.last_processed_bar_by_stream.get(stream_key, -1)
         target_bar = last_processed + 1 if req.bar_index is None else req.bar_index
@@ -101,6 +109,8 @@ async def api_paper_execution_step(req: PaperExecutionStepRequest):
             req.interval,
             start_bar=max(0, last_processed + 1),
             end_bar=target_bar,
+            enabled_trigger_modes=tuple(req.trigger_modes),
+            strategy_window_bars=req.strategy_window_bars,
         )
         result = paper_engine.step(
             normalized_symbol,
@@ -172,18 +182,22 @@ def _build_step_replay_result(
     *,
     start_bar: int,
     end_bar: int,
+    enabled_trigger_modes: tuple[str, ...] | list[str] | None = None,
+    strategy_window_bars: int | None = None,
 ) -> tuple[ReplayResult, int]:
     if end_bar < start_bar:
         return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple()), start_bar
 
     snapshots = []
     for current_bar in range(start_bar, end_bar + 1):
-        prefix = candles_df.iloc[: current_bar + 1].reset_index(drop=True)
+        prefix_start = max(0, current_bar - strategy_window_bars + 1) if strategy_window_bars else 0
+        prefix = candles_df.iloc[prefix_start : current_bar + 1].reset_index(drop=True)
         snapshot = build_latest_snapshot(
             prefix,
             strategy_cfg,
             symbol=symbol,
             timeframe=interval,
+            enabled_trigger_modes=enabled_trigger_modes,
         )
         snapshot = augment_snapshot_with_manual_signals(
             snapshot,
@@ -191,6 +205,7 @@ def _build_step_replay_result(
             strategy_cfg,
             symbol=symbol,
             timeframe=interval,
+            enabled_trigger_modes=enabled_trigger_modes,
         )
         snapshots.append(snapshot)
 

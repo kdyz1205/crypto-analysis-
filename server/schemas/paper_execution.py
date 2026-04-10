@@ -177,6 +177,13 @@ class PaperExecutionStepRequest(BaseModel):
     bar_index: int | None = None
     days: int | None = None
     analysis_bars: int = 500
+    trigger_modes: list[str] = Field(default_factory=lambda: ["pre_limit"])
+    lookback_bars: int | None = 80
+    min_touches: int | None = None
+    confirm_threshold: float | None = None
+    score_threshold: float | None = None
+    rr_target: float | None = None
+    strategy_window_bars: int | None = 100
 
 
 class PaperExecutionStepResponse(BaseModel):

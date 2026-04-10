@@ -58,10 +58,22 @@ def test_runtime_router_create_tick_and_stop(monkeypatch, tmp_path) -> None:
 
     created = client.post(
         "/api/runtime/instances",
-        json={"label": "BTC demo", "symbol": "BTCUSDT", "timeframe": "4h", "live_mode": "disabled"},
+        json={
+            "label": "BTC demo",
+            "symbol": "BTCUSDT",
+            "timeframe": "4h",
+            "live_mode": "disabled",
+            "strategy_config": {
+                "enabled_trigger_modes": ["pre_limit"],
+                "lookback_bars": 80,
+                "window_bars": 100,
+            },
+        },
     )
     assert created.status_code == 200
     instance_id = created.json()["instance"]["config"]["instance_id"]
+    assert created.json()["instance"]["config"]["strategy_config"]["enabled_trigger_modes"] == ["pre_limit"]
+    assert created.json()["instance"]["config"]["strategy_config"]["lookback_bars"] == 80
 
     ticked = client.post(f"/api/runtime/instances/{instance_id}/tick", json={})
     assert ticked.status_code == 200
@@ -110,3 +122,4 @@ def test_runtime_manager_restores_persisted_state(monkeypatch, tmp_path) -> None
     assert restored_record.status.paper_state is not None
     assert restored_record.status.paper_state.account.last_processed_bar_by_stream["ETHUSDT:4h"] == 0
     assert restored_record.status.last_processed_bar == 0
+    assert restored_record.config.strategy_config.enabled_trigger_modes == ("pre_limit",)
