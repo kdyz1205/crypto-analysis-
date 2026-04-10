@@ -21,6 +21,21 @@ class LiveBridgeConfig:
     max_live_notional: float = 100.0
     reconciliation_max_age_seconds: int = 300
 
+    @classmethod
+    def from_env(cls) -> "LiveBridgeConfig":
+        return cls(
+            allowed_symbols=_csv_env("LIVE_ALLOWED_SYMBOLS", ("BTCUSDT",)),
+            allowed_timeframes=_csv_env("LIVE_ALLOWED_TIMEFRAMES", ("1h",)),
+            allowed_trigger_modes=_csv_env(
+                "LIVE_ALLOWED_TRIGGER_MODES",
+                ("rejection", "failed_breakout"),
+            ),
+            max_live_positions=_int_env("LIVE_MAX_POSITIONS", 1),
+            default_mode=_mode_env("LIVE_DEFAULT_MODE", "demo"),
+            max_live_notional=_float_env("LIVE_MAX_NOTIONAL", 100.0),
+            reconciliation_max_age_seconds=_int_env("LIVE_RECONCILIATION_MAX_AGE_SECONDS", 300),
+        )
+
 
 class LiveExecutionEngine:
     def __init__(
@@ -39,6 +54,7 @@ class LiveExecutionEngine:
         adapter = self._adapter_provider()
         enabled_flags = self._enabled_flags()
         return {
+            "exchange": getattr(adapter, "exchange_name", "live"),
             "enabled_flags": enabled_flags,
             "default_mode": self.config.default_mode,
             "api_key_ready": adapter.has_api_keys(),
@@ -299,3 +315,34 @@ class LiveExecutionEngine:
 
 
 __all__ = ["LiveBridgeConfig", "LiveExecutionEngine"]
+
+
+def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.environ.get(name, "")
+    if not raw.strip():
+        return default
+    values = tuple(item.strip() for item in raw.split(",") if item.strip())
+    return values or default
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name, "")
+    try:
+        return int(raw) if raw.strip() else default
+    except ValueError:
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name, "")
+    try:
+        return float(raw) if raw.strip() else default
+    except ValueError:
+        return default
+
+
+def _mode_env(name: str, default: LiveMode) -> LiveMode:
+    raw = os.environ.get(name, "").strip().lower()
+    if raw in {"demo", "live"}:
+        return raw
+    return default

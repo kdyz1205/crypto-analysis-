@@ -62,6 +62,7 @@ class LiveExecutionResultModel(BaseModel):
 class LiveExecutionStatusModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
+    exchange: str = "bitget"
     enabled_flags: dict[str, bool]
     default_mode: str
     api_key_ready: bool

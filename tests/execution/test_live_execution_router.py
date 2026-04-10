@@ -10,6 +10,8 @@ from server.strategy.types import StrategySignal
 
 
 class _FakeAdapter:
+    exchange_name = "bitget"
+
     def __init__(self, *, has_keys: bool = True, reconcile_blocked: bool = False) -> None:
         self._has_keys = has_keys
         self._reconcile_blocked = reconcile_blocked
@@ -113,6 +115,7 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
 
     status_response = client.get("/api/live-execution/status")
     assert status_response.status_code == 200
+    assert status_response.json()["status"]["exchange"] == "bitget"
     assert status_response.json()["status"]["api_key_ready"] is True
     assert status_response.json()["status"]["enabled_flags"]["dry_run"] is True
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from server.execution.live_engine import LiveExecutionEngine
+from server.execution.live_engine import LiveBridgeConfig, LiveExecutionEngine
 from server.execution.types import OrderIntent
 
 
 class _FakeAdapter:
+    exchange_name = "bitget"
+
     def __init__(self, *, has_keys: bool = True, reconcile_blocked: bool = False) -> None:
         self._has_keys = has_keys
         self._reconcile_blocked = reconcile_blocked
@@ -145,8 +147,29 @@ def test_live_engine_status_exposes_flags_and_reconciliation_requirement(monkeyp
 
     status = engine.get_status()
 
+    assert status["exchange"] == "bitget"
     assert status["enabled_flags"]["enable_live_trading"] is False
     assert status["enabled_flags"]["confirm_live_trading"] is False
     assert status["enabled_flags"]["dry_run"] is True
     assert status["reconciliation_required_by_mode"] == {"demo": True, "live": True}
     assert status["blocked_reason"] == "enable_live_trading_disabled"
+
+
+def test_live_bridge_config_reads_env_overrides(monkeypatch) -> None:
+    monkeypatch.setenv("LIVE_ALLOWED_SYMBOLS", "BTCUSDT,HYPEUSDT")
+    monkeypatch.setenv("LIVE_ALLOWED_TIMEFRAMES", "4h,1h")
+    monkeypatch.setenv("LIVE_ALLOWED_TRIGGER_MODES", "rejection,failed_breakout")
+    monkeypatch.setenv("LIVE_MAX_POSITIONS", "2")
+    monkeypatch.setenv("LIVE_DEFAULT_MODE", "live")
+    monkeypatch.setenv("LIVE_MAX_NOTIONAL", "250")
+    monkeypatch.setenv("LIVE_RECONCILIATION_MAX_AGE_SECONDS", "900")
+
+    config = LiveBridgeConfig.from_env()
+
+    assert config.allowed_symbols == ("BTCUSDT", "HYPEUSDT")
+    assert config.allowed_timeframes == ("4h", "1h")
+    assert config.allowed_trigger_modes == ("rejection", "failed_breakout")
+    assert config.max_live_positions == 2
+    assert config.default_mode == "live"
+    assert config.max_live_notional == 250.0
+    assert config.reconciliation_max_age_seconds == 900

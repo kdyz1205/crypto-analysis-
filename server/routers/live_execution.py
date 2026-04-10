@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
-from ..core.dependencies import get_agent
 from ..execution.live_adapter import LiveExecutionAdapter
-from ..execution.live_engine import LiveExecutionEngine
+from ..execution.live_engine import LiveBridgeConfig, LiveExecutionEngine
 from ..execution.types import OrderIntent
 from ..schemas.live_execution import (
     LiveCloseRequest,
@@ -23,10 +22,13 @@ router = APIRouter(prefix="/api/live-execution", tags=["live-execution"])
 
 
 def _adapter_provider() -> LiveExecutionAdapter:
-    return LiveExecutionAdapter(get_agent().trader)
+    return LiveExecutionAdapter()
 
 
-live_engine = LiveExecutionEngine(adapter_provider=_adapter_provider)
+live_engine = LiveExecutionEngine(
+    adapter_provider=_adapter_provider,
+    config=LiveBridgeConfig.from_env(),
+)
 
 
 @router.get("/status", response_model=LiveExecutionStatusResponse)

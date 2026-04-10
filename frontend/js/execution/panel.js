@@ -865,6 +865,7 @@ function renderLiveBridgeSection(status, error, paperState) {
     return renderUnavailableSection('Live Bridge', error || 'Live bridge status unavailable');
   }
 
+  const exchangeLabel = escapeHtml(String(status.exchange || 'bitget').toUpperCase());
   const enabledFlags = status.enabled_flags || {};
   const whitelist = status.whitelist || {};
   const limits = status.limits || {};
@@ -906,7 +907,7 @@ function renderLiveBridgeSection(status, error, paperState) {
       <div class="paper-section-header">
         <h4>Live Bridge</h4>
         <span class="paper-badge ${status.api_key_ready ? 'is-ok' : 'is-danger'}">
-          ${status.api_key_ready ? 'OKX READY' : 'OKX KEYS MISSING'}
+          ${status.api_key_ready ? `${exchangeLabel} READY` : `${exchangeLabel} KEYS MISSING`}
         </span>
       </div>
       <div class="exec-stats-grid">
@@ -936,7 +937,8 @@ function renderLiveBridgeSection(status, error, paperState) {
           </div>
         </div>
       </div>
-      ${enabledFlags.dry_run ? '<div class="paper-note paper-note-danger">Live mode remains hard-blocked while DRY_RUN=true. Demo submit is still available after reconciliation.</div>' : ''}
+      ${enabledFlags.dry_run ? `<div class="paper-note paper-note-danger">Live mode remains hard-blocked while DRY_RUN=true. ${exchangeLabel} demo submit is still available after reconciliation.</div>` : ''}
+      <div class="paper-note">This bridge now submits approved intents to ${exchangeLabel}. Demo mode uses the exchange demo header and should be validated before any real-money toggle.</div>
       ${defaultIntentSubmittedDemo || defaultIntentSubmittedLive ? '<div class="paper-note">Selected intent was already submitted on at least one live bridge mode. Re-submit is locally idempotent-blocked.</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <div class="paper-actions live-actions">
@@ -1213,8 +1215,9 @@ function renderLegacyOpsSection(status, okx, healer, presets, logs) {
         <div class="muted" id="v2-preset-status"></div>
       </div>
 
-      <h4>OKX API Keys</h4>
+      <h4>Legacy OKX API Keys</h4>
       <form class="ops-form" id="v2-okx-form">
+        <div class="muted">Legacy only. The new live bridge uses Bitget credentials from environment variables, not this form.</div>
         <div class="muted">Status: ${okx?.has_keys ? '<span class="pnl-pos">Connected</span>' : 'No keys configured'}</div>
         ${okx?.balance ? `<pre>${escapeHtml(JSON.stringify(okx.balance, null, 2).slice(0, 300))}</pre>` : ''}
         <label>API Key<input type="password" name="api_key" placeholder="${okx?.has_keys ? 'already set - fill to update' : 'enter key'}" /></label>
