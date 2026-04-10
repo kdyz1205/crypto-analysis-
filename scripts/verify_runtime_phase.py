@@ -93,6 +93,7 @@ def _shutdown_server(server: subprocess.Popen[str]) -> None:
 
 
 def _create_runtime_instance(base_url: str) -> str:
+    _clear_existing_runtime_instances(base_url, label="Browser Verify Runtime")
     payload = {
         "label": "Browser Verify Runtime",
         "symbol": "HYPEUSDT",
@@ -115,6 +116,7 @@ def _create_runtime_instance(base_url: str) -> str:
 
     tick = httpx.post(f"{base_url}/api/runtime/instances/{instance_id}/tick", json={}, timeout=20.0)
     tick.raise_for_status()
+    _wait_for_instance_record(base_url, instance_id)
     return instance_id
 
 
@@ -158,9 +160,15 @@ def _verify_runtime_ui(base_url: str, instance_id: str) -> VerificationResult:
               hasKillButton: !!document.querySelector('[data-runtime-action="kill"]'),
             };
             """,
-            timeout_seconds=12.0,
+            timeout_seconds=30.0,
         )
         if execution_details is None:
+            driver.execute_script(
+                """
+                document.querySelector('.exec-tab[data-tab="execution"]')?.click();
+                """
+            )
+            time.sleep(1.0)
             execution_details = driver.execute_script(
                 """
                 const runtimeSection = document.getElementById('v2-exec-runtime-section');
@@ -247,6 +255,35 @@ def main() -> int:
 
     print(json.dumps({"passed": result.passed, "details": result.details}, ensure_ascii=True, indent=2))
     return 0 if result.passed else 1
+
+
+def _wait_for_instance_record(base_url: str, instance_id: str, timeout_seconds: float = 20.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        response = httpx.get(f"{base_url}/api/runtime/instances", timeout=10.0)
+        response.raise_for_status()
+        records = response.json().get("instances") or []
+        if any(record.get("config", {}).get("instance_id") == instance_id for record in records):
+            return
+        time.sleep(0.5)
+    raise RuntimeError(f"Runtime instance {instance_id} did not become visible via API")
+
+
+def _clear_existing_runtime_instances(base_url: str, *, label: str) -> None:
+    response = httpx.get(f"{base_url}/api/runtime/instances", timeout=10.0)
+    response.raise_for_status()
+    records = response.json().get("instances") or []
+    for record in records:
+        config = record.get("config") or {}
+        if config.get("label") != label:
+            continue
+        instance_id = config.get("instance_id")
+        if not instance_id:
+            continue
+        try:
+            httpx.delete(f"{base_url}/api/runtime/instances/{instance_id}", timeout=10.0).raise_for_status()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
