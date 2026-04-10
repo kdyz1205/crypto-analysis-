@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any, Mapping, Sequence
 
 from .config import StrategyConfig
@@ -63,7 +63,7 @@ def replay_strategy(
     snapshots: list[ReplaySnapshot] = []
 
     for bar_index in range(len(df)):
-        window = df.iloc[: bar_index + 1].reset_index(drop=True)
+        window = df.iloc[: bar_index + 1]
         pivots = tuple(detect_pivots(window, cfg))
         detection = detect_trendlines(window, pivots, cfg, symbol=symbol, timeframe=timeframe)
         prioritized_signals, selected_signals = _generate_signals_for_bar(
@@ -113,6 +113,127 @@ def replay_strategy(
         timeframe=timeframe,
         snapshots=tuple(snapshots),
     )
+
+
+def build_latest_snapshot(
+    candles,
+    config: StrategyConfig | None = None,
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    enabled_trigger_modes: Sequence[str] | None = None,
+    active_directions: Mapping[str, str] | None = None,
+) -> ReplaySnapshot:
+    cfg = config or StrategyConfig()
+    df = ensure_candles_df(candles)
+    if df.empty:
+        raise ValueError("No candles available for latest snapshot")
+
+    current_index = len(df) - 1
+    pivots = tuple(detect_pivots(df, cfg))
+    detection = detect_trendlines(df, pivots, cfg, symbol=symbol, timeframe=timeframe)
+    prioritized_signals, selected_signals = _generate_signals_for_bar(
+        df,
+        detection.active_lines,
+        cfg,
+        enabled_trigger_modes=enabled_trigger_modes,
+        active_directions=active_directions,
+    )
+    signal_states = build_signal_state_snapshots(
+        prioritized_signals,
+        selected_signals,
+        active_directions=active_directions,
+    )
+    # Snapshot consumers only need the current line state, not a replay-accurate
+    # transition chain. Keeping previous_states empty avoids replaying every prefix bar.
+    line_states = advance_line_states(
+        df,
+        detection.candidate_lines,
+        selected_signals,
+        cfg,
+        previous_states=None,
+        bar_index=current_index,
+    )
+    active_lines = tuple(
+        state for state in line_states if state.state in {"confirmed", "armed", "triggered"}
+    )
+    invalidations = tuple(
+        state for state in line_states if state.state in {"invalidated", "expired"}
+    )
+    return ReplaySnapshot(
+        bar_index=current_index,
+        timestamp=df.iloc[current_index]["timestamp"],
+        pivots=pivots,
+        candidate_lines=detection.candidate_lines,
+        active_lines=active_lines,
+        line_states=line_states,
+        signals=selected_signals,
+        signal_states=signal_states,
+        invalidations=invalidations,
+    )
+
+
+def build_tail_snapshots(
+    candles,
+    config: StrategyConfig | None = None,
+    *,
+    symbol: str = "",
+    timeframe: str = "",
+    tail: int,
+    enabled_trigger_modes: Sequence[str] | None = None,
+    active_directions: Mapping[str, str] | None = None,
+) -> tuple[ReplaySnapshot, ...]:
+    if tail <= 0:
+        return ()
+
+    cfg = config or StrategyConfig()
+    df = ensure_candles_df(candles)
+    if df.empty:
+        return ()
+
+    start_index = max(0, len(df) - tail)
+    previous_state_map: dict[str, str] = {}
+
+    snapshots: list[ReplaySnapshot] = []
+    for bar_index in range(start_index, len(df)):
+        snapshot = build_latest_snapshot(
+            df.iloc[: bar_index + 1],
+            cfg,
+            symbol=symbol,
+            timeframe=timeframe,
+            enabled_trigger_modes=enabled_trigger_modes,
+            active_directions=active_directions,
+        )
+        if previous_state_map:
+            line_states = tuple(
+                replace(state, previous_state=previous_state_map.get(state.line_id))
+                for state in snapshot.line_states
+            )
+        else:
+            line_states = snapshot.line_states
+
+        active_lines = tuple(
+            state for state in line_states if state.state in {"confirmed", "armed", "triggered"}
+        )
+        invalidations = tuple(
+            state for state in line_states if state.state in {"invalidated", "expired"}
+        )
+        snapshots.append(
+            ReplaySnapshot(
+                bar_index=snapshot.bar_index,
+                timestamp=snapshot.timestamp,
+                pivots=snapshot.pivots,
+                candidate_lines=snapshot.candidate_lines,
+                active_lines=active_lines,
+                line_states=line_states,
+                signals=snapshot.signals,
+                signal_states=snapshot.signal_states,
+                invalidations=invalidations,
+            )
+        )
+        previous_state_map = {state.line_id: state.state for state in line_states}
+
+    return tuple(snapshots)
 
 
 def iter_replay_snapshots(
@@ -179,6 +300,8 @@ def _json_safe(value: Any) -> Any:
 
 
 __all__ = [
+    "build_tail_snapshots",
+    "build_latest_snapshot",
     "ReplayResult",
     "ReplaySnapshot",
     "iter_replay_snapshots",

@@ -64,22 +64,23 @@ class PaperExecutionEngine:
         replay_result: ReplayResult,
         *,
         bar_index: int | None = None,
+        snapshot_offset: int = 0,
     ) -> dict[str, Any]:
         stream_key = f"{symbol}:{timeframe}"
-        max_index = len(replay_result.snapshots) - 1
-        if max_index < 0:
+        max_replay_index = snapshot_offset + len(replay_result.snapshots) - 1
+        if max_replay_index < snapshot_offset:
             raise ValueError("replay returned no snapshots")
 
         last_processed = self.last_processed_bar_by_stream.get(stream_key, -1)
         target_bar = (last_processed + 1) if bar_index is None else bar_index
-        if target_bar > max_index:
-            target_bar = max_index
+        if target_bar > max_replay_index:
+            target_bar = max_replay_index
         if target_bar < last_processed:
             raise ValueError(f"bar_index {target_bar} is behind already-processed bar {last_processed} for {stream_key}")
 
         processed_bars: list[int] = []
         for current_bar in range(last_processed + 1, target_bar + 1):
-            snapshot = replay_result.snapshots[current_bar]
+            snapshot = replay_result.snapshots[current_bar - snapshot_offset]
             bar = candles_df.iloc[current_bar].to_dict()
             timestamp = snapshot.timestamp
 

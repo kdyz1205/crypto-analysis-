@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from dataclasses import asdict, replace
 from typing import Any
 
@@ -21,7 +22,7 @@ from ..schemas.strategy import (
     StrategyTouchPointModel,
     serialize_config_response,
 )
-from ..strategy import StrategyConfig, replay_strategy
+from ..strategy import StrategyConfig, build_latest_snapshot, build_tail_snapshots, replay_strategy
 
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
 
@@ -33,6 +34,11 @@ DEFAULT_DAYS_BY_INTERVAL = {
     "4h": 365,
     "1d": 365,
 }
+SNAPSHOT_CACHE_LIMIT = 32
+REPLAY_CACHE_LIMIT = 16
+FAST_REPLAY_TAIL_THRESHOLD = 12
+_snapshot_cache: OrderedDict[tuple[Any, ...], StrategySnapshotResponse] = OrderedDict()
+_replay_cache: OrderedDict[tuple[Any, ...], StrategyReplayResponse] = OrderedDict()
 
 
 @router.get("/config", response_model=StrategyConfigResponse)
@@ -92,6 +98,10 @@ async def api_strategy_snapshot(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
+        cache_key = _snapshot_cache_key(candles_df, normalized_symbol, interval, price_precision)
+        cached = _get_cached_snapshot(cache_key)
+        if cached is not None:
+            return cached
         response = await asyncio.to_thread(
             _build_strategy_snapshot_response,
             candles_df,
@@ -100,7 +110,7 @@ async def api_strategy_snapshot(
             interval,
             price_precision,
         )
-        return response
+        return _store_cached_snapshot(cache_key, response)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
@@ -132,6 +142,10 @@ async def api_strategy_replay(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
+        cache_key = _replay_cache_key(candles_df, normalized_symbol, interval, price_precision, tail)
+        cached = _get_cached_replay(cache_key)
+        if cached is not None:
+            return cached
         response = await asyncio.to_thread(
             _build_strategy_replay_response,
             candles_df,
@@ -141,7 +155,7 @@ async def api_strategy_replay(
             price_precision,
             tail,
         )
-        return response
+        return _store_cached_replay(cache_key, response)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
@@ -156,7 +170,14 @@ async def _load_strategy_inputs(
     days: int,
     analysis_bars: int | None,
 ) -> tuple[pd.DataFrame, dict[str, Any], int | None, StrategyConfig]:
-    polars_df, market_payload = await get_ohlcv_with_df(symbol, interval, end_time, days)
+    polars_df, market_payload = await get_ohlcv_with_df(
+        symbol,
+        interval,
+        end_time,
+        days,
+        include_price_precision=True,
+        include_render_payload=False,
+    )
     if polars_df is None or polars_df.is_empty():
         raise ValueError(f"No data for {symbol} {interval}")
 
@@ -199,14 +220,8 @@ def _build_strategy_snapshot_response(
     interval: str,
     price_precision: int | None,
 ) -> StrategySnapshotResponse:
-    replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
-    if not replay_result.snapshots:
-        raise LookupError("No strategy snapshot available")
-
-    snapshot_payload = _serialize_snapshot(
-        replay_result.snapshots[-1],
-        candles_df,
-    )
+    snapshot = build_latest_snapshot(candles_df, cfg, symbol=symbol, timeframe=interval)
+    snapshot_payload = _serialize_snapshot(snapshot, candles_df)
     return StrategySnapshotResponse(
         symbol=symbol,
         interval=interval,
@@ -219,6 +234,93 @@ def _build_strategy_snapshot_response(
     )
 
 
+def _snapshot_cache_key(
+    candles_df: pd.DataFrame,
+    symbol: str,
+    interval: str,
+    price_precision: int | None,
+) -> tuple[Any, ...]:
+    return (
+        symbol,
+        interval,
+        int(len(candles_df)),
+        _recent_candle_signature(candles_df),
+        price_precision,
+    )
+
+
+def _get_cached_snapshot(cache_key: tuple[Any, ...]) -> StrategySnapshotResponse | None:
+    cached = _snapshot_cache.get(cache_key)
+    if cached is None:
+        return None
+    _snapshot_cache.move_to_end(cache_key)
+    return cached
+
+
+def _store_cached_snapshot(
+    cache_key: tuple[Any, ...],
+    response: StrategySnapshotResponse,
+) -> StrategySnapshotResponse:
+    _snapshot_cache[cache_key] = response
+    _snapshot_cache.move_to_end(cache_key)
+    while len(_snapshot_cache) > SNAPSHOT_CACHE_LIMIT:
+        _snapshot_cache.popitem(last=False)
+    return response
+
+
+def _replay_cache_key(
+    candles_df: pd.DataFrame,
+    symbol: str,
+    interval: str,
+    price_precision: int | None,
+    tail: int | None,
+) -> tuple[Any, ...]:
+    return (
+        symbol,
+        interval,
+        int(len(candles_df)),
+        _recent_candle_signature(candles_df),
+        price_precision,
+        tail,
+    )
+
+
+def _get_cached_replay(cache_key: tuple[Any, ...]) -> StrategyReplayResponse | None:
+    cached = _replay_cache.get(cache_key)
+    if cached is None:
+        return None
+    _replay_cache.move_to_end(cache_key)
+    return cached
+
+
+def _store_cached_replay(
+    cache_key: tuple[Any, ...],
+    response: StrategyReplayResponse,
+) -> StrategyReplayResponse:
+    _replay_cache[cache_key] = response
+    _replay_cache.move_to_end(cache_key)
+    while len(_replay_cache) > REPLAY_CACHE_LIMIT:
+        _replay_cache.popitem(last=False)
+    return response
+
+
+def _recent_candle_signature(candles_df: pd.DataFrame, *, window: int = 8) -> tuple[Any, ...]:
+    tail = candles_df.tail(window)
+    signature: list[Any] = []
+    for row in tail.itertuples(index=False):
+        signature.extend(
+            (
+                int(row.timestamp),
+                float(row.open),
+                float(row.high),
+                float(row.low),
+                float(row.close),
+                float(row.volume),
+            )
+        )
+    return tuple(signature)
+
+
 def _build_strategy_replay_response(
     candles_df: pd.DataFrame,
     cfg: StrategyConfig,
@@ -227,9 +329,24 @@ def _build_strategy_replay_response(
     price_precision: int | None,
     tail: int | None,
 ) -> StrategyReplayResponse:
-    replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
-    snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
-    snapshot_payloads = [_serialize_snapshot(snapshot, candles_df) for snapshot in snapshots]
+    if tail is not None and tail <= FAST_REPLAY_TAIL_THRESHOLD:
+        snapshots = build_tail_snapshots(
+            candles_df,
+            cfg,
+            symbol=symbol,
+            timeframe=interval,
+            tail=tail,
+        )
+    else:
+        replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
+        snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
+    timestamps = [int(value) for value in candles_df["timestamp"].tolist()]
+    highs = [float(value) for value in candles_df["high"].tolist()]
+    lows = [float(value) for value in candles_df["low"].tolist()]
+    snapshot_payloads = [
+        _serialize_snapshot(snapshot, candles_df, timestamps=timestamps, highs=highs, lows=lows)
+        for snapshot in snapshots
+    ]
     return StrategyReplayResponse(
         symbol=symbol,
         interval=interval,
@@ -243,8 +360,17 @@ def _build_strategy_replay_response(
     )
 
 
-def _serialize_snapshot(snapshot, candles_df: pd.DataFrame) -> StrategySnapshotModel:
-    timestamps = candles_df["timestamp"].tolist()
+def _serialize_snapshot(
+    snapshot,
+    candles_df: pd.DataFrame,
+    *,
+    timestamps: list[int] | None = None,
+    highs: list[float] | None = None,
+    lows: list[float] | None = None,
+) -> StrategySnapshotModel:
+    timestamps = timestamps or [int(value) for value in candles_df["timestamp"].tolist()]
+    highs = highs or [float(value) for value in candles_df["high"].tolist()]
+    lows = lows or [float(value) for value in candles_df["low"].tolist()]
     current_index = snapshot.bar_index
     current_time = timestamps[current_index]
     next_time = _next_timestamp(timestamps, current_index)
@@ -272,7 +398,7 @@ def _serialize_snapshot(snapshot, candles_df: pd.DataFrame) -> StrategySnapshotM
         line_states=[
             StrategyLineStateModel.model_validate(asdict(state)) for state in snapshot.line_states
         ],
-        touch_points=_serialize_touch_points(snapshot.candidate_lines, candles_df),
+        touch_points=_serialize_touch_points(snapshot.candidate_lines, timestamps=timestamps, highs=highs, lows=lows),
         signals=[StrategySignalModel.model_validate(asdict(signal)) for signal in snapshot.signals],
         signal_states=[
             StrategySignalStateModel.model_validate(asdict(signal_state))
@@ -324,19 +450,23 @@ def _serialize_line(line, line_state, *, timestamps: list[int], current_time: in
     )
 
 
-def _serialize_touch_points(lines, candles_df: pd.DataFrame) -> list[StrategyTouchPointModel]:
-    timestamps = candles_df["timestamp"].tolist()
-    rows = candles_df.to_dict("records")
+def _serialize_touch_points(
+    lines,
+    *,
+    timestamps: list[int],
+    highs: list[float],
+    lows: list[float],
+) -> list[StrategyTouchPointModel]:
     points: list[StrategyTouchPointModel] = []
     seen: set[tuple[str, int, str]] = set()
 
     for line in lines:
         for index in line.confirming_touch_indices:
             key = (line.line_id, int(index), "confirming")
-            if key in seen or index >= len(rows):
+            if key in seen or index >= len(timestamps):
                 continue
             seen.add(key)
-            price = float(rows[index]["high"] if line.side == "resistance" else rows[index]["low"])
+            price = highs[index] if line.side == "resistance" else lows[index]
             line_value = (line.slope * index) + line.intercept
             points.append(
                 StrategyTouchPointModel(
@@ -352,10 +482,10 @@ def _serialize_touch_points(lines, candles_df: pd.DataFrame) -> list[StrategyTou
             )
         for index in line.bar_touch_indices:
             key = (line.line_id, int(index), "bar")
-            if key in seen or index >= len(rows):
+            if key in seen or index >= len(timestamps):
                 continue
             seen.add(key)
-            price = float(rows[index]["high"] if line.side == "resistance" else rows[index]["low"])
+            price = highs[index] if line.side == "resistance" else lows[index]
             line_value = (line.slope * index) + line.intercept
             points.append(
                 StrategyTouchPointModel(

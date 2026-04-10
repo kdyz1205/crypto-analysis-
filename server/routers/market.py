@@ -5,6 +5,7 @@ Market data routes: symbols, OHLCV, chart overlays, top volume, data info.
 import asyncio
 import csv
 import logging
+from collections import OrderedDict
 
 from fastapi import APIRouter, Query, HTTPException
 
@@ -15,6 +16,15 @@ from ..data_service import (
 from ..pattern_service import get_patterns_from_df
 
 router = APIRouter(prefix="/api", tags=["market"])
+STRUCTURE_SUMMARY_CACHE_LIMIT = 32
+STRUCTURE_SUMMARY_LOOKBACK_BARS = {
+    "5m": 600,
+    "15m": 600,
+    "1h": 720,
+    "4h": 540,
+    "1d": 365,
+}
+_structure_summary_cache: OrderedDict[tuple[object, ...], dict] = OrderedDict()
 
 
 # ── Helpers (moved verbatim from app.py) ─────────────────────────────────
@@ -264,16 +274,78 @@ async def api_market_structure_summary(symbol: str = Query(...), interval: str =
         symbol += "USDT"
 
     try:
-        df, _ = await get_ohlcv_with_df(symbol, interval, None, days=90)
+        df, _ = await get_ohlcv_with_df(
+            symbol,
+            interval,
+            None,
+            days=90,
+            include_price_precision=False,
+            include_render_payload=False,
+        )
     except Exception as e:
         return {"error": str(e), "symbol": symbol}
     if df is None or df.is_empty():
         return {"error": "no data", "symbol": symbol}
 
     try:
-        return await asyncio.to_thread(_build_structure_summary, df, symbol, interval)
+        trimmed_df = _trim_structure_summary_df(df, interval)
+        cache_key = _structure_summary_cache_key(trimmed_df, symbol, interval)
+        cached = _get_cached_structure_summary(cache_key)
+        if cached is not None:
+            return cached
+        response = await asyncio.to_thread(_build_structure_summary, trimmed_df, symbol, interval)
+        return _store_cached_structure_summary(cache_key, response)
     except Exception as e:
         return {"error": str(e), "symbol": symbol}
+
+
+def _trim_structure_summary_df(df, interval: str):
+    max_bars = STRUCTURE_SUMMARY_LOOKBACK_BARS.get(interval, 540)
+    if len(df) <= max_bars:
+        return df
+    return df.tail(max_bars)
+
+
+def _structure_summary_cache_key(df, symbol: str, interval: str) -> tuple[object, ...]:
+    return (
+        symbol,
+        interval,
+        len(df),
+        _recent_structure_signature(df),
+    )
+
+
+def _get_cached_structure_summary(cache_key: tuple[object, ...]) -> dict | None:
+    cached = _structure_summary_cache.get(cache_key)
+    if cached is None:
+        return None
+    _structure_summary_cache.move_to_end(cache_key)
+    return cached
+
+
+def _store_cached_structure_summary(cache_key: tuple[object, ...], response: dict) -> dict:
+    _structure_summary_cache[cache_key] = response
+    _structure_summary_cache.move_to_end(cache_key)
+    while len(_structure_summary_cache) > STRUCTURE_SUMMARY_CACHE_LIMIT:
+        _structure_summary_cache.popitem(last=False)
+    return response
+
+
+def _recent_structure_signature(df, *, window: int = 8) -> tuple[object, ...]:
+    tail = df.tail(window)
+    signature: list[object] = []
+    for row in tail.iter_rows(named=True):
+        signature.extend(
+            (
+                int(row["open_time"].timestamp()),
+                float(row["open"]),
+                float(row["high"]),
+                float(row["low"]),
+                float(row["close"]),
+                float(row["volume"]),
+            )
+        )
+    return tuple(signature)
 
 
 def _build_structure_summary(df, symbol: str, interval: str) -> dict:

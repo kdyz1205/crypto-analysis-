@@ -75,11 +75,25 @@ def _build_app() -> FastAPI:
 
 
 def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None:
-    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days):
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
         return _sample_polars_df(), {"pricePrecision": 2}
 
+    def fake_build_latest_snapshot(candles_df, strategy_cfg, *, symbol="", timeframe="", **kwargs):
+        bar_index = len(candles_df) - 1
+        return ReplaySnapshot(
+            bar_index=bar_index,
+            timestamp=bar_index + 1,
+            pivots=(),
+            candidate_lines=(),
+            active_lines=(),
+            line_states=(),
+            signals=(_signal(),) if bar_index == 0 else (),
+            signal_states=(),
+            invalidations=(),
+        )
+
     monkeypatch.setattr(paper_execution_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
-    monkeypatch.setattr(paper_execution_router, "replay_strategy", lambda *args, **kwargs: _replay_result())
+    monkeypatch.setattr(paper_execution_router, "build_latest_snapshot", fake_build_latest_snapshot)
 
     paper_execution_router.paper_engine.reset()
     client = TestClient(_build_app())

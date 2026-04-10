@@ -137,3 +137,38 @@ def test_engine_rejects_orphan_fill_when_second_manual_order_cannot_open() -> No
     assert intents["sig-a"].status == "filled"
     assert intents["sig-b"].status == "rejected"
     assert intents["sig-b"].reason == "same_symbol_direction_open_blocked"
+
+
+def test_engine_step_supports_snapshot_offset() -> None:
+    engine = PaperExecutionEngine(PaperExecutionConfig())
+    engine.last_processed_bar_by_stream["BTCUSDT:1h"] = 0
+    replay = ReplayResult(
+        symbol="BTCUSDT",
+        timeframe="1h",
+        snapshots=(
+            ReplaySnapshot(
+                bar_index=1,
+                timestamp=2,
+                pivots=(),
+                candidate_lines=(),
+                active_lines=(),
+                line_states=(),
+                signals=(_signal("sig-offset"),),
+                signal_states=(),
+                invalidations=(),
+            ),
+        ),
+    )
+
+    result = engine.step(
+        "BTCUSDT",
+        "1h",
+        _candles(),
+        replay,
+        bar_index=1,
+        snapshot_offset=1,
+    )
+
+    assert result["processedBars"] == [1]
+    assert result["lastProcessedBar"] == 1
+    assert result["state"].account.open_order_count == 1

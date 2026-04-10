@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import polars as pl
 from fastapi import FastAPI
@@ -22,7 +22,7 @@ def _sample_polars_df() -> pl.DataFrame:
 
 
 def test_market_structure_summary_offloads_heavy_work(monkeypatch) -> None:
-    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days):
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
         return _sample_polars_df(), {}
 
     offload_calls = []
@@ -48,6 +48,89 @@ def test_market_structure_summary_offloads_heavy_work(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["trend_label"] == "SIDEWAYS"
     assert offload_calls == ["<lambda>"]
+
+
+def test_market_structure_summary_trims_and_caches(monkeypatch) -> None:
+    start = datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc)
+    rows = 800
+    big_df = pl.DataFrame(
+        {
+            "open_time": [start + timedelta(hours=4 * i) for i in range(rows)],
+            "open": [1.0 + (i * 0.001) for i in range(rows)],
+            "high": [1.1 + (i * 0.001) for i in range(rows)],
+            "low": [0.9 + (i * 0.001) for i in range(rows)],
+            "close": [1.0 + (i * 0.001) for i in range(rows)],
+            "volume": [100.0] * rows,
+        }
+    ).with_columns(pl.col("open_time").cast(pl.Datetime("us")))
+
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
+        return big_df, {}
+
+    build_lengths = []
+
+    def fake_build_structure_summary(df, symbol, interval):
+        build_lengths.append(len(df))
+        return {"symbol": symbol, "interval": interval, "trend_label": "SIDEWAYS", "bars": len(df)}
+
+    monkeypatch.setattr(market_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
+    monkeypatch.setattr(market_router, "_build_structure_summary", fake_build_structure_summary)
+    market_router._structure_summary_cache.clear()
+
+    app = FastAPI()
+    app.include_router(market_router.router)
+    client = TestClient(app)
+
+    first = client.get("/api/market/structure-summary?symbol=BTCUSDT&interval=4h")
+    second = client.get("/api/market/structure-summary?symbol=BTCUSDT&interval=4h")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert build_lengths == [market_router.STRUCTURE_SUMMARY_LOOKBACK_BARS["4h"]]
+    assert first.json()["bars"] == market_router.STRUCTURE_SUMMARY_LOOKBACK_BARS["4h"]
+
+
+def test_market_structure_summary_cache_invalidates_when_recent_history_changes(monkeypatch) -> None:
+    base_df = pl.DataFrame(
+        {
+            "open_time": [
+                datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc),
+                datetime(2026, 4, 1, 4, 0, tzinfo=timezone.utc),
+                datetime(2026, 4, 1, 8, 0, tzinfo=timezone.utc),
+            ],
+            "open": [1.0, 1.1, 1.2],
+            "high": [1.1, 1.2, 1.3],
+            "low": [0.9, 1.0, 1.1],
+            "close": [1.0, 1.1, 1.2],
+            "volume": [100.0, 100.0, 100.0],
+        }
+    ).with_columns(pl.col("open_time").cast(pl.Datetime("us")))
+    revised_df = base_df.with_columns(pl.Series("close", [1.0, 9.9, 1.2]))
+    responses = iter(((base_df, {}), (revised_df, {})))
+
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
+        return next(responses)
+
+    call_count = {"count": 0}
+
+    def fake_build_structure_summary(df, symbol, interval):
+        call_count["count"] += 1
+        return {"symbol": symbol, "interval": interval, "trend_label": "SIDEWAYS"}
+
+    monkeypatch.setattr(market_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
+    monkeypatch.setattr(market_router, "_build_structure_summary", fake_build_structure_summary)
+    market_router._structure_summary_cache.clear()
+
+    app = FastAPI()
+    app.include_router(market_router.router)
+    client = TestClient(app)
+
+    first = client.get("/api/market/structure-summary?symbol=BTCUSDT&interval=1h")
+    second = client.get("/api/market/structure-summary?symbol=BTCUSDT&interval=1h")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert call_count["count"] == 2
 
 
 def test_patterns_route_offloads_detection(monkeypatch) -> None:

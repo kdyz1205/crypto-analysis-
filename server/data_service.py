@@ -1216,6 +1216,9 @@ async def get_ohlcv_with_df(
     interval: str,
     end_time: str | None = None,
     days: int = 30,
+    *,
+    include_price_precision: bool = True,
+    include_render_payload: bool = True,
 ):
     """
     Same as get_ohlcv but returns (df, result_dict).
@@ -1288,7 +1291,13 @@ async def get_ohlcv_with_df(
         end_dt = pl.Series([end_time]).str.to_datetime("%Y-%m-%dT%H:%M")[0]
         df = df.filter(pl.col("open_time") <= end_dt)
 
-    price_precision = await get_symbol_price_precision(symbol)
+    price_precision = await get_symbol_price_precision(symbol) if include_price_precision else None
+
+    if not include_render_payload:
+        result = {}
+        if price_precision is not None:
+            result["pricePrecision"] = price_precision
+        return df, result
 
     candles = []
     volume = []

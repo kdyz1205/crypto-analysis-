@@ -17,7 +17,7 @@ from ..schemas.paper_execution import (
     PaperExecutionStepResponse,
     PaperKillSwitchRequest,
 )
-from ..strategy import StrategyConfig, replay_strategy
+from ..strategy import ReplayResult, StrategyConfig, build_latest_snapshot
 
 router = APIRouter(prefix="/api/paper-execution", tags=["paper-execution"])
 
@@ -79,13 +79,35 @@ async def api_paper_execution_step(req: PaperExecutionStepRequest):
             requested_days,
             req.analysis_bars,
         )
-        replay_result = replay_strategy(candles_df, strategy_cfg, symbol=normalized_symbol, timeframe=req.interval)
+        stream_key = f"{normalized_symbol}:{req.interval}"
+        last_processed = paper_engine.last_processed_bar_by_stream.get(stream_key, -1)
+        target_bar = last_processed + 1 if req.bar_index is None else req.bar_index
+        max_index = len(candles_df) - 1
+        if target_bar > max_index:
+            target_bar = max_index
+        if target_bar < last_processed + 1:
+            state = paper_engine.get_state()
+            return {
+                "stream": stream_key,
+                "processedBars": [],
+                "lastProcessedBar": last_processed,
+                "state": dataclass_to_dict(state),
+            }
+        replay_result, snapshot_offset = _build_step_replay_result(
+            candles_df,
+            strategy_cfg,
+            normalized_symbol,
+            req.interval,
+            start_bar=max(0, last_processed + 1),
+            end_bar=target_bar,
+        )
         result = paper_engine.step(
             normalized_symbol,
             req.interval,
             candles_df,
             replay_result,
             bar_index=req.bar_index,
+            snapshot_offset=snapshot_offset,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -139,6 +161,33 @@ def _normalize_symbol(symbol: str | None) -> str:
         raise ValueError("symbol is required")
     normalized = symbol.upper().replace("/", "")
     return normalized if normalized.endswith("USDT") else f"{normalized}USDT"
+
+
+def _build_step_replay_result(
+    candles_df: pd.DataFrame,
+    strategy_cfg: StrategyConfig,
+    symbol: str,
+    interval: str,
+    *,
+    start_bar: int,
+    end_bar: int,
+) -> tuple[ReplayResult, int]:
+    if end_bar < start_bar:
+        return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple()), start_bar
+
+    snapshots = []
+    for current_bar in range(start_bar, end_bar + 1):
+        prefix = candles_df.iloc[: current_bar + 1].reset_index(drop=True)
+        snapshots.append(
+            build_latest_snapshot(
+                prefix,
+                strategy_cfg,
+                symbol=symbol,
+                timeframe=interval,
+            )
+        )
+
+    return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple(snapshots)), start_bar
 
 
 __all__ = ["paper_engine", "router"]

@@ -5,6 +5,7 @@ from hashlib import sha1
 from typing import Any, Literal, Mapping, Sequence
 
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 
 OHLCV_COLUMNS = ("timestamp", "open", "high", "low", "close", "volume")
 LineSide = Literal["resistance", "support"]
@@ -15,6 +16,16 @@ TriggerMode = Literal["pre_limit", "rejection", "failed_breakout"]
 
 def ensure_candles_df(candles: pd.DataFrame | Sequence[Mapping[str, Any]]) -> pd.DataFrame:
     if isinstance(candles, pd.DataFrame):
+        missing = [column for column in OHLCV_COLUMNS if column not in candles.columns]
+        if missing:
+            raise ValueError(f"candles missing required columns: {missing}")
+
+        index = candles.index
+        range_index = isinstance(index, pd.RangeIndex) and index.start == 0 and index.step == 1 and len(index) == len(candles)
+        numeric_columns = all(is_numeric_dtype(candles[column]) for column in ("open", "high", "low", "close", "volume"))
+        if range_index and numeric_columns:
+            return candles
+
         df = candles.copy()
     else:
         df = pd.DataFrame(list(candles))

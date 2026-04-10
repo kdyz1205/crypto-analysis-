@@ -2,7 +2,7 @@ import pandas as pd
 
 import server.strategy.replay as replay_module
 from server.strategy.config import StrategyConfig
-from server.strategy.replay import replay_strategy
+from server.strategy.replay import build_latest_snapshot, build_tail_snapshots, replay_strategy
 from server.strategy.types import Trendline, TrendlineDetectionResult
 
 
@@ -195,3 +195,87 @@ def test_replay_exposes_invalidations(monkeypatch) -> None:
 
     assert len(latest_snapshot.invalidations) == 1
     assert latest_snapshot.invalidations[0].state == "invalidated"
+
+
+def test_build_latest_snapshot_matches_replay_latest_core_fields(monkeypatch) -> None:
+    line = _confirmed_resistance_line()
+
+    monkeypatch.setattr(replay_module, "detect_pivots", lambda candles, config: [])
+    monkeypatch.setattr(
+        replay_module,
+        "detect_trendlines",
+        lambda candles, pivots, config, **kwargs: TrendlineDetectionResult(
+            candidate_lines=(line,),
+            active_lines=(line,),
+        ),
+    )
+
+    candles = _simple_candles(4)
+    full_latest = replay_strategy(
+        candles,
+        StrategyConfig(),
+        symbol="TEST",
+        timeframe="1h",
+        enabled_trigger_modes=(),
+    ).snapshots[-1]
+    latest_only = build_latest_snapshot(
+        candles,
+        StrategyConfig(),
+        symbol="TEST",
+        timeframe="1h",
+        enabled_trigger_modes=(),
+    )
+
+    assert latest_only.bar_index == full_latest.bar_index
+    assert latest_only.timestamp == full_latest.timestamp
+    assert latest_only.pivots == full_latest.pivots
+    assert latest_only.candidate_lines == full_latest.candidate_lines
+    assert [state.line_id for state in latest_only.active_lines] == [state.line_id for state in full_latest.active_lines]
+    assert [state.state for state in latest_only.active_lines] == [state.state for state in full_latest.active_lines]
+    assert latest_only.signals == full_latest.signals
+    assert latest_only.signal_states == full_latest.signal_states
+    assert latest_only.invalidations == full_latest.invalidations
+    assert [state.state for state in latest_only.line_states] == [state.state for state in full_latest.line_states]
+
+
+def test_build_tail_snapshots_matches_replay_latest_core_fields(monkeypatch) -> None:
+    line = _confirmed_resistance_line()
+
+    monkeypatch.setattr(replay_module, "detect_pivots", lambda candles, config: [])
+    monkeypatch.setattr(
+        replay_module,
+        "detect_trendlines",
+        lambda candles, pivots, config, **kwargs: TrendlineDetectionResult(
+            candidate_lines=(line,),
+            active_lines=(line,),
+        ),
+    )
+
+    candles = _simple_candles(6)
+    full_tail = replay_strategy(
+        candles,
+        StrategyConfig(),
+        symbol="TEST",
+        timeframe="1h",
+        enabled_trigger_modes=(),
+    ).snapshots[-2:]
+    fast_tail = build_tail_snapshots(
+        candles,
+        StrategyConfig(),
+        symbol="TEST",
+        timeframe="1h",
+        tail=2,
+        enabled_trigger_modes=(),
+    )
+
+    assert len(fast_tail) == 2
+    for full_snapshot, fast_snapshot in zip(full_tail, fast_tail):
+        assert fast_snapshot.bar_index == full_snapshot.bar_index
+        assert fast_snapshot.pivots == full_snapshot.pivots
+        assert fast_snapshot.candidate_lines == full_snapshot.candidate_lines
+        assert [state.line_id for state in fast_snapshot.active_lines] == [state.line_id for state in full_snapshot.active_lines]
+        assert [state.state for state in fast_snapshot.active_lines] == [state.state for state in full_snapshot.active_lines]
+        assert fast_snapshot.signals == full_snapshot.signals
+        assert fast_snapshot.signal_states == full_snapshot.signal_states
+        assert fast_snapshot.invalidations == full_snapshot.invalidations
+        assert [state.state for state in fast_snapshot.line_states] == [state.state for state in full_snapshot.line_states]
