@@ -169,7 +169,7 @@ def _evaluate_candidate_line(
 
     recent_window_start = max(left_pivot.index, current_index - config.recent_test_window_bars + 1)
     recent_bar_touch_count = sum(1 for bar_index, _ in bar_touch_refs if bar_index >= recent_window_start)
-    invalidation_reason = _detect_invalidation(
+    invalidation_reason, invalidation_index = _detect_invalidation(
         df,
         atr,
         slope,
@@ -208,6 +208,7 @@ def _evaluate_candidate_line(
         recent_test_count=recent_bar_touch_count,
         non_touch_cross_count=non_touch_cross_count,
         invalidation_reason=invalidation_reason,
+        invalidation_index=invalidation_index,
     )
 
 
@@ -312,7 +313,7 @@ def _detect_invalidation(
     config: StrategyConfig,
     start_index: int,
     current_index: int,
-) -> str | None:
+) -> tuple[str | None, int | None]:
     consecutive_breaks = 0
     for bar_index in range(start_index, current_index + 1):
         line_value = project_price(slope, intercept, bar_index)
@@ -323,16 +324,16 @@ def _detect_invalidation(
         if side == "resistance":
             broken = close_price > line_value
             if close_price > line_value + break_distance:
-                return "break_distance"
+                return "break_distance", bar_index
         else:
             broken = close_price < line_value
             if close_price < line_value - break_distance:
-                return "break_distance"
+                return "break_distance", bar_index
 
         consecutive_breaks = consecutive_breaks + 1 if broken else 0
         if consecutive_breaks >= config.break_close_count:
-            return "break_close_count"
-    return None
+            return "break_close_count", bar_index
+    return None, None
 
 
 __all__ = [

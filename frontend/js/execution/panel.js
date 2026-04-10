@@ -22,6 +22,7 @@ import * as execSvc from '../services/execution.js';
 import * as opsSvc from '../services/ops.js';
 import * as paperExecSvc from '../services/paper_execution.js';
 import * as liveExecSvc from '../services/live_execution.js';
+import * as runtimeSvc from '../services/runtime.js';
 import { formatPct, formatPrice, formatUsd, pnlColorClass } from '../util/format.js';
 
 const PANEL_POLL_MS = 15000;
@@ -43,6 +44,20 @@ const liveBridgeState = {
   submittingDemo: false,
   submittingLive: false,
   closing: false,
+};
+const runtimePanelState = {
+  instances: [],
+  events: [],
+  lastError: null,
+  eventsError: null,
+  loading: false,
+  eventsLoading: false,
+  creating: false,
+  tickingInstanceId: null,
+  startingInstanceId: null,
+  stoppingInstanceId: null,
+  killInstanceId: null,
+  deletingInstanceId: null,
 };
 
 export function initExecutionPanel() {
@@ -146,11 +161,14 @@ function renderExecutionShell() {
     '<div id="v2-exec-paper-section">',
     renderLoadingSection('Paper Orders / Positions', 'Loading paper execution...'),
     '</div>',
-    '<div id="v2-exec-agent-section">',
-    renderLoadingSection('Agent Execution', 'Loading agent execution...'),
-    '</div>',
     '<div id="v2-exec-live-section">',
     renderLoadingSection('Live Bridge', 'Loading live bridge...'),
+    '</div>',
+    '<div id="v2-exec-runtime-section">',
+    renderLoadingSection('Subaccount Runtime', 'Loading runtime instances...'),
+    '</div>',
+    '<div id="v2-exec-agent-section">',
+    renderLoadingSection('Legacy Agent Execution', 'Loading legacy agent execution...'),
     '</div>',
   ].join('');
 }
@@ -164,6 +182,10 @@ function ensureExecutionShell(container = $('[data-subtab="execution"]')) {
 function patchExecutionModeBadge(status = agentState.lastStatus) {
   const modeBadge = $('#v2-exec-mode');
   if (!modeBadge) return;
+  if (paperExecutionState.state) {
+    modeBadge.textContent = 'PAPER-FIRST';
+    return;
+  }
   modeBadge.textContent = status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
 }
 
@@ -171,11 +193,11 @@ function patchAgentExecutionSection(status, error, options = {}) {
   const section = $('#v2-exec-agent-section');
   if (!section) return;
   if (status) {
-    setHtml(section, renderAgentExecutionSection(status, error));
+    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderAgentExecutionSection(status, error)));
   } else if (options.loading) {
-    setHtml(section, renderLoadingSection('Agent Execution', 'Loading agent execution...'));
+    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderLoadingSection('Legacy Agent Execution', 'Loading legacy agent execution...'), true));
   } else {
-    setHtml(section, renderUnavailableSection('Agent Execution', error || 'Agent execution unavailable'));
+    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderUnavailableSection('Legacy Agent Execution', error || 'Legacy agent execution unavailable'), true));
   }
   wireLegacyExecutionControls();
 }
@@ -206,11 +228,24 @@ function patchLiveBridgeSection(status, error, paperState = paperExecutionState.
   wireLiveBridgeControls();
 }
 
+function patchRuntimeExecutionSection(instances, error, options = {}) {
+  const section = $('#v2-exec-runtime-section');
+  if (!section) return;
+  if (instances && instances.length >= 0) {
+    setHtml(section, renderRuntimeExecutionSection(instances, error));
+  } else if (options.loading) {
+    setHtml(section, renderLoadingSection('Subaccount Runtime', 'Loading runtime instances...'));
+  } else {
+    setHtml(section, renderUnavailableSection('Subaccount Runtime', error || 'Runtime instances unavailable'));
+  }
+  wireRuntimeControls();
+}
+
 function isExecutionTabVisible() {
   return agentState.panelOpen && agentState.activeSubTab === 'execution';
 }
 
-function repaintExecutionSections({ paper = false, agent = false, live = false } = {}) {
+function repaintExecutionSections({ paper = false, agent = false, live = false, runtime = false } = {}) {
   if (!isExecutionTabVisible()) return false;
   ensureExecutionShell();
   if (paper) {
@@ -230,6 +265,11 @@ function repaintExecutionSections({ paper = false, agent = false, live = false }
   if (live) {
     patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
       loading: liveBridgeState.loading && !liveBridgeState.status,
+    });
+  }
+  if (runtime) {
+    patchRuntimeExecutionSection(runtimePanelState.instances, runtimePanelState.lastError, {
+      loading: runtimePanelState.loading && !runtimePanelState.instances.length,
     });
   }
   return true;
@@ -319,6 +359,7 @@ function startPolling() {
       );
       void refreshAgentExecutionSection(true).catch(() => null);
       void refreshLiveExecutionSection(true).catch(() => null);
+      void refreshRuntimeExecutionSection(true).catch(() => null);
       return;
     }
     renderActive(true).catch((err) => console.warn('[exec] poll render failed:', err));
@@ -454,6 +495,55 @@ async function loadLiveExecutionStatus(force = true) {
   }
 }
 
+async function loadRuntimeInstances(force = true) {
+  if (!force && runtimePanelState.instances.length) return runtimePanelState.instances;
+  if (runtimePanelState.loading) return runtimePanelState.instances;
+  runtimePanelState.loading = true;
+  try {
+    const response = await runtimeSvc.getRuntimeInstances();
+    runtimePanelState.instances = response.instances || [];
+    runtimePanelState.lastError = null;
+    return runtimePanelState.instances;
+  } catch (err) {
+    runtimePanelState.lastError = safeErrorMessage(err);
+    throw err;
+  } finally {
+    runtimePanelState.loading = false;
+  }
+}
+
+async function loadRuntimeEvents(force = true) {
+  if (!force && runtimePanelState.events.length) return runtimePanelState.events;
+  if (runtimePanelState.eventsLoading) return runtimePanelState.events;
+  runtimePanelState.eventsLoading = true;
+  try {
+    const response = await runtimeSvc.getRuntimeEvents(null, 12);
+    runtimePanelState.events = response.events || [];
+    runtimePanelState.eventsError = null;
+    return runtimePanelState.events;
+  } catch (err) {
+    runtimePanelState.eventsError = safeErrorMessage(err);
+    throw err;
+  } finally {
+    runtimePanelState.eventsLoading = false;
+  }
+}
+
+async function refreshRuntimeExecutionSection(force = true) {
+  if (!ensureExecutionShell()) return runtimePanelState.instances;
+  patchRuntimeExecutionSection(runtimePanelState.instances, null, {
+    loading: runtimePanelState.loading || !runtimePanelState.instances.length,
+  });
+  try {
+    const instances = await loadRuntimeInstances(force);
+    patchRuntimeExecutionSection(instances, null);
+    return instances;
+  } catch (err) {
+    patchRuntimeExecutionSection(runtimePanelState.instances, safeErrorMessage(err));
+    throw err;
+  }
+}
+
 async function renderOverview(useCached = false) {
   const container = $('[data-subtab="overview"]');
   if (!container) return;
@@ -471,20 +561,28 @@ async function renderOverview(useCached = false) {
   if (!useCached || !agentState.lastStatus) {
     ensureAgentStatusLoaded();
   }
+  if (!useCached || !runtimePanelState.instances.length) {
+    try {
+      await loadRuntimeInstances(!useCached);
+    } catch (err) {
+      runtimePanelState.lastError = safeErrorMessage(err);
+    }
+  }
 
   const status = agentState.lastStatus;
   agentError = agentPanelState.lastError || (agentPanelState.loading && !status ? 'Loading agent status...' : agentError);
   const paperState = paperExecutionState.state;
   const modeBadge = $('#v2-exec-mode');
   if (modeBadge) {
-    modeBadge.textContent = status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
+    modeBadge.textContent = paperState ? 'PAPER-FIRST' : status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
   }
 
   setHtml(
     container,
     [
-      renderAgentOverviewSection(status, agentError),
       renderPaperOverviewSection(paperState, paperError || paperExecutionState.lastError),
+      renderRuntimeOverviewSection(runtimePanelState.instances, runtimePanelState.lastError),
+      renderCollapsibleLegacySection('Legacy Agent Overview', renderAgentOverviewSection(status, agentError)),
     ].join(''),
   );
 }
@@ -507,6 +605,9 @@ async function renderExecution(useCached = false) {
   patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
     loading: liveBridgeState.loading || (!liveBridgeState.status && !liveBridgeState.lastError),
   });
+  patchRuntimeExecutionSection(runtimePanelState.instances, runtimePanelState.lastError, {
+    loading: runtimePanelState.loading || !runtimePanelState.instances.length,
+  });
 
   let paperError = null;
   try {
@@ -525,6 +626,7 @@ async function renderExecution(useCached = false) {
   // only start after the paper section has had a chance to render.
   void refreshAgentExecutionSection(!useCached).catch(() => null);
   void refreshLiveExecutionSection(!useCached).catch(() => null);
+  void refreshRuntimeExecutionSection(!useCached).catch(() => null);
 }
 
 async function renderRisk(useCached = false) {
@@ -556,11 +658,11 @@ async function renderRisk(useCached = false) {
   setHtml(
     container,
     [
-      renderAgentRiskSection(agentState.lastStatus, agentError),
       renderPaperRiskSection(
         paperExecutionState.config || paperExecutionState.state?.config,
         paperError || paperExecutionState.lastError,
       ),
+      renderCollapsibleLegacySection('Legacy Agent Risk', renderAgentRiskSection(agentState.lastStatus, agentError)),
     ].join(''),
   );
 
@@ -594,12 +696,18 @@ async function renderOps(useCached = false) {
   const healer = healerResult.status === 'fulfilled' ? healerResult.value : null;
   const presets = presetsResult.status === 'fulfilled' ? presetsResult.value?.presets || {} : {};
   const logs = logsResult.status === 'fulfilled' ? logsResult.value?.logs || [] : [];
+  try {
+    await loadRuntimeEvents(!useCached);
+  } catch (err) {
+    runtimePanelState.eventsError = safeErrorMessage(err);
+  }
 
   setHtml(
     container,
     [
       renderPaperOpsSection(paperExecutionState.state, paperError || paperExecutionState.lastError),
-      renderLegacyOpsSection(status, okx, healer, presets, logs),
+      renderRuntimeOpsSection(runtimePanelState.events, runtimePanelState.eventsError),
+      renderCollapsibleLegacySection('Legacy / Debug Ops', renderLegacyOpsSection(status, okx, healer, presets, logs)),
     ].join(''),
   );
 
@@ -608,7 +716,7 @@ async function renderOps(useCached = false) {
 
 function renderAgentOverviewSection(status, error) {
   if (!status) {
-    return renderUnavailableSection('Agent Overview', error || 'Agent status unavailable');
+    return renderUnavailableSection('Legacy Agent Overview', error || 'Legacy agent status unavailable');
   }
 
   const positions = Object.values(status.positions || {});
@@ -618,7 +726,7 @@ function renderAgentOverviewSection(status, error) {
     <section class="paper-section">
       <div class="paper-section-header">
         <h4>Agent Overview</h4>
-        <span class="paper-badge ${status.running ? 'is-ok' : 'is-muted'}">${status.running ? 'RUNNING' : 'STOPPED'}</span>
+        <span class="paper-badge is-muted">${status.running ? 'LEGACY RUNNING' : 'LEGACY STOPPED'}</span>
       </div>
       <div class="exec-hero">
         <div class="hero-stat">
@@ -756,9 +864,52 @@ function renderPaperOverviewSection(state, error) {
   `;
 }
 
+function renderRuntimeOverviewSection(instances, error) {
+  if (error && (!instances || instances.length === 0)) {
+    return renderUnavailableSection('Subaccount Runtime', error);
+  }
+  const records = instances || [];
+  const running = records.filter((record) => record.status.runtime_state === 'running').length;
+  const blocked = records.filter((record) => record.status.runtime_state === 'blocked').length;
+
+  return `
+    <section class="paper-section">
+      <div class="paper-section-header">
+        <h4>Subaccount Runtime</h4>
+        <span class="paper-badge ${running > 0 ? 'is-ok' : 'is-muted'}">${running} running</span>
+      </div>
+      <div class="exec-stats-grid">
+        <div class="stat"><div class="stat-label">Instances</div><div class="stat-value">${records.length}</div></div>
+        <div class="stat"><div class="stat-label">Running</div><div class="stat-value">${running}</div></div>
+        <div class="stat"><div class="stat-label">Blocked</div><div class="stat-value">${blocked}</div></div>
+        <div class="stat"><div class="stat-label">Modes</div><div class="stat-value">${escapeHtml(records.map((record) => record.config.live_mode).join(', ') || '-')}</div></div>
+      </div>
+      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
+      ${
+        records.length === 0
+          ? '<div class="paper-empty">No runtime instances configured yet.</div>'
+          : records.slice(0, 4).map((record) => `
+            <div class="paper-order-row">
+              <div class="paper-order-main">
+                <span class="pos-sym">${escapeHtml(record.config.label)}</span>
+                <span class="paper-badge ${record.status.runtime_state === 'running' ? 'is-ok' : record.status.runtime_state === 'blocked' ? 'is-danger' : 'is-muted'}">${escapeHtml(record.status.runtime_state.toUpperCase())}</span>
+                <span>${escapeHtml(record.config.symbol)} ${escapeHtml(record.config.timeframe)}</span>
+              </div>
+              <div class="paper-order-meta">
+                <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
+                <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
+                <span class="muted">${escapeHtml(record.status.last_runtime_note || '-')}</span>
+              </div>
+            </div>
+          `).join('')
+      }
+    </section>
+  `;
+}
+
 function renderAgentExecutionSection(status, error) {
   if (!status) {
-    return renderUnavailableSection('Agent Execution', error || 'Agent execution controls unavailable');
+    return renderUnavailableSection('Legacy Agent Execution', error || 'Legacy agent execution controls unavailable');
   }
 
   const signals = status.last_signals || {};
@@ -767,8 +918,8 @@ function renderAgentExecutionSection(status, error) {
   return `
     <section class="paper-section">
       <div class="paper-section-header">
-        <h4>Agent Execution</h4>
-        <span class="paper-badge ${status.mode === 'live' ? 'is-danger' : 'is-muted'}">${escapeHtml(String(status.mode || '-').toUpperCase())}</span>
+        <h4>Legacy Agent Execution</h4>
+        <span class="paper-badge is-muted">LEGACY ${escapeHtml(String(status.mode || '-').toUpperCase())}</span>
       </div>
       <div class="exec-controls">
         <button class="btn btn-primary" id="v2-start-btn">Start</button>
@@ -976,6 +1127,81 @@ function renderLiveBridgeSection(status, error, paperState) {
   `;
 }
 
+function renderRuntimeExecutionSection(instances, error) {
+  const records = instances || [];
+  const busy = isRuntimeBusy();
+  return `
+    <section class="paper-section">
+      <div class="paper-section-header">
+        <h4>Subaccount Runtime</h4>
+        <span class="paper-badge is-ok">Persistent Instances</span>
+      </div>
+      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
+      <form class="paper-form" id="v2-runtime-create-form">
+        <label>Label<input type="text" name="label" placeholder="BTC 4h demo" ${busy ? 'disabled' : ''} /></label>
+        <label>Symbol<input type="text" name="symbol" value="${escapeHtml(marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} /></label>
+        <label>Interval<input type="text" name="timeframe" value="${escapeHtml(marketState.currentInterval || '4h')}" ${busy ? 'disabled' : ''} /></label>
+        <label>Subaccount<input type="text" name="subaccount_label" placeholder="paper-a" ${busy ? 'disabled' : ''} /></label>
+        <label>
+          Live Mode
+          <select name="live_mode" ${busy ? 'disabled' : ''}>
+            <option value="disabled">disabled</option>
+            <option value="demo">demo</option>
+            <option value="live">live</option>
+          </select>
+        </label>
+        <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${runtimePanelState.creating ? 'Creating...' : 'Create instance'}</button>
+      </form>
+      <div class="paper-note">Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
+      <div class="paper-subgrid">
+        ${records.length === 0 ? '<div class="paper-empty">No runtime instances configured yet.</div>' : records.map((record) => renderRuntimeInstanceRow(record)).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderRuntimeInstanceRow(record) {
+  const busy = isRuntimeBusy(record.config.instance_id);
+  const paperState = record.status.paper_state;
+  const account = paperState?.account || {};
+  const runtimeBadgeClass = record.status.runtime_state === 'running' ? 'is-ok' : record.status.runtime_state === 'blocked' ? 'is-danger' : 'is-muted';
+  const actionLabel = runtimePanelState.startingInstanceId === record.config.instance_id
+    ? 'Starting...'
+    : runtimePanelState.stoppingInstanceId === record.config.instance_id
+      ? 'Stopping...'
+      : record.status.runtime_state === 'running'
+        ? 'Stop'
+        : 'Start';
+  const tickLabel = runtimePanelState.tickingInstanceId === record.config.instance_id ? 'Ticking...' : 'Tick once';
+  const killLabel = runtimePanelState.killInstanceId === record.config.instance_id
+    ? 'Updating...'
+    : paperState?.kill_switch?.blocked
+      ? 'Clear Kill'
+      : 'Kill';
+  return `
+    <div class="paper-order-row runtime-instance-row">
+      <div class="paper-order-main">
+        <span class="pos-sym">${escapeHtml(record.config.label)}</span>
+        <span class="paper-badge ${runtimeBadgeClass}">${escapeHtml(record.status.runtime_state.toUpperCase())}</span>
+        <span>${escapeHtml(record.config.symbol)} ${escapeHtml(record.config.timeframe)}</span>
+        <span>${escapeHtml(record.config.live_mode.toUpperCase())}</span>
+      </div>
+      <div class="paper-order-meta">
+        <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
+        <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
+        <span class="muted">equity ${formatUsd(account.equity)}</span>
+      </div>
+      <div class="paper-actions">
+        <button class="btn" data-runtime-action="${record.status.runtime_state === 'running' ? 'stop' : 'start'}" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${actionLabel}</button>
+        <button class="btn" data-runtime-action="tick" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${tickLabel}</button>
+        <button class="btn ${paperState?.kill_switch?.blocked ? 'active' : ''}" data-runtime-action="kill" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${killLabel}</button>
+        <button class="btn btn-danger" data-runtime-action="delete" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${runtimePanelState.deletingInstanceId === record.config.instance_id ? 'Deleting...' : 'Delete'}</button>
+      </div>
+      ${record.status.last_error ? `<div class="paper-error">${escapeHtml(record.status.last_error)}</div>` : ''}
+    </div>
+  `;
+}
+
 function renderLiveIntentOptions(intents) {
   if (!intents.length) {
     return '<option value="">No approved/submitted intents</option>';
@@ -1024,7 +1250,7 @@ function isLiveBridgeBusy() {
 
 function renderAgentRiskSection(status, error) {
   if (!status) {
-    return renderUnavailableSection('Agent Risk', error || 'Agent risk data unavailable');
+    return renderUnavailableSection('Legacy Agent Risk', error || 'Legacy agent risk data unavailable');
   }
 
   const limits = status.risk_limits || {};
@@ -1044,7 +1270,7 @@ function renderAgentRiskSection(status, error) {
   return `
     <section class="paper-section">
       <div class="paper-section-header">
-        <h4>Agent Risk</h4>
+        <h4>Legacy Agent Risk</h4>
         <span class="paper-badge is-muted">Legacy Agent</span>
       </div>
       <h4>Live risk meters</h4>
@@ -1142,6 +1368,36 @@ function renderPaperOpsSection(state, error) {
         <strong>Kill switch snapshot</strong>
         <span>${escapeHtml(killSwitch.reason || 'No active block reason')}</span>
       </div>
+    </section>
+  `;
+}
+
+function renderRuntimeOpsSection(events, error) {
+  const rows = events || [];
+  return `
+    <section class="paper-section">
+      <div class="paper-section-header">
+        <h4>Subaccount Runtime Events</h4>
+        <span class="paper-badge is-muted">${rows.length} recent</span>
+      </div>
+      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
+      ${
+        rows.length === 0
+          ? '<div class="paper-empty">No runtime events yet</div>'
+          : rows
+              .slice()
+              .reverse()
+              .map(
+                (event) => `
+                  <div class="paper-fill-row">
+                    <span class="pos-sym">${escapeHtml(event.instance_id)}</span>
+                    <span class="paper-badge is-muted">${escapeHtml(event.event_type)}</span>
+                    <span class="muted">${escapeHtml(event.timestamp || '-')}</span>
+                  </div>
+                `,
+              )
+              .join('')
+      }
     </section>
   `;
 }
@@ -1269,6 +1525,17 @@ function renderLegacyOpsSection(status, okx, healer, presets, logs) {
         <button class="btn" id="v2-healer-trigger">Trigger heal</button>
       </div>
     </section>
+  `;
+}
+
+function renderCollapsibleLegacySection(title, innerHtml, open = false) {
+  return `
+    <details class="legacy-collapsible" ${open ? 'open' : ''}>
+      <summary>${escapeHtml(title)}</summary>
+      <div class="legacy-collapsible-body">
+        ${innerHtml}
+      </div>
+    </details>
   `;
 }
 
@@ -1601,6 +1868,35 @@ function wireLiveBridgeControls() {
   });
 }
 
+function wireRuntimeControls() {
+  on('#v2-runtime-create-form', 'submit', async (event) => {
+    event.preventDefault();
+    if (isRuntimeBusy()) return;
+    runtimePanelState.creating = true;
+    await refreshRuntimeExecutionSection(true).catch(() => null);
+    try {
+      const form = event.target;
+      if (!(form instanceof HTMLFormElement)) return;
+      await runtimeSvc.createRuntimeInstance(readRuntimeCreatePayload(form));
+      await loadRuntimeInstances(true);
+    } catch (err) {
+      runtimePanelState.lastError = safeErrorMessage(err);
+    } finally {
+      runtimePanelState.creating = false;
+      await refreshRuntimeExecutionSection(true).catch(() => null);
+    }
+  });
+
+  $$('[data-runtime-action]').forEach((button) => {
+    on(button, 'click', async () => {
+      const instanceId = button.dataset.instanceId;
+      const action = button.dataset.runtimeAction;
+      if (!instanceId || !action || isRuntimeBusy(instanceId)) return;
+      await runRuntimeAction(instanceId, action);
+    });
+  });
+}
+
 function wireLegacyRiskForm() {
   on('#v2-risk-form', 'submit', async (event) => {
     event.preventDefault();
@@ -1823,6 +2119,17 @@ function readLiveMode(form) {
   return value === 'live' ? 'live' : 'demo';
 }
 
+function readRuntimeCreatePayload(form) {
+  const formData = new FormData(form);
+  return {
+    label: String(formData.get('label') || '').trim() || `${marketState.currentSymbol || 'BTCUSDT'} ${marketState.currentInterval || '4h'}`,
+    symbol: String(formData.get('symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
+    timeframe: String(formData.get('timeframe') || marketState.currentInterval || '4h').trim(),
+    subaccount_label: String(formData.get('subaccount_label') || '').trim(),
+    live_mode: String(formData.get('live_mode') || 'disabled').trim(),
+  };
+}
+
 async function runLiveBridgeAction(flag, fn) {
   if (isLiveBridgeBusy()) return;
   liveBridgeState[flag] = true;
@@ -1838,6 +2145,59 @@ async function runLiveBridgeAction(flag, fn) {
     if (!repaintExecutionSections({ live: true })) {
       renderActive(true).catch((err) => console.warn('[exec] live bridge post-render failed:', err));
     }
+  }
+}
+
+function isRuntimeBusy(instanceId = null) {
+  const activeIds = [
+    runtimePanelState.tickingInstanceId,
+    runtimePanelState.startingInstanceId,
+    runtimePanelState.stoppingInstanceId,
+    runtimePanelState.killInstanceId,
+    runtimePanelState.deletingInstanceId,
+  ].filter(Boolean);
+  if (!instanceId) {
+    return runtimePanelState.creating || runtimePanelState.loading || activeIds.length > 0;
+  }
+  return activeIds.includes(instanceId);
+}
+
+async function runRuntimeAction(instanceId, action) {
+  const flagKey = action === 'tick'
+    ? 'tickingInstanceId'
+    : action === 'start'
+      ? 'startingInstanceId'
+      : action === 'stop'
+        ? 'stoppingInstanceId'
+        : action === 'kill'
+          ? 'killInstanceId'
+          : 'deletingInstanceId';
+  runtimePanelState[flagKey] = instanceId;
+  await refreshRuntimeExecutionSection(true).catch(() => null);
+  try {
+    if (action === 'tick') {
+      await runtimeSvc.tickRuntimeInstance(instanceId, {});
+    } else if (action === 'start') {
+      await runtimeSvc.startRuntimeInstance(instanceId);
+    } else if (action === 'stop') {
+      await runtimeSvc.stopRuntimeInstance(instanceId);
+    } else if (action === 'kill') {
+      const target = runtimePanelState.instances.find((record) => record.config.instance_id === instanceId);
+      const blocked = !(target?.status?.paper_state?.kill_switch?.blocked);
+      await runtimeSvc.setRuntimeKillSwitch(instanceId, {
+        blocked,
+        reason: blocked ? 'manual_runtime_panel' : '',
+      });
+    } else if (action === 'delete') {
+      await runtimeSvc.deleteRuntimeInstance(instanceId);
+    }
+    await loadRuntimeInstances(true);
+    await loadRuntimeEvents(true).catch(() => null);
+  } catch (err) {
+    runtimePanelState.lastError = safeErrorMessage(err);
+  } finally {
+    runtimePanelState[flagKey] = null;
+    await refreshRuntimeExecutionSection(true).catch(() => null);
   }
 }
 

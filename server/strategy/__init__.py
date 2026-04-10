@@ -1,6 +1,12 @@
 """Pure strategy core for trendline detection and signal generation."""
 
 from .config import StrategyConfig
+from .display_filter import (
+    DisplayLineMeta,
+    build_display_line_meta,
+    collapse_display_invalidations,
+    filter_display_touch_indices,
+)
 from .factors import (
     calculate_resistance_short_score,
     calculate_support_long_score,
@@ -33,12 +39,14 @@ from .state_machine import (
 from .trendlines import build_candidate_lines, detect_trendlines, select_active_lines
 
 __all__ = [
+    "DisplayLineMeta",
     "LineStateSnapshot",
     "ReplayResult",
     "ReplaySnapshot",
     "SignalStateSnapshot",
     "StrategyConfig",
     "advance_line_states",
+    "build_display_line_meta",
     "build_latest_snapshot",
     "build_tail_snapshots",
     "build_candidate_lines",
@@ -46,9 +54,11 @@ __all__ = [
     "calculate_resistance_short_score",
     "calculate_support_long_score",
     "close_line_state",
+    "collapse_display_invalidations",
     "detect_pivots",
     "detect_trendlines",
     "evaluate_line_arming",
+    "filter_display_touch_indices",
     "generate_failed_breakout_signals",
     "generate_pre_limit_signals",
     "generate_rejection_signals",

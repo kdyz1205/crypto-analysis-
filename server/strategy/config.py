@@ -69,6 +69,10 @@ class StrategyConfig:
     max_anchor_combinations_per_pivot: int = 8
     max_candidate_lines_per_side: int = 50
     max_active_lines_per_side: int = 5
+    display_active_lines_per_side: int = 3
+    display_touch_limit_per_line: int = 5
+    display_bar_touch_limit_per_line: int = 2
+    display_invalidation_merge_bars: int = 6
     line_merge_slope_eps: float = 0.0005
     merge_price_atr_mult: float = 0.10
     merge_price_pct: float = 0.001

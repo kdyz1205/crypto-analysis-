@@ -300,6 +300,7 @@ def _make_signal(
         line_id=line.line_id,
         symbol=line.symbol,
         timeframe=line.timeframe,
+        source=line.source,
         signal_type=signal_type,
         direction=direction,
         trigger_mode=trigger_mode,

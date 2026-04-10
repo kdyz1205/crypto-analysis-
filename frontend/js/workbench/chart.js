@@ -1,8 +1,9 @@
 // frontend/js/workbench/chart.js — minimal LightweightCharts wrapper using services+state
 
 import { $ } from '../util/dom.js';
-import { marketState, setCandles, setPrecision } from '../state/market.js';
+import { marketState, setCandles, setHistoryMeta, setHistoryMode, setPrecision, setScale } from '../state/market.js';
 import { strategyState, setStrategyConfig, setStrategyError, setStrategySnapshot, clearStrategySnapshot, clearStrategyReplay, getCurrentStrategySnapshot, setStrategyLayerVisible } from '../state/strategy.js';
+import { drawingsState } from '../state/drawings.js';
 import { publish, subscribe } from '../util/events.js';
 import * as marketSvc from '../services/market.js';
 import * as patternsSvc from '../services/patterns.js';
@@ -14,12 +15,14 @@ import { drawPatterns, drawZones, clearPatternLines } from './patterns.js';
 import { clearTrendlineOverlay, drawTrendlineOverlay } from './overlays/trendline_overlay.js';
 import { clearSignalOverlay, drawSignalOverlay } from './overlays/signal_overlay.js';
 import { clearOrderOverlay, drawOrderOverlay } from './overlays/order_overlay.js';
+import { initManualTrendlineController, refreshManualDrawings, renderManualLines, getSuppressedAutoLineIds } from './drawings/manual_trendline_controller.js';
 
 let chart = null;
 let candleSeries = null;
 let volumeSeries = null;
 let liveTimer = null;
 let strategyLayerPanel = null;
+let chartModePanel = null;
 let strategyRequestSeq = 0;
 let patternRequestSeq = 0;
 let lastPatternKey = null;
@@ -79,6 +82,9 @@ export function initChart(containerId = 'chart-container') {
   });
 
   ensureStrategyLayerPanel(el.parentElement || el);
+  ensureChartModePanel(el.parentElement || el);
+  initManualTrendlineController(chart, el.parentElement || el);
+  applyScaleMode();
 
   subscribe('market.symbol.changed', () => {
     void loadCurrent(true).catch((err) => console.warn('[chart] symbol refresh failed:', err));
@@ -86,11 +92,26 @@ export function initChart(containerId = 'chart-container') {
   subscribe('market.interval.changed', () => {
     void loadCurrent(true).catch((err) => console.warn('[chart] interval refresh failed:', err));
   });
+  subscribe('market.history_mode.changed', () => {
+    syncChartModePanel();
+    void loadCurrent(true).catch((err) => console.warn('[chart] history mode refresh failed:', err));
+  });
+  subscribe('market.history_meta.changed', () => {
+    syncChartModePanel();
+    updateHeader(marketState.currentSymbol, marketState.currentInterval, marketState.lastCandles.at(-1)?.close);
+  });
+  subscribe('market.scale.changed', () => {
+    applyScaleMode();
+    syncChartModePanel();
+    updateHeader(marketState.currentSymbol, marketState.currentInterval, marketState.lastCandles.at(-1)?.close);
+  });
   subscribe('strategy.snapshot.updated', () => renderStrategyOverlays());
   subscribe('strategy.layers.changed', () => {
     syncStrategyLayerPanel();
     renderStrategyOverlays();
   });
+  subscribe('drawings.updated', () => renderStrategyOverlays());
+  subscribe('drawings.viewMode', () => renderStrategyOverlays());
 
   return chart;
 }
@@ -106,7 +127,7 @@ export async function loadCurrent(forcePatterns = false) {
     cancelDeferredOverlayLoad();
     abortOverlayRequests();
 
-    const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, 365);
+    const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, 365, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
     }
@@ -140,6 +161,16 @@ export async function loadCurrent(forcePatterns = false) {
     chart.timeScale().fitContent();
 
     setCandles(candles);
+    setHistoryMeta({
+      historyMode: data.historyMode || marketState.historyMode,
+      loadedBarCount: data.loadedBarCount ?? candles.length,
+      earliestLoadedTimestamp: data.earliestLoadedTimestamp ?? candles[0]?.time ?? null,
+      latestLoadedTimestamp: data.latestLoadedTimestamp ?? candles[candles.length - 1]?.time ?? null,
+      listingStartTimestamp: data.listingStartTimestamp ?? candles[0]?.time ?? null,
+      isFullHistory: Boolean(data.isFullHistory),
+      isTruncated: Boolean(data.isTruncated),
+      truncationReason: data.truncationReason || '',
+    });
     const lastPrice = candles[candles.length - 1].close;
     setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
 
@@ -167,6 +198,7 @@ export async function loadCurrent(forcePatterns = false) {
       interval: currentInterval,
       shouldLoadPatterns,
     });
+    void refreshManualDrawings(currentSymbol, currentInterval).catch((err) => console.warn('[drawings] refresh failed:', err));
 
     return {
       ok: true,
@@ -183,6 +215,7 @@ export async function loadCurrent(forcePatterns = false) {
     clearStrategySnapshot();
     clearStrategyReplay();
     setStrategyError(err?.message || String(err));
+    setHistoryMeta(null);
     renderStrategyOverlays();
     console.error('[chart] load failed:', err);
     throw err;
@@ -340,16 +373,39 @@ function isOverlayContextCurrent(overlayContext) {
 function renderStrategyOverlays() {
   const snapshot = getCurrentStrategySnapshot();
   if (!chart || !candleSeries) return;
+  const viewMode = drawingsState.viewMode || 'mixed';
   if (!snapshot) {
     clearTrendlineOverlay(chart);
     clearSignalOverlay(candleSeries);
     clearOrderOverlay(chart);
+    renderManualLines();
     return;
   }
 
-  drawTrendlineOverlay(chart, snapshot, strategyState.layerVisibility);
-  drawSignalOverlay(candleSeries, snapshot, strategyState.layerVisibility);
-  drawOrderOverlay(chart, snapshot, strategyState.layerVisibility);
+  const suppressedAutoLineIds = getSuppressedAutoLineIds();
+  const filteredSnapshot = {
+    ...snapshot,
+    candidate_lines: viewMode === 'manual_only'
+      ? []
+      : (snapshot.candidate_lines || []).filter((line) => !suppressedAutoLineIds.has(line.line_id)),
+    active_lines: viewMode === 'manual_only'
+      ? []
+      : (snapshot.active_lines || []).filter((line) => !suppressedAutoLineIds.has(line.line_id)),
+    touch_points: viewMode === 'manual_only'
+      ? []
+      : (snapshot.touch_points || []).filter((point) => !suppressedAutoLineIds.has(point.line_id)),
+    signals: viewMode === 'manual_only'
+      ? []
+      : (snapshot.signals || []).filter((signal) => !suppressedAutoLineIds.has(signal.line_id)),
+    invalidations: viewMode === 'manual_only'
+      ? []
+      : (snapshot.invalidations || []).filter((item) => !suppressedAutoLineIds.has(item.line_id)),
+  };
+
+  drawTrendlineOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
+  drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
+  drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
+  renderManualLines();
 }
 
 function ensureStrategyLayerPanel(container) {
@@ -359,11 +415,13 @@ function ensureStrategyLayerPanel(container) {
   strategyLayerPanel.innerHTML = `
     <div class="strategy-layer-title">Strategy Layers</div>
     <div class="strategy-layer-grid">
-      <label class="strategy-layer-option"><input type="checkbox" data-layer="trendlines" checked /> Trendlines</label>
-      <label class="strategy-layer-option"><input type="checkbox" data-layer="touchMarkers" checked /> Touches</label>
+      <label class="strategy-layer-option"><input type="checkbox" data-layer="primaryTrendlines" checked /> Primary Lines</label>
+      <label class="strategy-layer-option"><input type="checkbox" data-layer="debugTrendlines" /> Debug Lines</label>
+      <label class="strategy-layer-option"><input type="checkbox" data-layer="confirmingTouches" checked /> Confirming Touches</label>
+      <label class="strategy-layer-option"><input type="checkbox" data-layer="barTouches" /> Bar Touches</label>
       <label class="strategy-layer-option"><input type="checkbox" data-layer="projectedLine" checked /> Projection</label>
       <label class="strategy-layer-option"><input type="checkbox" data-layer="signalMarkers" checked /> Signals</label>
-      <label class="strategy-layer-option"><input type="checkbox" data-layer="invalidationMarkers" checked /> Invalidations</label>
+      <label class="strategy-layer-option"><input type="checkbox" data-layer="collapsedInvalidations" checked /> Invalidations</label>
       <label class="strategy-layer-option"><input type="checkbox" data-layer="orderMarkers" /> Orders</label>
     </div>
     <div class="strategy-layer-meta">Backend-driven strategy overlay</div>
@@ -391,6 +449,88 @@ function syncStrategyLayerPanel() {
   });
 }
 
+function ensureChartModePanel(container) {
+  if (!container || chartModePanel) return;
+  chartModePanel = document.createElement('div');
+  chartModePanel.className = 'chart-mode-panel';
+  chartModePanel.innerHTML = `
+    <div class="chart-mode-title">Chart Mode</div>
+    <div class="chart-mode-actions">
+      <button class="btn chart-mode-btn" data-history-mode="fast_window">Fast</button>
+      <button class="btn chart-mode-btn" data-history-mode="full_history">Full History</button>
+    </div>
+    <div class="chart-mode-actions">
+      <button class="btn chart-scale-btn" data-scale-mode="linear">Linear</button>
+      <button class="btn chart-scale-btn" data-scale-mode="log">Log</button>
+    </div>
+    <div class="chart-mode-meta" id="chart-mode-meta">Loading chart window...</div>
+  `;
+
+  chartModePanel.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement)) return;
+    const historyMode = target.dataset.historyMode;
+    if (historyMode) {
+      setHistoryMode(historyMode);
+      return;
+    }
+    const scaleMode = target.dataset.scaleMode;
+    if (scaleMode) {
+      setScale(scaleMode);
+    }
+  });
+
+  container.appendChild(chartModePanel);
+  syncChartModePanel();
+}
+
+function syncChartModePanel() {
+  if (!chartModePanel) return;
+  const historyButtons = chartModePanel.querySelectorAll('[data-history-mode]');
+  historyButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.historyMode === marketState.historyMode);
+  });
+  const scaleButtons = chartModePanel.querySelectorAll('[data-scale-mode]');
+  scaleButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.scaleMode === marketState.currentScale);
+  });
+  const meta = chartModePanel.querySelector('#chart-mode-meta');
+  if (meta) {
+    meta.textContent = formatHistoryMeta();
+  }
+}
+
+function formatHistoryMeta() {
+  const meta = marketState.historyMeta;
+  if (!meta) {
+    return 'No history metadata loaded yet.';
+  }
+  const range = `${formatUnixDate(meta.earliestLoadedTimestamp)} -> ${formatUnixDate(meta.latestLoadedTimestamp)}`;
+  const base = `${meta.historyMode === 'full_history' ? 'Full history' : 'Fast window'} | ${meta.loadedBarCount ?? 0} bars | ${range}`;
+  if (meta.isTruncated) {
+    return `${base} | truncated (${meta.truncationReason || 'fast_window'}) | listing start ${formatUnixDate(meta.listingStartTimestamp)}`;
+  }
+  return `${base} | listing start ${formatUnixDate(meta.listingStartTimestamp)}`;
+}
+
+function formatUnixDate(timestamp) {
+  if (!timestamp) return '-';
+  const date = new Date(Number(timestamp) * 1000);
+  return Number.isNaN(date.getTime()) ? '-' : date.toISOString().slice(0, 10);
+}
+
+function applyScaleMode() {
+  if (!chart) return;
+  if (typeof chart.priceScale !== 'function') return;
+  const priceScale = chart.priceScale('right');
+  if (!priceScale || typeof priceScale.applyOptions !== 'function') return;
+  priceScale.applyOptions({
+    mode: marketState.currentScale === 'log'
+      ? LightweightCharts.PriceScaleMode.Logarithmic
+      : LightweightCharts.PriceScaleMode.Normal,
+  });
+}
+
 export function toggleMAOverlays() {
   return toggleMA();
 }
@@ -398,7 +538,9 @@ export function toggleMAOverlays() {
 function updateHeader(symbol, interval, price) {
   const header = $('#chart-header-v2');
   if (header) {
-    header.textContent = `${symbol} · ${interval} · $${formatPrice(price)}`;
+    const historyModeLabel = marketState.historyMode === 'full_history' ? 'FULL' : 'FAST';
+    const scaleLabel = marketState.currentScale === 'log' ? 'LOG' : 'LIN';
+    header.textContent = `${symbol} · ${interval} · ${historyModeLabel}/${scaleLabel} · $${formatPrice(price)}`;
   }
 }
 

@@ -3,7 +3,7 @@ import polars as pl
 import httpx
 import time
 import numpy as np
-from datetime import timezone
+from datetime import timedelta, timezone
 from pathlib import Path
 
 from .market import (
@@ -1070,6 +1070,7 @@ async def get_ohlcv(
     interval: str,
     end_time: str | None = None,
     days: int = 30,
+    history_mode: str = "fast_window",
 ) -> dict:
     """
     Get OHLCV data for a symbol/interval.
@@ -1079,6 +1080,7 @@ async def get_ohlcv(
     """
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
     loaded_from_csv = False
+    requested_days = max(days, FULL_HISTORY_DAYS) if history_mode == "full_history" else days
 
     if OFFLINE_ONLY:
         # Pure offline path: look for an exact match CSV first.
@@ -1105,7 +1107,7 @@ async def get_ohlcv(
     else:
         # Online mode: API_ONLY = always fetch from API. Use requested days so chart loads in reasonable time.
         if API_ONLY:
-            download_days = days
+            download_days = requested_days
             try:
                 df = await download_ohlcv(symbol, base_interval, days=download_days)
             except ValueError as e:
@@ -1135,10 +1137,10 @@ async def get_ohlcv(
                             except Exception as e:
                                 print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
                 except Exception:
-                    download_days = max(days, DOWNLOAD_DAYS.get(base_interval, 60))
+                    download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
             else:
-                download_days = max(days, DOWNLOAD_DAYS.get(base_interval, 60))
+                download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                 try:
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
                 except ValueError as e:
@@ -1146,9 +1148,12 @@ async def get_ohlcv(
                 except Exception as e:
                     raise ValueError(f"Failed to download data for {symbol} {base_interval}: {str(e)}\n\nPossible causes:\n- Symbol does not exist on {EXCHANGE.upper()}\n- Network connection issue\n- API rate limit or restriction")
 
+    source_df = df
+
     # Resample if needed
     if resample_to:
-        df = resample_ohlcv(df, resample_to)
+        source_df = resample_ohlcv(source_df, resample_to)
+    df = _apply_history_mode(source_df, interval, days, history_mode)
 
     # When data is from local CSV we return full history (no days limit). Downloaded data is already limited by DOWNLOAD_DAYS.
 
@@ -1156,6 +1161,7 @@ async def get_ohlcv(
     if end_time:
         end_dt = pl.Series([end_time]).str.to_datetime("%Y-%m-%dT%H:%M")[0]
         df = df.filter(pl.col("open_time") <= end_dt)
+        source_df = source_df.filter(pl.col("open_time") <= end_dt)
 
     price_precision = await get_symbol_price_precision(symbol)
     
@@ -1208,6 +1214,7 @@ async def get_ohlcv(
     result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
+    result.update(_history_metadata(source_df, df, history_mode))
     return result
 
 
@@ -1216,6 +1223,7 @@ async def get_ohlcv_with_df(
     interval: str,
     end_time: str | None = None,
     days: int = 30,
+    history_mode: str = "fast_window",
     *,
     include_price_precision: bool = True,
     include_render_payload: bool = True,
@@ -1225,6 +1233,7 @@ async def get_ohlcv_with_df(
     Used so chart endpoint can run pattern detection on the same df as candles.
     """
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
+    requested_days = max(days, FULL_HISTORY_DAYS) if history_mode == "full_history" else days
 
     if OFFLINE_ONLY:
         csv_path = _find_csv(symbol, base_interval)
@@ -1244,7 +1253,7 @@ async def get_ohlcv_with_df(
         # From local CSV: full history is returned (no days limit)
     else:
         if API_ONLY:
-            download_days = max(days, 365)
+            download_days = max(requested_days, 365)
             try:
                 df = await download_ohlcv(symbol, base_interval, days=download_days)
             except ValueError:
@@ -1273,10 +1282,10 @@ async def get_ohlcv_with_df(
                             except Exception as e:
                                 print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
                 except Exception:
-                    download_days = max(days, DOWNLOAD_DAYS.get(base_interval, 60))
+                    download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
             else:
-                download_days = max(days, DOWNLOAD_DAYS.get(base_interval, 60))
+                download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                 try:
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
                 except ValueError:
@@ -1284,12 +1293,15 @@ async def get_ohlcv_with_df(
                 except Exception as e:
                     raise ValueError(f"Failed to download data for {symbol} {base_interval}: {str(e)}")
 
+    source_df = df
     if resample_to:
-        df = resample_ohlcv(df, resample_to)
+        source_df = resample_ohlcv(source_df, resample_to)
+    df = _apply_history_mode(source_df, interval, days, history_mode)
 
     if end_time:
         end_dt = pl.Series([end_time]).str.to_datetime("%Y-%m-%dT%H:%M")[0]
         df = df.filter(pl.col("open_time") <= end_dt)
+        source_df = source_df.filter(pl.col("open_time") <= end_dt)
 
     price_precision = await get_symbol_price_precision(symbol) if include_price_precision else None
 
@@ -1297,6 +1309,7 @@ async def get_ohlcv_with_df(
         result = {}
         if price_precision is not None:
             result["pricePrecision"] = price_precision
+        result.update(_history_metadata(source_df, df, history_mode))
         return df, result
 
     candles = []
@@ -1348,4 +1361,39 @@ async def get_ohlcv_with_df(
     result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
+    result.update(_history_metadata(source_df, df, history_mode))
     return df, result
+
+
+def _apply_history_mode(df: pl.DataFrame, interval: str, days: int, history_mode: str) -> pl.DataFrame:
+    if history_mode == "full_history" or df.is_empty():
+        return df
+    if history_mode != "fast_window":
+        raise ValueError(f"Unsupported history_mode: {history_mode}")
+    latest = df["open_time"].max()
+    if latest is None:
+        return df
+    cutoff = latest - timedelta(days=days)
+    return df.filter(pl.col("open_time") >= cutoff)
+
+
+def _history_metadata(source_df: pl.DataFrame, window_df: pl.DataFrame, history_mode: str) -> dict:
+    source_count = len(source_df)
+    window_count = len(window_df)
+    earliest_source = source_df["open_time"].min() if source_count else None
+    latest_source = source_df["open_time"].max() if source_count else None
+    earliest_window = window_df["open_time"].min() if window_count else None
+    latest_window = window_df["open_time"].max() if window_count else None
+    is_full_history = history_mode == "full_history"
+    is_truncated = history_mode == "fast_window" and source_count > window_count
+    truncation_reason = "fast_window" if is_truncated else ""
+    return {
+        "historyMode": history_mode,
+        "loadedBarCount": window_count,
+        "earliestLoadedTimestamp": int(earliest_window.timestamp()) if earliest_window is not None else None,
+        "latestLoadedTimestamp": int(latest_window.timestamp()) if latest_window is not None else None,
+        "listingStartTimestamp": int(earliest_source.timestamp()) if earliest_source is not None else None,
+        "isFullHistory": is_full_history,
+        "isTruncated": is_truncated,
+        "truncationReason": truncation_reason,
+    }

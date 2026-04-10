@@ -16,6 +16,7 @@ from ..data_service import (
 from ..pattern_service import get_patterns_from_df
 
 router = APIRouter(prefix="/api", tags=["market"])
+VALID_HISTORY_MODES = {"fast_window", "full_history"}
 STRUCTURE_SUMMARY_CACHE_LIMIT = 32
 STRUCTURE_SUMMARY_LOOKBACK_BARS = {
     "5m": 600,
@@ -133,18 +134,21 @@ async def api_chart(
     interval: str = Query("1h", description="e.g. 5m, 15m, 1h, 4h, 1d"),
     end_time: str | None = Query(None, description="Replay end time, ISO format"),
     days: int = Query(365, description="Days of data"),
+    history_mode: str = Query("fast_window", description="fast_window | full_history"),
 ):
     """Return OHLCV + support/resistance lines in one response."""
     valid_intervals = {"5m", "15m", "1h", "4h", "1d"}
     if interval not in valid_intervals:
         raise HTTPException(400, f"Invalid interval. Must be one of: {valid_intervals}")
+    if history_mode not in VALID_HISTORY_MODES:
+        raise HTTPException(400, f"Invalid history_mode. Must be one of: {sorted(VALID_HISTORY_MODES)}")
 
     symbol = symbol.upper().replace("/", "")
     if not symbol.endswith("USDT"):
         symbol += "USDT"
 
     try:
-        df, ohlcv = await get_ohlcv_with_df(symbol, interval, end_time, days)
+        df, ohlcv = await get_ohlcv_with_df(symbol, interval, end_time, days, history_mode=history_mode)
         patterns = get_patterns_from_df(df, symbol, interval, end_time)
         return {**ohlcv, **patterns}
     except ValueError as e:
@@ -162,18 +166,21 @@ async def api_ohlcv(
     interval: str = Query("1h", description="e.g. 5m, 15m, 1h, 4h, 1d"),
     end_time: str | None = Query(None, description="Replay end time, ISO format"),
     days: int = Query(30, description="Days of data to fetch"),
+    history_mode: str = Query("fast_window", description="fast_window | full_history"),
 ):
     """Return OHLCV data as JSON."""
     valid_intervals = {"5m", "15m", "1h", "4h", "1d"}
     if interval not in valid_intervals:
         raise HTTPException(400, f"Invalid interval. Must be one of: {valid_intervals}")
+    if history_mode not in VALID_HISTORY_MODES:
+        raise HTTPException(400, f"Invalid history_mode. Must be one of: {sorted(VALID_HISTORY_MODES)}")
 
     symbol = symbol.upper().replace("/", "")
     if not symbol.endswith("USDT"):
         symbol += "USDT"
 
     try:
-        result = await get_ohlcv(symbol, interval, end_time, days)
+        result = await get_ohlcv(symbol, interval, end_time, days, history_mode=history_mode)
         return result
     except ValueError as e:
         print(f"ValueError in /api/ohlcv for {symbol} {interval}: {e}")

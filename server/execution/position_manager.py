@@ -18,6 +18,18 @@ class PaperPositionManager:
         self._position_id_by_signal_id.clear()
         self._closed_positions.clear()
 
+    def load_state(
+        self,
+        *,
+        open_positions: list[PaperPosition],
+        recent_closed_positions: list[PaperPosition],
+    ) -> None:
+        self.reset()
+        for position in open_positions:
+            self._positions_by_id[position.position_id] = position
+            self._position_id_by_signal_id[position.signal_id] = position.position_id
+        self._closed_positions.extend(recent_closed_positions[-100:])
+
     def get_open_positions(self) -> list[PaperPosition]:
         return [
             position for position in sorted(self._positions_by_id.values(), key=lambda item: (item.opened_at_bar, item.position_id))

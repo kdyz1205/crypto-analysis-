@@ -21,11 +21,18 @@ export function drawSignalOverlay(candleSeries, snapshot, layerVisibility = {}) 
   const touchPoints = Array.isArray(snapshot.touch_points) ? snapshot.touch_points : [];
   const lineLookup = new Map((snapshot.candidate_lines || []).map((line) => [line.line_id, line]));
 
-  if (layerVisibility.touchMarkers !== false) {
-    const scopedTouches = activeLineIds.size > 0
-      ? touchPoints.filter((point) => activeLineIds.has(point.line_id))
-      : touchPoints;
-    for (const point of scopedTouches.slice(-80)) {
+  const scopedTouches = activeLineIds.size > 0
+    ? touchPoints.filter((point) => activeLineIds.has(point.line_id) || point.display_visible)
+    : touchPoints;
+
+  if (layerVisibility.confirmingTouches !== false || layerVisibility.barTouches === true) {
+    const visibleTouches = scopedTouches.filter((point) => {
+      if (!point.display_visible) return false;
+      if (point.display_class === 'confirming') return layerVisibility.confirmingTouches !== false;
+      if (point.display_class === 'bar') return layerVisibility.barTouches === true;
+      return false;
+    });
+    for (const point of visibleTouches) {
       markers.push({
         time: Math.floor(point.timestamp),
         position: point.side === 'resistance' ? 'aboveBar' : 'belowBar',
@@ -48,16 +55,16 @@ export function drawSignalOverlay(candleSeries, snapshot, layerVisibility = {}) 
     }
   }
 
-  if (layerVisibility.invalidationMarkers !== false) {
+  if (layerVisibility.collapsedInvalidations !== false) {
     for (const invalidation of (snapshot.invalidations || [])) {
       const line = lineLookup.get(invalidation.line_id);
-      const markerTime = line?.t_end ?? snapshot.timestamp;
+      const markerTime = invalidation.invalidation_timestamp ?? line?.invalidation_timestamp ?? snapshot.timestamp;
       markers.push({
         time: Math.floor(markerTime),
         position: invalidation.side === 'resistance' ? 'aboveBar' : 'belowBar',
         color: '#94a3b8',
         shape: 'square',
-        text: 'X',
+        text: invalidation.collapsed_invalidation_count > 1 ? `X${invalidation.collapsed_invalidation_count}` : 'X',
       });
     }
   }

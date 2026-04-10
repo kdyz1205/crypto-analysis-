@@ -19,6 +19,16 @@ class PaperKillSwitch:
     def reset(self) -> None:
         self._state = KillSwitchState()
 
+    def load_state(self, state: KillSwitchState) -> KillSwitchState:
+        self._state = KillSwitchState(
+            blocked=bool(state.blocked),
+            manual_blocked=bool(state.manual_blocked),
+            data_blocked=bool(state.data_blocked),
+            risk_blocked=bool(state.risk_blocked),
+            reason=str(state.reason or ""),
+        )
+        return self.snapshot()
+
     def set_manual(self, blocked: bool, reason: str = "") -> KillSwitchState:
         self._state.manual_blocked = blocked
         self._state.reason = reason if blocked else ""

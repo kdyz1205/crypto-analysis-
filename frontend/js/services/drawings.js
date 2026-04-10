@@ -1,0 +1,35 @@
+import { fetchJson } from '../util/fetch.js';
+
+export function getManualDrawings(symbol, timeframe) {
+  const params = new URLSearchParams({ symbol, timeframe });
+  return fetchJson(`/api/drawings?${params}`);
+}
+
+export function createManualDrawing(payload) {
+  return fetchJson('/api/drawings', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateManualDrawing(manualLineId, payload) {
+  return fetchJson(`/api/drawings/${encodeURIComponent(manualLineId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteManualDrawing(manualLineId) {
+  return fetchJson(`/api/drawings/${encodeURIComponent(manualLineId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function clearManualDrawings(symbol, timeframe) {
+  const params = new URLSearchParams();
+  if (symbol) params.set('symbol', symbol);
+  if (timeframe) params.set('timeframe', timeframe);
+  return fetchJson(`/api/drawings/clear?${params}`, {
+    method: 'POST',
+  });
+}

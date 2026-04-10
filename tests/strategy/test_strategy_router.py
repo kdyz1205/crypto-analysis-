@@ -39,7 +39,8 @@ def test_strategy_config_route_returns_layer_defaults(monkeypatch) -> None:
     payload = response.json()
     assert payload["symbol"] == "BTCUSDT"
     assert payload["pricePrecision"] == 4
-    assert payload["layerDefaults"]["trendlines"] is True
+    assert payload["layerDefaults"]["primaryTrendlines"] is True
+    assert payload["layerDefaults"]["debugTrendlines"] is False
     assert payload["tickSize"] == 0.0001
 
 
@@ -64,6 +65,7 @@ def test_strategy_snapshot_route_returns_frontend_ready_fields(monkeypatch) -> N
     assert "signals" in snapshot
     assert "signal_states" in snapshot
     assert "invalidations" in snapshot
+    assert snapshot["candidate_lines"] == [] or "display_class" in snapshot["candidate_lines"][0]
 
 
 def test_strategy_replay_route_supports_tail(monkeypatch) -> None:

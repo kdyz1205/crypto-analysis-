@@ -7,6 +7,8 @@ export const marketState = {
   allSymbols: [],
   lastCandles: [],
   pricePrecision: null,
+  historyMode: 'fast_window',
+  historyMeta: null,
   currentScale: 'linear',  // 'linear' | 'log'
   magnetMode: 'weak',      // 'weak' | 'strong'
   replayEndTime: null,
@@ -29,6 +31,17 @@ export function setScale(scale) {
   if (marketState.currentScale === scale) return;
   marketState.currentScale = scale;
   publish('market.scale.changed', scale);
+}
+
+export function setHistoryMode(mode) {
+  if (!mode || marketState.historyMode === mode) return;
+  marketState.historyMode = mode;
+  publish('market.history_mode.changed', mode);
+}
+
+export function setHistoryMeta(meta) {
+  marketState.historyMeta = meta || null;
+  publish('market.history_meta.changed', marketState.historyMeta);
 }
 
 export function setMagnet(mode) {

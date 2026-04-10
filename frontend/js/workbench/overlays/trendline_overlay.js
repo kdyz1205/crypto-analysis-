@@ -38,22 +38,25 @@ export function drawTrendlineOverlay(chart, snapshot, layerVisibility = {}) {
   clearTrendlineOverlay(chart);
   if (!snapshot) return;
 
-  const visibleLines = Array.isArray(snapshot.candidate_lines)
-    ? [...snapshot.candidate_lines]
-        .sort((a, b) => {
-          if (Number(b.is_active) !== Number(a.is_active)) return Number(b.is_active) - Number(a.is_active);
-          return (b.line_score || 0) - (a.line_score || 0);
-        })
-        .slice(0, 12)
-    : [];
+  const allLines = Array.isArray(snapshot.candidate_lines) ? [...snapshot.candidate_lines] : [];
+  const primaryLines = allLines
+    .filter((line) => line.display_class === 'primary' || line.display_class === 'secondary')
+    .sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999));
+  const debugLines = allLines
+    .filter((line) => line.display_class === 'debug')
+    .sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999));
+  const visibleLines = [
+    ...(layerVisibility.primaryTrendlines !== false ? primaryLines : []),
+    ...(layerVisibility.debugTrendlines ? debugLines : []),
+  ];
 
-  if (layerVisibility.trendlines !== false) {
+  if (visibleLines.length > 0) {
     for (const line of visibleLines) {
       try {
         const series = chart.addLineSeries({
           color: lineColor(line),
-          lineWidth: line.is_active ? 2 : 1,
-          lineStyle: lineStyleForState(line.state),
+          lineWidth: line.display_class === 'primary' ? 3 : line.is_active ? 2 : 1,
+          lineStyle: line.display_class === 'debug' ? 2 : lineStyleForState(line.state),
           priceLineVisible: false,
           lastValueVisible: false,
         });
@@ -69,7 +72,7 @@ export function drawTrendlineOverlay(chart, snapshot, layerVisibility = {}) {
   }
 
   if (layerVisibility.projectedLine !== false) {
-    for (const line of visibleLines.filter((item) => item.is_active)) {
+    for (const line of visibleLines.filter((item) => item.is_active && item.display_class !== 'debug')) {
       try {
         const projectedSeries = chart.addLineSeries({
           color: projectedColor(line),

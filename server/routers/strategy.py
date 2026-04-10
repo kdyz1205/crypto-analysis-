@@ -23,6 +23,11 @@ from ..schemas.strategy import (
     serialize_config_response,
 )
 from ..strategy import StrategyConfig, build_latest_snapshot, build_tail_snapshots, replay_strategy
+from ..strategy.display_filter import (
+    build_display_line_meta,
+    collapse_display_invalidations,
+    filter_display_touch_indices,
+)
 
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
 
@@ -376,11 +381,13 @@ def _serialize_snapshot(
     next_time = _next_timestamp(timestamps, current_index)
     line_state_map = {state.line_id: state for state in snapshot.line_states}
     active_line_ids = {state.line_id for state in snapshot.active_lines}
+    display_meta = build_display_line_meta(candles_df, snapshot.candidate_lines)
 
     candidate_lines = [
         _serialize_line(
             line,
             line_state_map.get(line.line_id),
+            display_meta=display_meta,
             timestamps=timestamps,
             current_time=current_time,
             next_time=next_time,
@@ -396,27 +403,51 @@ def _serialize_snapshot(
         candidate_lines=candidate_lines,
         active_lines=active_lines,
         line_states=[
-            StrategyLineStateModel.model_validate(asdict(state)) for state in snapshot.line_states
+            _serialize_line_state(state, snapshot.candidate_lines, display_meta=display_meta, timestamps=timestamps)
+            for state in snapshot.line_states
         ],
-        touch_points=_serialize_touch_points(snapshot.candidate_lines, timestamps=timestamps, highs=highs, lows=lows),
+        touch_points=_serialize_touch_points(
+            snapshot.candidate_lines,
+            display_meta=display_meta,
+            timestamps=timestamps,
+            highs=highs,
+            lows=lows,
+        ),
         signals=[StrategySignalModel.model_validate(asdict(signal)) for signal in snapshot.signals],
         signal_states=[
             StrategySignalStateModel.model_validate(asdict(signal_state))
             for signal_state in snapshot.signal_states
         ],
-        invalidations=[
-            StrategyLineStateModel.model_validate(asdict(state)) for state in snapshot.invalidations
-        ],
+        invalidations=_serialize_invalidations(
+            snapshot.candidate_lines,
+            snapshot.invalidations,
+            display_meta=display_meta,
+            timestamps=timestamps,
+        ),
         orders=[],
     )
 
 
-def _serialize_line(line, line_state, *, timestamps: list[int], current_time: int, next_time: int) -> StrategyLineModel:
+def _serialize_line(
+    line,
+    line_state,
+    *,
+    display_meta,
+    timestamps: list[int],
+    current_time: int,
+    next_time: int,
+) -> StrategyLineModel:
     state = line_state.state if line_state is not None else line.state
     invalidation_reason = (
         line_state.invalidation_reason
         if line_state is not None and line_state.invalidation_reason is not None
         else line.invalidation_reason
+    )
+    meta = display_meta.get(line.line_id)
+    invalidation_timestamp = (
+        timestamps[line.invalidation_index]
+        if line.invalidation_index is not None and 0 <= line.invalidation_index < len(timestamps)
+        else None
     )
     return StrategyLineModel(
         line_id=line.line_id,
@@ -447,12 +478,20 @@ def _serialize_line(line, line_state, *, timestamps: list[int], current_time: in
         is_active=state in {"confirmed", "armed", "triggered"},
         is_invalidated=state in {"invalidated", "expired"},
         invalidation_reason=invalidation_reason,
+        invalidation_bar_index=line.invalidation_index,
+        invalidation_timestamp=invalidation_timestamp,
+        display_rank=meta.display_rank if meta is not None else None,
+        display_class=meta.display_class if meta is not None else "debug",
+        line_usability_score=meta.line_usability_score if meta is not None else 0.0,
+        last_quality_touch_index=meta.last_quality_touch_index if meta is not None else line.latest_confirming_touch_index,
+        collapsed_invalidation_count=meta.collapsed_invalidation_count if meta is not None else 1,
     )
 
 
 def _serialize_touch_points(
     lines,
     *,
+    display_meta,
     timestamps: list[int],
     highs: list[float],
     lows: list[float],
@@ -461,7 +500,11 @@ def _serialize_touch_points(
     seen: set[tuple[str, int, str]] = set()
 
     for line in lines:
-        for index in line.confirming_touch_indices:
+        meta = display_meta.get(line.line_id)
+        if meta is None or meta.display_class == "debug":
+            continue
+        confirming_indices, bar_touch_indices = filter_display_touch_indices(line)
+        for index in confirming_indices:
             key = (line.line_id, int(index), "confirming")
             if key in seen or index >= len(timestamps):
                 continue
@@ -478,9 +521,11 @@ def _serialize_touch_points(
                     residual=abs(price - line_value),
                     is_confirming_touch=True,
                     side=line.side,
+                    display_visible=True,
+                    display_class="confirming",
                 )
             )
-        for index in line.bar_touch_indices:
+        for index in bar_touch_indices:
             key = (line.line_id, int(index), "bar")
             if key in seen or index >= len(timestamps):
                 continue
@@ -497,11 +542,74 @@ def _serialize_touch_points(
                     residual=abs(price - line_value),
                     is_confirming_touch=False,
                     side=line.side,
+                    display_visible=True,
+                    display_class="bar",
                 )
             )
 
     points.sort(key=lambda point: (point.timestamp, point.line_id, point.touch_type))
     return points
+
+
+def _serialize_invalidations(
+    lines,
+    invalidations,
+    *,
+    display_meta,
+    timestamps: list[int],
+) -> list[StrategyLineStateModel]:
+    line_lookup = {line.line_id: line for line in lines}
+    collapsed = collapse_display_invalidations(
+        [line_lookup[state.line_id] for state in invalidations if state.line_id in line_lookup],
+        display_meta,
+    )
+    state_lookup = {state.line_id: state for state in invalidations}
+    serialized: list[StrategyLineStateModel] = []
+    for line, collapsed_count in collapsed:
+        state = state_lookup.get(line.line_id)
+        if state is None:
+            continue
+        serialized.append(
+            _serialize_line_state(
+                state,
+                lines,
+                display_meta=display_meta,
+                timestamps=timestamps,
+                collapsed_invalidation_count=collapsed_count,
+            )
+        )
+    return serialized
+
+
+def _serialize_line_state(
+    state,
+    lines,
+    *,
+    display_meta,
+    timestamps: list[int],
+    collapsed_invalidation_count: int = 1,
+) -> StrategyLineStateModel:
+    line_lookup = {line.line_id: line for line in lines}
+    line = line_lookup.get(state.line_id)
+    meta = display_meta.get(state.line_id)
+    invalidation_bar_index = line.invalidation_index if line is not None else None
+    invalidation_timestamp = (
+        timestamps[invalidation_bar_index]
+        if invalidation_bar_index is not None and 0 <= invalidation_bar_index < len(timestamps)
+        else None
+    )
+    payload = asdict(state)
+    payload.update(
+        {
+            "invalidation_bar_index": invalidation_bar_index,
+            "invalidation_timestamp": invalidation_timestamp,
+            "display_rank": meta.display_rank if meta is not None else None,
+            "display_class": meta.display_class if meta is not None else "debug",
+            "line_usability_score": meta.line_usability_score if meta is not None else 0.0,
+            "collapsed_invalidation_count": collapsed_invalidation_count,
+        }
+    )
+    return StrategyLineStateModel.model_validate(payload)
 
 
 def _next_timestamp(timestamps: list[int], current_index: int) -> int:

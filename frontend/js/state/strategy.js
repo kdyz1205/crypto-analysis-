@@ -6,11 +6,13 @@ export const strategyState = {
   replayEnvelope: null,
   error: null,
   layerVisibility: {
-    trendlines: true,
-    touchMarkers: true,
+    primaryTrendlines: true,
+    debugTrendlines: false,
+    confirmingTouches: true,
+    barTouches: false,
     projectedLine: true,
     signalMarkers: true,
-    invalidationMarkers: true,
+    collapsedInvalidations: true,
     orderMarkers: false,
   },
 };

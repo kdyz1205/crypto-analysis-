@@ -39,6 +39,26 @@ class PaperExecutionEngine:
         self.last_processed_bar_by_stream.clear()
         return self.get_state()
 
+    def load_state(self, state: PaperExecutionState, *, current_day: str | None = None) -> PaperExecutionState:
+        self.config = state.config
+        self.order_manager.load_state(
+            intents=list(state.intents),
+            open_orders=list(state.open_orders),
+            recent_fills=list(state.recent_fills),
+        )
+        self.position_manager.load_state(
+            open_positions=list(state.open_positions),
+            recent_closed_positions=list(state.recent_closed_positions),
+        )
+        self.kill_switch.load_state(state.kill_switch)
+        self.realized_pnl = float(state.account.realized_pnl)
+        self.daily_realized_pnl = float(state.account.daily_realized_pnl)
+        self.current_day = current_day
+        self.consecutive_losses = int(state.account.consecutive_losses)
+        self.cooldowns = dict(state.cooldowns)
+        self.last_processed_bar_by_stream = dict(state.account.last_processed_bar_by_stream)
+        return self.get_state()
+
     def update_config(self, **changes) -> PaperExecutionConfig:
         self.config = replace(self.config, **changes)
         return self.config

@@ -33,6 +33,22 @@ class PaperOrderManager:
         self._order_id_by_signal_id.clear()
         self._recent_fills.clear()
 
+    def load_state(
+        self,
+        *,
+        intents: list[OrderIntent],
+        open_orders: list[PaperOrder],
+        recent_fills: list[PaperFill],
+    ) -> None:
+        self.reset()
+        for intent in intents:
+            self._intents_by_signal_id[intent.signal_id] = intent
+            self._intents_by_client_order_id[intent.client_order_id] = intent
+        for order in open_orders:
+            self._orders_by_id[order.order_id] = order
+            self._order_id_by_signal_id[order.signal_id] = order.order_id
+        self._recent_fills.extend(recent_fills[-100:])
+
     def get_intent(self, signal_id: str) -> OrderIntent | None:
         return self._intents_by_signal_id.get(signal_id)
 

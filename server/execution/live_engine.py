@@ -80,6 +80,30 @@ class LiveExecutionEngine:
             "blocked_reason": self._blocked_reason(enabled_flags, adapter.has_api_keys()),
         }
 
+    def export_state(self) -> dict[str, Any]:
+        return {
+            "last_preview_result": self.last_preview_result,
+            "last_submission_result": self.last_submission_result,
+            "reconciliation_by_mode": self.reconciliation_by_mode,
+            "submissions_by_mode": self.submissions_by_mode,
+        }
+
+    def load_state(self, state: dict[str, Any] | None) -> None:
+        if not state:
+            return
+        self.last_preview_result = state.get("last_preview_result")
+        self.last_submission_result = state.get("last_submission_result")
+        reconciliation = state.get("reconciliation_by_mode") or {}
+        submissions = state.get("submissions_by_mode") or {}
+        self.reconciliation_by_mode = {
+            "demo": reconciliation.get("demo"),
+            "live": reconciliation.get("live"),
+        }
+        self.submissions_by_mode = {
+            "demo": dict(submissions.get("demo") or {}),
+            "live": dict(submissions.get("live") or {}),
+        }
+
     async def preview_live_submission(self, intent: OrderIntent, mode: LiveMode | None = None) -> dict[str, Any]:
         resolved_mode = mode or self.config.default_mode
         result = await self._build_preview(intent, resolved_mode)

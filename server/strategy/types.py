@@ -90,6 +90,8 @@ class Trendline:
     recent_test_count: int = 0
     non_touch_cross_count: int = 0
     invalidation_reason: str | None = None
+    invalidation_index: int | None = None
+    source: str = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +123,7 @@ class StrategySignal:
     line_side: LineSide
     reason_code: str
     factor_components: Mapping[str, float] = field(default_factory=dict)
+    source: str = "auto"
 
 
 __all__ = [

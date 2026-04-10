@@ -7,14 +7,14 @@ export const getSymbols = (includeExtended = false) =>
 export const getSymbolInfo = (symbol) =>
   fetchJson(`/api/symbol-info?symbol=${encodeURIComponent(symbol)}`);
 
-export const getOhlcv = (symbol, interval, days = 30, endTime = null) => {
-  const params = new URLSearchParams({ symbol, interval, days: String(days) });
+export const getOhlcv = (symbol, interval, days = 30, endTime = null, historyMode = 'fast_window') => {
+  const params = new URLSearchParams({ symbol, interval, days: String(days), history_mode: historyMode });
   if (endTime) params.set('end_time', endTime);
   return fetchJson(`/api/ohlcv?${params}`);
 };
 
-export const getChart = (symbol, interval, days = 365, endTime = null) => {
-  const params = new URLSearchParams({ symbol, interval, days: String(days) });
+export const getChart = (symbol, interval, days = 365, endTime = null, historyMode = 'fast_window') => {
+  const params = new URLSearchParams({ symbol, interval, days: String(days), history_mode: historyMode });
   if (endTime) params.set('end_time', endTime);
   return fetchJson(`/api/chart?${params}`);
 };

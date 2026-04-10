@@ -32,6 +32,8 @@ class StrategyTouchPointModel(BaseModel):
     residual: float
     is_confirming_touch: bool
     side: str
+    display_visible: bool = True
+    display_class: str = "confirming"
 
 
 class StrategyLineModel(BaseModel):
@@ -41,6 +43,7 @@ class StrategyLineModel(BaseModel):
     symbol: str
     timeframe: str
     side: str
+    source: str = "auto"
     state: str
     t_start: Any
     t_end: Any
@@ -65,6 +68,13 @@ class StrategyLineModel(BaseModel):
     is_active: bool
     is_invalidated: bool
     invalidation_reason: str | None = None
+    invalidation_bar_index: int | None = None
+    invalidation_timestamp: Any | None = None
+    display_rank: int | None = None
+    display_class: str = "debug"
+    line_usability_score: float = 0.0
+    last_quality_touch_index: int | None = None
+    collapsed_invalidation_count: int = 1
 
 
 class StrategyLineStateModel(BaseModel):
@@ -89,6 +99,12 @@ class StrategyLineStateModel(BaseModel):
     arm_distance: float | None = None
     distance_to_next_projection: float | None = None
     signal_ids: list[str] = Field(default_factory=list)
+    invalidation_bar_index: int | None = None
+    invalidation_timestamp: Any | None = None
+    display_rank: int | None = None
+    display_class: str = "debug"
+    line_usability_score: float = 0.0
+    collapsed_invalidation_count: int = 1
 
 
 class StrategySignalModel(BaseModel):
@@ -98,6 +114,7 @@ class StrategySignalModel(BaseModel):
     line_id: str
     symbol: str
     timeframe: str
+    source: str = "auto"
     signal_type: str
     direction: str
     trigger_mode: str
@@ -188,11 +205,13 @@ class StrategyReplayResponse(BaseModel):
 
 def strategy_layer_defaults() -> dict[str, bool]:
     return {
-        "trendlines": True,
-        "touchMarkers": True,
+        "primaryTrendlines": True,
+        "debugTrendlines": False,
+        "confirmingTouches": True,
+        "barTouches": False,
         "projectedLine": True,
         "signalMarkers": True,
-        "invalidationMarkers": True,
+        "collapsedInvalidations": True,
         "orderMarkers": False,
     }
 
