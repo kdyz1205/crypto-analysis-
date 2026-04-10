@@ -6,6 +6,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 from ..data_service import get_ohlcv_with_df
+from ..drawings import augment_snapshot_with_manual_signals
 from ..execution import PaperExecutionConfig, PaperExecutionEngine
 from ..execution.types import dataclass_to_dict
 from ..schemas.paper_execution import (
@@ -178,14 +179,20 @@ def _build_step_replay_result(
     snapshots = []
     for current_bar in range(start_bar, end_bar + 1):
         prefix = candles_df.iloc[: current_bar + 1].reset_index(drop=True)
-        snapshots.append(
-            build_latest_snapshot(
-                prefix,
-                strategy_cfg,
-                symbol=symbol,
-                timeframe=interval,
-            )
+        snapshot = build_latest_snapshot(
+            prefix,
+            strategy_cfg,
+            symbol=symbol,
+            timeframe=interval,
         )
+        snapshot = augment_snapshot_with_manual_signals(
+            snapshot,
+            prefix,
+            strategy_cfg,
+            symbol=symbol,
+            timeframe=interval,
+        )
+        snapshots.append(snapshot)
 
     return ReplayResult(symbol=symbol, timeframe=interval, snapshots=tuple(snapshots)), start_bar
 

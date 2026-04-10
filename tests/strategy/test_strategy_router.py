@@ -201,6 +201,52 @@ def test_strategy_snapshot_cache_invalidates_when_recent_history_changes(monkeyp
     assert call_count["count"] == 2
 
 
+def test_strategy_snapshot_cache_invalidates_when_manual_strategy_signature_changes(monkeypatch) -> None:
+    async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
+        return _sample_polars_df(), {"pricePrecision": 4}
+
+    signatures = iter((("manual-a",), ("manual-b",)))
+    call_count = {"count": 0}
+
+    def fake_build_snapshot(*args, **kwargs):
+        call_count["count"] += 1
+        return strategy_router.StrategySnapshotResponse(
+            symbol="BTCUSDT",
+            interval="1h",
+            barCount=4,
+            analysisBarCount=4,
+            pricePrecision=4,
+            tickSize=0.0001,
+            config={},
+            snapshot=strategy_router.StrategySnapshotModel(
+                bar_index=3,
+                timestamp=1,
+                pivots=[],
+                candidate_lines=[],
+                active_lines=[],
+                line_states=[],
+                touch_points=[],
+                signals=[],
+                signal_states=[],
+                invalidations=[],
+                orders=[],
+            ),
+        )
+
+    monkeypatch.setattr(strategy_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
+    monkeypatch.setattr(strategy_router, "manual_strategy_signature", lambda *args, **kwargs: next(signatures))
+    monkeypatch.setattr(strategy_router, "_build_strategy_snapshot_response", fake_build_snapshot)
+    strategy_router._snapshot_cache.clear()
+
+    client = TestClient(_build_app())
+    first = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120")
+    second = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert call_count["count"] == 2
+
+
 def test_strategy_replay_route_reuses_cached_tail_response(monkeypatch) -> None:
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
         return _sample_polars_df(), {"pricePrecision": 4}

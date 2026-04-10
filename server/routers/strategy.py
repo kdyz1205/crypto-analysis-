@@ -9,6 +9,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 
 from ..data_service import get_ohlcv_with_df
+from ..drawings import augment_snapshot_with_manual_signals, manual_strategy_signature
 from ..schemas.strategy import (
     StrategyConfigResponse,
     StrategyLineModel,
@@ -103,7 +104,8 @@ async def api_strategy_snapshot(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
-        cache_key = _snapshot_cache_key(candles_df, normalized_symbol, interval, price_precision)
+        drawings_signature = manual_strategy_signature(normalized_symbol, interval)
+        cache_key = _snapshot_cache_key(candles_df, normalized_symbol, interval, price_precision, drawings_signature)
         cached = _get_cached_snapshot(cache_key)
         if cached is not None:
             return cached
@@ -114,6 +116,7 @@ async def api_strategy_snapshot(
             normalized_symbol,
             interval,
             price_precision,
+            drawings_signature,
         )
         return _store_cached_snapshot(cache_key, response)
     except LookupError as exc:
@@ -147,7 +150,8 @@ async def api_strategy_replay(
             days=requested_days,
             analysis_bars=analysis_bars,
         )
-        cache_key = _replay_cache_key(candles_df, normalized_symbol, interval, price_precision, tail)
+        drawings_signature = manual_strategy_signature(normalized_symbol, interval)
+        cache_key = _replay_cache_key(candles_df, normalized_symbol, interval, price_precision, tail, drawings_signature)
         cached = _get_cached_replay(cache_key)
         if cached is not None:
             return cached
@@ -159,6 +163,7 @@ async def api_strategy_replay(
             interval,
             price_precision,
             tail,
+            drawings_signature,
         )
         return _store_cached_replay(cache_key, response)
     except ValueError as exc:
@@ -224,8 +229,16 @@ def _build_strategy_snapshot_response(
     symbol: str,
     interval: str,
     price_precision: int | None,
+    drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategySnapshotResponse:
     snapshot = build_latest_snapshot(candles_df, cfg, symbol=symbol, timeframe=interval)
+    snapshot = augment_snapshot_with_manual_signals(
+        snapshot,
+        candles_df,
+        cfg,
+        symbol=symbol,
+        timeframe=interval,
+    )
     snapshot_payload = _serialize_snapshot(snapshot, candles_df)
     return StrategySnapshotResponse(
         symbol=symbol,
@@ -244,6 +257,7 @@ def _snapshot_cache_key(
     symbol: str,
     interval: str,
     price_precision: int | None,
+    drawings_signature: tuple[Any, ...] | None,
 ) -> tuple[Any, ...]:
     return (
         symbol,
@@ -251,6 +265,7 @@ def _snapshot_cache_key(
         int(len(candles_df)),
         _recent_candle_signature(candles_df),
         price_precision,
+        drawings_signature or (),
     )
 
 
@@ -279,6 +294,7 @@ def _replay_cache_key(
     interval: str,
     price_precision: int | None,
     tail: int | None,
+    drawings_signature: tuple[Any, ...] | None,
 ) -> tuple[Any, ...]:
     return (
         symbol,
@@ -287,6 +303,7 @@ def _replay_cache_key(
         _recent_candle_signature(candles_df),
         price_precision,
         tail,
+        drawings_signature or (),
     )
 
 
@@ -333,6 +350,7 @@ def _build_strategy_replay_response(
     interval: str,
     price_precision: int | None,
     tail: int | None,
+    drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategyReplayResponse:
     if tail is not None and tail <= FAST_REPLAY_TAIL_THRESHOLD:
         snapshots = build_tail_snapshots(
@@ -345,6 +363,16 @@ def _build_strategy_replay_response(
     else:
         replay_result = replay_strategy(candles_df, cfg, symbol=symbol, timeframe=interval)
         snapshots = replay_result.snapshots[-tail:] if tail else replay_result.snapshots
+    snapshots = tuple(
+        augment_snapshot_with_manual_signals(
+            snapshot,
+            candles_df.iloc[: snapshot.bar_index + 1],
+            cfg,
+            symbol=symbol,
+            timeframe=interval,
+        )
+        for snapshot in snapshots
+    )
     timestamps = [int(value) for value in candles_df["timestamp"].tolist()]
     highs = [float(value) for value in candles_df["high"].tolist()]
     lows = [float(value) for value in candles_df["low"].tolist()]
