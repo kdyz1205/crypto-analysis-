@@ -178,6 +178,17 @@ def _wait_for_non_empty_section(driver: webdriver.Chrome, selector: str, timeout
     raise RuntimeError(f"Timed out waiting for non-empty section {selector}")
 
 
+def _wait_for_button_disabled(driver: webdriver.Chrome, element_id: str, timeout_seconds: float = 20.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        try:
+            element = driver.find_element(By.ID, element_id)
+            return element.get_attribute('disabled') is not None
+        except Exception:  # pragma: no cover - transient rerender path
+            time.sleep(0.2)
+    raise RuntimeError(f"Timed out waiting for disabled state of #{element_id}")
+
+
 @dataclass
 class VerificationResult:
     passed: bool
@@ -220,6 +231,14 @@ def _verify_api() -> dict:
     submit_response.raise_for_status()
     submit_payload = submit_response.json()["result"]
 
+    preflight_response = httpx.get(
+        f"{BASE_URL}/api/live-execution/preflight",
+        params={"mode": "live", "order_intent_id": intent_id},
+        timeout=20.0,
+    )
+    preflight_response.raise_for_status()
+    preflight_payload = preflight_response.json()["preflight"]
+
     return {
         "status": {
             "exchange": status_payload["exchange"],
@@ -240,6 +259,10 @@ def _verify_api() -> dict:
             "blocked": submit_payload["blocked"],
             "reason": submit_payload["reason"],
         },
+        "preflight": {
+            "ready": preflight_payload["ready"],
+            "blocking_reasons": preflight_payload["blocking_reasons"],
+        },
     }
 
 
@@ -251,18 +274,21 @@ def _verify_browser() -> dict:
         driver.find_element(By.ID, "v2-exec-toggle").click()
         _wait_for_non_empty_section(driver, '#v2-execution-panel', timeout_seconds=15.0)
         driver.find_element(By.CSS_SELECTOR, '.exec-tab[data-tab="execution"]').click()
-        live_text = _wait_for_non_empty_section(driver, '#v2-exec-live-section', timeout_seconds=25.0)
-        if 'Live Bridge' not in live_text:
-            live_text = _wait_for_text(driver, '#v2-exec-live-section', 'Live Bridge', timeout_seconds=25.0)
+        _wait_for_text(driver, '#v2-exec-live-section', 'Live Bridge', timeout_seconds=25.0)
         _wait_for_text(driver, '#v2-exec-live-section', 'BITGET KEYS MISSING')
-        preview_button = driver.find_element(By.ID, 'v2-live-preview-btn')
-        preview_button.click()
-        result_text = _wait_for_text(driver, '#v2-exec-live-section', 'api_keys_missing')
-        submit_demo_disabled = driver.find_element(By.ID, 'v2-live-submit-demo-btn').get_attribute('disabled') is not None
-        submit_live_disabled = driver.find_element(By.ID, 'v2-live-submit-live-btn').get_attribute('disabled') is not None
+        bridge_text = _wait_for_non_empty_section(driver, '#v2-exec-live-section', timeout_seconds=25.0)
+        if 'BITGET KEYS MISSING' not in bridge_text:
+            bridge_text = _wait_for_text(driver, '#v2-exec-live-section', 'BITGET KEYS MISSING', timeout_seconds=25.0)
+        driver.find_element(By.ID, 'v2-live-preflight-btn').click()
+        _wait_for_text(driver, '#v2-exec-live-section', 'Live Preflight')
+        preflight_text = _wait_for_text(driver, '#v2-exec-live-section', 'Bitget API keys', timeout_seconds=25.0)
+        result_text = _wait_for_text(driver, '#v2-exec-live-section', 'api_keys_missing', timeout_seconds=25.0)
+        submit_demo_disabled = _wait_for_button_disabled(driver, 'v2-live-submit-demo-btn')
+        submit_live_disabled = _wait_for_button_disabled(driver, 'v2-live-submit-live-btn')
         return {
-            "live_section_excerpt": live_text[:600],
-            "result_excerpt": result_text[:400],
+            "live_section_excerpt": bridge_text[:800],
+            "preflight_excerpt": preflight_text[:1200],
+            "result_excerpt": result_text[:1200],
             "submit_demo_disabled": submit_demo_disabled,
             "submit_live_disabled": submit_live_disabled,
         }
@@ -276,6 +302,17 @@ def main() -> int:
         _wait_for_server()
         api_details = _verify_api()
         browser_details = _verify_browser()
+        preflight_excerpt_lower = browser_details["preflight_excerpt"].lower()
+        live_section_excerpt_lower = browser_details["live_section_excerpt"].lower()
+        result_excerpt_lower = browser_details["result_excerpt"].lower()
+        expected_preflight_reasons = {
+            "api_keys_ready",
+            "confirm_live_trading",
+            "dry_run_disabled",
+            "reconciliation_present",
+            "reconciliation_fresh",
+            "intent_gating",
+        }
         passed = (
             api_details["status"]["exchange"] == "bitget"
             and api_details["status"]["api_key_ready"] is False
@@ -283,11 +320,16 @@ def main() -> int:
             and api_details["reconcile"]["reason"] == "api_keys_missing"
             and api_details["preview"]["reason"] == "api_keys_missing"
             and api_details["submit"]["reason"] == "api_keys_missing"
-            and "HYPEUSDT, RIVERUSDT" in browser_details["result_excerpt"]
-            and "pre_limit" in browser_details["result_excerpt"]
+            and api_details["preflight"]["ready"] is False
+            and expected_preflight_reasons.issubset(set(api_details["preflight"]["blocking_reasons"]))
+            and "hypeusdt, riverusdt" in live_section_excerpt_lower
+            and "pre_limit" in live_section_excerpt_lower
             and browser_details["submit_demo_disabled"] is True
             and browser_details["submit_live_disabled"] is True
-            and "api_keys_missing" in browser_details["result_excerpt"]
+            and "live preflight" in preflight_excerpt_lower
+            and "bitget api keys" in preflight_excerpt_lower
+            and "blocking reasons:" in preflight_excerpt_lower
+            and "api_keys_missing" in result_excerpt_lower
         )
         print(json.dumps({"passed": passed, "details": {"api": api_details, "browser": browser_details}}, ensure_ascii=True, indent=2))
         return 0 if passed else 1

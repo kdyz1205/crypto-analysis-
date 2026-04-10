@@ -106,6 +106,15 @@ def _wait_for_text(wait: WebDriverWait, locator: tuple[str, str], needle: str) -
     wait.until(lambda d: needle in d.find_element(*locator).text)
 
 
+def _wait_for_paper_section_ready(wait: WebDriverWait) -> None:
+    wait.until(
+        lambda d: (
+            "Step once" in d.find_element(By.ID, "v2-exec-paper-section").text
+            and "Loading paper execution..." not in d.find_element(By.ID, "v2-exec-paper-section").text
+        )
+    )
+
+
 def _open_execution_tab(driver: webdriver.Chrome, wait: WebDriverWait) -> None:
     driver.find_element(By.ID, "v2-exec-toggle").click()
     wait.until(lambda d: "hidden" not in (d.find_element(By.ID, "v2-execution-panel").get_attribute("class") or ""))
@@ -137,7 +146,7 @@ def _scenario_actual() -> dict:
         page_ready = round(time.perf_counter() - start, 3)
 
         _open_execution_tab(driver, wait)
-        _wait_for_text(wait, (By.ID, "v2-exec-paper-section"), "Step once")
+        _wait_for_paper_section_ready(wait)
         paper_ready = round(time.perf_counter() - start, 3)
 
         driver.find_element(By.ID, "v2-paper-step-btn").click()
@@ -169,7 +178,7 @@ def _scenario_degraded_agent_live() -> dict:
         ))
 
         _open_execution_tab(driver, wait)
-        _wait_for_text(wait, (By.ID, "v2-exec-paper-section"), "Step once")
+        _wait_for_paper_section_ready(wait)
         paper_ready = round(time.perf_counter() - start, 3)
 
         agent_initial = driver.find_element(By.ID, "v2-exec-agent-section").text

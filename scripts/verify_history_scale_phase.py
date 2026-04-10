@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import pathlib
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -47,6 +48,12 @@ def _start_server(port: int) -> subprocess.Popen[str]:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def _wait_for_server(port: int, timeout_seconds: float = 45.0) -> None:
@@ -141,7 +148,7 @@ def _verify_chart_modes(base_url: str) -> VerificationResult:
 
 
 def main() -> int:
-    port = 8068
+    port = _pick_free_port()
     server = _start_server(port)
     try:
         _wait_for_server(port)

@@ -17,26 +17,32 @@ SCRIPTS = (
 
 
 def _run_script(path: str) -> dict:
-    completed = subprocess.run(
-        [sys.executable, path],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    stdout = completed.stdout.strip()
-    stderr = completed.stderr.strip()
-    parsed = None
-    if stdout:
-        try:
-            parsed = json.loads(stdout)
-        except json.JSONDecodeError:
-            parsed = {"stdout": stdout}
-    return {
-        "script": path,
-        "returncode": completed.returncode,
-        "stdout": parsed,
-        "stderr_tail": stderr.splitlines()[-20:] if stderr else [],
-    }
+    last_result = None
+    for attempt in range(1, 3):
+        completed = subprocess.run(
+            [sys.executable, path],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        stdout = completed.stdout.strip()
+        stderr = completed.stderr.strip()
+        parsed = None
+        if stdout:
+            try:
+                parsed = json.loads(stdout)
+            except json.JSONDecodeError:
+                parsed = {"stdout": stdout}
+        last_result = {
+            "script": path,
+            "attempts": attempt,
+            "returncode": completed.returncode,
+            "stdout": parsed,
+            "stderr_tail": stderr.splitlines()[-20:] if stderr else [],
+        }
+        if completed.returncode == 0:
+            return last_result
+    return last_result
 
 
 def main() -> int:

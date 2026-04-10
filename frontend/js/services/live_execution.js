@@ -7,6 +7,18 @@ export async function getLiveExecutionStatus() {
   return response.status;
 }
 
+export async function getLiveExecutionPreflight(params = {}) {
+  const search = new URLSearchParams();
+  if (params.mode) search.set('mode', params.mode);
+  if (params.order_intent_id) search.set('order_intent_id', params.order_intent_id);
+  if (params.signal_id) search.set('signal_id', params.signal_id);
+  const suffix = search.toString() ? `?${search}` : '';
+  const response = await fetchJson(`/api/live-execution/preflight${suffix}`, {
+    timeout: 30000,
+  });
+  return response.preflight;
+}
+
 export async function reconcileLiveExecution(payload) {
   const response = await fetchJson('/api/live-execution/reconcile', {
     method: 'POST',

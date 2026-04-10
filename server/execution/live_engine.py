@@ -110,6 +110,106 @@ class LiveExecutionEngine:
         self.last_preview_result = result
         return result
 
+    async def build_preflight(
+        self,
+        *,
+        mode: LiveMode,
+        intent: OrderIntent | None = None,
+    ) -> dict[str, Any]:
+        adapter = self._adapter_provider()
+        flags = self._enabled_flags()
+        reconciliation = self.reconciliation_by_mode.get(mode)
+        preview_result = await self._build_preview(intent, mode) if intent is not None else None
+
+        checks: list[dict[str, Any]] = [
+            self._preflight_check(
+                "enable_live_trading",
+                "ENABLE_LIVE_TRADING",
+                flags["enable_live_trading"],
+                detail="Set ENABLE_LIVE_TRADING=true to allow any live bridge action.",
+            ),
+            self._preflight_check(
+                "api_keys_ready",
+                "Bitget API keys",
+                adapter.has_api_keys(),
+                detail="Fill BITGET_API_KEY, BITGET_SECRET_KEY, and BITGET_PASSPHRASE.",
+            ),
+        ]
+
+        if mode == "live":
+            checks.extend(
+                [
+                    self._preflight_check(
+                        "confirm_live_trading",
+                        "CONFIRM_LIVE_TRADING",
+                        flags["confirm_live_trading"],
+                        detail="Real-money live mode requires CONFIRM_LIVE_TRADING=true.",
+                    ),
+                    self._preflight_check(
+                        "dry_run_disabled",
+                        "DRY_RUN disabled",
+                        not flags["dry_run"],
+                        detail="Real-money live mode requires DRY_RUN=false.",
+                    ),
+                ]
+            )
+
+        checks.extend(
+            [
+                self._preflight_check(
+                    "reconciliation_present",
+                    "Fresh reconciliation",
+                    reconciliation is not None,
+                    detail=f"Run /api/live-execution/reconcile for mode={mode}.",
+                ),
+                self._preflight_check(
+                    "reconciliation_fresh",
+                    "Reconciliation not stale",
+                    self._reconciliation_is_fresh(reconciliation),
+                    detail=f"Re-run reconciliation within {self.config.reconciliation_max_age_seconds}s of submit.",
+                ),
+                self._preflight_check(
+                    "reconciliation_clear",
+                    "Reconciliation unblocked",
+                    not bool(reconciliation and reconciliation.get("blocked")),
+                    detail=reconciliation.get("reason", "") if reconciliation else "No reconciliation report yet.",
+                ),
+                self._preflight_check(
+                    "intent_selected",
+                    "Live-eligible intent selected",
+                    intent is not None,
+                    detail="Seed at least one approved/submitted paper intent before live submit.",
+                ),
+            ]
+        )
+
+        if intent is not None and preview_result is not None:
+            checks.append(
+                self._preflight_check(
+                    "intent_gating",
+                    "Intent passes live gating",
+                    not bool(preview_result.get("blocked")),
+                    detail=", ".join(preview_result.get("blocking_reasons") or []) or preview_result.get("reason", ""),
+                )
+            )
+
+        blocking_reasons = [check["check_id"] for check in checks if check["blocking"] and not check["ok"]]
+        next_actions = self._preflight_next_actions(mode, checks, preview_result)
+        return {
+            "ready": len(blocking_reasons) == 0,
+            "mode": mode,
+            "exchange": getattr(adapter, "exchange_name", "bitget"),
+            "selected_intent_id": intent.order_intent_id if intent else None,
+            "selected_signal_id": intent.signal_id if intent else None,
+            "selected_symbol": intent.symbol if intent else None,
+            "selected_timeframe": intent.timeframe if intent else None,
+            "selected_trigger_mode": intent.trigger_mode if intent else None,
+            "checks": checks,
+            "blocking_reasons": blocking_reasons,
+            "next_actions": next_actions,
+            "preview_result": preview_result,
+        }
+
     async def execute_live_submission(
         self,
         intent: OrderIntent,
@@ -324,6 +424,50 @@ class LiveExecutionEngine:
             if report and (time.time() - int(report.get("checked_at") or 0)) > self.config.reconciliation_max_age_seconds:
                 return "reconciliation_stale"
         return ""
+
+    def _reconciliation_is_fresh(self, reconciliation: dict[str, Any] | None) -> bool:
+        if reconciliation is None:
+            return False
+        checked_at = int(reconciliation.get("checked_at") or 0)
+        if checked_at <= 0:
+            return False
+        return (time.time() - checked_at) <= self.config.reconciliation_max_age_seconds
+
+    @staticmethod
+    def _preflight_check(check_id: str, label: str, ok: bool, *, detail: str = "", blocking: bool = True) -> dict[str, Any]:
+        return {
+            "check_id": check_id,
+            "label": label,
+            "ok": bool(ok),
+            "blocking": blocking,
+            "detail": detail,
+        }
+
+    def _preflight_next_actions(
+        self,
+        mode: LiveMode,
+        checks: list[dict[str, Any]],
+        preview_result: dict[str, Any] | None,
+    ) -> list[str]:
+        actions: list[str] = []
+        failed = {check["check_id"] for check in checks if not check["ok"]}
+        if "enable_live_trading" in failed:
+            actions.append("Set ENABLE_LIVE_TRADING=true.")
+        if "api_keys_ready" in failed:
+            actions.append("Fill BITGET_API_KEY, BITGET_SECRET_KEY, and BITGET_PASSPHRASE.")
+        if "confirm_live_trading" in failed:
+            actions.append("Set CONFIRM_LIVE_TRADING=true for real-money mode.")
+        if "dry_run_disabled" in failed:
+            actions.append("Set DRY_RUN=false before real-money submit.")
+        if "reconciliation_present" in failed or "reconciliation_fresh" in failed or "reconciliation_clear" in failed:
+            actions.append(f"Run reconcile for mode={mode} and confirm it returns ok/unblocked.")
+        if "intent_selected" in failed:
+            actions.append("Generate or approve at least one paper intent, then select it in Live Bridge.")
+        if "intent_gating" in failed and preview_result is not None:
+            actions.append(f"Selected intent is blocked by: {', '.join(preview_result.get('blocking_reasons') or []) or preview_result.get('reason', 'unknown')}.")
+        if not actions:
+            actions.append(f"Preflight passed for mode={mode}. Demo/real-money submit may proceed under current safeguards.")
+        return actions
 
     @staticmethod
     def _result_base(intent: OrderIntent, mode: LiveMode) -> dict[str, Any]:

@@ -37,9 +37,13 @@ const agentPanelState = {
 };
 const liveBridgeState = {
   status: null,
+  preflight: null,
   lastError: null,
+  preflightError: null,
   loading: false,
+  preflightLoading: false,
   reconciling: false,
+  preflighting: false,
   previewing: false,
   submittingDemo: false,
   submittingLive: false,
@@ -486,12 +490,42 @@ async function loadLiveExecutionStatus(force = true) {
     const status = await liveExecSvc.getLiveExecutionStatus();
     liveBridgeState.status = status;
     liveBridgeState.lastError = null;
+    await loadLiveExecutionPreflight(force);
     return status;
   } catch (err) {
     liveBridgeState.lastError = safeErrorMessage(err);
     throw err;
   } finally {
     liveBridgeState.loading = false;
+  }
+}
+
+async function loadLiveExecutionPreflight(force = true) {
+  const selectedIntentId = getSelectedLiveIntentId();
+  const cached = liveBridgeState.preflight;
+  if (
+    !force &&
+    cached &&
+    cached.mode === 'live' &&
+    (cached.selected_intent_id || null) === selectedIntentId
+  ) {
+    return cached;
+  }
+  if (liveBridgeState.preflightLoading) return liveBridgeState.preflight;
+  liveBridgeState.preflightLoading = true;
+  try {
+    const preflight = await liveExecSvc.getLiveExecutionPreflight({
+      mode: 'live',
+      order_intent_id: selectedIntentId || undefined,
+    });
+    liveBridgeState.preflight = preflight;
+    liveBridgeState.preflightError = null;
+    return preflight;
+  } catch (err) {
+    liveBridgeState.preflightError = safeErrorMessage(err);
+    throw err;
+  } finally {
+    liveBridgeState.preflightLoading = false;
   }
 }
 
@@ -1042,6 +1076,9 @@ function renderLiveBridgeSection(status, error, paperState) {
   const latestResult = status.last_submission_result || status.last_preview_result || null;
   const intents = getLiveEligibleIntents(paperState);
   const defaultIntent = intents[0] || null;
+  const preflight = liveBridgeState.preflight;
+  const preflightError = liveBridgeState.preflightError;
+  const preflightLoading = liveBridgeState.preflightLoading;
   const busy = isLiveBridgeBusy();
   const submittedIntentIdsByMode = status.submitted_intent_ids_by_mode || {};
   const submittedDemo = new Set(submittedIntentIdsByMode.demo || []);
@@ -1107,6 +1144,7 @@ function renderLiveBridgeSection(status, error, paperState) {
       ${defaultIntentSubmittedDemo || defaultIntentSubmittedLive ? '<div class="paper-note">Selected intent was already submitted on at least one live bridge mode. Re-submit is locally idempotent-blocked.</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <div class="paper-actions live-actions">
+        <button class="btn" id="v2-live-preflight-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.preflighting ? 'Preflighting...' : 'Run live preflight'}</button>
         <button class="btn" id="v2-live-reconcile-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.reconciling ? 'Reconciling...' : 'Reconcile'}</button>
         <button class="btn" id="v2-live-preview-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.previewing ? 'Previewing...' : 'Preview selected intent'}</button>
         <button class="btn" id="v2-live-submit-demo-btn" ${submitDemoBlocked ? 'disabled' : ''}>${liveBridgeState.submittingDemo ? 'Submitting demo...' : 'Submit to demo'}</button>
@@ -1136,6 +1174,7 @@ function renderLiveBridgeSection(status, error, paperState) {
           <input type="text" value="${escapeHtml(defaultIntent ? describeIntent(defaultIntent) : 'No live-eligible paper intents')}" disabled />
         </label>
       </form>
+      ${renderLivePreflightSection(preflight, preflightError, preflightLoading)}
       ${latestResult ? renderLiveResult(latestResult) : '<div class="paper-note">No live preview or submit result yet.</div>'}
     </section>
   `;
@@ -1258,10 +1297,81 @@ function renderLiveResult(result) {
   `;
 }
 
+function renderLivePreflightSection(preflight, error, loading) {
+  if (loading && !preflight) {
+    return '<div class="paper-note">Running live preflight...</div>';
+  }
+  if (!preflight) {
+    if (error) {
+      return `<div class="paper-error">${escapeHtml(error)}</div>`;
+    }
+    return '<div class="paper-note">No live preflight available yet.</div>';
+  }
+
+  const blockingReasons = preflight.blocking_reasons || [];
+  const nextActions = preflight.next_actions || [];
+  const checks = preflight.checks || [];
+  return `
+    <div class="paper-section paper-section-nested">
+      <div class="paper-section-header">
+        <h4>Live Preflight</h4>
+        <span class="paper-badge ${preflight.ready ? 'is-ok' : 'is-danger'}">${preflight.ready ? 'READY' : 'BLOCKED'}</span>
+      </div>
+      <div class="paper-note">
+        <strong>Mode:</strong> ${escapeHtml(String(preflight.mode || 'live').toUpperCase())} |
+        <strong>Intent:</strong> ${escapeHtml(preflight.selected_intent_id || 'none')} |
+        <strong>Symbol:</strong> ${escapeHtml(preflight.selected_symbol || '-')} |
+        <strong>Trigger:</strong> ${escapeHtml(preflight.selected_trigger_mode || '-')}
+      </div>
+      ${
+        blockingReasons.length
+          ? `<div class="paper-error">Blocking reasons: ${escapeHtml(blockingReasons.join(', '))}</div>`
+          : '<div class="paper-note">No blocking reasons. This bridge is ready from a code/gating perspective.</div>'
+      }
+      <div>
+        ${checks
+          .map(
+            (check) => `
+              <div class="paper-cooldown-row">
+                <span>${check.ok ? 'PASS' : 'FAIL'} - ${escapeHtml(check.label || check.check_id)}</span>
+                <span class="muted">${escapeHtml(check.detail || '-')}</span>
+              </div>
+            `,
+          )
+          .join('')}
+      </div>
+      ${
+        nextActions.length
+          ? `
+            <div class="paper-note">
+              <strong>Next actions:</strong> ${escapeHtml(nextActions.join(' | '))}
+            </div>
+          `
+          : ''
+      }
+    </div>
+  `;
+}
+
 function getLiveEligibleIntents(paperState) {
   return [...(paperState?.intents || [])]
     .filter((intent) => ['approved', 'submitted'].includes(intent.status))
     .sort((left, right) => (right.created_at_bar ?? -1) - (left.created_at_bar ?? -1));
+}
+
+function getDefaultLiveIntent(paperState) {
+  const intents = getLiveEligibleIntents(paperState);
+  return intents[0] || null;
+}
+
+function getSelectedLiveIntentId() {
+  const form = $('#v2-live-bridge-form');
+  if (form instanceof HTMLFormElement) {
+    const selected = String(new FormData(form).get('order_intent_id') || '').trim();
+    if (selected) return selected;
+  }
+  const defaultIntent = getDefaultLiveIntent(paperExecutionState.state);
+  return defaultIntent?.order_intent_id || null;
 }
 
 function describeIntent(intent) {
@@ -1271,7 +1381,9 @@ function describeIntent(intent) {
 function isLiveBridgeBusy() {
   return !!(
     liveBridgeState.loading ||
+    liveBridgeState.preflightLoading ||
     liveBridgeState.reconciling ||
+    liveBridgeState.preflighting ||
     liveBridgeState.previewing ||
     liveBridgeState.submittingDemo ||
     liveBridgeState.submittingLive ||
@@ -1872,12 +1984,19 @@ function wirePaperExecutionControls() {
 }
 
 function wireLiveBridgeControls() {
+  on('#v2-live-preflight-btn', 'click', async () => {
+    await runLiveBridgeAction('preflighting', async () => {
+      await loadLiveExecutionPreflight(true);
+    });
+  });
+
   on('#v2-live-reconcile-btn', 'click', async () => {
     await runLiveBridgeAction('reconciling', async () => {
       const form = $('#v2-live-bridge-form');
       const mode = form instanceof HTMLFormElement ? readLiveMode(form) : 'demo';
       await liveExecSvc.reconcileLiveExecution({ mode });
       await loadLiveExecutionStatus(true);
+      await loadLiveExecutionPreflight(true).catch(() => null);
     });
   });
 
@@ -1893,6 +2012,7 @@ function wireLiveBridgeControls() {
       if (liveBridgeState.status) {
         liveBridgeState.status = { ...liveBridgeState.status, last_preview_result: result };
       }
+      await loadLiveExecutionPreflight(true).catch(() => null);
     });
   });
 
@@ -1910,6 +2030,7 @@ function wireLiveBridgeControls() {
       }
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
+      await loadLiveExecutionPreflight(true).catch(() => null);
     });
   });
 
@@ -1927,6 +2048,7 @@ function wireLiveBridgeControls() {
       }
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
+      await loadLiveExecutionPreflight(true).catch(() => null);
     });
   });
 
@@ -1944,6 +2066,7 @@ function wireLiveBridgeControls() {
       }
       liveBridgeState.lastError = null;
       await loadLiveExecutionStatus(true);
+      await loadLiveExecutionPreflight(true).catch(() => null);
     });
   });
 }

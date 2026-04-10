@@ -139,6 +139,36 @@ async def test_live_engine_is_idempotent_for_repeated_submit(monkeypatch) -> Non
     assert adapter.submit_calls == 1
 
 
+@pytest.mark.asyncio
+async def test_live_engine_preflight_reports_missing_keys_and_intent(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("CONFIRM_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "false")
+    engine = LiveExecutionEngine(adapter_provider=lambda: _FakeAdapter(has_keys=False))
+
+    preflight = await engine.build_preflight(mode="live", intent=None)
+
+    assert preflight["ready"] is False
+    assert "api_keys_ready" in preflight["blocking_reasons"]
+    assert "reconciliation_present" in preflight["blocking_reasons"]
+    assert "intent_selected" in preflight["blocking_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_live_engine_preflight_ready_when_live_gates_pass(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("CONFIRM_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "false")
+    engine = LiveExecutionEngine(adapter_provider=lambda: _FakeAdapter())
+
+    await engine.reconcile_startup("live")
+    preflight = await engine.build_preflight(mode="live", intent=_intent())
+
+    assert preflight["ready"] is True
+    assert preflight["blocking_reasons"] == []
+    assert preflight["preview_result"]["ok"] is True
+
+
 def test_live_engine_status_exposes_flags_and_reconciliation_requirement(monkeypatch) -> None:
     monkeypatch.delenv("ENABLE_LIVE_TRADING", raising=False)
     monkeypatch.delenv("CONFIRM_LIVE_TRADING", raising=False)

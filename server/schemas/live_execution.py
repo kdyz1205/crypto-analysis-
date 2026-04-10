@@ -82,6 +82,39 @@ class LiveExecutionStatusResponse(BaseModel):
     status: LiveExecutionStatusModel
 
 
+class LivePreflightCheckModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    check_id: str
+    label: str
+    ok: bool
+    blocking: bool = True
+    detail: str = ""
+
+
+class LivePreflightModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ready: bool
+    mode: str
+    exchange: str = "bitget"
+    selected_intent_id: str | None = None
+    selected_signal_id: str | None = None
+    selected_symbol: str | None = None
+    selected_timeframe: str | None = None
+    selected_trigger_mode: str | None = None
+    checks: list[LivePreflightCheckModel] = Field(default_factory=list)
+    blocking_reasons: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    preview_result: LiveExecutionResultModel | None = None
+
+
+class LivePreflightResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    preflight: LivePreflightModel
+
+
 class LivePreviewRequest(BaseModel):
     order_intent_id: str | None = None
     signal_id: str | None = None
@@ -133,6 +166,7 @@ __all__ = [
     "LiveCloseResponse",
     "LiveExecutionResultModel",
     "LiveExecutionStatusResponse",
+    "LivePreflightResponse",
     "LivePreviewRequest",
     "LivePreviewResponse",
     "LiveReconcileRequest",

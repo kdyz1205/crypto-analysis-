@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..execution.live_adapter import LiveExecutionAdapter
 from ..execution.live_engine import LiveBridgeConfig, LiveExecutionEngine
@@ -8,6 +8,7 @@ from ..execution.types import OrderIntent
 from ..schemas.live_execution import (
     LiveCloseRequest,
     LiveCloseResponse,
+    LivePreflightResponse,
     LiveExecutionStatusResponse,
     LivePreviewRequest,
     LivePreviewResponse,
@@ -34,6 +35,18 @@ live_engine = LiveExecutionEngine(
 @router.get("/status", response_model=LiveExecutionStatusResponse)
 async def api_live_execution_status():
     return {"status": live_engine.get_status()}
+
+
+@router.get("/preflight", response_model=LivePreflightResponse)
+async def api_live_execution_preflight(
+    mode: str = Query("live"),
+    order_intent_id: str | None = Query(None),
+    signal_id: str | None = Query(None),
+):
+    normalized_mode = _normalize_mode(mode)
+    intent = _resolve_optional_intent(order_intent_id, signal_id)
+    preflight = await live_engine.build_preflight(mode=normalized_mode, intent=intent)
+    return {"preflight": preflight}
 
 
 @router.post("/reconcile", response_model=LiveReconcileResponse)
@@ -80,6 +93,21 @@ def _resolve_intent(order_intent_id: str | None, signal_id: str | None) -> Order
         raise HTTPException(404, f"Unknown order_intent_id: {order_intent_id}")
 
     raise HTTPException(400, "order_intent_id or signal_id is required")
+
+
+def _resolve_optional_intent(order_intent_id: str | None, signal_id: str | None) -> OrderIntent | None:
+    if order_intent_id or signal_id:
+        return _resolve_intent(order_intent_id, signal_id)
+
+    intents = [
+        intent
+        for intent in paper_engine.order_manager.get_intents()
+        if intent.status in {"approved", "submitted"}
+    ]
+    if not intents:
+        return None
+    intents.sort(key=lambda intent: (intent.created_at_bar, intent.order_intent_id), reverse=True)
+    return intents[0]
 
 
 def _normalize_mode(mode: str) -> str:

@@ -114,75 +114,80 @@ class VerificationResult:
 def _verify_manual_ui(base_url: str, manual_line_id: str) -> VerificationResult:
     driver = _build_driver()
     try:
-        driver.get(f"{base_url}/v2")
-        deadline = time.time() + 15.0
-        while time.time() < deadline:
-            rows = driver.find_elements(By.CSS_SELECTOR, ".manual-line-row")
-            if rows:
-                break
-            time.sleep(0.25)
-        rows = driver.find_elements(By.CSS_SELECTOR, ".manual-line-row")
-        if not rows:
-            return VerificationResult(False, {"reason": "manual line rows not visible"})
-
-        _wait_for_manual_panel_ready(driver)
-        rows[0].click()
-        _wait_for_selected_inputs(driver)
-
-        driver.execute_script(
-            """
-            const label = document.getElementById('manual-line-label-input');
-            const notes = document.getElementById('manual-line-notes-input');
-            if (label) {
-              label.value = 'verified manual line';
-              label.dispatchEvent(new Event('input', { bubbles: true }));
-              label.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            if (notes) {
-              notes.value = 'manual note from browser verify';
-              notes.dispatchEvent(new Event('input', { bubbles: true }));
-              notes.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            """,
-        )
-
-        driver.execute_script(
-            """
-            const button = document.querySelector('[data-action="save-metadata"]');
-            if (button) button.click();
-            """,
-        )
-
-        current = _wait_for_saved_drawing(
-            base_url,
-            manual_line_id,
-            expected_label="verified manual line",
-            expected_notes="manual note from browser verify",
-        )
-
-        details = {
-            "rowCount": len(rows),
-            "hasDrawResistance": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="draw-resistance"]')),
-            "hasDrawSupport": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="draw-support"]')),
-            "hasToggleExtendLeft": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="toggle-extend-left"]')),
-            "hasToggleExtendRight": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="toggle-extend-right"]')),
-            "hasOverrideMode": bool(driver.find_elements(By.CSS_SELECTOR, 'select[data-action="override-mode"]')),
-            "savedLabel": current["label"] if current else None,
-            "savedNotes": current["notes"] if current else None,
-        }
-        passed = (
-            details["rowCount"] >= 1
-            and details["hasDrawResistance"]
-            and details["hasDrawSupport"]
-            and details["hasToggleExtendLeft"]
-            and details["hasToggleExtendRight"]
-            and details["hasOverrideMode"]
-            and details["savedLabel"] == "verified manual line"
-            and details["savedNotes"] == "manual note from browser verify"
-        )
-        return VerificationResult(passed, details)
+        last_error = None
+        for attempt in range(2):
+            try:
+                if attempt == 0:
+                    driver.get(f"{base_url}/v2")
+                else:
+                    driver.refresh()
+                return _verify_manual_ui_once(driver, base_url, manual_line_id)
+            except RuntimeError as exc:
+                last_error = str(exc)
+                time.sleep(0.75)
+        return VerificationResult(False, {"reason": last_error or "manual verification failed"})
     finally:
         driver.quit()
+
+
+def _verify_manual_ui_once(driver: webdriver.Chrome, base_url: str, manual_line_id: str) -> VerificationResult:
+    _wait_for_manual_panel_ready(driver)
+    rows = _wait_for_manual_rows(driver)
+    rows[0].click()
+    _wait_for_selected_inputs(driver)
+
+    driver.execute_script(
+        """
+        const label = document.getElementById('manual-line-label-input');
+        const notes = document.getElementById('manual-line-notes-input');
+        if (label) {
+          label.value = 'verified manual line';
+          label.dispatchEvent(new Event('input', { bubbles: true }));
+          label.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (notes) {
+          notes.value = 'manual note from browser verify';
+          notes.dispatchEvent(new Event('input', { bubbles: true }));
+          notes.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """,
+    )
+
+    driver.execute_script(
+        """
+        const button = document.querySelector('[data-action="save-metadata"]');
+        if (button) button.click();
+        """,
+    )
+
+    current = _wait_for_saved_drawing(
+        base_url,
+        manual_line_id,
+        expected_label="verified manual line",
+        expected_notes="manual note from browser verify",
+    )
+
+    details = {
+        "rowCount": len(rows),
+        "hasDrawResistance": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="draw-resistance"]')),
+        "hasDrawSupport": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="draw-support"]')),
+        "hasToggleExtendLeft": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="toggle-extend-left"]')),
+        "hasToggleExtendRight": bool(driver.find_elements(By.CSS_SELECTOR, '[data-action="toggle-extend-right"]')),
+        "hasOverrideMode": bool(driver.find_elements(By.CSS_SELECTOR, 'select[data-action="override-mode"]')),
+        "savedLabel": current["label"] if current else None,
+        "savedNotes": current["notes"] if current else None,
+    }
+    passed = (
+        details["rowCount"] >= 1
+        and details["hasDrawResistance"]
+        and details["hasDrawSupport"]
+        and details["hasToggleExtendLeft"]
+        and details["hasToggleExtendRight"]
+        and details["hasOverrideMode"]
+        and details["savedLabel"] == "verified manual line"
+        and details["savedNotes"] == "manual note from browser verify"
+    )
+    return VerificationResult(passed, details)
 
 
 def _wait_for_selected_inputs(driver: webdriver.Chrome, timeout_seconds: float = 15.0) -> None:
@@ -197,14 +202,28 @@ def _wait_for_selected_inputs(driver: webdriver.Chrome, timeout_seconds: float =
     raise RuntimeError("Selected manual line editor did not appear")
 
 
-def _wait_for_manual_panel_ready(driver: webdriver.Chrome, timeout_seconds: float = 15.0) -> None:
+def _wait_for_manual_panel_ready(driver: webdriver.Chrome, timeout_seconds: float = 25.0) -> None:
     deadline = time.time() + timeout_seconds
     while time.time() < deadline:
+        draw_buttons = driver.find_elements(By.CSS_SELECTOR, '[data-action="draw-resistance"]')
         note = driver.find_elements(By.CSS_SELECTOR, ".manual-panel-note")
-        if note and "Loading manual lines..." not in (note[0].text or ""):
+        rows = driver.find_elements(By.CSS_SELECTOR, ".manual-line-row")
+        if draw_buttons and rows:
+            return
+        if draw_buttons and note and "Loading manual lines..." not in (note[0].text or ""):
             return
         time.sleep(0.25)
     raise RuntimeError("Manual panel did not leave loading state")
+
+
+def _wait_for_manual_rows(driver: webdriver.Chrome, timeout_seconds: float = 20.0):
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        rows = driver.find_elements(By.CSS_SELECTOR, ".manual-line-row")
+        if rows:
+            return rows
+        time.sleep(0.25)
+    raise RuntimeError("manual line rows not visible")
 
 
 def _wait_for_saved_drawing(

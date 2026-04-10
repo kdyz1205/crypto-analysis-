@@ -137,6 +137,11 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
     assert preview_after_reconcile.status_code == 200
     assert preview_after_reconcile.json()["result"]["ok"] is True
 
+    preflight = client.get("/api/live-execution/preflight?mode=demo")
+    assert preflight.status_code == 200
+    assert preflight.json()["preflight"]["ready"] is True
+    assert preflight.json()["preflight"]["selected_intent_id"] == intent.order_intent_id
+
     submit_without_confirm = client.post(
         "/api/live-execution/submit",
         json={"order_intent_id": intent.order_intent_id, "mode": "demo", "confirm": False},
@@ -158,6 +163,7 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
     )
     assert submit_demo_again.status_code == 200
     assert submit_demo_again.json()["result"]["idempotent_replay"] is True
+
 
 
 def test_live_execution_router_blocks_non_whitelist_and_live_without_confirm_flag(monkeypatch) -> None:
@@ -212,3 +218,22 @@ def test_live_execution_router_reconcile_reports_blocked_state(monkeypatch) -> N
     payload = reconcile.json()["reconciliation"]
     assert payload["blocked"] is True
     assert payload["reason"] == "exchange_positions_detected"
+
+
+def test_live_execution_router_preflight_reports_blocking_reasons(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.delenv("CONFIRM_LIVE_TRADING", raising=False)
+    monkeypatch.setenv("DRY_RUN", "true")
+    live_execution_router.live_engine = LiveExecutionEngine(adapter_provider=lambda: _FakeAdapter(has_keys=False))
+    live_execution_router.paper_engine.reset()
+    client = TestClient(_build_app())
+
+    preflight = client.get("/api/live-execution/preflight?mode=live")
+
+    assert preflight.status_code == 200
+    payload = preflight.json()["preflight"]
+    assert payload["ready"] is False
+    assert "api_keys_ready" in payload["blocking_reasons"]
+    assert "confirm_live_trading" in payload["blocking_reasons"]
+    assert "dry_run_disabled" in payload["blocking_reasons"]
+    assert "intent_selected" in payload["blocking_reasons"]
