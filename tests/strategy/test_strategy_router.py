@@ -4,6 +4,9 @@ import polars as pl
 from datetime import datetime, timedelta, timezone
 
 import server.routers.strategy as strategy_router
+from server.strategy.display_filter import build_display_line_meta
+from server.strategy.state_machine import LineStateSnapshot
+from server.strategy.types import Trendline
 
 
 def _sample_polars_df() -> pl.DataFrame:
@@ -24,6 +27,66 @@ def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(strategy_router.router)
     return app
+
+
+def _line(
+    line_id: str,
+    *,
+    side: str = "resistance",
+    state: str = "confirmed",
+    score: float = 80.0,
+    invalidation_index: int | None = None,
+) -> Trendline:
+    return Trendline(
+        line_id=line_id,
+        side=side,
+        symbol="BTCUSDT",
+        timeframe="1h",
+        state=state,
+        anchor_pivot_ids=("a", "b"),
+        confirming_touch_pivot_ids=("a", "b", "c"),
+        anchor_indices=(0, 2),
+        anchor_prices=(1.05, 1.03),
+        slope=-0.01 if side == "resistance" else 0.01,
+        intercept=1.05 if side == "resistance" else 0.95,
+        confirming_touch_indices=(0, 2, 3),
+        bar_touch_indices=(0, 2, 3),
+        confirming_touch_count=3,
+        bar_touch_count=3,
+        recent_bar_touch_count=0,
+        residuals=(0.001, 0.001, 0.001),
+        score=score,
+        score_components={},
+        projected_price_current=1.02 if side == "resistance" else 0.98,
+        projected_price_next=1.01 if side == "resistance" else 0.99,
+        latest_confirming_touch_index=3,
+        latest_confirming_touch_price=1.02 if side == "resistance" else 0.98,
+        bars_since_last_confirming_touch=0,
+        recent_test_count=0,
+        non_touch_cross_count=0,
+        invalidation_reason="break_close_count" if invalidation_index is not None else None,
+        invalidation_index=invalidation_index,
+    )
+
+
+def _line_state(line: Trendline) -> LineStateSnapshot:
+    return LineStateSnapshot(
+        line_id=line.line_id,
+        state="invalidated" if line.invalidation_reason else line.state,
+        previous_state="confirmed",
+        side=line.side,
+        symbol=line.symbol,
+        timeframe=line.timeframe,
+        line_score=line.score,
+        confirming_touch_count=line.confirming_touch_count,
+        bar_touch_count=line.bar_touch_count,
+        projected_price_current=line.projected_price_current,
+        projected_price_next=line.projected_price_next,
+        latest_confirming_touch_index=line.latest_confirming_touch_index,
+        bars_since_last_confirming_touch=line.bars_since_last_confirming_touch,
+        invalidation_reason=line.invalidation_reason,
+        transition_reason="test",
+    )
 
 
 def test_strategy_config_route_returns_layer_defaults(monkeypatch) -> None:
@@ -319,3 +382,48 @@ def test_strategy_replay_route_uses_fast_tail_builder(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["snapshotCount"] == 1
     assert calls["tail"] == 1
+
+
+def test_serialize_touch_points_does_not_emit_bar_and_confirming_for_same_bar() -> None:
+    candles_df = strategy_router._standardize_strategy_candles(_sample_polars_df())
+    line = _line("line-a")
+    display_meta = build_display_line_meta(candles_df, [line])
+
+    touch_points = strategy_router._serialize_touch_points(
+        [line],
+        display_meta=display_meta,
+        timestamps=candles_df["timestamp"].tolist(),
+        highs=candles_df["high"].tolist(),
+        lows=candles_df["low"].tolist(),
+    )
+
+    grouped: dict[tuple[str, int], list[str]] = {}
+    for point in touch_points:
+        grouped.setdefault((point.line_id, point.bar_index), []).append(point.touch_type)
+
+    assert all(len(kinds) == 1 for kinds in grouped.values())
+
+
+def test_serialize_invalidations_only_returns_displayworthy_markers() -> None:
+    candles_df = strategy_router._standardize_strategy_candles(_sample_polars_df())
+    lines = [
+        _line("line-a", state="invalidated", score=90.0, invalidation_index=0),
+        _line("line-b", state="invalidated", score=70.0, invalidation_index=10),
+        _line("line-c", state="invalidated", score=50.0, invalidation_index=20),
+    ]
+    display_meta = build_display_line_meta(
+        candles_df,
+        lines,
+        config=strategy_router.StrategyConfig(display_active_lines_per_side=2),
+    )
+
+    invalidations = strategy_router._serialize_invalidations(
+        lines,
+        [_line_state(line) for line in lines],
+        display_meta=display_meta,
+        timestamps=candles_df["timestamp"].tolist(),
+    )
+
+    assert [item.line_id for item in invalidations] == ["line-a", "line-b"]
+    assert invalidations[0].display_class == "primary_invalidation"
+    assert invalidations[1].display_class == "secondary_invalidation"

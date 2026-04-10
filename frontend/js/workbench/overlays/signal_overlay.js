@@ -57,6 +57,9 @@ export function drawSignalOverlay(candleSeries, snapshot, layerVisibility = {}) 
 
   if (layerVisibility.collapsedInvalidations !== false) {
     for (const invalidation of (snapshot.invalidations || [])) {
+      if (invalidation.display_class === 'debug' || invalidation.display_class === 'debug_invalidation') {
+        continue;
+      }
       const line = lineLookup.get(invalidation.line_id);
       const markerTime = invalidation.invalidation_timestamp ?? line?.invalidation_timestamp ?? snapshot.timestamp;
       markers.push({

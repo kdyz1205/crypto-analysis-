@@ -11,6 +11,10 @@ on every symbol or timeframe.
 This is the narrower statement that the current implementation has a
 backtest-positive preset on a specific 1h high-beta market cluster.
 
+After the Phase A touch / invalidation tightening pass, `ENSOUSDT` no longer
+stays inside the currently validated cluster and should not be treated as part
+of the passing preset scope.
+
 ## Preset
 
 - Trigger modes: `pre_limit`
@@ -23,7 +27,6 @@ backtest-positive preset on a specific 1h high-beta market cluster.
 
 - `HYPEUSDT`
 - `RIVERUSDT`
-- `ENSOUSDT`
 
 ## Verification Command
 
@@ -41,12 +44,12 @@ The verification script currently checks that the combined preset run:
 
 Latest passing run on this branch:
 
-- trade count: `13`
-- total pnl: `239.8143`
-- return pct: `0.7994`
-- win rate pct: `53.85`
-- profit factor: `2.3217`
-- max drawdown pct: `0.9730`
+- trade count: `11`
+- total pnl: `301.6216`
+- return pct: `1.5081`
+- win rate pct: `63.64`
+- profit factor: `3.4909`
+- max drawdown pct: `0.5991`
 
 ## Important Boundary
 

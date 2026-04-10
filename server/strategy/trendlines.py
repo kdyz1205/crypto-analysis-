@@ -131,6 +131,16 @@ def _evaluate_candidate_line(
 ) -> Trendline | None:
     slope = (right_pivot.price - left_pivot.price) / (right_pivot.index - left_pivot.index)
     intercept = left_pivot.price - (slope * left_pivot.index)
+    invalidation_reason, invalidation_index = _detect_invalidation(
+        df,
+        atr,
+        slope,
+        intercept,
+        side=side,
+        config=config,
+        start_index=right_pivot.index,
+        current_index=current_index,
+    )
 
     confirming_refs: list[tuple[int, float, Pivot]] = []
     for pivot in pivots:
@@ -141,6 +151,8 @@ def _evaluate_candidate_line(
         max_error = config.max_line_error(float(atr.iloc[pivot.index]), float(df.iloc[pivot.index]["close"]))
         if residual <= max_error:
             confirming_refs.append((pivot.index, residual, pivot))
+    if invalidation_index is not None:
+        confirming_refs = [item for item in confirming_refs if item[0] <= invalidation_index]
     confirming_refs = _dedupe_touch_refs(confirming_refs, config.min_touch_spacing_bars)
     if len(confirming_refs) < 2:
         return None
@@ -152,7 +164,8 @@ def _evaluate_candidate_line(
 
     bar_touch_refs: list[tuple[int, float]] = []
     non_touch_cross_count = 0
-    for bar_index in range(left_pivot.index, current_index + 1):
+    bar_scan_end_index = invalidation_index if invalidation_index is not None else current_index
+    for bar_index in range(left_pivot.index, bar_scan_end_index + 1):
         line_value = project_price(slope, intercept, bar_index)
         atr_value = float(atr.iloc[bar_index])
         close_price = float(df.iloc[bar_index]["close"])
@@ -164,21 +177,17 @@ def _evaluate_candidate_line(
             non_touch_cross_count += 1
 
     bar_touch_refs = _dedupe_touch_refs(bar_touch_refs, config.min_touch_spacing_bars)
+    confirming_touch_indices = {item[0] for item in confirming_refs}
+    bar_touch_refs = [
+        item
+        for item in bar_touch_refs
+        if item[0] not in confirming_touch_indices and item[0] > latest_touch_index
+    ]
     if non_touch_cross_count > config.max_non_touch_crosses:
         return None
 
     recent_window_start = max(left_pivot.index, current_index - config.recent_test_window_bars + 1)
     recent_bar_touch_count = sum(1 for bar_index, _ in bar_touch_refs if bar_index >= recent_window_start)
-    invalidation_reason, invalidation_index = _detect_invalidation(
-        df,
-        atr,
-        slope,
-        intercept,
-        side=side,
-        config=config,
-        start_index=latest_touch_index,
-        current_index=current_index,
-    )
 
     latest_touch_price = next(item[2].price for item in reversed(confirming_refs) if item[0] == latest_touch_index)
     return Trendline(

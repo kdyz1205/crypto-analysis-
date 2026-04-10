@@ -18,7 +18,7 @@ from server.strategy import StrategyConfig
 from server.strategy.backtest import run_strategy_backtest, summarize_backtest_results
 
 
-VALIDATED_SYMBOLS = ("HYPEUSDT", "RIVERUSDT", "ENSOUSDT")
+VALIDATED_SYMBOLS = ("HYPEUSDT", "RIVERUSDT")
 VALIDATED_INTERVAL = "1h"
 VALIDATED_ANALYSIS_BARS = 200
 VALIDATED_WINDOW_BARS = 100

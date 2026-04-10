@@ -14,6 +14,7 @@ class DisplayLineMeta:
     display_class: str
     line_usability_score: float
     last_quality_touch_index: int | None
+    invalidation_display_class: str = "debug_invalidation"
     collapsed_invalidation_count: int = 1
 
 
@@ -42,19 +43,27 @@ def build_display_line_meta(
 
     for side, ranked_lines in ranked_by_side.items():
         ranked_lines.sort(key=lambda item: _display_sort_key(item[0], item[1]))
+        display_slot = 0
+        invalidation_slot = 0
         for index, (line, usability) in enumerate(ranked_lines):
-            if index < cfg.display_active_lines_per_side and line.state not in {"invalidated", "expired"}:
-                display_class = "primary" if index == 0 else "secondary"
-                display_rank = index + 1
+            display_rank = index + 1
+            if line.state not in {"invalidated", "expired"} and display_slot < cfg.display_active_lines_per_side:
+                display_class = "primary" if display_slot == 0 else "secondary"
+                display_slot += 1
             else:
                 display_class = "debug"
-                display_rank = index + 1
+            if line.state in {"invalidated", "expired"} and invalidation_slot < cfg.display_active_lines_per_side:
+                invalidation_class = "primary_invalidation" if invalidation_slot == 0 else "secondary_invalidation"
+                invalidation_slot += 1
+            else:
+                invalidation_class = "debug_invalidation"
             metas[line.line_id] = DisplayLineMeta(
                 line_id=line.line_id,
                 display_rank=display_rank,
                 display_class=display_class,
                 line_usability_score=round(usability, 4),
                 last_quality_touch_index=line.latest_confirming_touch_index,
+                invalidation_display_class=invalidation_class,
                 collapsed_invalidation_count=1,
             )
     return metas
@@ -67,7 +76,12 @@ def filter_display_touch_indices(
 ) -> tuple[list[int], list[int]]:
     cfg = config or StrategyConfig()
     confirming = list(line.confirming_touch_indices)
-    bar_touches = list(line.bar_touch_indices)
+    confirming_set = set(confirming)
+    bar_touches = [
+        index
+        for index in line.bar_touch_indices
+        if index not in confirming_set and (line.latest_confirming_touch_index is None or index > line.latest_confirming_touch_index)
+    ]
 
     if line.state not in {"confirmed", "armed", "triggered"}:
         bar_touches = []
@@ -83,6 +97,24 @@ def filter_display_touch_indices(
         bar_touches = []
 
     return confirming, bar_touches
+
+
+def invalidation_display_class(
+    meta: DisplayLineMeta | None,
+    *,
+    config: StrategyConfig | None = None,
+) -> str:
+    if meta is None:
+        return "debug_invalidation"
+    return meta.invalidation_display_class
+
+
+def should_display_invalidation(
+    meta: DisplayLineMeta | None,
+    *,
+    config: StrategyConfig | None = None,
+) -> bool:
+    return invalidation_display_class(meta, config=config) != "debug_invalidation"
 
 
 def collapse_display_invalidations(
@@ -193,4 +225,6 @@ __all__ = [
     "build_display_line_meta",
     "collapse_display_invalidations",
     "filter_display_touch_indices",
+    "invalidation_display_class",
+    "should_display_invalidation",
 ]

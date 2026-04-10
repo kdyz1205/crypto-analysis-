@@ -5,6 +5,8 @@ from server.strategy.display_filter import (
     build_display_line_meta,
     collapse_display_invalidations,
     filter_display_touch_indices,
+    invalidation_display_class,
+    should_display_invalidation,
 )
 from server.strategy.types import Trendline
 
@@ -93,6 +95,18 @@ def test_filter_display_touch_indices_caps_bar_touches() -> None:
     assert bar_touches == [20]
 
 
+def test_filter_display_touch_indices_excludes_confirming_overlap() -> None:
+    line = _line("line-a")
+    confirming, bar_touches = filter_display_touch_indices(
+        line,
+        config=StrategyConfig(display_touch_limit_per_line=5, display_bar_touch_limit_per_line=4),
+    )
+
+    assert confirming == [2, 8, 12]
+    assert bar_touches == [18, 20]
+    assert set(confirming).isdisjoint(bar_touches)
+
+
 def test_collapse_display_invalidations_merges_nearby_events() -> None:
     lines = [
         _line("line-a", state="invalidated", score=90.0, invalidation_index=20),
@@ -114,3 +128,22 @@ def test_collapse_display_invalidations_merges_nearby_events() -> None:
     assert resistance_count == 2
     assert support_line.line_id == "line-c"
     assert support_count == 1
+
+
+def test_invalidation_display_class_is_separate_from_line_display_class() -> None:
+    meta = build_display_line_meta(
+        _candles(),
+        [
+            _line("line-a", state="invalidated", score=90.0, invalidation_index=20),
+            _line("line-b", state="invalidated", score=70.0, invalidation_index=26),
+            _line("line-c", state="invalidated", score=50.0, invalidation_index=29),
+        ],
+        config=StrategyConfig(display_active_lines_per_side=2),
+    )
+
+    assert meta["line-a"].display_class == "debug"
+    assert invalidation_display_class(meta["line-a"], config=StrategyConfig(display_active_lines_per_side=2)) == "primary_invalidation"
+    assert invalidation_display_class(meta["line-b"], config=StrategyConfig(display_active_lines_per_side=2)) == "secondary_invalidation"
+    assert invalidation_display_class(meta["line-c"], config=StrategyConfig(display_active_lines_per_side=2)) == "debug_invalidation"
+    assert should_display_invalidation(meta["line-a"], config=StrategyConfig(display_active_lines_per_side=2)) is True
+    assert should_display_invalidation(meta["line-c"], config=StrategyConfig(display_active_lines_per_side=2)) is False

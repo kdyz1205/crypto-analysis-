@@ -28,6 +28,8 @@ from ..strategy.display_filter import (
     build_display_line_meta,
     collapse_display_invalidations,
     filter_display_touch_indices,
+    invalidation_display_class,
+    should_display_invalidation,
 )
 
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
@@ -587,8 +589,13 @@ def _serialize_invalidations(
     timestamps: list[int],
 ) -> list[StrategyLineStateModel]:
     line_lookup = {line.line_id: line for line in lines}
+    eligible_lines = [
+        line_lookup[state.line_id]
+        for state in invalidations
+        if state.line_id in line_lookup and should_display_invalidation(display_meta.get(state.line_id))
+    ]
     collapsed = collapse_display_invalidations(
-        [line_lookup[state.line_id] for state in invalidations if state.line_id in line_lookup],
+        eligible_lines,
         display_meta,
     )
     state_lookup = {state.line_id: state for state in invalidations}
@@ -604,6 +611,7 @@ def _serialize_invalidations(
                 display_meta=display_meta,
                 timestamps=timestamps,
                 collapsed_invalidation_count=collapsed_count,
+                invalidation_only=True,
             )
         )
     return serialized
@@ -616,6 +624,7 @@ def _serialize_line_state(
     display_meta,
     timestamps: list[int],
     collapsed_invalidation_count: int = 1,
+    invalidation_only: bool = False,
 ) -> StrategyLineStateModel:
     line_lookup = {line.line_id: line for line in lines}
     line = line_lookup.get(state.line_id)
@@ -627,12 +636,17 @@ def _serialize_line_state(
         else None
     )
     payload = asdict(state)
+    resolved_display_class = (
+        invalidation_display_class(meta)
+        if invalidation_only
+        else (meta.display_class if meta is not None else "debug")
+    )
     payload.update(
         {
             "invalidation_bar_index": invalidation_bar_index,
             "invalidation_timestamp": invalidation_timestamp,
             "display_rank": meta.display_rank if meta is not None else None,
-            "display_class": meta.display_class if meta is not None else "debug",
+            "display_class": resolved_display_class,
             "line_usability_score": meta.line_usability_score if meta is not None else 0.0,
             "collapsed_invalidation_count": collapsed_invalidation_count,
         }

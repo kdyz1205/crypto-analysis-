@@ -993,7 +993,7 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
         <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Strategy Window<input type="number" name="strategy_window_bars" value="100" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
       </form>
-      <div class="paper-note">Validated paper preset currently uses <strong>pre_limit</strong> with lookback 80 and strategy window 100. Backtest-positive scope is the 1h high-beta cluster, not every market.</div>
+      <div class="paper-note">Validated paper preset currently uses <strong>pre_limit</strong> with lookback 80 and strategy window 100. Current passing cluster is <strong>HYPEUSDT / RIVERUSDT</strong> on 1h, not every market.</div>
       ${busy ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       ${renderPaperLastStep(lastStepResult)}
@@ -1159,7 +1159,7 @@ function renderRuntimeExecutionSection(instances, error) {
         </label>
         <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${runtimePanelState.creating ? 'Creating...' : 'Create instance'}</button>
       </form>
-      <div class="paper-note">Validated runtime preset currently defaults to <strong>pre_limit</strong>, lookback 80, and strategy window 100. Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
+      <div class="paper-note">Validated runtime preset currently defaults to <strong>pre_limit</strong>, lookback 80, and strategy window 100. Current passing cluster is <strong>HYPEUSDT / RIVERUSDT</strong> on 1h. Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
       <div class="paper-subgrid">
         ${records.length === 0 ? '<div class="paper-empty">No runtime instances configured yet.</div>' : records.map((record) => renderRuntimeInstanceRow(record)).join('')}
       </div>

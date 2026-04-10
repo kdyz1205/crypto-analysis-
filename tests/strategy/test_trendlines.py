@@ -4,7 +4,7 @@ import pandas as pd
 
 import server.strategy.scoring as scoring_module
 import server.strategy.trendlines as trendlines_module
-from server.strategy.config import StrategyConfig
+from server.strategy.config import StrategyConfig, calculate_atr
 from server.strategy.scoring import score_lines
 from server.strategy.trendlines import build_candidate_lines, detect_trendlines
 from server.strategy.types import Pivot, Trendline, stable_id
@@ -128,6 +128,40 @@ def _invalidation_pivots() -> list[Pivot]:
     ]
 
 
+def _late_touch_after_break_candles() -> pd.DataFrame:
+    close = [1.00, 1.10, 1.02, 1.00, 1.04, 1.08, 1.09, 1.01, 0.98, 0.97, 0.96]
+    high = [1.03, 1.12, 1.05, 1.02, 1.04, 1.10, 1.11, 0.99, 0.98, 0.97, 0.96]
+    low = [0.97, 1.04, 0.98, 0.97, 1.00, 1.04, 1.05, 0.95, 0.93, 0.92, 0.91]
+    open_ = [0.99, 1.06, 1.01, 0.99, 1.02, 1.05, 1.06, 0.98, 0.95, 0.94, 0.93]
+    return pd.DataFrame(
+        {
+            "timestamp": list(range(len(close))),
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": [100] * len(close),
+        }
+    )
+
+
+def _late_touch_after_break_pivots() -> list[Pivot]:
+    pivot_points = {1: 1.12, 4: 1.04, 7: 0.99}
+    return [
+        Pivot(
+            pivot_id=stable_id("pivot", "high", index, price),
+            kind="high",
+            index=index,
+            timestamp=index,
+            price=price,
+            left_bars=2,
+            right_bars=2,
+            confirmed_at_index=index + 2,
+        )
+        for index, price in pivot_points.items()
+    ]
+
+
 def test_candidate_pruning_and_dedup_merge_similar_lines() -> None:
     candles = _descending_candles()
     pivots = _descending_pivots()
@@ -158,7 +192,7 @@ def test_confirming_touch_and_bar_touch_stay_separate() -> None:
 
     assert 16 not in line.confirming_touch_indices
     assert 16 in line.bar_touch_indices
-    assert line.bar_touch_count > line.confirming_touch_count
+    assert set(line.confirming_touch_indices).isdisjoint(line.bar_touch_indices)
 
 
 def test_pre_score_pruning_happens_before_scoring(monkeypatch) -> None:
@@ -225,3 +259,36 @@ def test_break_distance_invalidation_is_detected() -> None:
     invalidated = next(line for line in lines if line.side == "resistance")
     assert invalidated.state == "invalidated"
     assert invalidated.invalidation_reason == "break_distance"
+
+
+def test_late_pivot_does_not_count_as_confirming_touch_after_break() -> None:
+    candles = _late_touch_after_break_candles()
+    pivots = _late_touch_after_break_pivots()
+    config = StrategyConfig(
+        pivot_left=2,
+        pivot_right=2,
+        max_fresh_bars=20,
+        min_touch_spacing_bars=1,
+        break_close_count=2,
+        break_atr_mult=0.05,
+        break_pct=0.001,
+    )
+    line = trendlines_module._evaluate_candidate_line(
+        candles,
+        calculate_atr(candles, config.atr_period),
+        pivots,
+        pivots[0],
+        pivots[1],
+        side="resistance",
+        config=config,
+        symbol="TEST",
+        timeframe="1h",
+        current_index=len(candles) - 1,
+    )
+
+    assert line is not None
+    assert line.state == "invalidated"
+    assert line.invalidation_index is not None and line.invalidation_index < 7
+    assert 7 not in line.confirming_touch_indices
+    assert set(line.confirming_touch_indices) == {1, 4}
+    assert all(index not in line.bar_touch_indices for index in line.confirming_touch_indices)
