@@ -21,6 +21,23 @@ function projectPrice(line, targetTime) {
   return Number(line.price_start) + (slope * (targetTime - line.t_start));
 }
 
+export function resolveManualTrendlinePoints(line, options = {}) {
+  const latestTime = Number(options.latestTime || 0);
+  const earliestTime = Number(options.earliestTime || 0);
+  const startTime = line.extend_left && earliestTime > 0 && earliestTime < line.t_start
+    ? earliestTime
+    : Number(line.t_start);
+  const endTime = line.extend_right && latestTime > line.t_end
+    ? latestTime
+    : Number(line.t_end);
+  const startPrice = startTime !== Number(line.t_start) ? projectPrice(line, startTime) : Number(line.price_start);
+  const endPrice = endTime !== Number(line.t_end) ? projectPrice(line, endTime) : Number(line.price_end);
+  return [
+    { time: Math.floor(startTime), value: Number(startPrice) },
+    { time: Math.floor(endTime), value: Number(endPrice) },
+  ];
+}
+
 export function clearManualTrendlineOverlay(chart) {
   if (!chart) return;
   clearSeries(chart, manualLineSeriesRefs);
@@ -30,7 +47,6 @@ export function drawManualTrendlineOverlay(chart, lines, options = {}) {
   if (!chart) return;
   clearManualTrendlineOverlay(chart);
   const visibleLines = Array.isArray(lines) ? lines : [];
-  const latestTime = Number(options.latestTime || 0);
 
   for (const line of visibleLines) {
     try {
@@ -41,12 +57,7 @@ export function drawManualTrendlineOverlay(chart, lines, options = {}) {
         priceLineVisible: false,
         lastValueVisible: false,
       });
-      const endTime = line.extend_right && latestTime > line.t_end ? latestTime : line.t_end;
-      const endPrice = line.extend_right && latestTime > line.t_end ? projectPrice(line, latestTime) : Number(line.price_end);
-      series.setData([
-        { time: Math.floor(line.t_start), value: Number(line.price_start) },
-        { time: Math.floor(endTime), value: Number(endPrice) },
-      ]);
+      series.setData(resolveManualTrendlinePoints(line, options));
       manualLineSeriesRefs.push(series);
     } catch (err) {
       console.warn('[manual overlay] failed to draw line', line.manual_line_id, err);

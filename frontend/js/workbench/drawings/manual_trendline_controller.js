@@ -17,6 +17,8 @@ import { drawManualTrendlineOverlay, clearManualTrendlineOverlay } from '../over
 let controllerChart = null;
 let controllerContainer = null;
 let controllerInitialized = false;
+let drawingsRequestSeq = 0;
+let selectedDraft = null;
 
 export function initManualTrendlineController(chart, container) {
   controllerChart = chart;
@@ -31,6 +33,7 @@ export function initManualTrendlineController(chart, container) {
 
   panel.addEventListener('click', onPanelClick);
   panel.addEventListener('change', onPanelChange);
+  panel.addEventListener('input', onPanelInput);
 
   if (typeof chart.subscribeClick === 'function') {
     chart.subscribeClick((param) => {
@@ -58,14 +61,18 @@ export function initManualTrendlineController(chart, container) {
 
 export async function refreshManualDrawings(symbol, timeframe) {
   if (!symbol || !timeframe) return;
+  const requestSeq = ++drawingsRequestSeq;
   setDrawingsLoading(true);
   try {
     const response = await drawingsSvc.getManualDrawings(symbol, timeframe);
+    if (requestSeq !== drawingsRequestSeq) return;
     setManualDrawings(response.drawings || []);
     setDrawingsError(null);
   } catch (err) {
+    if (requestSeq !== drawingsRequestSeq) return;
     setDrawingsError(safeErrorMessage(err));
   } finally {
+    if (requestSeq !== drawingsRequestSeq) return;
     setDrawingsLoading(false);
     renderManualLines();
   }
@@ -75,12 +82,14 @@ export function renderManualLines() {
   if (!controllerChart) return;
   const snapshot = marketState.lastCandles || [];
   const latestTime = snapshot.length ? snapshot[snapshot.length - 1].time : 0;
+  const earliestTime = snapshot.length ? snapshot[0].time : 0;
   if (drawingsState.viewMode === 'auto_only') {
     clearManualTrendlineOverlay(controllerChart);
     return;
   }
   drawManualTrendlineOverlay(controllerChart, drawingsState.lines, {
     latestTime,
+    earliestTime,
     selectedLineId: drawingsState.selectedLineId,
   });
 }
@@ -159,18 +168,22 @@ function renderLineList(lines, selectedLineId) {
 }
 
 function renderSelectedActions(selected) {
+  const draft = getSelectedDraft(selected);
   return `
     <div class="manual-selected-actions">
       <div class="manual-selected-title">Selected: ${escapeHtml(selected.label || selected.manual_line_id)}</div>
       <div class="manual-selected-meta">
         nearest auto: ${escapeHtml(selected.nearest_auto_line_id || 'none')} |
+        status: ${escapeHtml(selected.comparison_status || 'uncompared')} |
         slope diff: ${selected.slope_diff ?? '-'} |
-        projected diff: ${selected.projected_price_diff ?? '-'}
+        projected diff: ${selected.projected_price_diff ?? '-'} |
+        overlap: ${selected.overlap_ratio ?? '-'}
       </div>
       <div class="manual-panel-actions">
         <button class="btn" data-action="edit-start" ${selected.locked ? 'disabled' : ''}>Edit Start</button>
         <button class="btn" data-action="edit-end" ${selected.locked ? 'disabled' : ''}>Edit End</button>
         <button class="btn" data-action="toggle-lock">${selected.locked ? 'Unlock' : 'Lock'}</button>
+        <button class="btn" data-action="toggle-extend-left">${selected.extend_left ? 'Stop Extend Left' : 'Extend Left'}</button>
         <button class="btn" data-action="toggle-extend-right">${selected.extend_right ? 'Stop Extend' : 'Extend Right'}</button>
         <button class="btn btn-danger" data-action="delete-selected">Delete</button>
       </div>
@@ -185,6 +198,19 @@ function renderSelectedActions(selected) {
             ${renderOption('strategy_input_enabled', 'Strategy Input', selected.override_mode)}
           </select>
         </label>
+      </div>
+      <div class="manual-panel-form">
+        <label class="manual-inline-label manual-inline-field">
+          Label
+          <input type="text" id="manual-line-label-input" value="${escapeHtml(draft.label)}" placeholder="Line label" />
+        </label>
+        <label class="manual-inline-label manual-inline-field">
+          Notes
+          <textarea id="manual-line-notes-input" rows="3" placeholder="Optional notes">${escapeHtml(draft.notes)}</textarea>
+        </label>
+        <div class="manual-panel-actions">
+          <button class="btn" data-action="save-metadata">Save Label / Notes</button>
+        </div>
       </div>
     </div>
   `;
@@ -217,11 +243,17 @@ async function onPanelClick(event) {
   if (action === 'clear-all') {
     await drawingsSvc.clearManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     setSelectedManualLine(null);
+    selectedDraft = null;
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     return;
   }
   if (action === 'select-line') {
-    setSelectedManualLine(target.dataset.lineId || null);
+    const lineId = target.dataset.lineId || null;
+    setSelectedManualLine(lineId);
+    const current = drawingsState.lines.find((line) => line.manual_line_id === lineId) || null;
+    selectedDraft = current
+      ? { manualLineId: current.manual_line_id, label: current.label || '', notes: current.notes || '' }
+      : null;
     setEditTarget(null);
     return;
   }
@@ -244,14 +276,29 @@ async function onPanelClick(event) {
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     return;
   }
+  if (action === 'toggle-extend-left') {
+    await drawingsSvc.updateManualDrawing(selected.manual_line_id, { extend_left: !selected.extend_left });
+    await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
+    return;
+  }
   if (action === 'toggle-extend-right') {
     await drawingsSvc.updateManualDrawing(selected.manual_line_id, { extend_right: !selected.extend_right });
+    await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
+    return;
+  }
+  if (action === 'save-metadata') {
+    const draft = getSelectedDraft(selected);
+    await drawingsSvc.updateManualDrawing(selected.manual_line_id, {
+      label: draft.label,
+      notes: draft.notes,
+    });
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     return;
   }
   if (action === 'delete-selected') {
     await drawingsSvc.deleteManualDrawing(selected.manual_line_id);
     setSelectedManualLine(null);
+    selectedDraft = null;
     setEditTarget(null);
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
   }
@@ -271,6 +318,20 @@ async function onPanelChange(event) {
     await drawingsSvc.updateManualDrawing(selected.manual_line_id, { override_mode: target.value });
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
   }
+}
+
+function onPanelInput(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  const selected = drawingsState.lines.find((line) => line.manual_line_id === drawingsState.selectedLineId) || null;
+  if (!selected) return;
+  const draft = getSelectedDraft(selected);
+  if (target.id === 'manual-line-label-input') {
+    draft.label = target.value;
+  } else if (target.id === 'manual-line-notes-input') {
+    draft.notes = target.value;
+  }
+  selectedDraft = draft;
 }
 
 async function handleChartClick(param) {
@@ -336,6 +397,17 @@ function normalizeAnchors(left, right) {
 function inferSelectedSide() {
   const selected = drawingsState.lines.find((line) => line.manual_line_id === drawingsState.selectedLineId);
   return selected?.side || 'resistance';
+}
+
+function getSelectedDraft(selected) {
+  if (!selectedDraft || selectedDraft.manualLineId !== selected.manual_line_id) {
+    selectedDraft = {
+      manualLineId: selected.manual_line_id,
+      label: selected.label || '',
+      notes: selected.notes || '',
+    };
+  }
+  return selectedDraft;
 }
 
 function resolveCandleAnchor(param, side) {

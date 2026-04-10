@@ -8,14 +8,14 @@ export function getManualDrawings(symbol, timeframe) {
 export function createManualDrawing(payload) {
   return fetchJson('/api/drawings', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 
 export function updateManualDrawing(manualLineId, payload) {
   return fetchJson(`/api/drawings/${encodeURIComponent(manualLineId)}`, {
     method: 'PATCH',
-    body: JSON.stringify(payload),
+    body: payload,
   });
 }
 

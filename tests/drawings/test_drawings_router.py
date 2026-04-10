@@ -62,12 +62,21 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
 
     update_response = client.patch(
         f"/api/drawings/{created['manual_line_id']}",
-        json={"override_mode": "suppress_nearest_auto_line", "locked": True},
+        json={
+            "override_mode": "suppress_nearest_auto_line",
+            "locked": True,
+            "extend_left": True,
+            "label": "desk override",
+            "notes": "manual review line",
+        },
     )
     assert update_response.status_code == 200
     updated = update_response.json()["drawing"]
     assert updated["override_mode"] == "suppress_nearest_auto_line"
     assert updated["locked"] is True
+    assert updated["extend_left"] is True
+    assert updated["label"] == "desk override"
+    assert updated["notes"] == "manual review line"
 
     delete_response = client.delete(f"/api/drawings/{created['manual_line_id']}")
     assert delete_response.status_code == 200
