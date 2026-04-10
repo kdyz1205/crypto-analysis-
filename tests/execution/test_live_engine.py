@@ -51,17 +51,17 @@ class _FakeAdapter:
         }
 
 
-def _intent() -> OrderIntent:
+def _intent(symbol: str = "HYPEUSDT", trigger_mode: str = "pre_limit") -> OrderIntent:
     return OrderIntent(
         order_intent_id="intent-1",
         signal_id="sig-1",
         line_id="line-1",
         client_order_id="client-1",
-        symbol="BTCUSDT",
+        symbol=symbol,
         timeframe="1h",
         side="short",
         order_type="market",
-        trigger_mode="rejection",
+        trigger_mode=trigger_mode,
         entry_price=100.0,
         stop_price=105.0,
         tp_price=90.0,
@@ -158,7 +158,7 @@ def test_live_engine_status_exposes_flags_and_reconciliation_requirement(monkeyp
 def test_live_bridge_config_reads_env_overrides(monkeypatch) -> None:
     monkeypatch.setenv("LIVE_ALLOWED_SYMBOLS", "BTCUSDT,HYPEUSDT")
     monkeypatch.setenv("LIVE_ALLOWED_TIMEFRAMES", "4h,1h")
-    monkeypatch.setenv("LIVE_ALLOWED_TRIGGER_MODES", "rejection,failed_breakout")
+    monkeypatch.setenv("LIVE_ALLOWED_TRIGGER_MODES", "pre_limit,rejection")
     monkeypatch.setenv("LIVE_MAX_POSITIONS", "2")
     monkeypatch.setenv("LIVE_DEFAULT_MODE", "live")
     monkeypatch.setenv("LIVE_MAX_NOTIONAL", "250")
@@ -168,7 +168,7 @@ def test_live_bridge_config_reads_env_overrides(monkeypatch) -> None:
 
     assert config.allowed_symbols == ("BTCUSDT", "HYPEUSDT")
     assert config.allowed_timeframes == ("4h", "1h")
-    assert config.allowed_trigger_modes == ("rejection", "failed_breakout")
+    assert config.allowed_trigger_modes == ("pre_limit", "rejection")
     assert config.max_live_positions == 2
     assert config.default_mode == "live"
     assert config.max_live_notional == 250.0

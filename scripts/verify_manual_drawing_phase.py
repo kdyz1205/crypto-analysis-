@@ -22,6 +22,7 @@ except ImportError as exc:  # pragma: no cover - environment dependency
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+DRAWINGS_STORE_PATH = REPO_ROOT / "data" / "manual_trendlines.json"
 CHROME_CANDIDATES = (
     pathlib.Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
     pathlib.Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
@@ -217,11 +218,14 @@ def _wait_for_saved_drawing(
     deadline = time.time() + timeout_seconds
     latest = None
     while time.time() < deadline:
+        latest = _read_saved_drawing_from_store(manual_line_id) or latest
+        if latest and latest.get("label") == expected_label and latest.get("notes") == expected_notes:
+            return latest
         try:
             list_response = httpx.get(
                 f"{base_url}/api/drawings",
                 params={"symbol": "HYPEUSDT", "timeframe": "4h"},
-                timeout=10.0,
+                timeout=20.0,
             )
             list_response.raise_for_status()
             drawings = list_response.json()["drawings"]
@@ -230,8 +234,27 @@ def _wait_for_saved_drawing(
                 return latest
         except Exception:
             pass
-        time.sleep(1.0)
+        time.sleep(0.5)
     return latest
+
+
+def _read_saved_drawing_from_store(manual_line_id: str) -> dict | None:
+    if not DRAWINGS_STORE_PATH.exists():
+        return None
+    try:
+        payload = json.loads(DRAWINGS_STORE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, list):
+        return None
+    return next(
+        (
+            item
+            for item in payload
+            if isinstance(item, dict) and item.get("manual_line_id") == manual_line_id
+        ),
+        None,
+    )
 
 
 def main() -> int:

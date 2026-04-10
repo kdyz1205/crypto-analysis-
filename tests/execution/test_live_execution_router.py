@@ -52,7 +52,7 @@ class _FakeAdapter:
         }
 
 
-def _signal(symbol: str = "BTCUSDT", timeframe: str = "1h", trigger_mode: str = "rejection") -> StrategySignal:
+def _signal(symbol: str = "HYPEUSDT", timeframe: str = "1h", trigger_mode: str = "pre_limit") -> StrategySignal:
     return StrategySignal(
         signal_id=f"sig-{symbol}-{trigger_mode}",
         line_id=f"line-{symbol}",

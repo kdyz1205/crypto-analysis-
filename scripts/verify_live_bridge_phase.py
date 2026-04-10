@@ -51,11 +51,11 @@ live_engine.submissions_by_mode = {"demo": {}, "live": {}}
 signal = StrategySignal(
     signal_id="sig-live-verify",
     line_id="line-live-verify",
-    symbol="BTCUSDT",
+    symbol="HYPEUSDT",
     timeframe="1h",
     signal_type="REJECTION_SHORT",
     direction="short",
-    trigger_mode="rejection",
+    trigger_mode="pre_limit",
     timestamp=1,
     trigger_bar_index=1,
     score=0.8,
@@ -283,6 +283,8 @@ def main() -> int:
             and api_details["reconcile"]["reason"] == "api_keys_missing"
             and api_details["preview"]["reason"] == "api_keys_missing"
             and api_details["submit"]["reason"] == "api_keys_missing"
+            and "HYPEUSDT, RIVERUSDT" in browser_details["result_excerpt"]
+            and "pre_limit" in browser_details["result_excerpt"]
             and browser_details["submit_demo_disabled"] is True
             and browser_details["submit_live_disabled"] is True
             and "api_keys_missing" in browser_details["result_excerpt"]

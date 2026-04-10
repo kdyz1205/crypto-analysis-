@@ -13,9 +13,9 @@ EligibleIntentStatus = Literal["approved", "submitted"]
 
 @dataclass(slots=True)
 class LiveBridgeConfig:
-    allowed_symbols: tuple[str, ...] = ("BTCUSDT",)
+    allowed_symbols: tuple[str, ...] = ("HYPEUSDT", "RIVERUSDT")
     allowed_timeframes: tuple[str, ...] = ("1h",)
-    allowed_trigger_modes: tuple[str, ...] = ("rejection", "failed_breakout")
+    allowed_trigger_modes: tuple[str, ...] = ("pre_limit",)
     max_live_positions: int = 1
     default_mode: LiveMode = "demo"
     max_live_notional: float = 100.0
@@ -24,11 +24,11 @@ class LiveBridgeConfig:
     @classmethod
     def from_env(cls) -> "LiveBridgeConfig":
         return cls(
-            allowed_symbols=_csv_env("LIVE_ALLOWED_SYMBOLS", ("BTCUSDT",)),
+            allowed_symbols=_csv_env("LIVE_ALLOWED_SYMBOLS", ("HYPEUSDT", "RIVERUSDT")),
             allowed_timeframes=_csv_env("LIVE_ALLOWED_TIMEFRAMES", ("1h",)),
             allowed_trigger_modes=_csv_env(
                 "LIVE_ALLOWED_TRIGGER_MODES",
-                ("rejection", "failed_breakout"),
+                ("pre_limit",),
             ),
             max_live_positions=_int_env("LIVE_MAX_POSITIONS", 1),
             default_mode=_mode_env("LIVE_DEFAULT_MODE", "demo"),
