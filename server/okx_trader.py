@@ -145,7 +145,7 @@ class OKXTrader:
 
     def __init__(self, api_key: str = "", api_secret: str = "", passphrase: str = ""):
         self.api_key = api_key or os.environ.get("OKX_API_KEY", "")
-        self.api_secret = api_secret or os.environ.get("OKX_SECRET", "")
+        self.api_secret = api_secret or os.environ.get("OKX_SECRET", "") or os.environ.get("OKX_API_SECRET", "")
         self.passphrase = passphrase or os.environ.get("OKX_PASSPHRASE", "")
         self.state = AgentState()
         self.risk = RiskLimits()

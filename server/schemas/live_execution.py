@@ -16,6 +16,7 @@ class LiveExecutionLimitsModel(BaseModel):
 
     max_live_positions: int
     max_live_notional: float
+    reconciliation_max_age_seconds: int | None = None
 
 
 class LiveExecutionReconciliationModel(BaseModel):
@@ -55,6 +56,7 @@ class LiveExecutionResultModel(BaseModel):
     submitted_notional: float | None = None
     exchange_order_id: str = ""
     exchange_response_excerpt: dict | None = None
+    idempotent_replay: bool = False
 
 
 class LiveExecutionStatusModel(BaseModel):
@@ -67,6 +69,7 @@ class LiveExecutionStatusModel(BaseModel):
     limits: LiveExecutionLimitsModel
     reconciliation: dict[str, LiveExecutionReconciliationModel | None]
     reconciliation_required_by_mode: dict[str, bool] = Field(default_factory=dict)
+    submitted_intent_ids_by_mode: dict[str, list[str]] = Field(default_factory=dict)
     last_preview_result: LiveExecutionResultModel | None = None
     last_submission_result: LiveExecutionResultModel | None = None
     blocked_reason: str = ""

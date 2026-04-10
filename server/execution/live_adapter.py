@@ -45,6 +45,7 @@ class LiveExecutionAdapter:
                 "posSide": "long" if intent.side == "long" else "short",
                 "ordType": "market",
                 "sz": str(contracts),
+                "clOrdId": self._client_order_id(intent),
             }
         )
         response = await self._okx_request("POST", "/api/v5/trade/order", mode=mode, body=body)
@@ -246,6 +247,13 @@ class LiveExecutionAdapter:
             "submitted_notional": float(intent.entry_price * intent.quantity) if intent else 0.0,
             "exchange_response_excerpt": self._excerpt(response),
         }
+
+    @staticmethod
+    def _client_order_id(intent: OrderIntent) -> str:
+        # OKX `clOrdId` supports up to 32 chars. Preserve local intent identity while
+        # making the order id deterministic and exchange-safe.
+        raw = str(intent.client_order_id or intent.order_intent_id or "")[:32]
+        return raw or f"live-{intent.order_intent_id[:27]}"
 
 
 __all__ = ["LiveExecutionAdapter", "LiveMode"]

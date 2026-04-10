@@ -149,6 +149,13 @@ def test_live_execution_router_status_preview_submit_and_reconcile(monkeypatch) 
     assert submit_demo.json()["result"]["ok"] is True
     assert submit_demo.json()["result"]["exchange_order_id"] == "ord-demo-1"
 
+    submit_demo_again = client.post(
+        "/api/live-execution/submit",
+        json={"order_intent_id": intent.order_intent_id, "mode": "demo", "confirm": True},
+    )
+    assert submit_demo_again.status_code == 200
+    assert submit_demo_again.json()["result"]["idempotent_replay"] is True
+
 
 def test_live_execution_router_blocks_non_whitelist_and_live_without_confirm_flag(monkeypatch) -> None:
     monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")

@@ -10,6 +10,7 @@ class _FakeAdapter:
     def __init__(self, *, has_keys: bool = True, reconcile_blocked: bool = False) -> None:
         self._has_keys = has_keys
         self._reconcile_blocked = reconcile_blocked
+        self.submit_calls = 0
 
     def has_api_keys(self) -> bool:
         return self._has_keys
@@ -26,6 +27,7 @@ class _FakeAdapter:
         }
 
     async def submit_live_entry(self, intent, mode: str) -> dict:
+        self.submit_calls += 1
         return {
             "ok": True,
             "mode": mode,
@@ -99,6 +101,40 @@ async def test_live_engine_live_mode_requires_dry_run_false(monkeypatch) -> None
     monkeypatch.setenv("DRY_RUN", "false")
     preview_live = await engine.preview_live_submission(_intent(), mode="live")
     assert preview_live["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_live_engine_blocks_stale_reconciliation(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "true")
+    adapter = _FakeAdapter()
+    engine = LiveExecutionEngine(adapter_provider=lambda: adapter)
+
+    await engine.reconcile_startup("demo")
+    stale_report = dict(engine.reconciliation_by_mode["demo"])
+    stale_report["checked_at"] = 1
+    engine.reconciliation_by_mode["demo"] = stale_report
+
+    preview = await engine.preview_live_submission(_intent(), mode="demo")
+    assert preview["ok"] is False
+    assert "reconciliation_stale" in preview["blocking_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_live_engine_is_idempotent_for_repeated_submit(monkeypatch) -> None:
+    monkeypatch.setenv("ENABLE_LIVE_TRADING", "true")
+    monkeypatch.setenv("DRY_RUN", "true")
+    adapter = _FakeAdapter()
+    engine = LiveExecutionEngine(adapter_provider=lambda: adapter)
+
+    await engine.reconcile_startup("demo")
+    first = await engine.execute_live_submission(_intent(), mode="demo", confirm=True)
+    second = await engine.execute_live_submission(_intent(), mode="demo", confirm=True)
+
+    assert first["ok"] is True
+    assert second["ok"] is True
+    assert second["idempotent_replay"] is True
+    assert adapter.submit_calls == 1
 
 
 def test_live_engine_status_exposes_flags_and_reconciliation_requirement(monkeypatch) -> None:

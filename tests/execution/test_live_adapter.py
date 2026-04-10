@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from server.execution.live_adapter import LiveExecutionAdapter
@@ -33,9 +35,11 @@ class _RecordingAdapter(LiveExecutionAdapter):
         super().__init__(trader)
         self.calls: list[tuple[str, str]] = []
         self.status_payload: dict | None = None
+        self.last_body: dict | None = None
 
     async def _okx_request(self, method: str, path: str, *, mode: str, body: str = "") -> dict:
         self.calls.append((method, mode))
+        self.last_body = json.loads(body) if body else None
         if path == "/api/v5/account/balance":
             return {
                 "code": "0",
@@ -84,6 +88,7 @@ async def test_live_adapter_demo_mode_path_is_callable() -> None:
     assert result["ok"] is True
     assert result["mode"] == "demo"
     assert ("POST", "demo") in adapter.calls
+    assert adapter.last_body["clOrdId"] == "client-1"
 
 
 @pytest.mark.asyncio

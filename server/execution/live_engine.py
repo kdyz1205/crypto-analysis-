@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
@@ -18,6 +19,7 @@ class LiveBridgeConfig:
     max_live_positions: int = 1
     default_mode: LiveMode = "demo"
     max_live_notional: float = 100.0
+    reconciliation_max_age_seconds: int = 300
 
 
 class LiveExecutionEngine:
@@ -31,6 +33,7 @@ class LiveExecutionEngine:
         self.last_preview_result: dict[str, Any] | None = None
         self.last_submission_result: dict[str, Any] | None = None
         self.reconciliation_by_mode: dict[LiveMode, dict[str, Any] | None] = {"demo": None, "live": None}
+        self.submissions_by_mode: dict[LiveMode, dict[str, dict[str, Any]]] = {"demo": {}, "live": {}}
 
     def get_status(self) -> dict[str, Any]:
         adapter = self._adapter_provider()
@@ -47,10 +50,14 @@ class LiveExecutionEngine:
             "limits": {
                 "max_live_positions": self.config.max_live_positions,
                 "max_live_notional": self.config.max_live_notional,
+                "reconciliation_max_age_seconds": self.config.reconciliation_max_age_seconds,
             },
             "reconciliation": {mode: report for mode, report in self.reconciliation_by_mode.items()},
             "reconciliation_required_by_mode": {
                 mode: self.reconciliation_by_mode.get(mode) is None for mode in self.reconciliation_by_mode
+            },
+            "submitted_intent_ids_by_mode": {
+                mode: sorted(records.keys()) for mode, records in self.submissions_by_mode.items()
             },
             "last_preview_result": self.last_preview_result,
             "last_submission_result": self.last_submission_result,
@@ -75,6 +82,13 @@ class LiveExecutionEngine:
             rejected.update({"ok": False, "blocked": True, "reason": "confirm_required"})
             self.last_submission_result = rejected
             return rejected
+
+        existing_submission = self.submissions_by_mode[mode].get(intent.order_intent_id)
+        if existing_submission is not None:
+            replayed = dict(existing_submission)
+            replayed["idempotent_replay"] = True
+            self.last_submission_result = replayed
+            return replayed
 
         preview = await self._build_preview(intent, mode)
         self.last_preview_result = preview
@@ -109,6 +123,8 @@ class LiveExecutionEngine:
                     "exchange_response_excerpt": submitted.get("exchange_response_excerpt"),
                 }
             )
+        if result.get("ok"):
+            self.submissions_by_mode[mode][intent.order_intent_id] = dict(result)
         self.last_submission_result = result
         return result
 
@@ -158,6 +174,7 @@ class LiveExecutionEngine:
             return report
 
         report = await adapter.reconcile_live_state(mode)
+        report["checked_at"] = int(time.time())
         self.reconciliation_by_mode[mode] = report
         return report
 
@@ -205,10 +222,17 @@ class LiveExecutionEngine:
         if reconciliation is None:
             reasons.append("reconciliation_required")
         else:
+            checked_at = int(reconciliation.get("checked_at") or 0)
+            if checked_at <= 0:
+                reasons.append("reconciliation_required")
+            elif (time.time() - checked_at) > self.config.reconciliation_max_age_seconds:
+                reasons.append("reconciliation_stale")
             if reconciliation.get("blocked"):
                 reasons.append(reconciliation.get("reason") or "reconciliation_blocked")
             if len(reconciliation.get("positions", [])) >= self.config.max_live_positions:
                 reasons.append("max_live_positions_reached")
+        if intent.order_intent_id in self.submissions_by_mode[mode]:
+            reasons.append("intent_already_submitted_live")
         if intent.status not in {"approved", "submitted"}:
             reasons.append(f"intent_status_not_live_eligible:{intent.status}")
         if intent.symbol.upper() not in self.config.allowed_symbols:
@@ -257,6 +281,8 @@ class LiveExecutionEngine:
         for report in self.reconciliation_by_mode.values():
             if report and report.get("blocked"):
                 return str(report.get("reason") or "reconciliation_blocked")
+            if report and (time.time() - int(report.get("checked_at") or 0)) > self.config.reconciliation_max_age_seconds:
+                return "reconciliation_stale"
         return ""
 
     @staticmethod

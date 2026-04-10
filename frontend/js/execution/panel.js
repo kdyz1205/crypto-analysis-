@@ -877,13 +877,19 @@ function renderLiveBridgeSection(status, error, paperState) {
   const intents = getLiveEligibleIntents(paperState);
   const defaultIntent = intents[0] || null;
   const busy = isLiveBridgeBusy();
+  const submittedIntentIdsByMode = status.submitted_intent_ids_by_mode || {};
+  const submittedDemo = new Set(submittedIntentIdsByMode.demo || []);
+  const submittedLive = new Set(submittedIntentIdsByMode.live || []);
+  const defaultIntentSubmittedDemo = defaultIntent ? submittedDemo.has(defaultIntent.order_intent_id) : false;
+  const defaultIntentSubmittedLive = defaultIntent ? submittedLive.has(defaultIntent.order_intent_id) : false;
   const submitDemoBlocked =
     busy ||
     !defaultIntent ||
     !status.api_key_ready ||
     !enabledFlags.enable_live_trading ||
     !!reconciliationRequired.demo ||
-    !!reconcileDemo.blocked;
+    !!reconcileDemo.blocked ||
+    defaultIntentSubmittedDemo;
   const submitLiveBlocked =
     busy ||
     !defaultIntent ||
@@ -892,7 +898,8 @@ function renderLiveBridgeSection(status, error, paperState) {
     !enabledFlags.confirm_live_trading ||
     enabledFlags.dry_run ||
     !!reconciliationRequired.live ||
-    !!reconcileLive.blocked;
+    !!reconcileLive.blocked ||
+    defaultIntentSubmittedLive;
 
   return `
     <section class="paper-section">
@@ -909,6 +916,7 @@ function renderLiveBridgeSection(status, error, paperState) {
         <div class="stat"><div class="stat-label">DRY_RUN</div><div class="stat-value">${enabledFlags.dry_run ? 'TRUE' : 'FALSE'}</div></div>
         <div class="stat"><div class="stat-label">Live Slots</div><div class="stat-value">${limits.max_live_positions ?? '-'}</div></div>
         <div class="stat"><div class="stat-label">Max Notional</div><div class="stat-value">${formatUsd(limits.max_live_notional)}</div></div>
+        <div class="stat"><div class="stat-label">Recon TTL</div><div class="stat-value">${limits.reconciliation_max_age_seconds ?? '-'}s</div></div>
         <div class="stat"><div class="stat-label">Blocked Reason</div><div class="stat-value">${escapeHtml(status.blocked_reason || '-')}</div></div>
       </div>
       <div class="paper-subgrid">
@@ -929,6 +937,7 @@ function renderLiveBridgeSection(status, error, paperState) {
         </div>
       </div>
       ${enabledFlags.dry_run ? '<div class="paper-note paper-note-danger">Live mode remains hard-blocked while DRY_RUN=true. Demo submit is still available after reconciliation.</div>' : ''}
+      ${defaultIntentSubmittedDemo || defaultIntentSubmittedLive ? '<div class="paper-note">Selected intent was already submitted on at least one live bridge mode. Re-submit is locally idempotent-blocked.</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       <div class="paper-actions live-actions">
         <button class="btn" id="v2-live-reconcile-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.reconciling ? 'Reconciling...' : 'Reconcile'}</button>
@@ -981,7 +990,7 @@ function renderLiveResult(result) {
   const blocked = result.blocked || !result.ok;
   return `
     <div class="paper-note ${blocked ? 'paper-note-danger' : ''}">
-      <strong>${blocked ? 'Blocked' : 'Accepted'}</strong>
+      <strong>${blocked ? 'Blocked' : result.idempotent_replay ? 'Accepted (cached)' : 'Accepted'}</strong>
       <span>${escapeHtml(result.reason || 'OK')}</span>
       <span>${escapeHtml(String(result.mode || '').toUpperCase())} | ${escapeHtml(result.symbol || '-')} | ${escapeHtml(String(result.side || '-').toUpperCase())}</span>
       <span>Notional: ${formatUsd(result.submitted_notional ?? result.would_submit_notional)}</span>
