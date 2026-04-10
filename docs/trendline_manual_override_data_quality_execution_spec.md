@@ -17,8 +17,7 @@ This document freezes the next product phases that must be completed before the 
 1. trendline / touch / invalidation quality,
 2. manual drawing and human override,
 3. full-history and data completeness,
-4. execution center / GUI / loading reliability,
-5. auto runtime for subaccounts.
+4. execution center / GUI / loading reliability.
 
 Portfolio allocation is intentionally not part of the current mainline.
 That can be deferred to a future phase because subaccounts can solve funding separation first.
@@ -62,15 +61,6 @@ Current issues:
 3. paper-first loading exists, but some surrounding UI still looks transitional,
 4. the product still feels like an engineering workbench rather than a coherent trading terminal.
 
-### 2.5 Auto Runtime Gap
-
-Current issues:
-
-1. live execution is still mainly reconcile / preview / submit / close,
-2. there is no fully automated approved-intent scan loop,
-3. there is no durable restart recovery for runtime state,
-4. there is no subaccount-oriented runtime control surface.
-
 ## 3. Scope
 
 The current mainline includes exactly these phases:
@@ -79,15 +69,15 @@ The current mainline includes exactly these phases:
 2. Phase B: Manual Drawing / Human Override
 3. Phase C: Full History / Data Quality / Scale Modes
 4. Phase D: Execution Center / GUI / Loading Reliability
-5. Phase E: Auto Runtime for Subaccounts
 
 The following is explicitly out of scope for this mainline:
 
 1. portfolio allocator,
 2. sleeve budgets,
 3. multi-strategy capital attribution,
-4. multi-user runtime,
-5. persistence-backed portfolio analytics.
+4. auto runtime for subaccounts,
+5. multi-user runtime,
+6. persistence-backed portfolio analytics.
 
 Those may appear later as a future phase or appendix.
 
@@ -136,9 +126,9 @@ The UI must always make it clear whether the user is looking at:
 2. full available history,
 3. a truncated or partially recovered history set.
 
-### 4.5 Runtime Must Be Default-Safe
+### 4.5 Future Automation Must Be Default-Safe
 
-Any automation added after this point must remain:
+Any automation added in a future phase must remain:
 
 1. default-off,
 2. gated,
@@ -344,7 +334,10 @@ Phase D is complete only if:
 3. the product does not regress on paper-first rendering,
 4. the chart and execution center still degrade gracefully under slow auxiliary endpoints.
 
-## 9. Phase E: Auto Runtime for Subaccounts
+## 9. Future Phase: Auto Runtime for Subaccounts
+
+This is intentionally not part of the current A-D mainline.
+It remains a future phase after the chart, data, and execution surfaces are made trader-trustworthy.
 
 ### 9.1 Goal
 
@@ -386,7 +379,8 @@ The following are future-phase items and are not part of the current mainline:
 2. sleeve budgets,
 3. strategy attribution dashboards,
 4. unified multi-strategy account allocator,
-5. multi-user orchestration.
+5. multi-user orchestration,
+6. auto runtime for subaccounts.
 
 ## 11. Recommended Execution Order
 
@@ -394,11 +388,10 @@ The following are future-phase items and are not part of the current mainline:
 2. Phase B: manual drawing / human override
 3. Phase C: full history / data quality / scale modes
 4. Phase D: execution center / GUI / loading reliability
-5. Phase E: auto runtime for subaccounts
 
 This order is deliberate:
 
 1. do not scale automation on top of low-quality line recognition,
 2. do not trust full-history analysis until history completeness is explicit,
-3. do not automate runtime before the human can override structure,
-4. do not treat GUI duplication as cosmetic when it reflects product ambiguity.
+3. do not treat GUI duplication as cosmetic when it reflects product ambiguity,
+4. do not promote runtime automation before phases A-D are trader-trustworthy.
