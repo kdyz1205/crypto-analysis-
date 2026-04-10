@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .history import HistoryCoverageModel
 from .paper_execution import PaperExecutionConfigModel, PaperExecutionStateModel
 
 
@@ -48,6 +49,7 @@ class RuntimeInstanceStatusModel(BaseModel):
     last_runtime_note: str = ""
     last_live_result: dict | None = None
     paper_current_day: str | None = None
+    last_history: HistoryCoverageModel | None = None
     paper_state: PaperExecutionStateModel | None = None
     live_engine_state: dict | None = None
 

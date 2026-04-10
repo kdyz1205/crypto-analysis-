@@ -12,6 +12,7 @@ import pandas as pd
 from ..core.config import PROJECT_ROOT
 from ..data_service import get_ohlcv_with_df
 from ..drawings import augment_snapshot_with_manual_signals
+from ..history_coverage import build_analysis_history
 from ..execution import PaperExecutionConfig, PaperExecutionEngine
 from ..execution.live_adapter import LiveExecutionAdapter
 from ..execution.live_engine import LiveBridgeConfig, LiveExecutionEngine
@@ -222,7 +223,7 @@ class SubaccountRuntimeManager:
 
         async with lock:
             try:
-                candles_df, strategy_cfg = await _load_runtime_inputs(record.config)
+                candles_df, strategy_cfg, history = await _load_runtime_inputs(record.config)
                 stream_key = f"{record.config.symbol}:{record.config.timeframe}"
                 last_processed = engine.last_processed_bar_by_stream.get(stream_key, -1)
                 target_bar = (last_processed + 1) if bar_index is None else bar_index
@@ -259,6 +260,7 @@ class SubaccountRuntimeManager:
                 record.status.last_tick_at = _utc_iso_now()
                 record.status.last_processed_bar = record.status.paper_state.account.last_processed_bar_by_stream.get(stream_key)
                 record.status.last_error = ""
+                record.status.last_history = history
                 if record.status.runtime_state != "running":
                     record.status.runtime_state = "stopped"
                 record.status.paper_current_day = engine.current_day
@@ -403,7 +405,7 @@ class SubaccountRuntimeManager:
             handle.write(json.dumps(event, ensure_ascii=True) + "\n")
 
 
-async def _load_runtime_inputs(config: RuntimeInstanceConfig) -> tuple[pd.DataFrame, StrategyConfig]:
+async def _load_runtime_inputs(config: RuntimeInstanceConfig) -> tuple[pd.DataFrame, StrategyConfig, dict[str, Any]]:
     polars_df, market_payload = await get_ohlcv_with_df(
         config.symbol,
         config.timeframe,
@@ -422,6 +424,7 @@ async def _load_runtime_inputs(config: RuntimeInstanceConfig) -> tuple[pd.DataFr
 
     price_precision = market_payload.get("pricePrecision") if isinstance(market_payload, dict) else None
     strategy_cfg = _config_with_market_precision(StrategyConfig(), price_precision)
+    history = build_analysis_history(market_payload, candles_df)
     return candles_df, apply_strategy_overrides(
         strategy_cfg,
         lookback_bars=config.strategy_config.lookback_bars,
@@ -429,7 +432,7 @@ async def _load_runtime_inputs(config: RuntimeInstanceConfig) -> tuple[pd.DataFr
         confirm_threshold=config.strategy_config.confirm_threshold,
         score_threshold=config.strategy_config.score_threshold,
         rr_target=config.strategy_config.rr_target,
-    )
+    ), history
 
 
 def _standardize_strategy_candles(polars_df) -> pd.DataFrame:
@@ -515,6 +518,7 @@ def _runtime_record_from_dict(payload: dict[str, Any]) -> RuntimeInstanceRecord:
         last_runtime_note=status_payload.get("last_runtime_note", ""),
         last_live_result=status_payload.get("last_live_result"),
         paper_current_day=status_payload.get("paper_current_day"),
+        last_history=status_payload.get("last_history"),
         paper_state=_paper_state_from_dict(paper_state_payload) if paper_state_payload else None,
         live_engine_state=status_payload.get("live_engine_state"),
     )

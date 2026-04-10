@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .history import HistoryCoverageModel
 
 class OrderIntentModel(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -176,6 +177,7 @@ class PaperExecutionStepRequest(BaseModel):
     interval: str = "4h"
     bar_index: int | None = None
     days: int | None = None
+    history_mode: str = "fast_window"
     analysis_bars: int = 500
     trigger_modes: list[str] = Field(default_factory=lambda: ["pre_limit"])
     lookback_bars: int | None = 80
@@ -192,6 +194,7 @@ class PaperExecutionStepResponse(BaseModel):
     stream: str
     processedBars: list[int] = Field(default_factory=list)
     lastProcessedBar: int
+    history: HistoryCoverageModel | None = None
     state: PaperExecutionStateModel
 
 

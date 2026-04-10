@@ -1080,6 +1080,8 @@ async def get_ohlcv(
     """
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
     loaded_from_csv = False
+    used_api_tail = False
+    loaded_from_api = False
     requested_days = max(days, FULL_HISTORY_DAYS) if history_mode == "full_history" else days
 
     if OFFLINE_ONLY:
@@ -1110,6 +1112,7 @@ async def get_ohlcv(
             download_days = requested_days
             try:
                 df = await download_ohlcv(symbol, base_interval, days=download_days)
+                loaded_from_api = True
             except ValueError as e:
                 raise
             except Exception as e:
@@ -1128,21 +1131,25 @@ async def get_ohlcv(
                         if last_ms is not None and (now_ms - last_ms) >= interval_ms * 2:
                             try:
                                 df = await _incremental_update(symbol, base_interval)
+                                used_api_tail = True
                             except Exception as e:
                                 print(f"Warning: Incremental update failed for {symbol}, using existing CSV: {e}")
                     else:
                         if EXCHANGE.lower() == "okx":
                             try:
                                 df = await _append_okx_live(df, symbol, base_interval)
+                                used_api_tail = True
                             except Exception as e:
                                 print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
                 except Exception:
                     download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
+                    loaded_from_api = True
             else:
                 download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                 try:
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
+                    loaded_from_api = True
                 except ValueError as e:
                     raise
                 except Exception as e:
@@ -1214,7 +1221,19 @@ async def get_ohlcv(
     result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
-    result.update(_history_metadata(source_df, df, history_mode))
+    result.update(
+        _history_metadata(
+            source_df,
+            df,
+            history_mode,
+            exchange=EXCHANGE.lower(),
+            data_source_mode=_data_source_mode(),
+            data_source_kind=_data_source_kind(loaded_from_csv, loaded_from_api, used_api_tail),
+            requested_days=requested_days,
+            base_interval=base_interval,
+            resampled_from_interval=base_interval if resample_to else None,
+        )
+    )
     return result
 
 
@@ -1233,6 +1252,9 @@ async def get_ohlcv_with_df(
     Used so chart endpoint can run pattern detection on the same df as candles.
     """
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
+    loaded_from_csv = False
+    used_api_tail = False
+    loaded_from_api = False
     requested_days = max(days, FULL_HISTORY_DAYS) if history_mode == "full_history" else days
 
     if OFFLINE_ONLY:
@@ -1250,12 +1272,14 @@ async def get_ohlcv_with_df(
                 f"Place a CSV like '{symbol.lower()}_{base_interval}.csv' in the data/ folder."
             )
         df = _load_csv(csv_path)
+        loaded_from_csv = True
         # From local CSV: full history is returned (no days limit)
     else:
         if API_ONLY:
             download_days = max(requested_days, 365)
             try:
                 df = await download_ohlcv(symbol, base_interval, days=download_days)
+                loaded_from_api = True
             except ValueError:
                 raise
             except Exception as e:
@@ -1265,6 +1289,7 @@ async def get_ohlcv_with_df(
             if csv_path is not None:
                 try:
                     df = _load_csv(csv_path)
+                    loaded_from_csv = True
                     is_okx_file = csv_path.name.upper().startswith("OKX_")
                     if not is_okx_file:
                         last_ms = _get_last_timestamp_ms(df)
@@ -1273,21 +1298,25 @@ async def get_ohlcv_with_df(
                         if last_ms is not None and (now_ms - last_ms) >= interval_ms * 2:
                             try:
                                 df = await _incremental_update(symbol, base_interval)
+                                used_api_tail = True
                             except Exception as e:
                                 print(f"Warning: Incremental update failed for {symbol}, using existing CSV: {e}")
                     else:
                         if EXCHANGE.lower() == "okx":
                             try:
                                 df = await _append_okx_live(df, symbol, base_interval)
+                                used_api_tail = True
                             except Exception as e:
                                 print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
                 except Exception:
                     download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
+                    loaded_from_api = True
             else:
                 download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                 try:
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
+                    loaded_from_api = True
                 except ValueError:
                     raise
                 except Exception as e:
@@ -1309,7 +1338,19 @@ async def get_ohlcv_with_df(
         result = {}
         if price_precision is not None:
             result["pricePrecision"] = price_precision
-        result.update(_history_metadata(source_df, df, history_mode))
+        result.update(
+            _history_metadata(
+                source_df,
+                df,
+                history_mode,
+                exchange=EXCHANGE.lower(),
+                data_source_mode=_data_source_mode(),
+                data_source_kind=_data_source_kind(loaded_from_csv, loaded_from_api, used_api_tail),
+                requested_days=requested_days,
+                base_interval=base_interval,
+                resampled_from_interval=base_interval if resample_to else None,
+            )
+        )
         return df, result
 
     candles = []
@@ -1361,7 +1402,19 @@ async def get_ohlcv_with_df(
     result = {"candles": candles, "volume": volume, "overlays": overlays}
     if price_precision is not None:
         result["pricePrecision"] = price_precision
-    result.update(_history_metadata(source_df, df, history_mode))
+    result.update(
+        _history_metadata(
+            source_df,
+            df,
+            history_mode,
+            exchange=EXCHANGE.lower(),
+            data_source_mode=_data_source_mode(),
+            data_source_kind=_data_source_kind(loaded_from_csv, loaded_from_api, used_api_tail),
+            requested_days=requested_days,
+            base_interval=base_interval,
+            resampled_from_interval=base_interval if resample_to else None,
+        )
+    )
     return df, result
 
 
@@ -1377,7 +1430,18 @@ def _apply_history_mode(df: pl.DataFrame, interval: str, days: int, history_mode
     return df.filter(pl.col("open_time") >= cutoff)
 
 
-def _history_metadata(source_df: pl.DataFrame, window_df: pl.DataFrame, history_mode: str) -> dict:
+def _history_metadata(
+    source_df: pl.DataFrame,
+    window_df: pl.DataFrame,
+    history_mode: str,
+    *,
+    exchange: str = "",
+    data_source_mode: str = "",
+    data_source_kind: str = "",
+    requested_days: int | None = None,
+    base_interval: str | None = None,
+    resampled_from_interval: str | None = None,
+) -> dict:
     source_count = len(source_df)
     window_count = len(window_df)
     earliest_source = source_df["open_time"].min() if source_count else None
@@ -1388,6 +1452,13 @@ def _history_metadata(source_df: pl.DataFrame, window_df: pl.DataFrame, history_
     is_truncated = history_mode == "fast_window" and source_count > window_count
     truncation_reason = "fast_window" if is_truncated else ""
     return {
+        "exchange": exchange,
+        "dataSourceMode": data_source_mode,
+        "dataSourceKind": data_source_kind,
+        "requestedDays": requested_days,
+        "baseInterval": base_interval,
+        "resampledFromInterval": resampled_from_interval,
+        "sourceBarCount": source_count,
         "historyMode": history_mode,
         "loadedBarCount": window_count,
         "earliestLoadedTimestamp": int(earliest_window.timestamp()) if earliest_window is not None else None,
@@ -1397,3 +1468,21 @@ def _history_metadata(source_df: pl.DataFrame, window_df: pl.DataFrame, history_
         "isTruncated": is_truncated,
         "truncationReason": truncation_reason,
     }
+
+
+def _data_source_mode() -> str:
+    if OFFLINE_ONLY:
+        return "offline_only"
+    if API_ONLY:
+        return "api_only"
+    return "hybrid"
+
+
+def _data_source_kind(loaded_from_csv: bool, loaded_from_api: bool, used_api_tail: bool) -> str:
+    if loaded_from_csv and (loaded_from_api or used_api_tail):
+        return "hybrid"
+    if loaded_from_csv:
+        return "csv"
+    if loaded_from_api:
+        return "api"
+    return "unknown"

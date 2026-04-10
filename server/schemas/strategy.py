@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .history import HistoryCoverageModel
 from ..strategy.config import StrategyConfig
 
 
@@ -186,6 +187,7 @@ class StrategySnapshotResponse(BaseModel):
     pricePrecision: int | None = None
     tickSize: float
     config: dict[str, Any]
+    history: HistoryCoverageModel | None = None
     snapshot: StrategySnapshotModel
 
 
@@ -200,6 +202,7 @@ class StrategyReplayResponse(BaseModel):
     pricePrecision: int | None = None
     tickSize: float
     config: dict[str, Any]
+    history: HistoryCoverageModel | None = None
     snapshots: list[StrategySnapshotModel]
 
 

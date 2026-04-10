@@ -40,9 +40,27 @@ def _sample_polars_df(rows: int = 30) -> pl.DataFrame:
     ).with_columns(pl.col("open_time").cast(pl.Datetime("us")))
 
 
+def _market_payload(*, history_mode: str = "fast_window", requested_days: int = 365, rows: int = 30) -> dict:
+    start = datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc)
+    latest = start + timedelta(hours=4 * (rows - 1))
+    return {
+        "pricePrecision": 2,
+        "historyMode": history_mode,
+        "requestedDays": requested_days,
+        "loadedBarCount": rows,
+        "listingStartTimestamp": int(start.timestamp()),
+        "earliestLoadedTimestamp": int(start.timestamp()),
+        "latestLoadedTimestamp": int(latest.timestamp()),
+        "dataSourceMode": "hybrid",
+        "dataSourceKind": "api",
+        "sourceBarCount": rows,
+    }
+
+
 def test_runtime_router_create_tick_and_stop(monkeypatch, tmp_path) -> None:
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 2}
+        df = _sample_polars_df()
+        return df, _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days, rows=len(df))
 
     monkeypatch.setattr(runtime_manager_module, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
     manager = SubaccountRuntimeManager(
@@ -62,6 +80,9 @@ def test_runtime_router_create_tick_and_stop(monkeypatch, tmp_path) -> None:
             "label": "BTC demo",
             "symbol": "BTCUSDT",
             "timeframe": "4h",
+            "history_mode": "full_history",
+            "analysis_bars": 120,
+            "days": 30,
             "live_mode": "disabled",
             "strategy_config": {
                 "enabled_trigger_modes": ["pre_limit"],
@@ -74,10 +95,16 @@ def test_runtime_router_create_tick_and_stop(monkeypatch, tmp_path) -> None:
     instance_id = created.json()["instance"]["config"]["instance_id"]
     assert created.json()["instance"]["config"]["strategy_config"]["enabled_trigger_modes"] == ["pre_limit"]
     assert created.json()["instance"]["config"]["strategy_config"]["lookback_bars"] == 80
+    assert created.json()["instance"]["config"]["history_mode"] == "full_history"
+    assert created.json()["instance"]["config"]["analysis_bars"] == 120
+    assert created.json()["instance"]["config"]["days"] == 30
 
     ticked = client.post(f"/api/runtime/instances/{instance_id}/tick", json={})
     assert ticked.status_code == 200
     assert ticked.json()["instance"]["status"]["paper_state"]["account"]["last_processed_bar_by_stream"]["BTCUSDT:4h"] == 0
+    assert ticked.json()["instance"]["status"]["last_history"]["historyMode"] == "full_history"
+    assert ticked.json()["instance"]["status"]["last_history"]["requestedDays"] == 30
+    assert ticked.json()["instance"]["status"]["last_history"]["analysisInputBarCount"] == 30
 
     started = client.post(f"/api/runtime/instances/{instance_id}/start")
     assert started.status_code == 200
@@ -94,7 +121,8 @@ def test_runtime_router_create_tick_and_stop(monkeypatch, tmp_path) -> None:
 
 def test_runtime_manager_restores_persisted_state(monkeypatch, tmp_path) -> None:
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 2}
+        df = _sample_polars_df()
+        return df, _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days, rows=len(df))
 
     monkeypatch.setattr(runtime_manager_module, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
     store_path = tmp_path / "runtime.json"
@@ -123,3 +151,5 @@ def test_runtime_manager_restores_persisted_state(monkeypatch, tmp_path) -> None
     assert restored_record.status.paper_state.account.last_processed_bar_by_stream["ETHUSDT:4h"] == 0
     assert restored_record.status.last_processed_bar == 0
     assert restored_record.config.strategy_config.enabled_trigger_modes == ("pre_limit",)
+    assert restored_record.status.last_history is not None
+    assert restored_record.status.last_history["historyMode"] == "fast_window"

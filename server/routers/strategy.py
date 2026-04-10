@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..data_service import get_ohlcv_with_df
 from ..drawings import augment_snapshot_with_manual_signals, manual_strategy_signature
+from ..history_coverage import build_analysis_history
 from ..schemas.strategy import (
     StrategyConfigResponse,
     StrategyLineModel,
@@ -35,6 +36,7 @@ from ..strategy.display_filter import (
 router = APIRouter(prefix="/api/strategy", tags=["strategy"])
 
 VALID_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+VALID_HISTORY_MODES = {"fast_window", "full_history"}
 DEFAULT_DAYS_BY_INTERVAL = {
     "5m": 7,
     "15m": 21,
@@ -68,6 +70,7 @@ async def api_strategy_config(
                 interval,
                 end_time=None,
                 days=DEFAULT_DAYS_BY_INTERVAL.get(interval, 120),
+                history_mode="fast_window",
                 analysis_bars=None,
             )
             if market_payload:
@@ -90,20 +93,24 @@ async def api_strategy_snapshot(
     interval: str = Query("4h", description="5m, 15m, 1h, 4h, 1d"),
     end_time: str | None = Query(None, description="Replay end time, ISO format"),
     days: int | None = Query(None, description="Days of data to load before analysis"),
+    history_mode: str = Query("fast_window", description="fast_window | full_history"),
     analysis_bars: int = Query(500, ge=120, le=2000, description="Max bars sent through replay/strategy core"),
 ):
     if interval not in VALID_INTERVALS:
         raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+    if history_mode not in VALID_HISTORY_MODES:
+        raise HTTPException(400, f"Invalid history_mode. Must be one of: {sorted(VALID_HISTORY_MODES)}")
 
     normalized_symbol = _normalize_symbol(symbol)
     requested_days = days or DEFAULT_DAYS_BY_INTERVAL.get(interval, 120)
 
     try:
-        candles_df, _, price_precision, cfg = await _load_strategy_inputs(
+        candles_df, history, price_precision, cfg = await _load_strategy_inputs(
             normalized_symbol,
             interval,
             end_time=end_time,
             days=requested_days,
+            history_mode=history_mode,
             analysis_bars=analysis_bars,
         )
         drawings_signature = manual_strategy_signature(normalized_symbol, interval)
@@ -118,6 +125,7 @@ async def api_strategy_snapshot(
             normalized_symbol,
             interval,
             price_precision,
+            history,
             drawings_signature,
         )
         return _store_cached_snapshot(cache_key, response)
@@ -135,21 +143,25 @@ async def api_strategy_replay(
     interval: str = Query("4h", description="5m, 15m, 1h, 4h, 1d"),
     end_time: str | None = Query(None, description="Replay end time, ISO format"),
     days: int | None = Query(None, description="Days of data to load before analysis"),
+    history_mode: str = Query("fast_window", description="fast_window | full_history"),
     analysis_bars: int = Query(500, ge=120, le=2000, description="Max bars sent through replay/strategy core"),
     tail: int | None = Query(None, ge=1, le=500, description="Optional number of latest snapshots to return"),
 ):
     if interval not in VALID_INTERVALS:
         raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+    if history_mode not in VALID_HISTORY_MODES:
+        raise HTTPException(400, f"Invalid history_mode. Must be one of: {sorted(VALID_HISTORY_MODES)}")
 
     normalized_symbol = _normalize_symbol(symbol)
     requested_days = days or DEFAULT_DAYS_BY_INTERVAL.get(interval, 120)
 
     try:
-        candles_df, _, price_precision, cfg = await _load_strategy_inputs(
+        candles_df, history, price_precision, cfg = await _load_strategy_inputs(
             normalized_symbol,
             interval,
             end_time=end_time,
             days=requested_days,
+            history_mode=history_mode,
             analysis_bars=analysis_bars,
         )
         drawings_signature = manual_strategy_signature(normalized_symbol, interval)
@@ -164,6 +176,7 @@ async def api_strategy_replay(
             normalized_symbol,
             interval,
             price_precision,
+            history,
             tail,
             drawings_signature,
         )
@@ -180,6 +193,7 @@ async def _load_strategy_inputs(
     *,
     end_time: str | None,
     days: int,
+    history_mode: str,
     analysis_bars: int | None,
 ) -> tuple[pd.DataFrame, dict[str, Any], int | None, StrategyConfig]:
     polars_df, market_payload = await get_ohlcv_with_df(
@@ -187,6 +201,7 @@ async def _load_strategy_inputs(
         interval,
         end_time,
         days,
+        history_mode=history_mode,
         include_price_precision=True,
         include_render_payload=False,
     )
@@ -198,8 +213,9 @@ async def _load_strategy_inputs(
         candles_df = candles_df.iloc[-analysis_bars:].reset_index(drop=True)
 
     price_precision = market_payload.get("pricePrecision") if isinstance(market_payload, dict) else None
+    history = build_analysis_history(market_payload, candles_df)
     cfg = _config_with_market_precision(StrategyConfig(), price_precision)
-    return candles_df, market_payload, price_precision, cfg
+    return candles_df, history, price_precision, cfg
 
 
 def _standardize_strategy_candles(polars_df) -> pd.DataFrame:
@@ -231,6 +247,7 @@ def _build_strategy_snapshot_response(
     symbol: str,
     interval: str,
     price_precision: int | None,
+    history: dict[str, Any],
     drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategySnapshotResponse:
     snapshot = build_latest_snapshot(candles_df, cfg, symbol=symbol, timeframe=interval)
@@ -250,6 +267,7 @@ def _build_strategy_snapshot_response(
         pricePrecision=price_precision,
         tickSize=float(cfg.tick_size),
         config=asdict(cfg),
+        history=history,
         snapshot=snapshot_payload,
     )
 
@@ -351,6 +369,7 @@ def _build_strategy_replay_response(
     symbol: str,
     interval: str,
     price_precision: int | None,
+    history: dict[str, Any],
     tail: int | None,
     drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategyReplayResponse:
@@ -391,6 +410,7 @@ def _build_strategy_replay_response(
         pricePrecision=price_precision,
         tickSize=float(cfg.tick_size),
         config=asdict(cfg),
+        history=history,
         snapshots=snapshot_payloads,
     )
 

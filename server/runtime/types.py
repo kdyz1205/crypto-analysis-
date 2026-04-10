@@ -49,6 +49,7 @@ class RuntimeInstanceStatus:
     last_runtime_note: str = ""
     last_live_result: dict[str, Any] | None = None
     paper_current_day: str | None = None
+    last_history: dict[str, Any] | None = None
     paper_state: PaperExecutionState | None = None
     live_engine_state: dict[str, Any] | None = None
 

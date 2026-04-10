@@ -23,6 +23,21 @@ def _sample_polars_df() -> pl.DataFrame:
     ).with_columns(pl.col("open_time").cast(pl.Datetime("us")))
 
 
+def _market_payload(*, history_mode: str = "fast_window", requested_days: int = 30) -> dict:
+    return {
+        "pricePrecision": 2,
+        "historyMode": history_mode,
+        "requestedDays": requested_days,
+        "loadedBarCount": 4,
+        "listingStartTimestamp": int(datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).timestamp()),
+        "earliestLoadedTimestamp": int(datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).timestamp()),
+        "latestLoadedTimestamp": int(datetime(2026, 4, 1, 3, 0, tzinfo=timezone.utc).timestamp()),
+        "dataSourceMode": "hybrid",
+        "dataSourceKind": "api",
+        "sourceBarCount": 4,
+    }
+
+
 def _signal() -> StrategySignal:
     return StrategySignal(
         signal_id="sig-router",
@@ -78,7 +93,8 @@ def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None
     captured = {}
 
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 2}
+        captured["history_mode"] = kwargs.get("history_mode")
+        return _sample_polars_df(), _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days)
 
     def fake_build_latest_snapshot(candles_df, strategy_cfg, *, symbol="", timeframe="", **kwargs):
         bar_index = len(candles_df) - 1
@@ -123,6 +139,8 @@ def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None
         json={
             "symbol": "BTCUSDT",
             "interval": "1h",
+            "history_mode": "full_history",
+            "days": 30,
             "bar_index": 0,
             "analysis_bars": 120,
             "trigger_modes": ["pre_limit"],
@@ -134,12 +152,29 @@ def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None
     step_payload = step_response.json()
     assert step_payload["stream"] == "BTCUSDT:1h"
     assert step_payload["lastProcessedBar"] == 0
+    assert step_payload["history"]["historyMode"] == "full_history"
+    assert step_payload["history"]["requestedDays"] == 30
+    assert step_payload["history"]["analysisInputBarCount"] == 4
     assert step_payload["state"]["account"]["open_order_count"] == 1
     assert captured["lookback_bars"] == 80
     assert captured["enabled_trigger_modes"] == ("pre_limit",)
+    assert captured["history_mode"] == "full_history"
 
     reset_response = client.post("/api/paper-execution/reset", json={"starting_equity": 12000})
     assert reset_response.status_code == 200
     reset_payload = reset_response.json()
     assert reset_payload["state"]["account"]["equity"] == 12000.0
     assert reset_payload["state"]["account"]["open_order_count"] == 0
+
+
+def test_paper_execution_router_rejects_invalid_history_mode() -> None:
+    paper_execution_router.paper_engine.reset()
+    client = TestClient(_build_app())
+
+    response = client.post(
+        "/api/paper-execution/step",
+        json={"symbol": "BTCUSDT", "interval": "1h", "history_mode": "oops"},
+    )
+
+    assert response.status_code == 400
+    assert "history_mode" in response.json()["detail"]

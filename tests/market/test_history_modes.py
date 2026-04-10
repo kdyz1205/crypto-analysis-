@@ -42,9 +42,25 @@ def test_history_metadata_marks_truncation() -> None:
     df = _sample_df(rows=10)
     window = df.tail(3)
 
-    metadata = data_service._history_metadata(df, window, "fast_window")
+    metadata = data_service._history_metadata(
+        df,
+        window,
+        "fast_window",
+        exchange="bitget",
+        data_source_mode="hybrid",
+        data_source_kind="hybrid",
+        requested_days=30,
+        base_interval="1h",
+        resampled_from_interval=None,
+    )
 
     assert metadata["historyMode"] == "fast_window"
+    assert metadata["exchange"] == "bitget"
+    assert metadata["dataSourceMode"] == "hybrid"
+    assert metadata["dataSourceKind"] == "hybrid"
+    assert metadata["requestedDays"] == 30
+    assert metadata["baseInterval"] == "1h"
+    assert metadata["sourceBarCount"] == 10
     assert metadata["loadedBarCount"] == 3
     assert metadata["isTruncated"] is True
     assert metadata["truncationReason"] == "fast_window"

@@ -23,6 +23,21 @@ def _sample_polars_df() -> pl.DataFrame:
     ).with_columns(pl.col("open_time").cast(pl.Datetime("us")))
 
 
+def _market_payload(*, history_mode: str = "fast_window", requested_days: int = 30) -> dict:
+    return {
+        "pricePrecision": 4,
+        "historyMode": history_mode,
+        "requestedDays": requested_days,
+        "loadedBarCount": 4,
+        "listingStartTimestamp": int(datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).timestamp()),
+        "earliestLoadedTimestamp": int(datetime(2026, 4, 1, 0, 0, tzinfo=timezone.utc).timestamp()),
+        "latestLoadedTimestamp": int(datetime(2026, 4, 1, 3, 0, tzinfo=timezone.utc).timestamp()),
+        "dataSourceMode": "hybrid",
+        "dataSourceKind": "api",
+        "sourceBarCount": 4,
+    }
+
+
 def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(strategy_router.router)
@@ -91,7 +106,7 @@ def _line_state(line: Trendline) -> LineStateSnapshot:
 
 def test_strategy_config_route_returns_layer_defaults(monkeypatch) -> None:
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 4}
+        return _sample_polars_df(), _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days)
 
     monkeypatch.setattr(strategy_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
 
@@ -108,19 +123,26 @@ def test_strategy_config_route_returns_layer_defaults(monkeypatch) -> None:
 
 
 def test_strategy_snapshot_route_returns_frontend_ready_fields(monkeypatch) -> None:
+    captured = {}
+
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 4}
+        captured["history_mode"] = kwargs.get("history_mode")
+        return _sample_polars_df(), _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days)
 
     monkeypatch.setattr(strategy_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
 
     client = TestClient(_build_app())
-    response = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120")
+    response = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120&history_mode=full_history&days=30")
 
     assert response.status_code == 200
     payload = response.json()
     snapshot = payload["snapshot"]
     assert payload["symbol"] == "BTCUSDT"
     assert payload["analysisBarCount"] == 4
+    assert payload["history"]["historyMode"] == "full_history"
+    assert payload["history"]["requestedDays"] == 30
+    assert payload["history"]["analysisInputBarCount"] == 4
+    assert captured["history_mode"] == "full_history"
     assert "candidate_lines" in snapshot
     assert "active_lines" in snapshot
     assert "line_states" in snapshot
@@ -132,18 +154,24 @@ def test_strategy_snapshot_route_returns_frontend_ready_fields(monkeypatch) -> N
 
 
 def test_strategy_replay_route_supports_tail(monkeypatch) -> None:
+    captured = {}
+
     async def fake_get_ohlcv_with_df(symbol, interval, end_time, days, **kwargs):
-        return _sample_polars_df(), {"pricePrecision": 4}
+        captured["history_mode"] = kwargs.get("history_mode")
+        return _sample_polars_df(), _market_payload(history_mode=kwargs.get("history_mode", "fast_window"), requested_days=days)
 
     monkeypatch.setattr(strategy_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
 
     client = TestClient(_build_app())
-    response = client.get("/api/strategy/replay?symbol=BTCUSDT&interval=1h&analysis_bars=120&tail=2")
+    response = client.get("/api/strategy/replay?symbol=BTCUSDT&interval=1h&analysis_bars=120&tail=2&history_mode=full_history")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["snapshotCount"] == 2
     assert len(payload["snapshots"]) == 2
+    assert payload["history"]["historyMode"] == "full_history"
+    assert payload["history"]["analysisInputBarCount"] == 4
+    assert captured["history_mode"] == "full_history"
 
 
 def test_strategy_snapshot_route_offloads_heavy_work(monkeypatch) -> None:
@@ -161,7 +189,7 @@ def test_strategy_snapshot_route_offloads_heavy_work(monkeypatch) -> None:
     strategy_router._snapshot_cache.clear()
 
     client = TestClient(_build_app())
-    response = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120")
+    response = client.get("/api/strategy/snapshot?symbol=BTCUSDT&interval=1h&analysis_bars=120&history_mode=full_history&days=30")
 
     assert response.status_code == 200
     assert offload_calls == ["_build_strategy_snapshot_response"]

@@ -898,6 +898,7 @@ function renderRuntimeOverviewSection(instances, error) {
               <div class="paper-order-meta">
                 <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
                 <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
+                <span class="muted">${escapeHtml((record.config.history_mode || 'fast_window').replace('_', ' '))} / ${record.config.analysis_bars} bars / ${record.config.days}d</span>
                 <span class="muted">${escapeHtml(record.status.last_runtime_note || '-')}</span>
               </div>
             </div>
@@ -987,6 +988,14 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
       <form class="paper-form" id="v2-paper-step-form">
         <label>Symbol<input type="text" name="symbol" value="${escapeHtml(currentSymbol)}" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Interval<input type="text" name="interval" value="${escapeHtml(currentInterval)}" ${stepDisabled ? 'disabled' : ''} /></label>
+        <label>
+          History Mode
+          <select name="history_mode" ${stepDisabled ? 'disabled' : ''}>
+            <option value="fast_window">fast_window</option>
+            <option value="full_history">full_history</option>
+          </select>
+        </label>
+        <label>Days<input type="number" name="days" value="365" min="1" step="1" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Bar Index<input type="number" name="bar_index" placeholder="auto next bar" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${stepDisabled ? 'disabled' : ''} /></label>
         <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${stepDisabled ? 'disabled' : ''} /></label>
@@ -997,6 +1006,7 @@ function renderPaperExecutionSection(state, error, lastStepResult) {
       ${busy ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
       ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
       ${renderPaperLastStep(lastStepResult)}
+      ${renderHistoryCoverageSection(lastStepResult?.history, { title: 'Last step history coverage' })}
       <div class="paper-subgrid">
         <div>
           <h4>Open orders (${orders.length})</h4>
@@ -1146,6 +1156,15 @@ function renderRuntimeExecutionSection(instances, error) {
         <label>Symbol<input type="text" name="symbol" value="${escapeHtml(marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} /></label>
         <label>Interval<input type="text" name="timeframe" value="${escapeHtml(marketState.currentInterval || '4h')}" ${busy ? 'disabled' : ''} /></label>
         <label>Subaccount<input type="text" name="subaccount_label" placeholder="paper-a" ${busy ? 'disabled' : ''} /></label>
+        <label>
+          History Mode
+          <select name="history_mode" ${busy ? 'disabled' : ''}>
+            <option value="fast_window">fast_window</option>
+            <option value="full_history">full_history</option>
+          </select>
+        </label>
+        <label>Days<input type="number" name="days" value="365" min="1" step="1" ${busy ? 'disabled' : ''} /></label>
+        <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${busy ? 'disabled' : ''} /></label>
         <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${busy ? 'disabled' : ''} /></label>
         <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
         <label>Strategy Window<input type="number" name="window_bars" value="100" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
@@ -1200,6 +1219,7 @@ function renderRuntimeInstanceRow(record) {
         <span class="muted">modes ${(record.config.strategy_config?.enabled_trigger_modes || ['pre_limit']).join(',')}</span>
         <span class="muted">lookback ${record.config.strategy_config?.lookback_bars ?? '-'}</span>
         <span class="muted">window ${record.config.strategy_config?.window_bars ?? '-'}</span>
+        <span class="muted">${escapeHtml((record.config.history_mode || 'fast_window').replace('_', ' '))} / ${record.config.analysis_bars} bars / ${record.config.days}d</span>
       </div>
       <div class="paper-actions">
         <button class="btn" data-runtime-action="${record.status.runtime_state === 'running' ? 'stop' : 'start'}" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${actionLabel}</button>
@@ -1207,6 +1227,7 @@ function renderRuntimeInstanceRow(record) {
         <button class="btn ${paperState?.kill_switch?.blocked ? 'active' : ''}" data-runtime-action="kill" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${killLabel}</button>
         <button class="btn btn-danger" data-runtime-action="delete" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${runtimePanelState.deletingInstanceId === record.config.instance_id ? 'Deleting...' : 'Delete'}</button>
       </div>
+      ${renderHistoryCoverageSection(record.status.last_history, { title: 'Last tick history coverage', emptyMessage: 'No runtime tick executed yet.' })}
       ${record.status.last_error ? `<div class="paper-error">${escapeHtml(record.status.last_error)}</div>` : ''}
     </div>
   `;
@@ -1677,6 +1698,55 @@ function renderPaperLastStep(lastStepResult) {
   `;
 }
 
+function renderHistoryCoverageSection(history, options = {}) {
+  const title = options.title || 'History coverage';
+  const emptyMessage = options.emptyMessage || 'No history coverage available yet.';
+  if (!history) {
+    return `<div class="paper-note">${escapeHtml(emptyMessage)}</div>`;
+  }
+
+  const loadedRange = formatHistoryRange(history.earliestLoadedTimestamp, history.latestLoadedTimestamp);
+  const analysisRange = formatHistoryRange(history.analysisEarliestTimestamp, history.analysisLatestTimestamp);
+  const loadedBars = history.loadedBarCount ?? '-';
+  const analysisBars = history.analysisInputBarCount ?? '-';
+  const listingStart = formatTimestampShort(history.listingStartTimestamp);
+  const sourceMode = history.dataSourceMode || '-';
+  const sourceKind = history.dataSourceKind || '-';
+  const requestedDays = history.requestedDays ?? '-';
+  const historyMode = history.historyMode || '-';
+  const truncated = history.analysisWasTrimmed || history.isTruncated;
+  const truncationReason = history.truncationReason || (history.analysisWasTrimmed ? 'analysis_bars' : '');
+
+  return `
+    <div class="paper-note">
+      <strong>${escapeHtml(title)}:</strong>
+      mode ${escapeHtml(historyMode)} |
+      source ${escapeHtml(sourceMode)} / ${escapeHtml(sourceKind)} |
+      requested ${requestedDays}d |
+      loaded ${loadedBars} bars (${escapeHtml(loadedRange)}) |
+      analysis ${analysisBars} bars (${escapeHtml(analysisRange)}) |
+      listing start ${escapeHtml(listingStart)} |
+      ${truncated ? `trimmed ${escapeHtml(String(truncationReason || 'true'))}` : 'not trimmed'}
+    </div>
+  `;
+}
+
+function formatHistoryRange(start, end) {
+  const startLabel = formatTimestampShort(start);
+  const endLabel = formatTimestampShort(end);
+  if (startLabel === '-' && endLabel === '-') return '-';
+  return `${startLabel} -> ${endLabel}`;
+}
+
+function formatTimestampShort(value) {
+  if (value === null || value === undefined || value === '') return '-';
+  const millis = Number(value) * 1000;
+  if (!Number.isFinite(millis)) return '-';
+  const date = new Date(millis);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toISOString().slice(0, 10);
+}
+
 function renderRiskMeter(label, currentValue, maxValue, unit) {
   const pct = maxValue > 0 ? Math.min(100, (currentValue / maxValue) * 100) : 0;
   const tone = pct < 50 ? 'green' : pct < 80 ? 'yellow' : 'red';
@@ -2094,6 +2164,8 @@ function readStepPayload(form) {
   const payload = {
     symbol,
     interval,
+    history_mode: String(formData.get('history_mode') || 'fast_window').trim(),
+    days: Number(formData.get('days') || 365),
     analysis_bars: Number(analysisBarsRaw || 500),
     trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],
     lookback_bars: Number(formData.get('lookback_bars') || 80),
@@ -2147,6 +2219,9 @@ function readRuntimeCreatePayload(form) {
     symbol: String(formData.get('symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
     timeframe: String(formData.get('timeframe') || marketState.currentInterval || '4h').trim(),
     subaccount_label: String(formData.get('subaccount_label') || '').trim(),
+    history_mode: String(formData.get('history_mode') || 'fast_window').trim(),
+    analysis_bars: Number(formData.get('analysis_bars') || 500),
+    days: Number(formData.get('days') || 365),
     live_mode: String(formData.get('live_mode') || 'disabled').trim(),
     strategy_config: {
       enabled_trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],

@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..data_service import get_ohlcv_with_df
 from ..drawings import augment_snapshot_with_manual_signals
+from ..history_coverage import build_analysis_history
 from ..execution import PaperExecutionConfig, PaperExecutionEngine
 from ..execution.types import dataclass_to_dict
 from ..schemas.paper_execution import (
@@ -23,6 +24,7 @@ from ..strategy import ReplayResult, StrategyConfig, apply_strategy_overrides, b
 router = APIRouter(prefix="/api/paper-execution", tags=["paper-execution"])
 
 VALID_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+VALID_HISTORY_MODES = {"fast_window", "full_history"}
 DEFAULT_DAYS_BY_INTERVAL = {
     "5m": 7,
     "15m": 21,
@@ -69,15 +71,18 @@ async def api_paper_execution_kill_switch(req: PaperKillSwitchRequest):
 async def api_paper_execution_step(req: PaperExecutionStepRequest):
     if req.interval not in VALID_INTERVALS:
         raise HTTPException(400, f"Invalid interval. Must be one of: {sorted(VALID_INTERVALS)}")
+    if req.history_mode not in VALID_HISTORY_MODES:
+        raise HTTPException(400, f"Invalid history_mode. Must be one of: {sorted(VALID_HISTORY_MODES)}")
 
     normalized_symbol = _normalize_symbol(req.symbol)
     requested_days = req.days or DEFAULT_DAYS_BY_INTERVAL.get(req.interval, 120)
 
     try:
-        candles_df, strategy_cfg = await _load_strategy_inputs(
+        candles_df, strategy_cfg, history = await _load_strategy_inputs(
             normalized_symbol,
             req.interval,
             requested_days,
+            req.history_mode,
             req.analysis_bars,
         )
         strategy_cfg = apply_strategy_overrides(
@@ -100,6 +105,7 @@ async def api_paper_execution_step(req: PaperExecutionStepRequest):
                 "stream": stream_key,
                 "processedBars": [],
                 "lastProcessedBar": last_processed,
+                "history": history,
                 "state": dataclass_to_dict(state),
             }
         replay_result, snapshot_offset = _build_step_replay_result(
@@ -129,6 +135,7 @@ async def api_paper_execution_step(req: PaperExecutionStepRequest):
         "stream": result["stream"],
         "processedBars": result["processedBars"],
         "lastProcessedBar": result["lastProcessedBar"],
+        "history": history,
         "state": dataclass_to_dict(result["state"]),
     }
 
@@ -137,9 +144,10 @@ async def _load_strategy_inputs(
     symbol: str,
     interval: str,
     days: int,
+    history_mode: str,
     analysis_bars: int,
-) -> tuple[pd.DataFrame, StrategyConfig]:
-    polars_df, market_payload = await get_ohlcv_with_df(symbol, interval, None, days)
+) -> tuple[pd.DataFrame, StrategyConfig, dict]:
+    polars_df, market_payload = await get_ohlcv_with_df(symbol, interval, None, days, history_mode=history_mode)
     if polars_df is None or polars_df.is_empty():
         raise ValueError(f"No data for {symbol} {interval}")
 
@@ -148,7 +156,8 @@ async def _load_strategy_inputs(
         candles_df = candles_df.iloc[-analysis_bars:].reset_index(drop=True)
 
     price_precision = market_payload.get("pricePrecision") if isinstance(market_payload, dict) else None
-    return candles_df, _config_with_market_precision(StrategyConfig(), price_precision)
+    history = build_analysis_history(market_payload, candles_df)
+    return candles_df, _config_with_market_precision(StrategyConfig(), price_precision), history
 
 
 def _standardize_strategy_candles(polars_df) -> pd.DataFrame:
