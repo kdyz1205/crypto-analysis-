@@ -114,9 +114,9 @@ class StrategyConfig:
     max_fresh_bars: int = 80
 
     # Horizontal zone detection
-    zone_min_touches: int = 3  # min pivot touches to form a zone (was 2, too noisy)
-    zone_eps_atr_mult: float = 0.3  # clustering radius as ATR multiple
-    zone_eps_pct: float = 0.006  # clustering radius as price percentage (0.6%)
+    zone_min_touches: int = 2  # min pivot touches to form a zone
+    zone_eps_atr_mult: float = 0.35  # clustering radius as ATR multiple
+    zone_eps_pct: float = 0.007  # clustering radius as price percentage
 
     min_body_unit: float = 1e-8
     timeframe_priority: Mapping[str, int] = field(default_factory=_default_timeframe_priority)

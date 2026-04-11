@@ -18908,3 +18908,11 @@
 {"timestamp": "2026-04-11T08:09:58.171932+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
 {"timestamp": "2026-04-11T08:10:29.412804+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 491, "live_mode": "live"}}
 {"timestamp": "2026-04-11T08:10:29.474097+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:10:59.917727+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 492, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:10:59.997572+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:11:36.018580+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 493, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:11:36.834523+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:11:49.531491+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 494, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:11:49.569010+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:12:19.833000+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 495, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:12:19.856412+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
