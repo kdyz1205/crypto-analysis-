@@ -110,7 +110,7 @@ function wireEvents() {
     if (t.closest('[data-action="go-live"]')) {
       const id = t.closest('[data-action="go-live"]').dataset.instanceId;
       if (!confirm('确定切换到实盘？将使用 Bitget 真实资金。')) return;
-      runtimeSvc.updateRuntimeInstance(id, { live_mode: 'live' }).then(() => refreshAll()).catch(log);
+      runtimeSvc.updateRuntimeInstance(id, { live_mode: 'live', auto_live_preview: true, auto_live_submit: true }).then(() => refreshAll()).catch(log);
       return;
     }
 
