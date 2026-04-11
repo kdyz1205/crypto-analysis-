@@ -126,7 +126,7 @@ async def _shutdown():
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,  # Fixed: credentials=True conflicts with origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )

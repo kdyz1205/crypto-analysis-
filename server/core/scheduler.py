@@ -74,13 +74,17 @@ def _load_from_disk():
         print(f"[Scheduler] Load failed: {e}")
 
 
+import threading
+_disk_lock = threading.Lock()
+
 def _save_to_disk():
     try:
-        SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SCHEDULE_FILE.write_text(
-            json.dumps({tid: t.to_dict() for tid, t in _tasks.items()}, indent=2, default=str),
-            encoding="utf-8",
-        )
+        with _disk_lock:
+            SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            SCHEDULE_FILE.write_text(
+                json.dumps({tid: t.to_dict() for tid, t in _tasks.items()}, indent=2, default=str),
+                encoding="utf-8",
+            )
     except Exception as e:
         print(f"[Scheduler] Save failed: {e}")
 

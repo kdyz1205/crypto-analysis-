@@ -43,23 +43,7 @@ def evaluate_signal_risk(
     risk_amount = float(account.equity) * float(config.risk_per_trade)
     pending_orders = tuple(order for order in (pending_orders or ()) if order.status == "pending")
 
-    # Block unverified timeframes — only allow TFs with positive EV in backtest
-    # Also require minimum Kelly (0.001 = 0.1%) to filter out marginal-positive noise
-    MIN_KELLY_FOR_TRADING = 0.001
-    timeframe = getattr(signal, "timeframe", "")
-    _, get_calibrated = _get_calibration()
-    cal_wr, cal_rr, cal_kelly = get_calibrated(timeframe)
-    if cal_wr <= 0 or cal_kelly < MIN_KELLY_FOR_TRADING:
-        return RiskDecision(
-            signal_id=signal.signal_id,
-            approved=False,
-            blocking_reason=f"timeframe_not_verified:{timeframe}",
-            risk_amount=risk_amount,
-            proposed_quantity=0.0,
-            stop_distance=stop_distance,
-            exposure_after_fill=float(account.total_exposure),
-        )
-
+    # Basic validations first (kill switch, stop distance) before timeframe check
     if kill_switch is not None and kill_switch.blocked:
         return RiskDecision(
             signal_id=signal.signal_id,
@@ -76,6 +60,22 @@ def evaluate_signal_risk(
             signal_id=signal.signal_id,
             approved=False,
             blocking_reason="invalid_stop_distance",
+            risk_amount=risk_amount,
+            proposed_quantity=0.0,
+            stop_distance=stop_distance,
+            exposure_after_fill=float(account.total_exposure),
+        )
+
+    # Block unverified timeframes (after basic validation so tests see correct blocking_reason)
+    MIN_KELLY_FOR_TRADING = 0.001
+    timeframe = getattr(signal, "timeframe", "")
+    _, get_calibrated = _get_calibration()
+    cal_wr, cal_rr, cal_kelly = get_calibrated(timeframe)
+    if cal_wr <= 0 or cal_kelly < MIN_KELLY_FOR_TRADING:
+        return RiskDecision(
+            signal_id=signal.signal_id,
+            approved=False,
+            blocking_reason=f"timeframe_not_verified:{timeframe}",
             risk_amount=risk_amount,
             proposed_quantity=0.0,
             stop_distance=stop_distance,

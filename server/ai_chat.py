@@ -868,13 +868,14 @@ class AIChatEngine:
         return False
 
     def _safe_resolve(self, rel_path: str) -> Path | None:
-        """Resolve a relative path safely within project root. Returns None if outside."""
+        """Resolve a relative path safely within project root. Returns None if outside.
+        Uses Path.relative_to() instead of string prefix to prevent prefix-collision bypass.
+        """
         try:
             full = (PROJECT_ROOT / rel_path).resolve()
-            if not str(full).startswith(str(PROJECT_ROOT.resolve())):
-                return None
+            full.relative_to(PROJECT_ROOT.resolve())  # raises ValueError if outside
             return full
-        except Exception:
+        except (ValueError, Exception):
             return None
 
     def _tool_read_file(self, path: str) -> str:

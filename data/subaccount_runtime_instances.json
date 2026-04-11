@@ -640,7 +640,7 @@
         "days": 365,
         "tick_interval_seconds": 30,
         "auto_restart_on_boot": true,
-        "live_mode": "disabled",
+        "live_mode": "live",
         "auto_live_preview": true,
         "auto_live_submit": false,
         "notes": "",
@@ -672,8 +672,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T07:53:10.224884+00:00",
-        "last_processed_bar": 93,
+        "last_tick_at": "2026-04-11T08:05:47.348674+00:00",
+        "last_processed_bar": 94,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -686,18 +686,18 @@
           "requestedDays": 365,
           "baseInterval": "1h",
           "resampledFromInterval": null,
-          "sourceBarCount": 94,
+          "sourceBarCount": 95,
           "historyMode": "fast_window",
-          "loadedBarCount": 94,
+          "loadedBarCount": 95,
           "earliestLoadedTimestamp": 1775577600,
-          "latestLoadedTimestamp": 1775912400,
+          "latestLoadedTimestamp": 1775916000,
           "listingStartTimestamp": 1775577600,
           "isFullHistory": false,
           "isTruncated": false,
           "truncationReason": "",
-          "analysisInputBarCount": 94,
+          "analysisInputBarCount": 95,
           "analysisEarliestTimestamp": 1775552400,
-          "analysisLatestTimestamp": 1775887200,
+          "analysisLatestTimestamp": 1775890800,
           "analysisWasTrimmed": false
         },
         "paper_state": {
@@ -715,9 +715,9 @@
           },
           "account": {
             "starting_equity": 10000.0,
-            "equity": 10022.424101903765,
+            "equity": 10020.556015526425,
             "realized_pnl": 29.82,
-            "unrealized_pnl": -7.3958980962340775,
+            "unrealized_pnl": -9.263984473574176,
             "daily_realized_pnl": 0.0,
             "consecutive_losses": 0,
             "total_exposure": 7861.025395801433,
@@ -725,7 +725,7 @@
             "open_position_count": 1,
             "closed_trade_count": 2,
             "last_processed_bar_by_stream": {
-              "BTCUSDT:1h": 93
+              "BTCUSDT:1h": 94
             }
           },
           "kill_switch": {
@@ -882,7 +882,7 @@
               "direction": "long",
               "quantity": 0.10798187152253096,
               "entry_price": 72799.49203474577,
-              "mark_price": 72731.0,
+              "mark_price": 72713.7,
               "stop_price": 72520.83915,
               "tp_price": 73356.7978042373,
               "status": "open",
@@ -891,7 +891,7 @@
               "opened_at_ts": 1775883600.0,
               "closed_at_ts": null,
               "realized_pnl": 0.0,
-              "unrealized_pnl": -7.3958980962340775,
+              "unrealized_pnl": -9.263984473574176,
               "exit_price": null,
               "exit_reason": null
             }
@@ -1000,7 +1000,32 @@
           "last_submission_result": null,
           "reconciliation_by_mode": {
             "demo": null,
-            "live": null
+            "live": {
+              "ok": false,
+              "blocked": true,
+              "mode": "live",
+              "reason": "exchange_pending_orders_detected",
+              "positions": [],
+              "pending_orders": [
+                {
+                  "symbol": null,
+                  "orderId": null,
+                  "clientOid": null,
+                  "side": null,
+                  "size": null,
+                  "orderType": null,
+                  "status": null
+                }
+              ],
+              "account_accessible": true,
+              "total_equity": 100.0,
+              "usdt_available": 100.0,
+              "checked_at": 1775894716,
+              "exchange_response_excerpt": {
+                "positions_count": 0,
+                "pending_orders_count": 1
+              }
+            }
           },
           "submissions_by_mode": {
             "demo": {},
@@ -12171,7 +12196,7 @@
         "days": 365,
         "tick_interval_seconds": 30,
         "auto_restart_on_boot": true,
-        "live_mode": "disabled",
+        "live_mode": "live",
         "auto_live_preview": true,
         "auto_live_submit": false,
         "notes": "",
@@ -12203,12 +12228,12 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T07:53:10.185327+00:00",
-        "last_processed_bar": 458,
+        "last_tick_at": "2026-04-11T08:05:47.286758+00:00",
+        "last_processed_bar": 482,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
-        "paper_current_day": "2026-04-04",
+        "paper_current_day": "2026-04-08",
         "last_history": {
           "pricePrecision": 4,
           "exchange": "bitget",
@@ -12217,18 +12242,18 @@
           "requestedDays": 365,
           "baseInterval": "4h",
           "resampledFromInterval": null,
-          "sourceBarCount": 2418,
+          "sourceBarCount": 2419,
           "historyMode": "fast_window",
           "loadedBarCount": 2191,
-          "earliestLoadedTimestamp": 1744354800,
-          "latestLoadedTimestamp": 1775890800,
+          "earliestLoadedTimestamp": 1744369200,
+          "latestLoadedTimestamp": 1775905200,
           "listingStartTimestamp": 1741089600,
           "isFullHistory": false,
           "isTruncated": true,
           "truncationReason": "fast_window",
           "analysisInputBarCount": 500,
-          "analysisEarliestTimestamp": 1768680000,
-          "analysisLatestTimestamp": 1775865600,
+          "analysisEarliestTimestamp": 1768694400,
+          "analysisLatestTimestamp": 1775880000,
           "analysisWasTrimmed": true
         },
         "paper_state": {
@@ -12256,7 +12281,7 @@
             "open_position_count": 0,
             "closed_trade_count": 3,
             "last_processed_bar_by_stream": {
-              "ADAUSDT:4h": 458
+              "ADAUSDT:4h": 482
             }
           },
           "kill_switch": {
@@ -12778,7 +12803,32 @@
           "last_submission_result": null,
           "reconciliation_by_mode": {
             "demo": null,
-            "live": null
+            "live": {
+              "ok": false,
+              "blocked": true,
+              "mode": "live",
+              "reason": "exchange_pending_orders_detected",
+              "positions": [],
+              "pending_orders": [
+                {
+                  "symbol": null,
+                  "orderId": null,
+                  "clientOid": null,
+                  "side": null,
+                  "size": null,
+                  "orderType": null,
+                  "status": null
+                }
+              ],
+              "account_accessible": true,
+              "total_equity": 100.0,
+              "usdt_available": 100.0,
+              "checked_at": 1775894716,
+              "exchange_response_excerpt": {
+                "positions_count": 0,
+                "pending_orders_count": 1
+              }
+            }
           },
           "submissions_by_mode": {
             "demo": {},

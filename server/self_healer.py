@@ -282,10 +282,10 @@ Rules:
             return False
 
     def _git_revert_uncommitted(self):
-        """Discard uncommitted changes to restore the snapshot state."""
+        """Revert only server/ files to avoid destroying frontend/config changes."""
         try:
             subprocess.run(
-                ["git", "checkout", "--", "."],
+                ["git", "checkout", "--", "server/"],
                 cwd=PROJECT_ROOT, capture_output=True, timeout=15
             )
         except Exception:
