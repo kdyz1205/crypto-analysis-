@@ -40,8 +40,9 @@ def generate_zone_signals(
     # Arm distance: how close price must be to zone to trigger
     arm_dist = max(atr_value * 0.5, close_price * 0.005)
 
-    support_zones = sorted([z for z in zones if z.side == "support"], key=lambda z: -z.strength)
-    resist_zones = sorted([z for z in zones if z.side == "resistance"], key=lambda z: -z.strength)
+    # Only trade zones with 3+ touches (verified by market multiple times)
+    support_zones = sorted([z for z in zones if z.side == "support" and z.touches >= 3], key=lambda z: -z.strength)
+    resist_zones = sorted([z for z in zones if z.side == "resistance" and z.touches >= 3], key=lambda z: -z.strength)
 
     signals: list[StrategySignal] = []
 
@@ -51,8 +52,24 @@ def generate_zone_signals(
         if distance_to_zone < -arm_dist or distance_to_zone > arm_dist * 2:
             continue  # too far or already below
 
-        entry_price = zone.price_high + atr_value * 0.02  # slightly above zone top
-        stop_price = zone.price_low - atr_value * 0.15  # below zone bottom
+        # Rejection confirmation: current bar must show a lower wick into the zone
+        bar_low = float(df.iloc[current_index]["low"])
+        bar_open = float(df.iloc[current_index]["open"])
+        bar_close = float(df.iloc[current_index]["close"])
+        lower_wick = min(bar_open, bar_close) - bar_low
+        bar_body = abs(bar_close - bar_open) + 1e-10
+        wick_ratio = lower_wick / bar_body
+
+        # Require: price touched zone AND closed above it (rejection)
+        zone_touched = bar_low <= zone.price_high + atr_value * 0.05
+        price_reclaimed = bar_close > zone.price_high
+        has_rejection_wick = wick_ratio >= 1.0  # stronger rejection required
+
+        if not (zone_touched and price_reclaimed and has_rejection_wick):
+            continue
+
+        entry_price = zone.price_high + atr_value * 0.01  # tight: right at zone edge
+        stop_price = zone.price_low - atr_value * 0.05  # tight: just below zone break
         risk = abs(entry_price - stop_price)
         if risk <= 0:
             continue
@@ -106,8 +123,23 @@ def generate_zone_signals(
         if distance_to_zone < -arm_dist or distance_to_zone > arm_dist * 2:
             continue
 
-        entry_price = zone.price_low - atr_value * 0.02
-        stop_price = zone.price_high + atr_value * 0.15
+        # Rejection confirmation: current bar must show upper wick into zone
+        bar_high = float(df.iloc[current_index]["high"])
+        bar_open = float(df.iloc[current_index]["open"])
+        bar_close = float(df.iloc[current_index]["close"])
+        upper_wick = bar_high - max(bar_open, bar_close)
+        bar_body = abs(bar_close - bar_open) + 1e-10
+        wick_ratio = upper_wick / bar_body
+
+        zone_touched = bar_high >= zone.price_low - atr_value * 0.05
+        price_rejected = bar_close < zone.price_low
+        has_rejection_wick = wick_ratio >= 1.0
+
+        if not (zone_touched and price_rejected and has_rejection_wick):
+            continue
+
+        entry_price = zone.price_low - atr_value * 0.01  # tight: right at zone edge
+        stop_price = zone.price_high + atr_value * 0.05  # tight: just above zone break
         risk = abs(stop_price - entry_price)
         if risk <= 0:
             continue

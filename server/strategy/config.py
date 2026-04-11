@@ -126,7 +126,7 @@ class StrategyConfig:
     trend_weight: float = 0.10  # weight of trend context in factor score
 
     # Signal quality gates
-    min_rr_ratio: float = 2.0  # reject signals with RR below this
+    min_rr_ratio: float = 3.0  # reject signals with RR below this (tight stops = high RR)
     min_profit_space_atr_mult: float = 1.0  # min distance to opposing zone in ATR units
 
     def tolerance(self, atr_value: float, close_price: float) -> float:
