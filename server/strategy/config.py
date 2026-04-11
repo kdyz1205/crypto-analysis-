@@ -131,7 +131,7 @@ class StrategyConfig:
     trend_weight: float = 0.10  # weight of trend context in factor score
 
     # Signal quality gates
-    min_rr_ratio: float = 3.0  # reject signals with RR below this (tight stops = high RR)
+    min_rr_ratio: float = 1.8  # minimum RR to accept signal (was 3.0 — too strict, filtered valid setups)
     min_profit_space_atr_mult: float = 1.0  # min distance to opposing zone in ATR units
 
     def tolerance(self, atr_value: float, close_price: float) -> float:
@@ -268,6 +268,11 @@ class StrategyConfig:
 
     def trigger_rank(self, trigger_mode: str) -> int:
         return int(self.trigger_mode_priority.get(trigger_mode, 0))
+
+    def pivot_window_for_timeframe(self, timeframe: str) -> int:
+        """Shorter TFs need smaller pivot windows; longer TFs need wider."""
+        windows = {"1m": 2, "3m": 2, "5m": 3, "15m": 3, "1h": 4, "4h": 5, "1d": 5, "1w": 7}
+        return windows.get(timeframe, self.pivot_left)
 
     def touch_spacing_for_timeframe(self, timeframe: str) -> int:
         """Shorter TFs need smaller spacing; longer TFs need wider spacing."""

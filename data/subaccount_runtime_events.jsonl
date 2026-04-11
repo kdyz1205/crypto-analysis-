@@ -18894,3 +18894,9 @@
 {"timestamp": "2026-04-11T08:06:18.374578+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
 {"timestamp": "2026-04-11T08:06:49.358901+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 484, "live_mode": "live"}}
 {"timestamp": "2026-04-11T08:06:49.430410+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:07:20.270148+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 485, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:07:20.330489+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:07:51.183834+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 486, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:07:51.244643+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:08:22.022533+00:00", "instance_id": "e7a1e21ad3a4d030", "event_type": "instance.ticked", "payload": {"stream": "ADAUSDT:4h", "last_processed_bar": 487, "live_mode": "live"}}
+{"timestamp": "2026-04-11T08:08:22.076293+00:00", "instance_id": "c2102815db3b0bbb", "event_type": "instance.ticked", "payload": {"stream": "BTCUSDT:1h", "last_processed_bar": 94, "live_mode": "live"}}

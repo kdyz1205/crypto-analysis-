@@ -118,6 +118,9 @@ def detect_horizontal_zones(
     # Remove S/R conflicts — same price can't be both support and resistance
     zones = _resolve_sr_conflicts(zones, atr_value)
 
+    # Detect flip zones — broken S/R that flipped role
+    zones = _detect_flip_zones(zones, df, close_price, atr_value)
+
     return zones
 
 
@@ -360,6 +363,47 @@ def _resolve_sr_conflicts(zones: list[HorizontalZone], atr_value: float) -> list
                 to_remove.add(loser)
 
     return [z for i, z in enumerate(zones) if i not in to_remove]
+
+
+def _detect_flip_zones(zones: list[HorizontalZone], df, close_price: float, atr_value: float) -> list[HorizontalZone]:
+    """Detect zones where price has crossed through — support becomes resistance and vice versa.
+    If current price is significantly below a support zone, that zone has flipped to resistance.
+    If current price is significantly above a resistance zone, it has flipped to support.
+    """
+    flipped = []
+    threshold = atr_value * 1.5  # must be 1.5 ATR past the zone to count as flipped
+
+    for zone in zones:
+        if zone.side == "support" and close_price < zone.price_low - threshold:
+            # Price fell well below support → this is now resistance
+            flipped.append(HorizontalZone(
+                zone_id=zone.zone_id + "_flip",
+                side="resistance",  # flipped!
+                price_low=zone.price_low, price_high=zone.price_high,
+                price_center=zone.price_center, width=zone.width,
+                touches=zone.touches, touch_indices=zone.touch_indices,
+                touch_prices=zone.touch_prices,
+                first_touch_index=zone.first_touch_index,
+                last_touch_index=zone.last_touch_index,
+                strength=zone.strength * 0.8,  # slightly weaker than original
+                strength_components={**zone.strength_components, "flipped": True},
+            ))
+        elif zone.side == "resistance" and close_price > zone.price_high + threshold:
+            # Price rose well above resistance → this is now support
+            flipped.append(HorizontalZone(
+                zone_id=zone.zone_id + "_flip",
+                side="support",
+                price_low=zone.price_low, price_high=zone.price_high,
+                price_center=zone.price_center, width=zone.width,
+                touches=zone.touches, touch_indices=zone.touch_indices,
+                touch_prices=zone.touch_prices,
+                first_touch_index=zone.first_touch_index,
+                last_touch_index=zone.last_touch_index,
+                strength=zone.strength * 0.8,
+                strength_components={**zone.strength_components, "flipped": True},
+            ))
+
+    return zones + flipped
 
 
 def _timeframe_eps_scale(timeframe: str) -> float:
