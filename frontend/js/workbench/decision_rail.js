@@ -10,13 +10,14 @@ let pollTimer = null;
 const DECISION_RAIL_TIMEOUT_MS = 4000;
 
 async function fetchAll(symbol, interval) {
-  const [structure, summary, risk, candidates] = await Promise.all([
+  const [structure, summary, risk, candidates, snapshot] = await Promise.all([
     fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/summary', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/signal-candidates', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
+    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=500`, { timeout: 8000 }).catch(() => null),
   ]);
-  return { structure, summary, risk, candidates };
+  return { structure, summary, risk, candidates, snapshot };
 }
 
 function cardMarketState(structure) {
@@ -52,6 +53,45 @@ function cardMarketState(structure) {
           <span class="dr-value pnl-neg">$${structure.nearest_resistance} (+${structure.distance_to_resistance_pct}%)</span>
         </div>
       ` : ''}
+    </div>
+  `;
+}
+
+function cardSRZones(snapshot, currentPrice) {
+  const zones = snapshot?.snapshot?.horizontal_zones || [];
+  const signals = snapshot?.snapshot?.signals || [];
+  if (!zones.length) {
+    return `<div class="dr-card"><h3>S/R 区域</h3><p class="muted">暂无检测到区域</p></div>`;
+  }
+
+  const sup = zones.filter(z => z.side === 'support').slice(0, 2);
+  const res = zones.filter(z => z.side === 'resistance').slice(0, 2);
+  const price = currentPrice || 0;
+
+  const zoneRow = (z) => {
+    const dist = price > 0 ? ((z.price_center - price) / price * 100).toFixed(1) : '?';
+    const color = z.side === 'support' ? 'pnl-pos' : 'pnl-neg';
+    return `
+      <div class="dr-row">
+        <span class="dr-label ${color}">${z.side === 'support' ? '支撑' : '阻力'} ${z.touches}t</span>
+        <span class="dr-value">$${z.price_center.toFixed(2)} <small>(${dist}%)</small></span>
+      </div>
+    `;
+  };
+
+  const sigRows = signals.slice(0, 2).map(s => `
+    <div class="dr-row" style="background:rgba(255,235,59,0.08);margin:2px 0;padding:2px 4px;border-radius:3px;">
+      <span class="dr-label" style="color:#fbbf24">${s.direction === 'long' ? '做多' : '做空'}</span>
+      <span class="dr-value" style="color:#fbbf24">$${s.entry_price.toFixed(2)} RR=${s.risk_reward.toFixed(1)}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="dr-card">
+      <h3>S/R 区域 <small style="color:var(--v2-muted)">${zones.length}个</small></h3>
+      ${res.map(zoneRow).join('')}
+      ${sup.map(zoneRow).join('')}
+      ${sigRows || '<div class="dr-row"><span class="dr-label muted">等待入场信号...</span></div>'}
     </div>
   `;
 }
@@ -182,10 +222,11 @@ async function render() {
   if (!container) return;
 
   try {
-    const { structure, summary, risk, candidates } = await fetchAll(marketState.currentSymbol, marketState.currentInterval);
+    const { structure, summary, risk, candidates, snapshot } = await fetchAll(marketState.currentSymbol, marketState.currentInterval);
+    const lastPrice = structure?.last_price || marketState.lastCandles?.at?.(-1)?.close || 0;
     setHtml(container, `
       ${cardMarketState(structure)}
-      ${cardCurrentSetup(candidates, marketState.currentSymbol)}
+      ${cardSRZones(snapshot, lastPrice)}
       ${cardRiskGate(risk)}
       ${cardTradeCandidate(candidates, summary, marketState.currentSymbol)}
       <div class="dr-card dr-summary">
@@ -241,10 +282,10 @@ function paintLoading() {
   `;
   container.innerHTML = [
     loadingCard('市场状态'),
-    loadingCard('Current Setup'),
+    loadingCard('S/R 区域'),
     loadingCard('风控'),
-    loadingCard('Trade Candidate'),
-    loadingCard('Agent'),
+    loadingCard('交易候选'),
+    loadingCard('策略'),
   ].join('');
 }
 
