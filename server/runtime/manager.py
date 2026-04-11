@@ -39,7 +39,7 @@ from ..runtime.types import (
 DATA_DIR = PROJECT_ROOT / "data"
 RUNTIME_STORE_PATH = DATA_DIR / "subaccount_runtime_instances.json"
 RUNTIME_EVENT_LOG_PATH = DATA_DIR / "subaccount_runtime_events.jsonl"
-VALID_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
+VALID_INTERVALS = {"1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w"}
 
 
 class SubaccountRuntimeManager:

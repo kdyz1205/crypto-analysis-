@@ -21,38 +21,35 @@ async function fetchAll(symbol, interval) {
 
 function cardMarketState(structure) {
   if (!structure || structure.error) {
-    return `<div class="dr-card"><h3>Market State</h3><p class="muted">${structure?.error || 'Loading...'}</p></div>`;
+    return `<div class="dr-card"><h3>市场状态</h3><p class="muted">${structure?.error || '加载中...'}</p></div>`;
   }
+  const trendLabel = structure.trend_label === 'UPTREND' ? '上升趋势' : structure.trend_label === 'DOWNTREND' ? '下降趋势' : '震荡';
   const trendClass = structure.trend_label === 'UPTREND' ? 'pnl-pos' : structure.trend_label === 'DOWNTREND' ? 'pnl-neg' : '';
   return `
     <div class="dr-card">
-      <h3>Market State</h3>
+      <h3>市场状态</h3>
       <div class="dr-row">
-        <span class="dr-label">Trend</span>
-        <span class="dr-value ${trendClass}"><strong>${structure.trend_label}</strong> ${structure.trend_slope_pct > 0 ? '+' : ''}${structure.trend_slope_pct}%</span>
+        <span class="dr-label">趋势</span>
+        <span class="dr-value ${trendClass}"><strong>${trendLabel}</strong> ${structure.trend_slope_pct > 0 ? '+' : ''}${structure.trend_slope_pct}%</span>
       </div>
       <div class="dr-row">
-        <span class="dr-label">MA Align</span>
+        <span class="dr-label">MA 排列</span>
         <span class="dr-value">${structure.ma_alignment}</span>
       </div>
       <div class="dr-row">
-        <span class="dr-label">Ribbon Score</span>
+        <span class="dr-label">Ribbon</span>
         <span class="dr-value">${structure.ribbon_score}/${structure.ribbon_max}</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">BB</span>
-        <span class="dr-value">${structure.bb_position}${structure.bb_distance_pct != null ? ` (${structure.bb_distance_pct}%)` : ''}</span>
       </div>
       ${structure.nearest_support ? `
         <div class="dr-row">
-          <span class="dr-label">Nearest Support</span>
-          <span class="dr-value">$${structure.nearest_support} (−${structure.distance_to_support_pct}%)</span>
+          <span class="dr-label">最近支撑</span>
+          <span class="dr-value pnl-pos">$${structure.nearest_support} (${structure.distance_to_support_pct}%)</span>
         </div>
       ` : ''}
       ${structure.nearest_resistance ? `
         <div class="dr-row">
-          <span class="dr-label">Nearest Resistance</span>
-          <span class="dr-value">$${structure.nearest_resistance} (+${structure.distance_to_resistance_pct}%)</span>
+          <span class="dr-label">最近阻力</span>
+          <span class="dr-value pnl-neg">$${structure.nearest_resistance} (+${structure.distance_to_resistance_pct}%)</span>
         </div>
       ` : ''}
     </div>
@@ -63,8 +60,8 @@ function cardCurrentSetup(candidates, symbol) {
   if (!candidates || !candidates.candidates || candidates.candidates.length === 0) {
     return `
       <div class="dr-card">
-        <h3>Current Setup</h3>
-        <p class="muted">No active setup on any symbol</p>
+        <h3>当前机会</h3>
+        <p class="muted">暂无交易机会</p>
       </div>
     `;
   }
@@ -72,7 +69,7 @@ function cardCurrentSetup(candidates, symbol) {
   const biasClass = sigForSym.side === 'long' ? 'pnl-pos' : 'pnl-neg';
   return `
     <div class="dr-card">
-      <h3>Current Setup ${sigForSym.symbol !== symbol ? `<span class="muted" style="font-size:10px">(on ${sigForSym.symbol})</span>` : ''}</h3>
+      <h3>当前机会 ${sigForSym.symbol !== symbol ? `<span class="muted" style="font-size:10px">(${sigForSym.symbol})</span>` : ''}</h3>
       <div class="dr-row">
         <span class="dr-label">Bias</span>
         <span class="dr-value ${biasClass}"><strong>${sigForSym.side?.toUpperCase()}</strong></span>
@@ -95,7 +92,7 @@ function cardCurrentSetup(candidates, symbol) {
 }
 
 function cardRiskGate(risk) {
-  if (!risk) return `<div class="dr-card"><h3>Risk Gate</h3><p class="muted">Loading...</p></div>`;
+  if (!risk) return `<div class="dr-card"><h3>风控</h3><p class="muted">加载中...</p></div>`;
   const stateClass = {
     NORMAL: 'pnl-pos',
     WATCH: '',
@@ -118,16 +115,16 @@ function cardRiskGate(risk) {
 
   return `
     <div class="dr-card">
-      <h3>Risk Gate</h3>
+      <h3>风控</h3>
       <div class="dr-row">
         <span class="dr-label">State</span>
         <span class="dr-value ${stateClass}"><strong>${risk.state}</strong></span>
       </div>
       ${risk.state_reason ? `<div class="dr-reason">${risk.state_reason}</div>` : ''}
-      ${miniMeter('Exposure', m.exposure)}
-      ${miniMeter('Daily Loss', m.daily_loss)}
-      ${miniMeter('Drawdown', m.drawdown)}
-      ${miniMeter('Positions', m.positions)}
+      ${miniMeter('敞口', m.exposure)}
+      ${miniMeter('日亏损', m.daily_loss)}
+      ${miniMeter('回撤', m.drawdown)}
+      ${miniMeter('持仓', m.positions)}
       ${risk.cooldown_remaining_sec > 0 ? `
         <div class="dr-row">
           <span class="dr-label">Cooldown</span>
@@ -243,9 +240,9 @@ function paintLoading() {
     </div>
   `;
   container.innerHTML = [
-    loadingCard('Market State'),
+    loadingCard('市场状态'),
     loadingCard('Current Setup'),
-    loadingCard('Risk Gate'),
+    loadingCard('风控'),
     loadingCard('Trade Candidate'),
     loadingCard('Agent'),
   ].join('');

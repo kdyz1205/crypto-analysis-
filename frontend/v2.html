@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -10,62 +10,55 @@
 </head>
 <body class="v2-body">
 
-  <!-- ─── Header ─── -->
   <header class="v2-header">
     <div class="v2-brand">Trading OS</div>
-
     <div class="v2-symbol-group">
       <select id="v2-symbol-select" class="v2-select"></select>
     </div>
-
     <div class="v2-tf-group" id="v2-tf-group">
+      <button class="v2-tf-btn" data-tf="1m">1m</button>
+      <button class="v2-tf-btn" data-tf="3m">3m</button>
       <button class="v2-tf-btn" data-tf="5m">5m</button>
       <button class="v2-tf-btn" data-tf="15m">15m</button>
       <button class="v2-tf-btn" data-tf="1h">1h</button>
       <button class="v2-tf-btn active" data-tf="4h">4h</button>
       <button class="v2-tf-btn" data-tf="1d">1d</button>
+      <button class="v2-tf-btn" data-tf="1w">1w</button>
     </div>
-
     <div class="v2-chart-header" id="chart-header-v2">—</div>
-
     <div class="v2-header-status-slot" id="v2-boot-status-slot"></div>
-
     <div class="v2-header-actions">
       <div class="v2-scale-toggle" id="v2-scale-toggle">
         <button class="btn v2-scale-btn" data-scale="linear">Linear</button>
         <button class="btn v2-scale-btn active" data-scale="log">Log</button>
       </div>
-      <button class="btn active" id="v2-ma-toggle" title="MA overlays">MA</button>
-      <button class="btn" id="v2-combat-btn" title="Fullscreen">⛶</button>
-      <button class="btn btn-primary" id="v2-exec-toggle">Execution</button>
-      <button class="btn" id="v2-research-btn" title="Research" style="display:none">Research</button>
-      <button class="btn" id="v2-chat-btn" title="Chat" style="display:none">Chat</button>
-      <button class="btn" id="v2-cmdk-btn" title="Ctrl+K" style="display:none">⌘K</button>
+      <button class="btn active" id="v2-ma-toggle" title="MA">MA</button>
+      <button class="btn" id="v2-combat-btn" title="全屏">全屏</button>
+      <button class="btn btn-primary" id="v2-exec-toggle">交易</button>
+      <button class="btn" id="v2-research-btn" style="display:none">Research</button>
+      <button class="btn" id="v2-chat-btn" style="display:none">Chat</button>
+      <button class="btn" id="v2-cmdk-btn" style="display:none">K</button>
       <a href="/" class="btn" style="display:none">v1</a>
     </div>
   </header>
 
-  <!-- ─── Chart + Side Panel ─── -->
   <main class="v2-workbench">
     <div class="v2-chart-area">
       <div id="chart-container" class="v2-chart-container"></div>
     </div>
-
     <aside class="v2-decision-rail" id="v2-decision-rail">
-      <div class="dr-card"><h3>Market State</h3><p>Loading...</p></div>
+      <div class="dr-card"><h3>市场状态</h3><p>加载中...</p></div>
     </aside>
   </main>
 
-  <!-- ─── Glassbox (hidden by default, toggle via Ctrl+G) ─── -->
   <section class="v2-glassbox-dock" style="display:none">
     <div class="glass-header">
       <span class="glass-title">Agent Glassbox</span>
-      <span class="glass-hint">Live event stream · Ctrl+K to command</span>
+      <span class="glass-hint">Live event stream</span>
     </div>
     <div id="v2-glassbox" class="glass-timeline"></div>
   </section>
 
-  <!-- ─── Execution (slide-out) ─── -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
   <script type="module" src="/js/main.js"></script>

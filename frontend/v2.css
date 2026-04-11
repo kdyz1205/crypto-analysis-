@@ -231,7 +231,7 @@ body.v2-body {
   right: 0;
   top: 0;
   bottom: 0;
-  width: 520px;
+  width: 360px;
   background: var(--v2-bg-alt);
   border-left: 1px solid var(--v2-border);
   box-shadow: -4px 0 20px rgba(0,0,0,0.4);
@@ -691,16 +691,7 @@ body.v2-body {
 
 /* ── Glassbox Timeline (bottom dock) ── */
 .v2-glassbox-dock {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 320px;  /* leave room for decision rail */
-  height: 140px;
-  background: rgba(15, 20, 35, 0.96);
-  border-top: 1px solid var(--v2-border);
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
+  display: none;  /* hidden - was causing blank space at bottom */
 }
 .glass-header {
   display: flex;

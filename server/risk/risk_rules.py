@@ -143,6 +143,11 @@ def evaluate_signal_risk(
             exposure_after_fill=float(account.total_exposure),
         )
 
+    # Position sizing: risk_amount / stop_distance, capped by stop distance sanity check
+    # If stop is extremely tight (< 0.1% of price), reduce size to avoid outsized positions
+    entry = float(signal.entry_price)
+    if entry > 0 and stop_distance < entry * 0.001:
+        stop_distance = entry * 0.001  # floor at 0.1% of price
     proposed_quantity = risk_amount / stop_distance
     pending_exposure = sum(float(order.quantity) * float(order.price) for order in pending_orders)
     reserved_exposure = float(account.total_exposure) + pending_exposure
