@@ -50,7 +50,7 @@ def _default_trigger_mode_priority() -> dict[str, int]:
 class StrategyConfig:
     pivot_left: int = 3
     pivot_right: int = 3
-    lookback_bars: int = 300
+    lookback_bars: int = 500
     atr_period: int = 14
     tick_size: float = 0.0001
 

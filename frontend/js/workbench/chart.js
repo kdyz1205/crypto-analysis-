@@ -11,7 +11,7 @@ import * as strategySvc from '../services/strategy.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
 import { markBoot } from '../ui/boot_status.js';
 import { drawMAOverlays, toggleMAOverlays as toggleMA } from './ma_overlay.js';
-import { drawPatterns, drawZones, clearPatternLines } from './patterns.js';
+import { drawPatterns, drawZones, drawHorizontalSRZones, clearPatternLines } from './patterns.js';
 import { clearTrendlineOverlay, drawTrendlineOverlay } from './overlays/trendline_overlay.js';
 import { clearSignalOverlay, drawSignalOverlay } from './overlays/signal_overlay.js';
 import { clearOrderOverlay, drawOrderOverlay } from './overlays/order_overlay.js';
@@ -415,6 +415,13 @@ function renderStrategyOverlays() {
   drawTrendlineOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
   drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
   drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
+
+  // Draw horizontal S/R zones from strategy snapshot
+  const srZones = snapshot.horizontal_zones || [];
+  if (srZones.length > 0) {
+    drawHorizontalSRZones(chart, candleSeries, srZones);
+  }
+
   renderManualLines();
 }
 

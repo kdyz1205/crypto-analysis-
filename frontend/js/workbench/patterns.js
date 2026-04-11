@@ -79,3 +79,50 @@ export function drawZones(chart, zones = []) {
     }
   }
 }
+
+/**
+ * Draw horizontal S/R zones as colored price bands on the chart.
+ * Each zone renders as two horizontal lines (price_low and price_high)
+ * with different colors for support (green) and resistance (red).
+ */
+export function drawHorizontalSRZones(chart, candleSeries, zones = []) {
+  if (!chart || !candleSeries || !zones?.length) return;
+
+  for (const zone of zones) {
+    try {
+      const isSupport = zone.side === 'support';
+      const color = isSupport ? 'rgba(0, 230, 118, 0.35)' : 'rgba(255, 23, 68, 0.35)';
+      const borderColor = isSupport ? 'rgba(0, 230, 118, 0.7)' : 'rgba(255, 23, 68, 0.7)';
+
+      // Draw upper boundary
+      candleSeries.createPriceLine({
+        price: zone.price_high,
+        color: borderColor,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: false,
+      });
+
+      // Draw center with label
+      candleSeries.createPriceLine({
+        price: zone.price_center,
+        color: color,
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: `${isSupport ? 'S' : 'R'} ${zone.touches}t str:${Math.round(zone.strength)}`,
+      });
+
+      // Draw lower boundary
+      candleSeries.createPriceLine({
+        price: zone.price_low,
+        color: borderColor,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        axisLabelVisible: false,
+      });
+    } catch (err) {
+      console.warn('[patterns] S/R zone draw failed:', err);
+    }
+  }
+}

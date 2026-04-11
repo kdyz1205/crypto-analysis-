@@ -9,7 +9,7 @@ export const marketState = {
   pricePrecision: null,
   historyMode: 'fast_window',
   historyMeta: null,
-  currentScale: 'linear',  // 'linear' | 'log'
+  currentScale: 'log',  // 'linear' | 'log' — default log for crypto volatility
   magnetMode: 'weak',      // 'weak' | 'strong'
   replayEndTime: null,
   liveUpdateInterval: null,
