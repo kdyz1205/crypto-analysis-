@@ -157,7 +157,19 @@ async def main():
     print(f"[bot] Polling for messages...")
     print()
 
-    await tg_send("🤖 <b>Trading Bot 启动</b>\n发送任何消息，我用 Claude/Codex 回复。\n\n命令：\n/leaderboard — 查看进化排行榜\n/status — 系统状态")
+    await tg_send(
+        "🤖 <b>Trading OS Bot 启动</b>\n\n"
+        "📝 <b>自然语言</b> — 发任何消息，Claude 回复\n\n"
+        "⚡ <b>策略命令</b>\n"
+        "/create [策略] [币种] [周期] [资金] — 创建策略\n"
+        "/策略库 — 查看所有可用策略\n"
+        "/运行中 — 查看运行状态\n"
+        "/stop [币种|all] — 停止策略\n"
+        "/leaderboard — 进化排行榜\n"
+        "/status — 系统状态\n\n"
+        "💡 例: /create sr_full BTCUSDT 4h 10000\n"
+        "💡 例: /create 做市 HYPEUSDT 1m 100 live"
+    )
 
     offset = 0
     last_lb_check = 0
@@ -194,9 +206,25 @@ async def main():
                     )
                     continue
 
-                # Process with Claude/Codex
+                # Strategy commands (natural language → deploy)
+                if text.startswith("/create") or text.startswith("/deploy") or text.startswith("/策略"):
+                    await handle_strategy_command(text)
+                    continue
+
+                if text.strip() == "/strategies" or text.strip() == "/运行中":
+                    await show_running_strategies()
+                    continue
+
+                if text.strip() == "/catalog" or text.strip() == "/策略库":
+                    await show_catalog()
+                    continue
+
+                if text.strip().startswith("/stop"):
+                    await handle_stop_command(text)
+                    continue
+
+                # Natural language → Claude processes with full codebase context
                 response = await handle_message(text)
-                # Truncate very long responses
                 if len(response) > 4000:
                     response = response[:3900] + "\n\n...(truncated)"
                 await tg_send(response)
@@ -211,6 +239,167 @@ async def main():
             await asyncio.sleep(5)
 
         await asyncio.sleep(POLL_INTERVAL)
+
+
+# ── Strategy Commands ────────────────────────────────────────────────────
+
+API_BASE = "http://127.0.0.1:8001"
+
+
+async def api_call(method, path, body=None):
+    """Call the local web server API."""
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            if method == "GET":
+                r = await c.get(f"{API_BASE}{path}")
+            else:
+                r = await c.post(f"{API_BASE}{path}", json=body) if body else await c.post(f"{API_BASE}{path}")
+            return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
+async def handle_strategy_command(text: str):
+    """Parse natural language strategy request → create and deploy.
+
+    Examples:
+    /create SR反转 BTCUSDT 4h 10000
+    /deploy 均线开花 ETHUSDT 1h 5000 live
+    /策略 做市 HYPEUSDT 1m 100 实盘
+    """
+    parts = text.split()
+    if len(parts) < 3:
+        await tg_send(
+            "<b>创建策略</b>\n\n"
+            "格式: /create [策略名] [币种] [周期] [资金] [模式]\n\n"
+            "策略名:\n"
+            "  sr_reversal — S/R 反转\n"
+            "  sr_full — S/R 全模式\n"
+            "  sr_retest — 突破回测\n"
+            "  ma_ribbon — 均线开花\n"
+            "  hft_imbalance — 盘口失衡\n"
+            "  hft_mm — 做市\n"
+            "  hft_sweep — 突破跟随\n\n"
+            "例: /create sr_full BTCUSDT 4h 10000\n"
+            "例: /create hft_mm HYPEUSDT 1m 100 live"
+        )
+        return
+
+    # Parse
+    template_id = parts[1] if len(parts) > 1 else "sr_full"
+    symbol = parts[2].upper() if len(parts) > 2 else "BTCUSDT"
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+    timeframe = parts[3] if len(parts) > 3 else "4h"
+    equity = float(parts[4]) if len(parts) > 4 else 10000
+    mode = "live" if len(parts) > 5 and parts[5] in ("live", "实盘") else "disabled"
+
+    # Map Chinese names
+    name_map = {
+        "反转": "sr_reversal", "sr反转": "sr_reversal",
+        "全模式": "sr_full", "sr全模式": "sr_full",
+        "回测": "sr_retest", "突破回测": "sr_retest",
+        "均线": "ma_ribbon", "均线开花": "ma_ribbon",
+        "做市": "hft_mm", "hft做市": "hft_mm",
+        "失衡": "hft_imbalance", "盘口失衡": "hft_imbalance",
+        "突破": "hft_sweep", "突破跟随": "hft_sweep",
+        "剥头皮": "hf_scalp",
+    }
+    template_id = name_map.get(template_id.lower(), template_id)
+
+    await tg_send(f"🔧 创建策略...\n{template_id} | {symbol} {timeframe} | ${equity} | {'实盘' if mode == 'live' else '模拟'}")
+
+    # Call API
+    url = f"/api/runtime/catalog/{template_id}/launch?symbol={symbol}&timeframe={timeframe}&live_mode={mode}&starting_equity={equity}"
+    result = await api_call("POST", url)
+
+    if result.get("error"):
+        await tg_send(f"❌ 创建失败: {result['error']}")
+    elif result.get("template"):
+        await tg_send(
+            f"✅ <b>策略已创建并启动</b>\n\n"
+            f"策略: {result['template']}\n"
+            f"币种: {symbol}\n"
+            f"周期: {timeframe}\n"
+            f"资金: ${equity}\n"
+            f"模式: {'🔴 实盘' if mode == 'live' else '📋 模拟'}\n\n"
+            f"在网页面板查看运行状态"
+        )
+    else:
+        await tg_send(f"⚠️ 结果: {json.dumps(result)[:200]}")
+
+
+async def show_running_strategies():
+    """Show currently running strategies."""
+    result = await api_call("GET", "/api/runtime/instances")
+    if result.get("error"):
+        await tg_send(f"❌ 无法连接服务器: {result['error']}")
+        return
+
+    instances = result.get("instances", [])
+    running = [i for i in instances if i["status"]["runtime_state"] == "running"]
+    live = [i for i in instances if i["config"].get("live_mode") == "live"]
+
+    lines = [f"<b>📊 策略状态</b>", f"总数: {len(instances)} | 运行: {len(running)} | 实盘: {len(live)}", ""]
+
+    for i in running[:10]:
+        c = i["config"]
+        s = i["status"]
+        pnl = s.get("paper_state", {}).get("account", {}).get("realized_pnl", 0) or 0
+        is_live = "🔴" if c.get("live_mode") == "live" else "📋"
+        bar = s.get("last_processed_bar", "-")
+        lines.append(f"{is_live} {c['symbol']} {c['timeframe']} | bar={bar} | pnl={pnl:+.1f}")
+
+    if len(running) > 10:
+        lines.append(f"... 还有 {len(running) - 10} 个")
+
+    await tg_send("\n".join(lines))
+
+
+async def show_catalog():
+    """Show available strategy templates."""
+    result = await api_call("GET", "/api/runtime/catalog")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    templates = result.get("templates", [])
+    lines = ["<b>📚 策略库</b>", ""]
+    for t in templates:
+        risk = {"low": "🟢低", "medium": "🟡中", "high": "🔴高"}.get(t["risk_level"], "")
+        tfs = ", ".join(t.get("supported_timeframes", []))
+        lines.append(f"<b>{t['name']}</b> {risk}")
+        lines.append(f"  ID: {t['template_id']}")
+        lines.append(f"  周期: {tfs}")
+        lines.append(f"  {t['description'][:60]}...")
+        lines.append("")
+
+    lines.append("使用 /create [ID] [币种] [周期] [资金] 创建")
+    await tg_send("\n".join(lines))
+
+
+async def handle_stop_command(text: str):
+    """Stop a strategy. /stop BTCUSDT or /stop all"""
+    parts = text.split()
+    target = parts[1].upper() if len(parts) > 1 else "all"
+
+    result = await api_call("GET", "/api/runtime/instances")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    stopped = 0
+    for i in result.get("instances", []):
+        c = i["config"]
+        s = i["status"]
+        if s["runtime_state"] != "running":
+            continue
+        if target != "ALL" and target not in c["symbol"]:
+            continue
+        await api_call("POST", f"/api/runtime/instances/{c['instance_id']}/stop")
+        stopped += 1
+
+    await tg_send(f"⏹ 已停止 {stopped} 个策略")
 
 
 if __name__ == "__main__":
