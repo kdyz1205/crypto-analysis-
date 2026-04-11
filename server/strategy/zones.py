@@ -146,7 +146,8 @@ def _cluster_pivots_into_zones(
     while i < len(sorted_pivots):
         cluster = [sorted_pivots[i]]
         j = i + 1
-        while j < len(sorted_pivots) and sorted_pivots[j].price - sorted_pivots[i].price <= eps:
+        # Chain clustering: each pivot must be within eps of the PREVIOUS one (not the first)
+        while j < len(sorted_pivots) and sorted_pivots[j].price - cluster[-1].price <= eps:
             cluster.append(sorted_pivots[j])
             j += 1
 

@@ -340,8 +340,13 @@ class EvolutionEngine:
                             symbol=variant.symbol, timeframe=variant.timeframe,
                             enabled_trigger_modes=tuple(variant.trigger_modes),
                         )
+                        sig = None
                         if snapshot.signals:
                             sig = snapshot.signals[0]
+                            # Factor filtering: only accept signal if factor conditions met
+                            if variant.factors and not _check_factors(window, variant.factors):
+                                sig = None
+                        if sig:
                             risk_usd = equity * risk_per
                             open_trade = {
                                 "entry": sig.entry_price,
@@ -422,6 +427,32 @@ class EvolutionEngine:
                 self.leaderboard = [StrategyVariant(**d) for d in data]
         except Exception:
             self.leaderboard = []
+
+
+def _check_factors(df, factor_names: list[str]) -> bool:
+    """Check if factor conditions are met at the last bar."""
+    try:
+        from ..factors.factor_engine import FACTOR_BY_ID
+        from .indicators import compute_indicator
+
+        for fname in factor_names:
+            factor = FACTOR_BY_ID.get(fname)
+            if not factor:
+                continue
+            if factor.indicator in ("dist_to_support_atr", "dist_to_resistance_atr", "zone_score", "trend_strength_up", "trend_strength_down", "ema_alignment", "squeeze", "obv_slope", "volume_ratio"):
+                continue  # structure factors not computable here
+            try:
+                values = compute_indicator(df, factor.indicator, **factor.params)
+                last_val = float(values.iloc[-1])
+                if factor.condition == "gt" and last_val <= factor.threshold:
+                    return False
+                if factor.condition == "lt" and last_val >= factor.threshold:
+                    return False
+            except Exception:
+                continue
+        return True
+    except Exception:
+        return True  # if factor engine not available, allow signal
 
 
 __all__ = ["EvolutionEngine", "StrategyVariant"]
