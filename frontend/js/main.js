@@ -14,6 +14,7 @@ import { initBootStatus, markBoot } from './ui/boot_status.js';
 import { $, on } from './util/dom.js';
 import { subscribe } from './util/events.js';
 import { setChatDock, setResearchDrawer, uiState } from './state/ui.js';
+import { setScale } from './state/market.js';
 
 /**
  * Boot philosophy: NEVER block the UI shell on a data fetch.
@@ -142,6 +143,19 @@ function wireHeaderButtons() {
     const visible = toggleMAOverlays();
     $('#v2-ma-toggle')?.classList.toggle('active', visible);
   });
+
+  // Log/Linear scale toggle
+  const scaleToggle = $('#v2-scale-toggle');
+  if (scaleToggle) {
+    scaleToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-scale]');
+      if (!btn) return;
+      const scale = btn.dataset.scale;
+      setScale(scale);
+      scaleToggle.querySelectorAll('.v2-scale-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  }
 
   const setCombatMode = (enabled) => {
     document.body.classList.toggle('combat-mode', enabled);

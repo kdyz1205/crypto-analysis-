@@ -135,6 +135,25 @@ body.v2-body {
 .btn:disabled { opacity: 0.55; cursor: not-allowed; border-color: var(--v2-border); }
 .btn.active { background: var(--v2-primary); color: white; border-color: var(--v2-primary); }
 
+.v2-scale-toggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.v2-scale-btn {
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 3px 10px;
+  font-size: 11px;
+  min-width: 50px;
+}
+.v2-scale-btn.active {
+  background: var(--v2-primary);
+  color: white;
+}
+
 /* ── Workbench main layout ── */
 .v2-workbench {
   display: flex;
