@@ -90,6 +90,7 @@ INTERVAL_MS = {
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "1d": 24 * 60 * 60 * 1000,
+    "1w": 7 * 24 * 60 * 60 * 1000,
 }
 
 # When no 5m CSV exists, fetch this many days
@@ -520,13 +521,16 @@ def _okx_rows_to_records(rows: list) -> list:
     return records
 
 
-_BITGET_INTERVAL_MAP = {"5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D"}
+_BITGET_INTERVAL_MAP = {"1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D", "1w": "1W"}
 _BITGET_INTERVAL_MS = {
+    "1m": 1 * 60 * 1000,
+    "3m": 3 * 60 * 1000,
     "5m": 5 * 60 * 1000,
     "15m": 15 * 60 * 1000,
     "1h": 60 * 60 * 1000,
     "4h": 4 * 60 * 60 * 1000,
     "1d": 24 * 60 * 60 * 1000,
+    "1w": 7 * 24 * 60 * 60 * 1000,
 }
 _BITGET_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000
 BITGET_CANDLES_PAGE_LIMIT = 200
