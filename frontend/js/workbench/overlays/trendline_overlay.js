@@ -59,6 +59,7 @@ export function drawTrendlineOverlay(chart, snapshot, layerVisibility = {}) {
           lineStyle: line.display_class === 'debug' ? 2 : lineStyleForState(line.state),
           priceLineVisible: false,
           lastValueVisible: false,
+          autoscaleInfoProvider: () => null,
         });
         series.setData([
           { time: Math.floor(line.t_start), value: Number(line.price_start) },
@@ -80,6 +81,7 @@ export function drawTrendlineOverlay(chart, snapshot, layerVisibility = {}) {
           lineStyle: 2,
           priceLineVisible: false,
           lastValueVisible: false,
+          autoscaleInfoProvider: () => null,
         });
         projectedSeries.setData([
           { time: Math.floor(line.projected_time_current), value: Number(line.projected_price_current) },

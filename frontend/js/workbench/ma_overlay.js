@@ -43,6 +43,7 @@ export function drawMAOverlays(chart, overlays, _candleTimes) {
         priceLineVisible: false,
         lastValueVisible: false,
         title: cfg.title,
+        autoscaleInfoProvider: () => null,  // exclude from auto-scale calculation
       });
     }
     try { seriesRefs[key].setData(data); }
