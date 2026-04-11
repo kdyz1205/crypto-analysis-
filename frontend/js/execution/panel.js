@@ -165,8 +165,8 @@ function refreshAll() {
   paperSvc.getPaperExecutionState().then(s => { paperState = s; changed = true; }).catch(() => {});
   runtimeSvc.getRuntimeInstances().then(r => { instances = r?.instances || []; changed = true; }).catch(() => {});
   // Leaderboard — only fetch every 3rd poll (evolution runs slowly)
-  if (!this._pollCount) this._pollCount = 0;
-  if (++this._pollCount % 3 === 0) {
+  if (!refreshAll._pollCount) refreshAll._pollCount = 0;
+  if (++refreshAll._pollCount % 3 === 0) {
     runtimeSvc.getLeaderboard(10).then(r => { leaderboard = r?.leaderboard || []; }).catch(() => {});
   }
   // Single render after a short delay to batch all responses
