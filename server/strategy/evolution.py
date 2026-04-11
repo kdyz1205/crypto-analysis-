@@ -444,6 +444,8 @@ def _check_factors(df, factor_names: list[str]) -> bool:
             try:
                 values = compute_indicator(df, factor.indicator, **factor.params)
                 last_val = float(values.iloc[-1])
+                if np.isnan(last_val):
+                    continue  # skip NaN — insufficient data for this indicator
                 if factor.condition == "gt" and last_val <= factor.threshold:
                     return False
                 if factor.condition == "lt" and last_val >= factor.threshold:

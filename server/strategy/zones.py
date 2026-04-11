@@ -119,7 +119,12 @@ def detect_horizontal_zones(
     # Detect flip zones — broken S/R that flipped role
     zones = _detect_flip_zones(zones, df, close_price, atr_value)
 
-    return zones
+    # Re-apply per-side cap after flips (flips can inflate count)
+    final = []
+    for side in ("support", "resistance"):
+        side_zones = sorted([z for z in zones if z.side == side], key=lambda z: -z.strength)
+        final.extend(side_zones[:max_zones_per_side])
+    return final
 
 
 def _cluster_pivots_into_zones(

@@ -352,7 +352,7 @@ def _detect_fake_break_reclaim(df: pd.DataFrame, zone: ZoneContext, ctx: MarketC
 
     if zone.zone_type == "support":
         # Look for fake breakdown: recent low pierced z_low, but close came back above
-        for lookback in range(1, CONFIRM_BARS + 2):
+        for lookback in range(1, min(6, n - 1)):  # check up to 5 bars back
             bar = df.iloc[-(lookback + 1)]
             bar_low = float(bar["low"])
             if bar_low < zone.z_low:
@@ -368,7 +368,7 @@ def _detect_fake_break_reclaim(df: pd.DataFrame, zone: ZoneContext, ctx: MarketC
                         return {"direction": "LONG", "entry": entry, "stop": stop, "tp": tp, "rr": rr}
 
     elif zone.zone_type == "resistance":
-        for lookback in range(1, CONFIRM_BARS + 2):
+        for lookback in range(1, min(6, n - 1)):
             bar = df.iloc[-(lookback + 1)]
             bar_high = float(bar["high"])
             if bar_high > zone.z_high:
@@ -399,7 +399,7 @@ def _detect_breakout_retest(df: pd.DataFrame, zone: ZoneContext, ctx: MarketCont
     if zone.zone_type == "resistance":
         # Price broke above resistance, now retesting from above
         # Check: was price below zone 5-15 bars ago, now above?
-        was_below = any(float(df.iloc[-(i+1)]["close"]) < zone.z_low for i in range(5, min(15, n)))
+        was_below = any(float(df.iloc[-(i+1)]["close"]) < zone.z_low for i in range(5, min(15, n - 1)))
         currently_above = close > zone.z_high
         retest_touch = low <= zone.z_high + 0.2 * atr
 
@@ -416,7 +416,7 @@ def _detect_breakout_retest(df: pd.DataFrame, zone: ZoneContext, ctx: MarketCont
 
     elif zone.zone_type == "support":
         # Price broke below support, now retesting from below
-        was_above = any(float(df.iloc[-(i+1)]["close"]) > zone.z_high for i in range(5, min(15, n)))
+        was_above = any(float(df.iloc[-(i+1)]["close"]) > zone.z_high for i in range(5, min(15, n - 1)))
         currently_below = close < zone.z_low
         retest_touch = high >= zone.z_low - 0.2 * atr
 

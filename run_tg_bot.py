@@ -124,14 +124,19 @@ async def handle_message(text: str) -> str:
 
 
 async def check_leaderboard():
-    """Check evolution leaderboard file and return summary if updated."""
+    """Check evolution leaderboard file and return top 5."""
     lb_path = os.path.join(PROJECT_ROOT, "data", "strategy_leaderboard.json")
     try:
         if os.path.exists(lb_path):
             data = json.loads(open(lb_path, encoding="utf-8").read())
             if isinstance(data, list) and len(data) > 0:
-                top = data[0]
-                return f"📊 排行榜 #1: {top.get('symbol','')} {top.get('timeframe','')} | {top.get('name','')} | 回报:{top.get('total_return_pct',0):+.1f}% WR:{top.get('win_rate',0)}%"
+                lines = ["<b>📊 进化排行榜</b>", ""]
+                for i, v in enumerate(data[:5]):
+                    emoji = ["🥇","🥈","🥉","4️⃣","5️⃣"][i] if i < 5 else ""
+                    ret = v.get('total_return_pct', 0)
+                    lines.append(f"{emoji} {v.get('symbol','')} {v.get('timeframe','')} | {v.get('name','')}")
+                    lines.append(f"   回报:{ret:+.1f}% WR:{v.get('win_rate',0)}% Sharpe:{v.get('sharpe_ratio',0)}")
+                return "\n".join(lines)
     except Exception:
         pass
     return None
