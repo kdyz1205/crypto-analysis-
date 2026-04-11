@@ -444,12 +444,12 @@ function renderStrategyOverlays() {
   drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
   drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
 
-  // Draw horizontal S/R zones — only high-quality ones (strength > 40), max 2 per side
+  // Draw horizontal S/R zones — show top zones by strength, max 3 per side
   const srZones = (snapshot.horizontal_zones || [])
-    .filter((z) => z.strength > 40)
+    .filter((z) => z.strength > 25)
     .sort((a, b) => b.strength - a.strength);
-  const supportZones = srZones.filter((z) => z.side === 'support').slice(0, 2);
-  const resistanceZones = srZones.filter((z) => z.side === 'resistance').slice(0, 2);
+  const supportZones = srZones.filter((z) => z.side === 'support').slice(0, 3);
+  const resistanceZones = srZones.filter((z) => z.side === 'resistance').slice(0, 3);
   const filteredZones = [...supportZones, ...resistanceZones];
   if (filteredZones.length > 0) {
     drawHorizontalSRZones(chart, candleSeries, filteredZones);

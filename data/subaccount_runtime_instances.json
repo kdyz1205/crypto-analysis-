@@ -672,7 +672,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T07:46:29.813399+00:00",
+        "last_tick_at": "2026-04-11T07:49:11.815371+00:00",
         "last_processed_bar": 93,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12203,12 +12203,12 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T07:46:25.262587+00:00",
-        "last_processed_bar": 446,
+        "last_tick_at": "2026-04-11T07:49:11.681214+00:00",
+        "last_processed_bar": 451,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
-        "paper_current_day": "2026-04-02",
+        "paper_current_day": "2026-04-03",
         "last_history": {
           "pricePrecision": 4,
           "exchange": "bitget",
@@ -12256,7 +12256,7 @@
             "open_position_count": 0,
             "closed_trade_count": 3,
             "last_processed_bar_by_stream": {
-              "ADAUSDT:4h": 446
+              "ADAUSDT:4h": 451
             }
           },
           "kill_switch": {

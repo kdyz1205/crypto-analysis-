@@ -201,26 +201,27 @@ def _evaluate_candidate_line(
     recent_bar_touch_count = sum(1 for bar_index, _ in bar_touch_refs if bar_index >= recent_window_start)
 
     # ── BODY-CROSS QUALITY CHECK ─────────────────────────────────────
-    # Professional trendlines: wicks can touch/cross the line, but bodies
-    # should stay on the correct side. Allow small tolerance (0.1 ATR)
-    # for body slightly crossing, but count violations. Too many = reject.
-    scan_end = invalidation_index if invalidation_index is not None else current_index
+    # Only check bars between anchors up to the last confirming touch.
+    # After the last touch, the line is a projection — violations there
+    # are handled by invalidation, not by quality filtering.
+    body_check_end = min(
+        latest_touch_index,
+        invalidation_index if invalidation_index is not None else current_index,
+    )
     body_violation_count = 0
-    for bar_index in range(left_pivot.index + 1, scan_end + 1):
+    for bar_index in range(left_pivot.index + 1, body_check_end + 1):
         lv = project_price(slope, intercept, bar_index)
         local_atr = float(atr.iloc[bar_index])
-        body_tol = local_atr * 0.03  # very tight: only 3% of ATR tolerance
+        body_tol = local_atr * 0.05  # 5% ATR tolerance
         o = float(df.iloc[bar_index]["open"])
         c = float(df.iloc[bar_index]["close"])
         bh = max(o, c)
         bl = min(o, c)
-        if side == "support":
-            if bl < lv - body_tol:
-                body_violation_count += 1
-        else:
-            if bh > lv + body_tol:
-                body_violation_count += 1
-        if body_violation_count > 1:  # max 1 minor violation
+        if side == "support" and bl < lv - body_tol:
+            body_violation_count += 1
+        elif side == "resistance" and bh > lv + body_tol:
+            body_violation_count += 1
+        if body_violation_count > 2:
             return None
 
     latest_touch_price = next(item[2].price for item in reversed(confirming_refs) if item[0] == latest_touch_index)
