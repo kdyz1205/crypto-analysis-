@@ -44,10 +44,12 @@ def evaluate_signal_risk(
     pending_orders = tuple(order for order in (pending_orders or ()) if order.status == "pending")
 
     # Block unverified timeframes — only allow TFs with positive EV in backtest
+    # Also require minimum Kelly (0.001 = 0.1%) to filter out marginal-positive noise
+    MIN_KELLY_FOR_TRADING = 0.001
     timeframe = getattr(signal, "timeframe", "")
     _, get_calibrated = _get_calibration()
     cal_wr, cal_rr, cal_kelly = get_calibrated(timeframe)
-    if cal_wr <= 0 or cal_kelly <= 0:
+    if cal_wr <= 0 or cal_kelly < MIN_KELLY_FOR_TRADING:
         return RiskDecision(
             signal_id=signal.signal_id,
             approved=False,

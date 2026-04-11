@@ -36,9 +36,14 @@ async def run():
     cfg = StrategyConfig(pivot_left=3, pivot_right=3, lookback_bars=500, min_rr_ratio=3.0)
     results_by_tf = {}
 
+    MIN_SUCCESSFUL_SYMBOLS = 10  # require at least 10 symbols to trust calibration
+    MIN_TRADES_FOR_CALIBRATION = 15  # require at least 15 trades
+
     for tf in TIMEFRAMES:
         trades = []
         stops = []
+        successful_symbols = 0
+        failed_symbols = []
         for sym in SYMBOLS:
             try:
                 df, _ = await get_ohlcv_with_df(sym, tf, None, 365, history_mode="fast_window")
@@ -88,8 +93,10 @@ async def run():
                                     stops.append(stop_pct)
                                     break
 
+                successful_symbols += 1
                 print(f"  {sym:12s} {tf:4s} done ({n} bars)", flush=True)
             except Exception as e:
+                failed_symbols.append(sym)
                 print(f"  {sym:12s} {tf:4s} ERROR: {e}", flush=True)
 
         w = sum(1 for t in trades if t[0] == "W")
@@ -108,15 +115,31 @@ async def run():
         med_stop = float(np.median(stops))
         avg_stop = float(np.mean(stops))
 
-        verdict = "PROFITABLE" if ev > 0 else "NOT_PROFITABLE"
+        # Sample completeness check
+        sample_complete = (
+            successful_symbols >= MIN_SUCCESSFUL_SYMBOLS
+            and total >= MIN_TRADES_FOR_CALIBRATION
+        )
+        if ev > 0 and sample_complete:
+            verdict = "PROFITABLE"
+        elif ev > 0 and not sample_complete:
+            verdict = "PROFITABLE_BUT_INCOMPLETE_SAMPLE"
+        else:
+            verdict = "NOT_PROFITABLE"
+
         print(f"\n--- {tf} ---", flush=True)
+        print(f"  Symbols: {successful_symbols}/{len(SYMBOLS)} ok, {len(failed_symbols)} failed: {failed_symbols}", flush=True)
         print(f"  Trades: {total} | W: {w} | L: {l}", flush=True)
         print(f"  WR: {wr*100:.1f}% | RR: {avg_rr:.2f} | EV: {ev:.3f}R", flush=True)
         print(f"  Kelly: {hk*100:.2f}% | Med stop: {med_stop*100:.3f}% | Avg stop: {avg_stop*100:.3f}%", flush=True)
+        print(f"  Sample complete: {sample_complete} (need >={MIN_SUCCESSFUL_SYMBOLS} symbols, >={MIN_TRADES_FOR_CALIBRATION} trades)", flush=True)
         print(f"  Verdict: {verdict}", flush=True)
 
         results_by_tf[tf] = {
             "trades": total, "wins": w, "losses": l,
+            "successful_symbols": successful_symbols,
+            "failed_symbols": failed_symbols,
+            "sample_complete": sample_complete,
             "win_rate": round(wr, 4), "avg_rr": round(avg_rr, 2),
             "ev": round(ev, 4), "half_kelly": round(hk, 4),
             "median_stop_pct": round(med_stop, 6), "avg_stop_pct": round(avg_stop, 6),

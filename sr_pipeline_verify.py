@@ -147,7 +147,6 @@ async def verify_pipeline():
                     if len(zones) == 0:
                         reasons.append("no_zones_detected")
                     else:
-                        # Check each zone for why it didn't signal
                         atr = calculate_atr(pdf, 14)
                         atr_val = float(atr.iloc[-1])
                         arm_dist = max(atr_val * 0.5, close_price * 0.005)
@@ -162,8 +161,8 @@ async def verify_pipeline():
                                 reasons.append(f"{z.side}_${z.price_center:.2f}_price_too_far({dist/atr_val:.1f}ATR)")
                             else:
                                 reasons.append(f"{z.side}_${z.price_center:.2f}_no_rejection_wick")
-                    if z.touches < 3:
-                        reasons.append("zone_touches_below_3")
+                            if z.touches < 3:
+                                reasons.append(f"{z.side}_${z.price_center:.2f}_touches_below_3")
                     log_line(f"{prefix}[SIGNAL] NONE | reasons: {'; '.join(reasons[:5])}")
             except Exception as e:
                 log_line(f"{prefix}[SIGNAL] ERROR: {e}")
