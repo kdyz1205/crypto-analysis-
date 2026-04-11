@@ -21,6 +21,7 @@ from .state_machine import (
 from .trendlines import detect_trendlines
 from .types import Pivot, StrategySignal, Trendline, ensure_candles_df
 from .zones import detect_horizontal_zones
+from .zone_signals import generate_zone_signals
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +167,10 @@ def build_latest_snapshot(
     zones = tuple(detect_horizontal_zones(
         df, pivots, cfg, symbol=symbol, timeframe=timeframe, max_zones_per_side=3,
     ))
+
+    # Zone-based signals (supplement trendline signals)
+    zone_sigs = generate_zone_signals(df, zones, cfg, symbol=symbol, timeframe=timeframe)
+    selected_signals = tuple(list(selected_signals) + zone_sigs)
 
     return ReplaySnapshot(
         bar_index=current_index,
