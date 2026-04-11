@@ -672,7 +672,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:28.808060+00:00",
+        "last_tick_at": "2026-04-11T09:35:42.297209+00:00",
         "last_processed_bar": 95,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -11448,7 +11448,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:23.081337+00:00",
+        "last_tick_at": "2026-04-11T09:35:51.888307+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -11462,18 +11462,18 @@
           "requestedDays": 365,
           "baseInterval": "5m",
           "resampledFromInterval": null,
-          "sourceBarCount": 3032,
+          "sourceBarCount": 3033,
           "historyMode": "fast_window",
-          "loadedBarCount": 3032,
+          "loadedBarCount": 3033,
           "earliestLoadedTimestamp": 1775014200,
-          "latestLoadedTimestamp": 1775924700,
+          "latestLoadedTimestamp": 1775925000,
           "listingStartTimestamp": 1775014200,
           "isFullHistory": false,
           "isTruncated": false,
           "truncationReason": "",
           "analysisInputBarCount": 500,
-          "analysisEarliestTimestamp": 1775749200,
-          "analysisLatestTimestamp": 1775899500,
+          "analysisEarliestTimestamp": 1775749500,
+          "analysisLatestTimestamp": 1775899800,
           "analysisWasTrimmed": true
         },
         "paper_state": {
@@ -11836,6 +11836,25 @@
               "created_at_ts": 1775896500.0
             },
             {
+              "order_intent_id": "f0afe643e7b0de87",
+              "signal_id": "fcfa2951ed99139a",
+              "line_id": "d0787339ec231d7c",
+              "client_order_id": "paper-adausdt-fcfa2951ed",
+              "symbol": "ADAUSDT",
+              "timeframe": "5m",
+              "side": "short",
+              "order_type": "limit",
+              "trigger_mode": "pre_limit",
+              "entry_price": 0.2503049,
+              "stop_price": 0.2508753,
+              "tp_price": 0.24887889999999993,
+              "quantity": 0.0,
+              "status": "blocked",
+              "reason": "timeframe_not_verified:5m",
+              "created_at_bar": 493,
+              "created_at_ts": 1775896800.0
+            },
+            {
               "order_intent_id": "457c4e040d12d110",
               "signal_id": "2aa5512a9141ac33",
               "line_id": "fc623b6d418b9a0d",
@@ -11851,27 +11870,8 @@
               "quantity": 0.0,
               "status": "blocked",
               "reason": "timeframe_not_verified:5m",
-              "created_at_bar": 493,
-              "created_at_ts": 1775897100.0
-            },
-            {
-              "order_intent_id": "598fcb2e8a1d7daa",
-              "signal_id": "32828b9fc9f62b37",
-              "line_id": "6de444621179181a",
-              "client_order_id": "paper-adausdt-32828b9fc9",
-              "symbol": "ADAUSDT",
-              "timeframe": "5m",
-              "side": "long",
-              "order_type": "market",
-              "trigger_mode": "rejection",
-              "entry_price": 0.2501,
-              "stop_price": 0.24942485,
-              "tp_price": 0.25212545,
-              "quantity": 0.0,
-              "status": "blocked",
-              "reason": "timeframe_not_verified:5m",
               "created_at_bar": 494,
-              "created_at_ts": 1775897400.0
+              "created_at_ts": 1775897100.0
             },
             {
               "order_intent_id": "3a17ec61cddc3ae0",
@@ -12228,7 +12228,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:14.236989+00:00",
+        "last_tick_at": "2026-04-11T09:35:42.229532+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12881,7 +12881,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:28.080297+00:00",
+        "last_tick_at": "2026-04-11T09:35:49.546241+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12895,18 +12895,18 @@
           "requestedDays": 365,
           "baseInterval": "5m",
           "resampledFromInterval": null,
-          "sourceBarCount": 3032,
+          "sourceBarCount": 3033,
           "historyMode": "fast_window",
-          "loadedBarCount": 3032,
+          "loadedBarCount": 3033,
           "earliestLoadedTimestamp": 1775014200,
-          "latestLoadedTimestamp": 1775924700,
+          "latestLoadedTimestamp": 1775925000,
           "listingStartTimestamp": 1775014200,
           "isFullHistory": false,
           "isTruncated": false,
           "truncationReason": "",
           "analysisInputBarCount": 500,
-          "analysisEarliestTimestamp": 1775749200,
-          "analysisLatestTimestamp": 1775899500,
+          "analysisEarliestTimestamp": 1775749500,
+          "analysisLatestTimestamp": 1775899800,
           "analysisWasTrimmed": true
         },
         "paper_state": {
@@ -13699,7 +13699,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:28.205303+00:00",
+        "last_tick_at": "2026-04-11T09:35:42.118201+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -23503,13 +23503,13 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:32:30.777028+00:00",
-        "last_processed_bar": 73,
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T09:14:15.514259+00:00",
+        "last_processed_bar": 55,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "recovered_stopped",
         "last_live_result": null,
-        "paper_current_day": "2026-03-24",
+        "paper_current_day": "2026-03-23",
         "last_history": {
           "pricePrecision": 3,
           "exchange": "bitget",
@@ -23557,7 +23557,7 @@
             "open_position_count": 0,
             "closed_trade_count": 0,
             "last_processed_bar_by_stream": {
-              "HYPEUSDT:1h": 73
+              "HYPEUSDT:1h": 55
             }
           },
           "kill_switch": {

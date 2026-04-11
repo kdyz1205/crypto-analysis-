@@ -138,7 +138,7 @@ def test_paper_execution_router_state_reset_step_and_config(monkeypatch) -> None
         "/api/paper-execution/step",
         json={
             "symbol": "BTCUSDT",
-            "interval": "1h",
+            "interval": "4h",
             "history_mode": "full_history",
             "days": 30,
             "bar_index": 0,

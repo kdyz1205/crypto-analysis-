@@ -20,7 +20,7 @@ def _signal(signal_id: str, *, symbol: str = "BTCUSDT", direction: str = "short"
         signal_id=signal_id,
         line_id=f"line-{signal_id}",
         symbol=symbol,
-        timeframe="1h",
+        timeframe="4h",
         signal_type="PRE_LIMIT_SHORT" if direction == "short" else "PRE_LIMIT_LONG",
         direction=direction,
         trigger_mode="pre_limit",
@@ -59,7 +59,7 @@ def test_engine_pending_reservation_blocks_second_same_symbol_signal() -> None:
     engine = PaperExecutionEngine(PaperExecutionConfig())
     replay = ReplayResult(
         symbol="BTCUSDT",
-        timeframe="1h",
+        timeframe="4h",
         snapshots=(
             ReplaySnapshot(
                 bar_index=0,
@@ -122,7 +122,7 @@ def test_engine_rejects_orphan_fill_when_second_manual_order_cannot_open() -> No
 
     replay = ReplayResult(
         symbol="BTCUSDT",
-        timeframe="1h",
+        timeframe="4h",
         snapshots=(
             _empty_snapshot(0, 1),
             _empty_snapshot(1, 2),
@@ -144,7 +144,7 @@ def test_engine_step_supports_snapshot_offset() -> None:
     engine.last_processed_bar_by_stream["BTCUSDT:1h"] = 0
     replay = ReplayResult(
         symbol="BTCUSDT",
-        timeframe="1h",
+        timeframe="4h",
         snapshots=(
             ReplaySnapshot(
                 bar_index=1,
