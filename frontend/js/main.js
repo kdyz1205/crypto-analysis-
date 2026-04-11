@@ -108,28 +108,23 @@ function wireHeaderButtons() {
 
 // ── View Loaders ────────────────────────────────────────────────────────
 
-import { fetchJson } from './util/fetch.js';
-import { setHtml } from './util/dom.js';
-import { formatUsd } from './util/format.js';
-
-const viewLoaded = {};
+import { loadFactory, loadSimulate, loadLeaderboard, loadLive, loadMonitor } from './views.js';
 
 async function loadView(view) {
-  if (view === 'market') return; // market is always loaded
-
-  const container = $(`#view-${view}`);
-  if (!container) return;
-
-  if (view === 'factory') loadFactory(container);
-  else if (view === 'simulate') loadSimulate(container);
-  else if (view === 'leaderboard') loadLeaderboard(container);
-  else if (view === 'live') loadLive(container);
-  else if (view === 'monitor') loadMonitor(container);
+  if (view === 'market') return;
+  const el = $(`#view-${view}`);
+  if (!el) return;
+  el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--v2-muted)">加载中...</div>';
+  try {
+    if (view === 'factory') await loadFactory(el);
+    else if (view === 'simulate') await loadSimulate(el);
+    else if (view === 'leaderboard') await loadLeaderboard(el);
+    else if (view === 'live') await loadLive(el);
+    else if (view === 'monitor') await loadMonitor(el);
+  } catch (e) { el.innerHTML = `<p style="color:var(--v2-red);padding:20px">加载失败: ${e.message}</p>`; }
 }
 
-async function loadFactory(el) {
-  try {
-    const { templates } = await fetchJson('/api/runtime/catalog');
+/*
     const risk = { low: '🟢低', medium: '🟡中', high: '🔴高' };
     setHtml(el, `
       <div class="view-header"><h2>策略工厂</h2><p class="view-desc">创建和管理策略模板</p></div>
@@ -188,8 +183,7 @@ async function loadFactory(el) {
   } catch { setHtml(el, '<p>加载失败</p>'); }
 }
 
-async function loadSimulate(el) {
-  try {
+/*
     const { instances } = await fetchJson('/api/runtime/instances');
     const running = instances.filter(i => i.status.runtime_state === 'running');
     const paper = instances.filter(i => i.config.live_mode !== 'live');
@@ -294,7 +288,6 @@ async function loadMonitor(el) {
         }).join('')}
       </div>
     `);
-  } catch { setHtml(el, '<p>加载失败</p>'); }
-}
+*/
 
 document.addEventListener('DOMContentLoaded', boot);
