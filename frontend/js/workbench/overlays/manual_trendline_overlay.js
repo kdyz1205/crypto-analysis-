@@ -56,6 +56,7 @@ export function drawManualTrendlineOverlay(chart, lines, options = {}) {
         lineStyle: line.locked ? 0 : 2,
         priceLineVisible: false,
         lastValueVisible: false,
+        autoscaleInfoProvider: () => null,
       });
       series.setData(resolveManualTrendlinePoints(line, options));
       manualLineSeriesRefs.push(series);

@@ -59,8 +59,13 @@ def detect_horizontal_zones(
     atr_value = float(atr.iloc[current_index])
     close_price = float(df.iloc[current_index]["close"])
 
-    # Clustering epsilon: 1% of price or 0.5 ATR, whichever is larger
-    eps = max(atr_value * 0.5, close_price * 0.01)
+    # Clustering epsilon: adaptive by timeframe
+    # Shorter timeframes use tighter clustering to avoid oversized zones
+    tf_eps_scale = _timeframe_eps_scale(timeframe)
+    eps = max(
+        atr_value * cfg.zone_eps_atr_mult * tf_eps_scale,
+        close_price * cfg.zone_eps_pct * tf_eps_scale,
+    )
 
     zones: list[HorizontalZone] = []
     for side, pivot_kind in [("resistance", "high"), ("support", "low")]:
@@ -68,7 +73,7 @@ def detect_horizontal_zones(
         lookback_start = max(0, current_index - cfg.lookback_bars + 1)
         side_pivots = [p for p in confirmed if p.index >= lookback_start]
 
-        if len(side_pivots) < 2:
+        if len(side_pivots) < cfg.zone_min_touches:
             continue
 
         side_zones = _cluster_pivots_into_zones(
@@ -76,7 +81,7 @@ def detect_horizontal_zones(
             side=side,
             eps=eps,
             current_index=current_index,
-            min_touches=2,
+            min_touches=cfg.zone_min_touches,
             symbol=symbol,
             timeframe=timeframe,
         )
@@ -103,9 +108,15 @@ def detect_horizontal_zones(
                 strength_components=components,
             ))
 
+        # Filter out broken zones — price has moved far past them
+        scored = [z for z in scored if not _is_zone_broken(z, df, atr_value, close_price)]
+
         # Sort by strength descending, keep top N
         scored.sort(key=lambda z: -z.strength)
         zones.extend(scored[:max_zones_per_side])
+
+    # Remove S/R conflicts — same price can't be both support and resistance
+    zones = _resolve_sr_conflicts(zones, atr_value)
 
     return zones
 
@@ -217,14 +228,22 @@ def _score_zone(
     distance = abs(close_price - zone.price_center) / max(atr_value, 1e-10)
     proximity_score = clamp(1.0 - distance / 5.0)  # within 5 ATR = relevant
 
+    # 7. Trend context: support is more reliable in uptrends, resistance in downtrends
+    trend_score = _trend_alignment_score(df, zone.side, current_index, config)
+
+    # 8. Volume failure: touches on LOW volume reduce reliability
+    volume_failure_score = _volume_failure_score(df, zone.touch_indices, current_index)
+
     # Weighted composite
     strength = 100.0 * clamp(
-        (0.25 * touch_score)
-        + (0.20 * reaction_score)
-        + (0.15 * recency_score)
-        + (0.10 * clarity_score)
-        + (0.15 * volume_score)
-        + (0.15 * proximity_score)
+        (0.20 * touch_score)
+        + (0.15 * reaction_score)
+        + (0.10 * recency_score)
+        + (0.08 * clarity_score)
+        + (0.12 * volume_score)
+        + (0.10 * proximity_score)
+        + (0.15 * trend_score)
+        + (0.10 * volume_failure_score)
     )
 
     components = {
@@ -234,9 +253,119 @@ def _score_zone(
         "clarity_score": round(clarity_score, 4),
         "volume_score": round(volume_score, 4),
         "proximity_score": round(proximity_score, 4),
+        "trend_score": round(trend_score, 4),
+        "volume_failure_score": round(volume_failure_score, 4),
     }
 
     return round(strength, 2), components
+
+
+def _trend_alignment_score(df, side: str, current_index: int, config: StrategyConfig) -> float:
+    """Score 0-1: support zones score higher in uptrends, resistance in downtrends."""
+    ema_period = config.trend_ema_period
+    if current_index < ema_period:
+        return 0.5  # neutral when insufficient data
+
+    close = df["close"].astype(float)
+    ema = close.ewm(span=ema_period, adjust=False).mean()
+    current_close = float(close.iloc[current_index])
+    current_ema = float(ema.iloc[current_index])
+    prev_ema = float(ema.iloc[current_index - 1])
+
+    ema_slope = (current_ema - prev_ema) / max(abs(current_ema), 1e-10)
+    price_vs_ema = (current_close - current_ema) / max(abs(current_ema), 1e-10)
+
+    if side == "support":
+        # Uptrend = support is reliable
+        trend_signal = clamp(ema_slope * 1000) * 0.5 + clamp(price_vs_ema * 50) * 0.5
+    else:
+        # Downtrend = resistance is reliable
+        trend_signal = clamp(-ema_slope * 1000) * 0.5 + clamp(-price_vs_ema * 50) * 0.5
+
+    return clamp(trend_signal)
+
+
+def _volume_failure_score(df, touch_indices: tuple[int, ...], current_index: int) -> float:
+    """Score 0-1: penalize zones where touches happened on LOW volume.
+    High volume touches = 1.0 (reliable). Low volume touches = 0.0 (unreliable).
+    """
+    if len(df) == 0 or not touch_indices:
+        return 0.5
+
+    overall_avg = float(df["volume"].astype(float).mean())
+    if overall_avg <= 0:
+        return 0.5
+
+    ratios = []
+    for idx in touch_indices:
+        if idx >= len(df):
+            continue
+        vol = float(df.iloc[idx]["volume"])
+        ratios.append(vol / overall_avg)
+
+    if not ratios:
+        return 0.5
+
+    avg_ratio = float(np.mean(ratios))
+    # ratio < 0.5 = weak volume at touches → score 0
+    # ratio > 1.5 = strong volume at touches → score 1
+    return clamp((avg_ratio - 0.5) / 1.0)
+
+
+def _is_zone_broken(zone: HorizontalZone, df, atr_value: float, close_price: float) -> bool:
+    """A zone is 'broken' if price has moved decisively past it and stayed there.
+
+    Support broken = price well below zone and not coming back
+    Resistance broken = price well above zone and not coming back
+    """
+    distance = close_price - zone.price_center
+    threshold = atr_value * 2.0  # must be 2 ATR past the zone
+
+    if zone.side == "resistance":
+        # Price is far ABOVE resistance — resistance is broken
+        if distance > threshold:
+            # Verify: last 5 candle closes are all above the zone
+            recent_closes = df["close"].astype(float).iloc[-5:]
+            if all(c > zone.price_high for c in recent_closes):
+                return True
+    else:
+        # Price is far BELOW support — support is broken
+        if distance < -threshold:
+            recent_closes = df["close"].astype(float).iloc[-5:]
+            if all(c < zone.price_low for c in recent_closes):
+                return True
+    return False
+
+
+def _resolve_sr_conflicts(zones: list[HorizontalZone], atr_value: float) -> list[HorizontalZone]:
+    """Remove zones where support and resistance overlap at the same price.
+    Keep the one with higher strength."""
+    if not zones:
+        return zones
+
+    conflict_threshold = atr_value * 0.5  # within 0.5 ATR = conflict
+    to_remove = set()
+
+    for i, z1 in enumerate(zones):
+        for j, z2 in enumerate(zones):
+            if i >= j or z1.side == z2.side:
+                continue
+            if abs(z1.price_center - z2.price_center) < conflict_threshold:
+                # Keep the stronger one
+                loser = i if z1.strength < z2.strength else j
+                to_remove.add(loser)
+
+    return [z for i, z in enumerate(zones) if i not in to_remove]
+
+
+def _timeframe_eps_scale(timeframe: str) -> float:
+    """Shorter timeframes get tighter clustering radius to avoid oversized zones."""
+    scales = {
+        "1m": 0.4, "3m": 0.5, "5m": 0.6,
+        "15m": 0.7, "1h": 0.85, "4h": 1.0,
+        "1d": 1.2, "1w": 1.5,
+    }
+    return scales.get(timeframe, 1.0)
 
 
 __all__ = [

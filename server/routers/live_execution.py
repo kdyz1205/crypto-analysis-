@@ -37,6 +37,16 @@ async def api_live_execution_status():
     return {"status": live_engine.get_status()}
 
 
+@router.get("/account")
+async def api_live_execution_account(mode: str = Query("demo")):
+    """Get Bitget account summary — balance, positions, pending orders."""
+    normalized = _normalize_mode(mode)
+    adapter = _adapter_provider()
+    if not adapter.has_api_keys():
+        return {"ok": False, "reason": "api_keys_missing"}
+    return await adapter.get_live_account_status(normalized)
+
+
 @router.get("/preflight", response_model=LivePreflightResponse)
 async def api_live_execution_preflight(
     mode: str = Query("live"),

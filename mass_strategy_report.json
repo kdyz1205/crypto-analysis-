@@ -1,0 +1,217 @@
+{
+  "timestamp": "2026-04-10T18:42:28.447490",
+  "runtime_min": 119.74611333211263,
+  "total_trades": 7079758,
+  "total_pnl": 29033597411329.297,
+  "alive": 1880043,
+  "dead": 258357,
+  "top_strategies": [
+    {
+      "idx": 2155,
+      "label": "mean_rev_EMA2/21_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833881811.836693,
+      "trades": 904,
+      "wins": 520
+    },
+    {
+      "idx": 5071,
+      "label": "mean_rev_EMA3/21_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833881811.836693,
+      "trades": 904,
+      "wins": 520
+    },
+    {
+      "idx": 9931,
+      "label": "mean_rev_EMA8/21_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833881811.836693,
+      "trades": 904,
+      "wins": 520
+    },
+    {
+      "idx": 7987,
+      "label": "mean_rev_EMA5/21_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833881811.836693,
+      "trades": 904,
+      "wins": 520
+    },
+    {
+      "idx": 7015,
+      "label": "mean_rev_EMA5/13_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833792869.763956,
+      "trades": 897,
+      "wins": 508
+    },
+    {
+      "idx": 1183,
+      "label": "mean_rev_EMA2/13_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833792869.763956,
+      "trades": 897,
+      "wins": 508
+    },
+    {
+      "idx": 8959,
+      "label": "mean_rev_EMA8/13_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833792869.763956,
+      "trades": 897,
+      "wins": 508
+    },
+    {
+      "idx": 4099,
+      "label": "mean_rev_EMA3/13_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833792869.763956,
+      "trades": 897,
+      "wins": 508
+    },
+    {
+      "idx": 6043,
+      "label": "mean_rev_EMA5/8_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833791634.68031,
+      "trades": 892,
+      "wins": 503
+    },
+    {
+      "idx": 211,
+      "label": "mean_rev_EMA2/8_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833791634.68031,
+      "trades": 892,
+      "wins": 503
+    },
+    {
+      "idx": 3127,
+      "label": "mean_rev_EMA3/8_RSI4_45/65_SL1.0_TP0.8",
+      "pnl": 9833791634.68031,
+      "trades": 892,
+      "wins": 503
+    },
+    {
+      "idx": 3172,
+      "label": "mean_rev_EMA3/8_RSI6_25/55_SL0.5_TP0.8",
+      "pnl": 9831907207.720652,
+      "trades": 1361,
+      "wins": 630
+    },
+    {
+      "idx": 256,
+      "label": "mean_rev_EMA2/8_RSI6_25/55_SL0.5_TP0.8",
+      "pnl": 9831907207.720652,
+      "trades": 1361,
+      "wins": 630
+    },
+    {
+      "idx": 6088,
+      "label": "mean_rev_EMA5/8_RSI6_25/55_SL0.5_TP0.8",
+      "pnl": 9831907207.720652,
+      "trades": 1361,
+      "wins": 630
+    },
+    {
+      "idx": 2956,
+      "label": "mean_rev_EMA3/8_RSI4_25/65_SL0.5_TP0.8",
+      "pnl": 9831854105.076292,
+      "trades": 1395,
+      "wins": 633
+    }
+  ],
+  "top_coins": [
+    {
+      "symbol": "TSLAUSDT",
+      "pnl": 28965990871531.03,
+      "trades": 15466
+    },
+    {
+      "symbol": "BCHUSDT",
+      "pnl": 26904952547.648438,
+      "trades": 14699
+    },
+    {
+      "symbol": "TSMUSDT",
+      "pnl": 18092599569.402985,
+      "trades": 44521
+    },
+    {
+      "symbol": "GOOGLUSDT",
+      "pnl": 13251470688.638737,
+      "trades": 26338
+    },
+    {
+      "symbol": "METAUSDT",
+      "pnl": 7179393017.014829,
+      "trades": 21664
+    },
+    {
+      "symbol": "SPYUSDT",
+      "pnl": 3713185366.1736183,
+      "trades": 31525
+    },
+    {
+      "symbol": "MSFTUSDT",
+      "pnl": 2270329329.233606,
+      "trades": 14968
+    },
+    {
+      "symbol": "BNBUSDT",
+      "pnl": 640995110.5862247,
+      "trades": 15688
+    },
+    {
+      "symbol": "TRBUSDT",
+      "pnl": 332953983.1607615,
+      "trades": 39401
+    },
+    {
+      "symbol": "INTCUSDT",
+      "pnl": 165777729.81431836,
+      "trades": 42274
+    },
+    {
+      "symbol": "DASHUSDT",
+      "pnl": 159992773.10974064,
+      "trades": 62075
+    },
+    {
+      "symbol": "QQQUSDT",
+      "pnl": 156275286.41504025,
+      "trades": 23144
+    },
+    {
+      "symbol": "GIGGLEUSDT",
+      "pnl": 120215727.62976381,
+      "trades": 25763
+    },
+    {
+      "symbol": "AAVEUSDT",
+      "pnl": 103171595.45495155,
+      "trades": 42228
+    },
+    {
+      "symbol": "COPPERUSDT",
+      "pnl": 87591701.38876446,
+      "trades": 14448
+    },
+    {
+      "symbol": "ETCUSDT",
+      "pnl": 24446905.58029805,
+      "trades": 24254
+    },
+    {
+      "symbol": "ZROUSDT",
+      "pnl": 17448116.120883748,
+      "trades": 28855
+    },
+    {
+      "symbol": "EULUSDT",
+      "pnl": 11172345.884681812,
+      "trades": 37100
+    },
+    {
+      "symbol": "VIRTUALUSDT",
+      "pnl": 8698346.727112172,
+      "trades": 41336
+    },
+    {
+      "symbol": "TONUSDT",
+      "pnl": 6303153.176064519,
+      "trades": 17881
+    }
+  ]
+}

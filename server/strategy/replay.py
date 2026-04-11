@@ -18,6 +18,7 @@ from .state_machine import (
     advance_line_states,
     build_signal_state_snapshots,
 )
+from .regime import MarketRegime, detect_regime
 from .trendlines import detect_trendlines
 from .types import Pivot, StrategySignal, Trendline, ensure_candles_df
 from .zones import detect_horizontal_zones
@@ -36,6 +37,7 @@ class ReplaySnapshot:
     signal_states: tuple[SignalStateSnapshot, ...]
     invalidations: tuple[LineStateSnapshot, ...]
     horizontal_zones: tuple = ()  # HorizontalZone objects
+    market_regime: MarketRegime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -135,12 +137,21 @@ def build_latest_snapshot(
     current_index = len(df) - 1
     pivots = tuple(detect_pivots(df, cfg))
     detection = detect_trendlines(df, pivots, cfg, symbol=symbol, timeframe=timeframe)
+
+    # Market regime detection (runs before signal generation so it can gate signals)
+    regime = detect_regime(df, cfg)
+
+    # Pass all candidate lines (including invalidated) so retest signals can find them
+    all_lines_for_signals = list(detection.active_lines) + [
+        line for line in detection.candidate_lines if line.state == "invalidated"
+    ]
     prioritized_signals, selected_signals = _generate_signals_for_bar(
         df,
-        detection.active_lines,
+        all_lines_for_signals,
         cfg,
         enabled_trigger_modes=enabled_trigger_modes,
         active_directions=active_directions,
+        regime=regime,
     )
     signal_states = build_signal_state_snapshots(
         prioritized_signals,
@@ -183,6 +194,7 @@ def build_latest_snapshot(
         signal_states=signal_states,
         invalidations=invalidations,
         horizontal_zones=zones,
+        market_regime=regime,
     )
 
 
@@ -276,8 +288,9 @@ def _generate_signals_for_bar(
     *,
     enabled_trigger_modes: Sequence[str] | None,
     active_directions: Mapping[str, str] | None,
+    regime: MarketRegime | None = None,
 ) -> tuple[tuple[StrategySignal, ...], tuple[StrategySignal, ...]]:
-    enabled = set(("pre_limit", "rejection", "failed_breakout") if enabled_trigger_modes is None else enabled_trigger_modes)
+    enabled = set(("pre_limit", "rejection", "failed_breakout", "retest") if enabled_trigger_modes is None else enabled_trigger_modes)
     detected: list[StrategySignal] = []
 
     if "pre_limit" in enabled:
@@ -286,10 +299,48 @@ def _generate_signals_for_bar(
         detected.extend(generate_rejection_signals(candles, lines, config))
     if "failed_breakout" in enabled:
         detected.extend(generate_failed_breakout_signals(candles, lines, config))
+    if "retest" in enabled:
+        from .signals import generate_retest_signals
+        detected.extend(generate_retest_signals(candles, lines, config))
+
+    # Regime-based filtering: suppress signals that conflict with market state
+    if regime is not None:
+        detected = _filter_signals_by_regime(detected, regime)
 
     prioritized = tuple(prioritize_signals(detected, config))
     selected = tuple(resolve_signal_conflicts(prioritized, active_directions=active_directions))
     return prioritized, selected
+
+
+def _filter_signals_by_regime(
+    signals: list[StrategySignal],
+    regime: MarketRegime,
+) -> list[StrategySignal]:
+    """Suppress signals that conflict with the current market regime.
+
+    - Strong uptrend: suppress short signals (unless very high score)
+    - Strong downtrend: suppress long signals (unless very high score)
+    - Compressed volatility: suppress all pre-limit signals (wait for breakout)
+    """
+    if regime.trend_strength < 0.4:
+        return signals  # Weak trend — no filtering
+
+    filtered = []
+    for sig in signals:
+        # In strong trends, suppress counter-trend signals unless score is exceptional
+        if regime.trend_direction == "up" and regime.trend_strength > 0.6:
+            if sig.direction == "short" and sig.score < 0.80:
+                continue
+        if regime.trend_direction == "down" and regime.trend_strength > 0.6:
+            if sig.direction == "long" and sig.score < 0.80:
+                continue
+
+        # In compressed volatility, suppress pre-limit (wait for breakout)
+        if regime.is_compressed() and sig.trigger_mode == "pre_limit":
+            continue
+
+        filtered.append(sig)
+    return filtered
 
 
 def _json_safe(value: Any) -> Any:

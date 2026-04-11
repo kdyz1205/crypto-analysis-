@@ -35,7 +35,8 @@ def generate_pre_limit_signals(candles, lines: Sequence[Trendline], config: Stra
             stop_price = stop_source + cfg.stop_buffer(atr_value, close_price)
             direction = "short"
             signal_type = "PRE_LIMIT_SHORT"
-            tp_price = entry_price - (cfg.rr_target * abs(stop_price - entry_price))
+            rr = cfg.dynamic_rr_target(score=factor_score)
+            tp_price = entry_price - (rr * abs(stop_price - entry_price))
         else:
             factor_score, factor_components = calculate_support_long_score(df, line, cfg, bar_index=current_index)
             if factor_score < cfg.score_threshold:
@@ -45,7 +46,8 @@ def generate_pre_limit_signals(candles, lines: Sequence[Trendline], config: Stra
             stop_price = stop_source - cfg.stop_buffer(atr_value, close_price)
             direction = "long"
             signal_type = "PRE_LIMIT_LONG"
-            tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
+            rr = cfg.dynamic_rr_target(score=factor_score)
+            tp_price = entry_price + (rr * abs(entry_price - stop_price))
 
         # RR gate
         risk = abs(entry_price - stop_price)
@@ -101,7 +103,7 @@ def generate_rejection_signals(candles, lines: Sequence[Trendline], config: Stra
                 continue
             entry_price = close_price
             stop_price = high + cfg.stop_buffer(atr_value, close_price)
-            tp_price = entry_price - (cfg.rr_target * abs(stop_price - entry_price))
+            tp_price = entry_price - (cfg.dynamic_rr_target(score=factor_score) * abs(stop_price - entry_price))
             risk = abs(entry_price - stop_price)
             reward = abs(tp_price - entry_price)
             if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
@@ -133,7 +135,7 @@ def generate_rejection_signals(candles, lines: Sequence[Trendline], config: Stra
                 continue
             entry_price = close_price
             stop_price = low - cfg.stop_buffer(atr_value, close_price)
-            tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
+            tp_price = entry_price + (cfg.dynamic_rr_target(score=factor_score) * abs(entry_price - stop_price))
             risk = abs(entry_price - stop_price)
             reward = abs(tp_price - entry_price)
             if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
@@ -190,7 +192,7 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
                 continue
             entry_price = min(float(df.iloc[current_index]["close"]), prev_low - trigger_buffer)
             stop_price = prev_high + cfg.stop_buffer(float(atr.iloc[current_index]), float(df.iloc[current_index]["close"]))
-            tp_price = entry_price - (cfg.rr_target * abs(stop_price - entry_price))
+            tp_price = entry_price - (cfg.dynamic_rr_target(score=factor_score) * abs(stop_price - entry_price))
             risk = abs(entry_price - stop_price)
             reward = abs(tp_price - entry_price)
             if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
@@ -221,7 +223,7 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
                 continue
             entry_price = max(float(df.iloc[current_index]["close"]), prev_high + trigger_buffer)
             stop_price = prev_low - cfg.stop_buffer(float(atr.iloc[current_index]), float(df.iloc[current_index]["close"]))
-            tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
+            tp_price = entry_price + (cfg.dynamic_rr_target(score=factor_score) * abs(entry_price - stop_price))
             risk = abs(entry_price - stop_price)
             reward = abs(tp_price - entry_price)
             if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
@@ -245,6 +247,116 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
     return signals
 
 
+def generate_retest_signals(candles, lines: Sequence[Trendline], config: StrategyConfig | None = None) -> list[StrategySignal]:
+    """Retest trigger: price broke through a line, pulled back to it, and got rejected.
+
+    Old support becomes new resistance (short retest).
+    Old resistance becomes new support (long retest).
+    Requires: line was invalidated, price has returned to the broken level, wick rejection.
+    """
+    cfg = config or StrategyConfig()
+    df = ensure_candles_df(candles)
+    if len(df) < 5:
+        return []
+
+    atr = calculate_atr(df, cfg.atr_period)
+    current_index = len(df) - 1
+    signals: list[StrategySignal] = []
+
+    for line in lines:
+        # Only consider recently invalidated lines (broken within last 20 bars)
+        if line.state != "invalidated":
+            continue
+        if line.invalidation_index is None:
+            continue
+        bars_since_break = current_index - line.invalidation_index
+        if bars_since_break < 2 or bars_since_break > 20:
+            continue
+
+        atr_value = float(atr.iloc[current_index])
+        close_price = float(df.iloc[current_index]["close"])
+        line_value = project_price(line.slope, line.intercept, current_index)
+        tolerance = cfg.tolerance(atr_value, close_price)
+
+        if line.side == "support":
+            # Broken support → now resistance → look for SHORT retest
+            # Price should have come back UP toward the old support from below
+            if close_price > line_value + tolerance:
+                continue  # Price is above the line, not retesting from below
+            if close_price < line_value - 2.0 * atr_value:
+                continue  # Too far below — not a retest
+
+            # Need rejection wick: upper wick touching the line area
+            high = float(df.iloc[current_index]["high"])
+            if high < line_value - tolerance:
+                continue  # Didn't even reach the line
+
+            wick_ratio = _upper_wick_ratio(df, current_index, cfg)
+            if wick_ratio < cfg.wick_ratio_threshold:
+                continue  # No rejection
+
+            factor_score, factor_components = calculate_resistance_short_score(df, line, cfg, bar_index=current_index)
+            entry_price = close_price
+            stop_price = high + cfg.stop_buffer(atr_value, close_price)
+            tp_price = entry_price - (cfg.dynamic_rr_target(score=factor_score) * abs(stop_price - entry_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk <= 0 or (reward / risk) < cfg.min_rr_ratio:
+                continue
+
+            signals.append(_make_signal(
+                df, line,
+                trigger_mode="retest",
+                signal_type="RETEST_SHORT",
+                direction="short",
+                bar_index=current_index,
+                score=max(factor_score, 0.5),
+                entry_price=entry_price,
+                stop_price=stop_price,
+                tp_price=tp_price,
+                factor_components=factor_components,
+            ))
+
+        else:
+            # Broken resistance → now support → look for LONG retest
+            if close_price < line_value - tolerance:
+                continue  # Price is below the line
+            if close_price > line_value + 2.0 * atr_value:
+                continue  # Too far above
+
+            low = float(df.iloc[current_index]["low"])
+            if low > line_value + tolerance:
+                continue  # Didn't reach the line
+
+            wick_ratio = _lower_wick_ratio(df, current_index, cfg)
+            if wick_ratio < cfg.wick_ratio_threshold:
+                continue
+
+            factor_score, factor_components = calculate_support_long_score(df, line, cfg, bar_index=current_index)
+            entry_price = close_price
+            stop_price = low - cfg.stop_buffer(atr_value, close_price)
+            tp_price = entry_price + (cfg.dynamic_rr_target(score=factor_score) * abs(entry_price - stop_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk <= 0 or (reward / risk) < cfg.min_rr_ratio:
+                continue
+
+            signals.append(_make_signal(
+                df, line,
+                trigger_mode="retest",
+                signal_type="RETEST_LONG",
+                direction="long",
+                bar_index=current_index,
+                score=max(factor_score, 0.5),
+                entry_price=entry_price,
+                stop_price=stop_price,
+                tp_price=tp_price,
+                factor_components=factor_components,
+            ))
+
+    return signals
+
+
 def generate_signals(candles, lines: Sequence[Trendline], config: StrategyConfig | None = None) -> list[StrategySignal]:
     cfg = config or StrategyConfig()
     df = ensure_candles_df(candles)
@@ -256,6 +368,7 @@ def generate_signals(candles, lines: Sequence[Trendline], config: StrategyConfig
     signals.extend(generate_pre_limit_signals(candles, lines, cfg))
     signals.extend(generate_rejection_signals(candles, lines, cfg))
     signals.extend(generate_failed_breakout_signals(candles, lines, cfg))
+    signals.extend(generate_retest_signals(candles, lines, cfg))
 
     # Profit-space gate: reject signals where opposing zone is too close
     if cfg.min_profit_space_atr_mult > 0 and atr_value > 0:
@@ -415,6 +528,7 @@ __all__ = [
     "generate_failed_breakout_signals",
     "generate_pre_limit_signals",
     "generate_rejection_signals",
+    "generate_retest_signals",
     "generate_signals",
     "prioritize_signals",
     "resolve_signal_conflicts",

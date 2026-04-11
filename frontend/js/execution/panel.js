@@ -1,2452 +1,365 @@
-import { $, $$, setHtml, on, show, hide } from '../util/dom.js';
-import { agentState, setActiveSubTab, setPanelOpen, setLastStatus } from '../state/agent.js';
-import {
-  clearPaperExecutionError,
-  isPaperExecutionBusy,
-  paperExecutionState,
-  setPaperExecutionConfig,
-  setPaperExecutionError,
-  setPaperExecutionKillSwitchUpdating,
-  setPaperExecutionLastStep,
-  setPaperExecutionLoadingConfig,
-  setPaperExecutionLoadingState,
-  setPaperExecutionResetting,
-  setPaperExecutionStepping,
-  setPaperExecutionState,
-} from '../state/paper_execution.js';
-import { marketState } from '../state/market.js';
-import { subscribe } from '../util/events.js';
-import * as agentSvc from '../services/agent.js';
-import * as riskSvc from '../services/risk.js';
-import * as execSvc from '../services/execution.js';
-import * as opsSvc from '../services/ops.js';
-import * as paperExecSvc from '../services/paper_execution.js';
-import * as liveExecSvc from '../services/live_execution.js';
+// frontend/js/execution/panel.js — v5 correct architecture
+// Flow: 策略库(browse) → 因子组合(compose) → 排行榜(rank) → 运行中(monitor)
+
+import { $, setHtml, on, show, hide } from '../util/dom.js';
+import { publish } from '../util/events.js';
+import { marketState, setSymbol, setIntervalTF } from '../state/market.js';
+import * as paperSvc from '../services/paper_execution.js';
 import * as runtimeSvc from '../services/runtime.js';
-import { formatPct, formatPrice, formatUsd, pnlColorClass } from '../util/format.js';
+import * as liveSvc from '../services/live_execution.js';
+import { formatUsd, pnlColorClass } from '../util/format.js';
 
-const PANEL_POLL_MS = 15000;
-const AGENT_STATUS_TIMEOUT_MS = 4000;
+const POLL_MS = 15000;
+let pollTimer = null, panelOpen = false, accountMode = 'paper';
+let expandedId = null, expandedCatalogId = null, showInactive = false;
+let catalog = [], catalogLoaded = false, leaderboard = [];
+let paperState = null, liveAccount = null, liveStatus = null, instances = [];
+let liveStatusCacheTime = 0, liveAccountCacheTime = 0, renderQueued = false;
+const CACHE_TTL = 30000;
 
-let pollTimer = null;
-let paperStatePromise = null;
-let paperConfigPromise = null;
-const agentPanelState = {
-  loading: false,
-  lastError: null,
-};
-const liveBridgeState = {
-  status: null,
-  preflight: null,
-  lastError: null,
-  preflightError: null,
-  loading: false,
-  preflightLoading: false,
-  reconciling: false,
-  preflighting: false,
-  previewing: false,
-  submittingDemo: false,
-  submittingLive: false,
-  closing: false,
-};
-const runtimePanelState = {
-  instances: [],
-  events: [],
-  lastError: null,
-  eventsError: null,
-  loading: false,
-  eventsLoading: false,
-  creating: false,
-  tickingInstanceId: null,
-  startingInstanceId: null,
-  stoppingInstanceId: null,
-  killInstanceId: null,
-  deletingInstanceId: null,
-};
+// ── Public ──────────────────────────────────────────────────────────────
+export function initExecutionPanel() { buildShell(); wireEvents(); }
+export function openPanel() { panelOpen = true; show('#v2-execution-panel'); refreshAll(); startPolling(); }
+export function closePanel() { panelOpen = false; hide('#v2-execution-panel'); stopPolling(); }
+export function togglePanel() { panelOpen ? closePanel() : openPanel(); }
 
-export function initExecutionPanel() {
-  buildShell();
-  wireEvents();
-}
-
+// ── Shell ───────────────────────────────────────────────────────────────
 function buildShell() {
   const root = $('#v2-execution-panel');
   if (!root) return;
-  setHtml(
-    root,
-    `
-      <div class="exec-header">
-        <h3>Execution Center</h3>
-        <div class="exec-mode-badge" id="v2-exec-mode">-</div>
-        <button class="exec-close" id="v2-exec-close">x</button>
-      </div>
-      <nav class="exec-tabs">
-        <button class="exec-tab active" data-tab="overview">Overview</button>
-        <button class="exec-tab" data-tab="execution">Execution</button>
-        <button class="exec-tab" data-tab="risk">Risk</button>
-        <button class="exec-tab" data-tab="ops">Ops</button>
-      </nav>
-      <div class="exec-body">
-        <div class="exec-subtab" data-subtab="overview"></div>
-        <div class="exec-subtab hidden" data-subtab="execution"></div>
-        <div class="exec-subtab hidden" data-subtab="risk"></div>
-        <div class="exec-subtab hidden" data-subtab="ops"></div>
-      </div>
-    `,
-  );
+  setHtml(root, `
+    <div class="exec-header"><h3>交易面板</h3><button class="exec-close" id="v2-exec-close">&times;</button></div>
+    <div class="exec-account-switcher">
+      <button class="exec-acct-btn active" data-mode="paper">模拟</button>
+      <button class="exec-acct-btn" data-mode="live">Bitget</button>
+    </div>
+    <div class="exec-body" id="exec-body"><div class="exec-loading">加载中...</div></div>`);
 }
 
+// ── Events ──────────────────────────────────────────────────────────────
 function wireEvents() {
+  on('#v2-exec-close', 'click', () => closePanel());
   const root = $('#v2-execution-panel');
   if (!root) return;
 
-  on('#v2-exec-close', 'click', () => closePanel());
-
-  $$('.exec-tab', root).forEach((btn) => {
-    on(btn, 'click', () => switchSubTab(btn.dataset.tab));
+  // Coin search in factor composer
+  root.addEventListener('input', (e) => {
+    if (!e.target.matches('[data-role="coin-filter"]')) return;
+    const q = e.target.value.toUpperCase().trim();
+    if (q.length < 2) return;
+    const box = e.target.closest('.exec-composer')?.querySelector('.exec-coin-chips');
+    if (!box) return;
+    const have = new Set([...box.querySelectorAll('[data-coin]')].map(cb => cb.dataset.coin));
+    (marketState.allSymbols || []).filter(c => c.includes(q) && !have.has(c)).slice(0, 20).forEach(coin => {
+      const lbl = document.createElement('label');
+      lbl.className = 'exec-chip';
+      lbl.innerHTML = `<input type="checkbox" data-coin="${coin}" checked/> ${coin.replace('USDT','')}`;
+      box.appendChild(lbl);
+    });
   });
 
-  subscribe('agent.subtab.changed', (tab) => {
-    $$('.exec-tab', root).forEach((button) => button.classList.toggle('active', button.dataset.tab === tab));
-    $$('.exec-subtab', root).forEach((section) => section.classList.toggle('hidden', section.dataset.subtab !== tab));
-    paintLoading();
-    renderActive().catch((err) => renderTabError(tab, err));
-  });
-}
+  root.addEventListener('click', (e) => {
+    const t = e.target;
 
-function switchSubTab(tab) {
-  setActiveSubTab(tab);
-}
+    // Account switch
+    const ab = t.closest('.exec-acct-btn');
+    if (ab) { accountMode = ab.dataset.mode; root.querySelectorAll('.exec-acct-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === accountMode)); qRender(); refreshAll(); return; }
 
-export function openPanel() {
-  setPanelOpen(true);
-  show('#v2-execution-panel');
-  paintLoading();
-  renderActive().catch((err) => renderTabError(agentState.activeSubTab, err));
-  startPolling();
-}
-
-export function closePanel() {
-  setPanelOpen(false);
-  hide('#v2-execution-panel');
-  stopPolling();
-}
-
-export function togglePanel() {
-  if (agentState.panelOpen) closePanel();
-  else openPanel();
-}
-
-function paintLoading() {
-  const container = $(`[data-subtab="${agentState.activeSubTab}"]`);
-  if (container && !container.innerHTML.trim()) {
-    setHtml(container, '<div class="muted" style="padding:40px;text-align:center">Loading...</div>');
-  }
-}
-
-function hasExecutionShell(container = $('[data-subtab="execution"]')) {
-  return !!container?.querySelector('#v2-exec-paper-section');
-}
-
-function renderLoadingSection(title, message) {
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>${escapeHtml(title)}</h4>
-        <span class="paper-badge is-muted">Loading</span>
-      </div>
-      <div class="paper-note">${escapeHtml(message)}</div>
-    </section>
-  `;
-}
-
-function renderExecutionShell() {
-  return [
-    '<div id="v2-exec-paper-section">',
-    renderLoadingSection('Paper Orders / Positions', 'Loading paper execution...'),
-    '</div>',
-    '<div id="v2-exec-live-section">',
-    renderLoadingSection('Live Bridge', 'Loading live bridge...'),
-    '</div>',
-    '<div id="v2-exec-runtime-section">',
-    renderLoadingSection('Subaccount Runtime', 'Loading runtime instances...'),
-    '</div>',
-    '<div id="v2-exec-agent-section">',
-    renderLoadingSection('Legacy Agent Execution', 'Loading legacy agent execution...'),
-    '</div>',
-  ].join('');
-}
-
-function ensureExecutionShell(container = $('[data-subtab="execution"]')) {
-  if (!container || hasExecutionShell(container)) return container;
-  setHtml(container, renderExecutionShell());
-  return container;
-}
-
-function patchExecutionModeBadge(status = agentState.lastStatus) {
-  const modeBadge = $('#v2-exec-mode');
-  if (!modeBadge) return;
-  if (paperExecutionState.state) {
-    modeBadge.textContent = 'PAPER-FIRST';
-    return;
-  }
-  modeBadge.textContent = status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
-}
-
-function patchAgentExecutionSection(status, error, options = {}) {
-  const section = $('#v2-exec-agent-section');
-  if (!section) return;
-  if (status) {
-    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderAgentExecutionSection(status, error)));
-  } else if (options.loading) {
-    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderLoadingSection('Legacy Agent Execution', 'Loading legacy agent execution...'), true));
-  } else {
-    setHtml(section, renderCollapsibleLegacySection('Legacy Agent Execution', renderUnavailableSection('Legacy Agent Execution', error || 'Legacy agent execution unavailable'), true));
-  }
-  wireLegacyExecutionControls();
-}
-
-function patchPaperExecutionSection(state, error, lastStepResult = paperExecutionState.lastStepResult, options = {}) {
-  const section = $('#v2-exec-paper-section');
-  if (!section) return;
-  if (state) {
-    setHtml(section, renderPaperExecutionSection(state, error, lastStepResult));
-  } else if (options.loading) {
-    setHtml(section, renderLoadingSection('Paper Orders / Positions', 'Loading paper execution...'));
-  } else {
-    setHtml(section, renderUnavailableSection('Paper Orders / Positions', error || 'Paper execution state unavailable'));
-  }
-  wirePaperExecutionControls();
-}
-
-function patchLiveBridgeSection(status, error, paperState = paperExecutionState.state, options = {}) {
-  const section = $('#v2-exec-live-section');
-  if (!section) return;
-  if (status) {
-    setHtml(section, renderLiveBridgeSection(status, error, paperState));
-  } else if (options.loading) {
-    setHtml(section, renderLoadingSection('Live Bridge', 'Loading live bridge...'));
-  } else {
-    setHtml(section, renderUnavailableSection('Live Bridge', error || 'Live bridge status unavailable'));
-  }
-  wireLiveBridgeControls();
-}
-
-function patchRuntimeExecutionSection(instances, error, options = {}) {
-  const section = $('#v2-exec-runtime-section');
-  if (!section) return;
-  if (instances && instances.length >= 0) {
-    setHtml(section, renderRuntimeExecutionSection(instances, error));
-  } else if (options.loading) {
-    setHtml(section, renderLoadingSection('Subaccount Runtime', 'Loading runtime instances...'));
-  } else {
-    setHtml(section, renderUnavailableSection('Subaccount Runtime', error || 'Runtime instances unavailable'));
-  }
-  wireRuntimeControls();
-}
-
-function isExecutionTabVisible() {
-  return agentState.panelOpen && agentState.activeSubTab === 'execution';
-}
-
-function repaintExecutionSections({ paper = false, agent = false, live = false, runtime = false } = {}) {
-  if (!isExecutionTabVisible()) return false;
-  ensureExecutionShell();
-  if (paper) {
-    patchPaperExecutionSection(
-      paperExecutionState.state,
-      paperExecutionState.lastError,
-      paperExecutionState.lastStepResult,
-      { loading: paperExecutionState.loadingState && !paperExecutionState.state },
-    );
-  }
-  if (agent) {
-    patchExecutionModeBadge();
-    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
-      loading: agentPanelState.loading && !agentState.lastStatus,
-    });
-  }
-  if (live) {
-    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
-      loading: liveBridgeState.loading && !liveBridgeState.status,
-    });
-  }
-  if (runtime) {
-    patchRuntimeExecutionSection(runtimePanelState.instances, runtimePanelState.lastError, {
-      loading: runtimePanelState.loading && !runtimePanelState.instances.length,
-    });
-  }
-  return true;
-}
-
-async function refreshAgentExecutionSection(force = true) {
-  if (!ensureExecutionShell()) return agentState.lastStatus;
-  if (agentPanelState.loading) {
-    patchExecutionModeBadge();
-    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
-      loading: !agentState.lastStatus,
-    });
-    return agentState.lastStatus;
-  }
-  if (!force && agentState.lastStatus) {
-    patchExecutionModeBadge(agentState.lastStatus);
-    patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError);
-    return agentState.lastStatus;
-  }
-
-  agentPanelState.loading = true;
-  patchExecutionModeBadge();
-  patchAgentExecutionSection(agentState.lastStatus, null, { loading: !agentState.lastStatus });
-  try {
-    const status = await refreshAgentStatus();
-    agentPanelState.lastError = null;
-    patchExecutionModeBadge(status);
-    patchAgentExecutionSection(status, null);
-    return status;
-  } catch (err) {
-    const message = safeErrorMessage(err);
-    agentPanelState.lastError = message;
-    patchExecutionModeBadge();
-    patchAgentExecutionSection(agentState.lastStatus, message);
-    throw err;
-  } finally {
-    agentPanelState.loading = false;
-  }
-}
-
-async function refreshLiveExecutionSection(force = true) {
-  if (!ensureExecutionShell()) return liveBridgeState.status;
-  if (liveBridgeState.loading) {
-    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
-      loading: !liveBridgeState.status,
-    });
-    return liveBridgeState.status;
-  }
-  if (!force && liveBridgeState.status) {
-    patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state);
-    return liveBridgeState.status;
-  }
-
-  patchLiveBridgeSection(liveBridgeState.status, null, paperExecutionState.state, {
-    loading: !liveBridgeState.status,
-  });
-  try {
-    const status = await loadLiveExecutionStatus(force);
-    patchLiveBridgeSection(status, null, paperExecutionState.state);
-    return status;
-  } catch (err) {
-    patchLiveBridgeSection(liveBridgeState.status, safeErrorMessage(err), paperExecutionState.state);
-    throw err;
-  }
-}
-
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(async () => {
-    if (!agentState.panelOpen) return;
-    let paperError = null;
-    try {
-      await loadPaperExecutionState(true);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
+    // Expand strategy card
+    const hdr = t.closest('.exec-strategy-header');
+    if (hdr && !t.closest('button')) {
+      const id = hdr.closest('.exec-strategy-card')?.dataset?.instanceId;
+      if (!id) return;
+      expandedId = expandedId === id ? null : id;
+      if (expandedId) syncChart(id);
+      else publish('execution.strategy.deselected');
+      qRender(); return;
     }
-    if (agentState.activeSubTab === 'risk' && !paperExecutionState.config) {
-      await loadPaperExecutionConfig().catch(() => null);
+
+    // Expand catalog item (read-only detail)
+    const catHdr = t.closest('.exec-catalog-header');
+    if (catHdr) {
+      const tid = catHdr.dataset.templateId;
+      expandedCatalogId = expandedCatalogId === tid ? null : tid;
+      qRender(); return;
     }
-    if (agentState.activeSubTab === 'execution') {
-      ensureExecutionShell();
-      patchPaperExecutionSection(
-        paperExecutionState.state,
-        paperError || paperExecutionState.lastError,
-        paperExecutionState.lastStepResult,
-        { loading: paperExecutionState.loadingState && !paperExecutionState.state },
-      );
-      void refreshAgentExecutionSection(true).catch(() => null);
-      void refreshLiveExecutionSection(true).catch(() => null);
-      void refreshRuntimeExecutionSection(true).catch(() => null);
+
+    // Toggle inactive
+    if (t.closest('[data-action="toggle-inactive"]')) { showInactive = !showInactive; qRender(); return; }
+
+    // Select/deselect all coins
+    if (t.closest('[data-action="select-all-coins"]')) { t.closest('.exec-composer')?.querySelectorAll('[data-coin]').forEach(cb => cb.checked = true); return; }
+    if (t.closest('[data-action="deselect-all-coins"]')) { t.closest('.exec-composer')?.querySelectorAll('[data-coin]').forEach(cb => cb.checked = false); return; }
+
+    // Submit to backtest / paper
+    const submitBtn = t.closest('[data-action="submit-backtest"], [data-action="submit-paper"]');
+    if (submitBtn) { handleComposerSubmit(submitBtn); return; }
+
+    // Copy from leaderboard
+    const copyBtn = t.closest('[data-action="copy-variant"]');
+    if (copyBtn) {
+      const vid = copyBtn.dataset.variantId;
+      const eq = prompt('模拟资金 (USDT):', '10000');
+      if (!eq) return;
+      copyBtn.disabled = true; copyBtn.textContent = '...';
+      runtimeSvc.copyVariant(vid).then(() => refreshAll()).catch(log).finally(() => { copyBtn.disabled = false; copyBtn.textContent = '复制'; });
       return;
     }
-    renderActive(true).catch((err) => console.warn('[exec] poll render failed:', err));
-  }, PANEL_POLL_MS);
-}
 
-function stopPolling() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = null;
-}
-
-async function renderActive(useCached = false) {
-  const tab = agentState.activeSubTab;
-  switch (tab) {
-    case 'overview':
-      await renderOverview(useCached);
-      break;
-    case 'execution':
-      await renderExecution(useCached);
-      break;
-    case 'risk':
-      await renderRisk(useCached);
-      break;
-    case 'ops':
-      await renderOps(useCached);
-      break;
-    default:
-      break;
-  }
-}
-
-function renderTabError(tab, err) {
-  console.error(`[exec] render ${tab} failed:`, err);
-  const container = $(`[data-subtab="${tab}"]`);
-  if (!container) return;
-  setHtml(
-    container,
-    `<div class="paper-section"><div class="paper-error">Load failed: ${escapeHtml(safeErrorMessage(err))}</div></div>`,
-  );
-}
-
-async function refreshAgentStatus() {
-  const status = await agentSvc.getStatus({ timeout: AGENT_STATUS_TIMEOUT_MS });
-  setLastStatus(status);
-  return status;
-}
-
-function ensureAgentStatusLoaded() {
-  if (agentPanelState.loading) return;
-  agentPanelState.loading = true;
-  if (isExecutionTabVisible()) {
-    repaintExecutionSections({ agent: true });
-  }
-  refreshAgentStatus()
-    .then(() => {
-      agentPanelState.lastError = null;
-    })
-    .catch((err) => {
-      agentPanelState.lastError = safeErrorMessage(err);
-    })
-    .finally(() => {
-      agentPanelState.loading = false;
-      if (agentState.panelOpen) {
-        if (agentState.activeSubTab === 'execution' && hasExecutionShell()) {
-          patchExecutionModeBadge();
-          patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError);
-        } else {
-          renderActive(true).catch((err) => console.warn('[exec] agent refresh render failed:', err));
-        }
-      }
-    });
-}
-
-async function loadPaperExecutionState(force = true) {
-  if (!force && paperExecutionState.state) return paperExecutionState.state;
-  if (paperExecutionState.loadingState && paperStatePromise) return paperStatePromise;
-  setPaperExecutionLoadingState(true);
-  paperStatePromise = (async () => {
-    try {
-      const state = await paperExecSvc.getPaperExecutionState();
-      setPaperExecutionState(state);
-      if (!paperExecutionState.config && state?.config) {
-        setPaperExecutionConfig(state.config);
-      }
-      clearPaperExecutionError();
-      return state;
-    } catch (err) {
-      setPaperExecutionError(safeErrorMessage(err));
-      throw err;
-    } finally {
-      setPaperExecutionLoadingState(false);
-      paperStatePromise = null;
+    // Go live
+    if (t.closest('[data-action="go-live"]')) {
+      const id = t.closest('[data-action="go-live"]').dataset.instanceId;
+      if (!confirm('确定切换到实盘？将使用 Bitget 真实资金。')) return;
+      runtimeSvc.updateRuntimeInstance(id, { live_mode: 'live' }).then(() => refreshAll()).catch(log);
+      return;
     }
+
+    // Delete
+    if (t.closest('[data-action="delete"]')) {
+      if (!confirm('删除？')) return;
+      runtimeSvc.deleteRuntimeInstance(t.closest('[data-action="delete"]').dataset.instanceId).then(() => refreshAll()).catch(log);
+      return;
+    }
+
+    // Start/Stop
+    const actBtn = t.closest('[data-action="start"], [data-action="stop"]');
+    if (actBtn) {
+      const fn = actBtn.dataset.action === 'start' ? runtimeSvc.startRuntimeInstance : runtimeSvc.stopRuntimeInstance;
+      actBtn.disabled = true;
+      fn(actBtn.dataset.instanceId).then(() => refreshAll()).catch(log).finally(() => { actBtn.disabled = false; });
+      return;
+    }
+  });
+}
+
+function handleComposerSubmit(btn) {
+  const composer = btn.closest('.exec-composer');
+  if (!composer) return;
+  const tid = composer.dataset.templateId;
+  const coins = [...composer.querySelectorAll('[data-coin]:checked')].map(cb => cb.dataset.coin);
+  const tfs = [...composer.querySelectorAll('[data-tf]:checked')].map(cb => cb.dataset.tf);
+  const eq = parseFloat(composer.querySelector('[data-field="equity"]')?.value || '10000');
+  if (!coins.length || !tfs.length) { alert('请选择币种和周期'); return; }
+  btn.disabled = true;
+  const total = coins.length * tfs.length;
+  let done = 0;
+  btn.textContent = `0/${total}...`;
+  (async () => {
+    for (const sym of coins) {
+      for (const tf of tfs) {
+        try { await runtimeSvc.launchFromCatalog(tid, sym, tf, 'disabled', eq); } catch {}
+        btn.textContent = `${++done}/${total}...`;
+      }
+    }
+    btn.disabled = false; btn.textContent = btn.dataset.action === 'submit-paper' ? '开始模拟' : '提交回测';
+    refreshAll();
   })();
-  return paperStatePromise;
 }
 
-async function loadPaperExecutionConfig(force = true) {
-  if (!force && paperExecutionState.config) return paperExecutionState.config;
-  if (paperExecutionState.loadingConfig && paperConfigPromise) return paperConfigPromise;
-  setPaperExecutionLoadingConfig(true);
-  paperConfigPromise = (async () => {
-    try {
-      const config = await paperExecSvc.getPaperExecutionConfig();
-      setPaperExecutionConfig(config);
-      clearPaperExecutionError();
-      return config;
-    } catch (err) {
-      setPaperExecutionError(safeErrorMessage(err));
-      throw err;
-    } finally {
-      setPaperExecutionLoadingConfig(false);
-      paperConfigPromise = null;
-    }
-  })();
-  return paperConfigPromise;
-}
+function log(e) { console.warn('[exec]', e); }
 
-async function loadLiveExecutionStatus(force = true) {
-  if (!force && liveBridgeState.status) return liveBridgeState.status;
-  if (liveBridgeState.loading) return liveBridgeState.status;
-  liveBridgeState.loading = true;
-  try {
-    const status = await liveExecSvc.getLiveExecutionStatus();
-    liveBridgeState.status = status;
-    liveBridgeState.lastError = null;
-    await loadLiveExecutionPreflight(force);
-    return status;
-  } catch (err) {
-    liveBridgeState.lastError = safeErrorMessage(err);
-    throw err;
-  } finally {
-    liveBridgeState.loading = false;
+// ── Data ────────────────────────────────────────────────────────────────
+function refreshAll() {
+  paperSvc.getPaperExecutionState().then(s => { paperState = s; qRender(); }).catch(() => {});
+  runtimeSvc.getRuntimeInstances().then(r => { instances = r?.instances || []; qRender(); }).catch(() => {});
+  runtimeSvc.getLeaderboard(10).then(r => { leaderboard = r?.leaderboard || []; qRender(); }).catch(() => {});
+  if (!catalogLoaded) loadCatalog();
+  if (accountMode === 'live') {
+    const now = Date.now();
+    if (now - liveStatusCacheTime > CACHE_TTL) liveSvc.getLiveExecutionStatus().then(s => { liveStatus = s; liveStatusCacheTime = Date.now(); qRender(); }).catch(() => {});
+    if (now - liveAccountCacheTime > CACHE_TTL) liveSvc.getLiveAccount('live').then(a => { liveAccount = a; liveAccountCacheTime = Date.now(); qRender(); }).catch(() => {});
   }
 }
+async function loadCatalog() { catalogLoaded = true; try { catalog = (await runtimeSvc.getStrategyCatalog())?.templates || []; } catch {} qRender(); }
+function startPolling() { stopPolling(); pollTimer = setInterval(() => { if (panelOpen) refreshAll(); }, POLL_MS); }
+function stopPolling() { if (pollTimer) clearInterval(pollTimer); pollTimer = null; }
+function qRender() { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
 
-async function loadLiveExecutionPreflight(force = true) {
-  const selectedIntentId = getSelectedLiveIntentId();
-  const cached = liveBridgeState.preflight;
-  if (
-    !force &&
-    cached &&
-    cached.mode === 'live' &&
-    (cached.selected_intent_id || null) === selectedIntentId
-  ) {
-    return cached;
+// ── Chart Sync ──────────────────────────────────────────────────────────
+function syncChart(id) {
+  const inst = instances.find(i => i.config?.instance_id === id);
+  if (!inst?.config) return;
+  marketState.currentSymbol = ''; marketState.currentInterval = '';
+  setSymbol(inst.config.symbol);
+  setTimeout(() => setIntervalTF(inst.config.timeframe), 50);
+  const ps = inst.status?.paper_state;
+  if (!ps) { publish('execution.trade.markers', []); return; }
+  const markers = [];
+  for (const pos of [...(ps.open_positions || []), ...(ps.recent_closed_positions || [])]) {
+    if (pos.opened_at_ts) markers.push({ time: toUnix(pos.opened_at_ts), position: pos.direction==='short'?'aboveBar':'belowBar', color: pos.direction==='long'?'#00e676':'#ff1744', shape: pos.direction==='long'?'arrowUp':'arrowDown', text: pos.direction==='long'?'买':'卖' });
+    if (pos.closed_at_ts) markers.push({ time: toUnix(pos.closed_at_ts), position: pos.direction==='short'?'belowBar':'aboveBar', color: (pos.realized_pnl??0)>=0?'#00e676':'#ff1744', shape:'square', text:(pos.realized_pnl??0)>=0?'盈':'损' });
   }
-  if (liveBridgeState.preflightLoading) return liveBridgeState.preflight;
-  liveBridgeState.preflightLoading = true;
-  try {
-    const preflight = await liveExecSvc.getLiveExecutionPreflight({
-      mode: 'live',
-      order_intent_id: selectedIntentId || undefined,
-    });
-    liveBridgeState.preflight = preflight;
-    liveBridgeState.preflightError = null;
-    return preflight;
-  } catch (err) {
-    liveBridgeState.preflightError = safeErrorMessage(err);
-    throw err;
-  } finally {
-    liveBridgeState.preflightLoading = false;
-  }
+  markers.sort((a,b) => a.time - b.time);
+  publish('execution.trade.markers', markers);
+}
+function toUnix(ts) { return typeof ts==='number'?(ts>1e12?Math.floor(ts/1000):ts):Math.floor(new Date(ts).getTime()/1000); }
+
+// ── Render ──────────────────────────────────────────────────────────────
+function render() {
+  const body = $('#exec-body');
+  if (!body) return;
+  setHtml(body, [
+    renderOverview(),
+    renderRunning(),
+    renderCatalog(),
+    renderComposer(),
+    renderLeaderboard(),
+    renderInactive(),
+  ].join(''));
 }
 
-async function loadRuntimeInstances(force = true) {
-  if (!force && runtimePanelState.instances.length) return runtimePanelState.instances;
-  if (runtimePanelState.loading) return runtimePanelState.instances;
-  runtimePanelState.loading = true;
-  try {
-    const response = await runtimeSvc.getRuntimeInstances();
-    runtimePanelState.instances = response.instances || [];
-    runtimePanelState.lastError = null;
-    return runtimePanelState.instances;
-  } catch (err) {
-    runtimePanelState.lastError = safeErrorMessage(err);
-    throw err;
-  } finally {
-    runtimePanelState.loading = false;
+// ── 1. Overview ─────────────────────────────────────────────────────────
+function renderOverview() {
+  if (accountMode === 'live') {
+    if (!liveStatus?.api_key_ready) return sec('概览', 'Bitget', '<div class="exec-note">连接中...</div>');
+    const ah = liveAccount?.ok ? `<div class="exec-overview-compact">
+      <div class="exec-ov-item"><span class="exec-ov-label">权益</span><span class="exec-ov-value">${formatUsd(liveAccount.total_equity??0)}</span></div>
+      <div class="exec-ov-item"><span class="exec-ov-label">可用</span><span class="exec-ov-value">${formatUsd(liveAccount.usdt_available??0)}</span></div></div>` : '';
+    return sec('概览', 'Bitget', `<div class="exec-overview-compact">
+      <div class="exec-ov-item"><span class="exec-ov-label">状态</span><span class="exec-ov-value" style="color:var(--v2-green)">已连接</span></div>
+      <div class="exec-ov-item"><span class="exec-ov-label">模式</span><span class="exec-ov-value">${liveStatus?.default_mode||'live'}</span></div></div>${ah}`);
   }
+  const a = paperState?.account;
+  if (!a) return sec('概览', '模拟', '<div class="exec-note">加载中...</div>');
+  const running = instances.filter(i => i.status?.runtime_state==='running').length;
+  return sec('概览', '模拟', `<div class="exec-overview-compact">
+    <div class="exec-ov-item"><span class="exec-ov-label">权益</span><span class="exec-ov-value">${formatUsd(a.equity??10000)}</span></div>
+    <div class="exec-ov-item"><span class="exec-ov-label">盈亏</span><span class="exec-ov-value ${pnlColorClass(a.realized_pnl??0)}">${fmtPnl(a.realized_pnl??0)}</span></div>
+    <div class="exec-ov-item"><span class="exec-ov-label">运行</span><span class="exec-ov-value">${running}</span></div>
+    <div class="exec-ov-item"><span class="exec-ov-label">总数</span><span class="exec-ov-value">${instances.length}</span></div></div>`);
 }
 
-async function loadRuntimeEvents(force = true) {
-  if (!force && runtimePanelState.events.length) return runtimePanelState.events;
-  if (runtimePanelState.eventsLoading) return runtimePanelState.events;
-  runtimePanelState.eventsLoading = true;
-  try {
-    const response = await runtimeSvc.getRuntimeEvents(null, 12);
-    runtimePanelState.events = response.events || [];
-    runtimePanelState.eventsError = null;
-    return runtimePanelState.events;
-  } catch (err) {
-    runtimePanelState.eventsError = safeErrorMessage(err);
-    throw err;
-  } finally {
-    runtimePanelState.eventsLoading = false;
-  }
+// ── 2. Running ──────────────────────────────────────────────────────────
+function renderRunning() {
+  const running = instances.filter(i => i.status?.runtime_state === 'running');
+  if (!running.length) return '';
+  return sec('运行中', `(${running.length})`, running.map(renderCard).join(''));
 }
 
-async function refreshRuntimeExecutionSection(force = true) {
-  if (!ensureExecutionShell()) return runtimePanelState.instances;
-  patchRuntimeExecutionSection(runtimePanelState.instances, null, {
-    loading: runtimePanelState.loading || !runtimePanelState.instances.length,
-  });
-  try {
-    const instances = await loadRuntimeInstances(force);
-    patchRuntimeExecutionSection(instances, null);
-    return instances;
-  } catch (err) {
-    patchRuntimeExecutionSection(runtimePanelState.instances, safeErrorMessage(err));
-    throw err;
-  }
+// ── 3. Strategy Catalog (read-only, click to see details) ───────────────
+function renderCatalog() {
+  if (!catalog.length) return '';
+  const riskLabel = {low:'低',medium:'中',high:'高'};
+  const catLabel = {trend:'趋势',reversal:'反转',breakout:'突破',scalp:'剥头皮'};
+  const items = catalog.map(t => {
+    const expanded = expandedCatalogId === t.template_id;
+    const triggers = (t.default_trigger_modes || []).map(m => ({pre_limit:'限价预挂',rejection:'反转拒绝',failed_breakout:'假突破回收',retest:'突破回测'}[m]||m)).join(', ');
+    return `<div class="exec-catalog-item">
+      <div class="exec-catalog-header" data-template-id="${esc(t.template_id)}">
+        <span class="exec-catalog-name">${esc(t.name)}</span>
+        <span style="color:var(--v2-muted);font-size:10px">${catLabel[t.category]||''} | 风险${riskLabel[t.risk_level]||''}</span>
+        <span style="margin-left:auto;font-size:10px">${expanded?'▾':'▸'}</span>
+      </div>
+      ${expanded ? `<div class="exec-catalog-detail">
+        <div class="exec-catalog-desc">${esc(t.description)}</div>
+        <div class="exec-detail-row"><span>触发模式</span><span>${triggers}</span></div>
+        <div class="exec-detail-row"><span>支持周期</span><span>${(t.supported_timeframes||[]).join(', ')}</span></div>
+        <div class="exec-detail-row"><span>默认 RR</span><span>${t.default_params?.rr_target || '2.0'}</span></div>
+        <div class="exec-detail-row"><span>默认风险</span><span>${((t.default_params?.risk_per_trade||0.003)*100).toFixed(1)}%</span></div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+  return sec('策略库', `(${catalog.length})`, items);
 }
 
-async function renderOverview(useCached = false) {
-  const container = $('[data-subtab="overview"]');
-  if (!container) return;
-
-  let agentError = null;
-  let paperError = null;
-
-  if (!useCached || !paperExecutionState.state) {
-    try {
-      await loadPaperExecutionState(!useCached);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
-    }
-  }
-  if (!useCached || !agentState.lastStatus) {
-    ensureAgentStatusLoaded();
-  }
-  if (!useCached || !runtimePanelState.instances.length) {
-    try {
-      await loadRuntimeInstances(!useCached);
-    } catch (err) {
-      runtimePanelState.lastError = safeErrorMessage(err);
-    }
-  }
-
-  const status = agentState.lastStatus;
-  agentError = agentPanelState.lastError || (agentPanelState.loading && !status ? 'Loading agent status...' : agentError);
-  const paperState = paperExecutionState.state;
-  const modeBadge = $('#v2-exec-mode');
-  if (modeBadge) {
-    modeBadge.textContent = paperState ? 'PAPER-FIRST' : status?.mode ? `AGENT ${String(status.mode).toUpperCase()}` : 'PAPER';
-  }
-
-  setHtml(
-    container,
-    [
-      renderPaperOverviewSection(paperState, paperError || paperExecutionState.lastError),
-      renderRuntimeOverviewSection(runtimePanelState.instances, runtimePanelState.lastError),
-      renderCollapsibleLegacySection('Legacy Agent Overview', renderAgentOverviewSection(status, agentError)),
-    ].join(''),
-  );
+// ── 4. Factor Composer (create custom strategies) ───────────────────────
+function renderComposer() {
+  const topCoins = ['BTCUSDT','ETHUSDT','SOLUSDT','HYPEUSDT','XRPUSDT','ADAUSDT','DOGEUSDT','SUIUSDT','PEPEUSDT','TAOUSDT','BNBUSDT','AVAXUSDT'];
+  const tfs = ['5m','15m','1h','4h','1d'];
+  // Use the first catalog template as base (sr_full is most versatile)
+  const baseTid = 'sr_full';
+  return sec('因子组合', '', `
+    <div class="exec-composer" data-template-id="${baseTid}">
+      <div class="exec-multi-label">策略类型</div>
+      <div class="exec-multi-chips">
+        <label class="exec-chip"><input type="checkbox" data-trigger="rejection" checked/> 反转拒绝</label>
+        <label class="exec-chip"><input type="checkbox" data-trigger="failed_breakout" checked/> 假突破回收</label>
+        <label class="exec-chip"><input type="checkbox" data-trigger="retest" checked/> 突破回测</label>
+        <label class="exec-chip"><input type="checkbox" data-trigger="pre_limit"/> 限价预挂</label>
+      </div>
+      <div class="exec-multi-label">币种 <input class="exec-coin-search" data-role="coin-filter" placeholder="搜索添加..." style="width:80px;margin-left:6px;padding:2px 6px;font-size:10px;background:var(--v2-bg);border:1px solid var(--v2-border);color:var(--v2-text);border-radius:3px"/>
+        <button data-action="select-all-coins" style="margin-left:4px;font-size:9px;cursor:pointer;color:var(--v2-primary);background:none;border:none">全选</button>
+        <button data-action="deselect-all-coins" style="font-size:9px;cursor:pointer;color:var(--v2-muted);background:none;border:none">清空</button>
+      </div>
+      <div class="exec-multi-chips exec-coin-chips">${topCoins.map(c => `<label class="exec-chip"><input type="checkbox" data-coin="${c}"/> ${c.replace('USDT','')}</label>`).join('')}</div>
+      <div class="exec-multi-label">周期</div>
+      <div class="exec-multi-chips">${tfs.map(tf => `<label class="exec-chip"><input type="checkbox" data-tf="${tf}" ${['1h','4h'].includes(tf)?'checked':''}/> ${tf}</label>`).join('')}</div>
+      <div class="exec-catalog-form" style="margin-top:8px">
+        <span style="font-size:11px;color:var(--v2-muted)">资金</span>
+        <input data-field="equity" value="10000" style="width:60px" type="number"/>
+        <button class="exec-btn exec-btn-sm exec-btn-primary" data-action="submit-paper" data-template-id="${baseTid}">开始模拟</button>
+      </div>
+    </div>`);
 }
 
-async function renderExecution(useCached = false) {
-  const container = $('[data-subtab="execution"]');
-  if (!container) return;
-
-  ensureExecutionShell(container);
-  patchExecutionModeBadge();
-  patchPaperExecutionSection(
-    paperExecutionState.state,
-    paperExecutionState.lastError,
-    paperExecutionState.lastStepResult,
-    { loading: !paperExecutionState.state },
-  );
-  patchAgentExecutionSection(agentState.lastStatus, agentPanelState.lastError, {
-    loading: agentPanelState.loading || !agentState.lastStatus,
-  });
-  patchLiveBridgeSection(liveBridgeState.status, liveBridgeState.lastError, paperExecutionState.state, {
-    loading: liveBridgeState.loading || (!liveBridgeState.status && !liveBridgeState.lastError),
-  });
-  patchRuntimeExecutionSection(runtimePanelState.instances, runtimePanelState.lastError, {
-    loading: runtimePanelState.loading || !runtimePanelState.instances.length,
-  });
-
-  let paperError = null;
-  try {
-    await loadPaperExecutionState(!useCached);
-  } catch (err) {
-    paperError = safeErrorMessage(err);
-  }
-  patchPaperExecutionSection(
-    paperExecutionState.state,
-    paperError || paperExecutionState.lastError,
-    paperExecutionState.lastStepResult,
-    { loading: false },
-  );
-
-  // Keep paper rendering isolated: agent/live refresh runs independently and
-  // only start after the paper section has had a chance to render.
-  void refreshAgentExecutionSection(!useCached).catch(() => null);
-  void refreshLiveExecutionSection(!useCached).catch(() => null);
-  void refreshRuntimeExecutionSection(!useCached).catch(() => null);
+// ── 5. Leaderboard ──────────────────────────────────────────────────────
+function renderLeaderboard() {
+  if (!leaderboard.length) return sec('进化排行榜', '', '<div class="exec-note" style="font-size:10px">引擎未运行或暂无结果。终端运行 python run_evolution.py 启动</div>');
+  const rows = leaderboard.map((v, i) => `<div class="exec-lb-row">
+    <span class="exec-lb-rank">#${i+1}</span>
+    <span class="exec-lb-sym">${esc(v.symbol)} ${esc(v.timeframe)}</span>
+    <span class="${v.total_return_pct>=0?'pnl-pos':'pnl-neg'}">${v.total_return_pct>=0?'+':''}${v.total_return_pct}%</span>
+    <span style="color:var(--v2-muted);font-size:10px">WR${v.win_rate}% S${v.sharpe_ratio}</span>
+    <button class="exec-btn exec-btn-sm exec-btn-primary" data-action="copy-variant" data-variant-id="${esc(v.variant_id)}">复制</button>
+  </div>`).join('');
+  return sec('进化排行榜', '', rows);
 }
 
-async function renderRisk(useCached = false) {
-  const container = $('[data-subtab="risk"]');
-  if (!container) return;
-
-  let agentError = null;
-  let paperError = null;
-
-  if (!useCached || !paperExecutionState.state) {
-    try {
-      await loadPaperExecutionState(!useCached);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
-    }
-  }
-  if (!useCached || !paperExecutionState.config) {
-    try {
-      await loadPaperExecutionConfig(!useCached);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
-    }
-  }
-  if (!useCached || !agentState.lastStatus) {
-    ensureAgentStatusLoaded();
-  }
-
-  agentError = agentPanelState.lastError || (agentPanelState.loading && !agentState.lastStatus ? 'Loading agent status...' : agentError);
-  setHtml(
-    container,
-    [
-      renderPaperRiskSection(
-        paperExecutionState.config || paperExecutionState.state?.config,
-        paperError || paperExecutionState.lastError,
-      ),
-      renderCollapsibleLegacySection('Legacy Agent Risk', renderAgentRiskSection(agentState.lastStatus, agentError)),
-    ].join(''),
-  );
-
-  wireLegacyRiskForm();
-  wirePaperRiskForm();
+// ── 6. Inactive ─────────────────────────────────────────────────────────
+function renderInactive() {
+  const inactive = instances.filter(i => i.status?.runtime_state !== 'running');
+  if (!inactive.length) return '';
+  return `<div class="exec-section"><div class="exec-group-label exec-group-toggle" data-action="toggle-inactive">已停止 (${inactive.length}) ${showInactive?'▾':'▸'}</div>${showInactive?inactive.map(renderCard).join(''):''}</div>`;
 }
 
-async function renderOps(useCached = false) {
-  const container = $('[data-subtab="ops"]');
-  if (!container) return;
-
-  let paperError = null;
-  if (!useCached || !paperExecutionState.state) {
-    try {
-      await loadPaperExecutionState(!useCached);
-    } catch (err) {
-      paperError = safeErrorMessage(err);
-    }
-  }
-
-  const [statusResult, okxResult, healerResult, presetsResult, logsResult] = await Promise.allSettled([
-    agentState.lastStatus ? Promise.resolve(agentState.lastStatus) : agentSvc.getStatus({ timeout: AGENT_STATUS_TIMEOUT_MS }),
-    execSvc.getOkxStatus(),
-    opsSvc.getHealerStatus(),
-    agentSvc.getPresets(),
-    opsSvc.getLogs(30, 'agent'),
-  ]);
-
-  const status = statusResult.status === 'fulfilled' ? statusResult.value : agentState.lastStatus;
-  const okx = okxResult.status === 'fulfilled' ? okxResult.value : null;
-  const healer = healerResult.status === 'fulfilled' ? healerResult.value : null;
-  const presets = presetsResult.status === 'fulfilled' ? presetsResult.value?.presets || {} : {};
-  const logs = logsResult.status === 'fulfilled' ? logsResult.value?.logs || [] : [];
-  try {
-    await loadRuntimeEvents(!useCached);
-  } catch (err) {
-    runtimePanelState.eventsError = safeErrorMessage(err);
-  }
-
-  setHtml(
-    container,
-    [
-      renderPaperOpsSection(paperExecutionState.state, paperError || paperExecutionState.lastError),
-      renderRuntimeOpsSection(runtimePanelState.events, runtimePanelState.eventsError),
-      renderCollapsibleLegacySection('Legacy / Debug Ops', renderLegacyOpsSection(status, okx, healer, presets, logs)),
-    ].join(''),
-  );
-
-  wireOpsForms();
-}
-
-function renderAgentOverviewSection(status, error) {
-  if (!status) {
-    return renderUnavailableSection('Legacy Agent Overview', error || 'Legacy agent status unavailable');
-  }
-
-  const positions = Object.values(status.positions || {});
-  const trades = status.recent_trades || [];
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Agent Overview</h4>
-        <span class="paper-badge is-muted">${status.running ? 'LEGACY RUNNING' : 'LEGACY STOPPED'}</span>
-      </div>
-      <div class="exec-hero">
-        <div class="hero-stat">
-          <div class="hero-label">Total Equity</div>
-          <div class="hero-value">${formatUsd(status.equity)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">P&L</div>
-          <div class="hero-value ${pnlColorClass(status.total_pnl_usd)}">${formatUsd(status.total_pnl_usd)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">Today</div>
-          <div class="hero-value ${pnlColorClass(status.daily_pnl)}">${formatUsd(status.daily_pnl)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">Win Rate</div>
-          <div class="hero-value">${(status.win_rate ?? 0).toFixed(1)}%</div>
-        </div>
-      </div>
-      <div class="exec-stats-grid">
-        <div class="stat"><div class="stat-label">Cash</div><div class="stat-value">${formatUsd(status.cash)}</div></div>
-        <div class="stat"><div class="stat-label">Trades</div><div class="stat-value">${status.total_trades ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Regime</div><div class="stat-value">${escapeHtml(status.harness?.market_regime || '-')}</div></div>
-        <div class="stat"><div class="stat-label">Generation</div><div class="stat-value">${status.generation ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Phase</div><div class="stat-value">${escapeHtml(status.cycle_phase || '-')}</div></div>
-        <div class="stat"><div class="stat-label">Mode</div><div class="stat-value">${escapeHtml(String(status.mode || '-').toUpperCase())}</div></div>
-      </div>
-      <div class="paper-subgrid">
-        <div>
-          <h4>Open positions (${positions.length})</h4>
-          <div class="exec-positions">
-            ${positions.length === 0
-              ? '<div class="paper-empty">No open positions</div>'
-              : positions
-                  .map(
-                    (position) => `
-                      <div class="pos-row">
-                        <span class="pos-sym">${escapeHtml(position.symbol || '-')}</span>
-                        <span class="pos-side ${escapeHtml(position.side || '')}">${escapeHtml(String(position.side || '-').toUpperCase())}</span>
-                        <span>${formatUsd(position.size_usd || position.size)}</span>
-                        <span class="${pnlColorClass(position.unrealized_pnl_pct)}">${formatPct(position.unrealized_pnl_pct)}</span>
-                      </div>
-                    `,
-                  )
-                  .join('')}
-          </div>
-        </div>
-        <div>
-          <h4>Recent trades</h4>
-          <div class="exec-trades">
-            ${trades.length === 0
-              ? '<div class="paper-empty">No trades yet</div>'
-              : trades
-                  .slice(-5)
-                  .reverse()
-                  .map(
-                    (trade) => `
-                      <div class="trade-row">
-                        <span>${escapeHtml(trade.symbol || '-')}</span>
-                        <span class="${escapeHtml(trade.side || '')}">${escapeHtml(String(trade.side || '-').toUpperCase())}</span>
-                        <span class="${pnlColorClass(trade.pnl_pct)}">${formatPct(trade.pnl_pct)}</span>
-                        <span class="muted">${escapeHtml(trade.reason || '')}</span>
-                      </div>
-                    `,
-                  )
-                  .join('')}
-          </div>
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderPaperOverviewSection(state, error) {
-  if (!state) {
-    return renderUnavailableSection('Paper Execution', error || 'Paper execution state unavailable');
-  }
-
-  const account = state.account || {};
-  const killSwitch = state.kill_switch || {};
-  const recentFills = (state.recent_fills || []).slice(-8).reverse();
-  const recentClosed = (state.recent_closed_positions || []).slice(-8).reverse();
-  const cooldownCount = Object.keys(state.cooldowns || {}).length;
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Paper Execution</h4>
-        <span class="paper-badge ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">
-          ${killSwitch.blocked ? 'KILL SWITCH ON' : 'READY'}
-        </span>
-      </div>
-      <div class="exec-hero">
-        <div class="hero-stat">
-          <div class="hero-label">Equity</div>
-          <div class="hero-value">${formatUsd(account.equity)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">Realized</div>
-          <div class="hero-value ${pnlColorClass(account.realized_pnl)}">${formatUsd(account.realized_pnl)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">Unrealized</div>
-          <div class="hero-value ${pnlColorClass(account.unrealized_pnl)}">${formatUsd(account.unrealized_pnl)}</div>
-        </div>
-        <div class="hero-stat">
-          <div class="hero-label">Exposure</div>
-          <div class="hero-value">${formatUsd(account.total_exposure)}</div>
-        </div>
-      </div>
-      <div class="exec-stats-grid">
-        <div class="stat"><div class="stat-label">Daily Realized</div><div class="stat-value ${pnlColorClass(account.daily_realized_pnl)}">${formatUsd(account.daily_realized_pnl)}</div></div>
-        <div class="stat"><div class="stat-label">Open Orders</div><div class="stat-value">${account.open_order_count ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Open Positions</div><div class="stat-value">${account.open_position_count ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Closed Trades</div><div class="stat-value">${account.closed_trade_count ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Consecutive Losses</div><div class="stat-value">${account.consecutive_losses ?? 0}</div></div>
-        <div class="stat"><div class="stat-label">Cooldowns</div><div class="stat-value">${cooldownCount}</div></div>
-      </div>
-      <div class="paper-kill-banner ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">
-        <strong>${killSwitch.blocked ? 'Blocked' : 'Unblocked'}</strong>
-        <span>${escapeHtml(killSwitch.reason || 'No active paper-execution block')}</span>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <div class="paper-subgrid">
-        <div>
-          <h4>Recent fills</h4>
-          ${renderPaperFillRows(recentFills)}
-        </div>
-        <div>
-          <h4>Recent closed positions</h4>
-          ${renderPaperClosedPositionRows(recentClosed)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderRuntimeOverviewSection(instances, error) {
-  if (error && (!instances || instances.length === 0)) {
-    return renderUnavailableSection('Subaccount Runtime', error);
-  }
-  const records = instances || [];
-  const running = records.filter((record) => record.status.runtime_state === 'running').length;
-  const blocked = records.filter((record) => record.status.runtime_state === 'blocked').length;
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Subaccount Runtime</h4>
-        <span class="paper-badge ${running > 0 ? 'is-ok' : 'is-muted'}">${running} running</span>
-      </div>
-      <div class="exec-stats-grid">
-        <div class="stat"><div class="stat-label">Instances</div><div class="stat-value">${records.length}</div></div>
-        <div class="stat"><div class="stat-label">Running</div><div class="stat-value">${running}</div></div>
-        <div class="stat"><div class="stat-label">Blocked</div><div class="stat-value">${blocked}</div></div>
-        <div class="stat"><div class="stat-label">Modes</div><div class="stat-value">${escapeHtml(records.map((record) => record.config.live_mode).join(', ') || '-')}</div></div>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      ${
-        records.length === 0
-          ? '<div class="paper-empty">No runtime instances configured yet.</div>'
-          : records.slice(0, 4).map((record) => `
-            <div class="paper-order-row">
-              <div class="paper-order-main">
-                <span class="pos-sym">${escapeHtml(record.config.label)}</span>
-                <span class="paper-badge ${record.status.runtime_state === 'running' ? 'is-ok' : record.status.runtime_state === 'blocked' ? 'is-danger' : 'is-muted'}">${escapeHtml(record.status.runtime_state.toUpperCase())}</span>
-                <span>${escapeHtml(record.config.symbol)} ${escapeHtml(record.config.timeframe)}</span>
-              </div>
-              <div class="paper-order-meta">
-                <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
-                <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
-                <span class="muted">${escapeHtml((record.config.history_mode || 'fast_window').replace('_', ' '))} / ${record.config.analysis_bars} bars / ${record.config.days}d</span>
-                <span class="muted">${escapeHtml(record.status.last_runtime_note || '-')}</span>
-              </div>
-            </div>
-          `).join('')
-      }
-    </section>
-  `;
-}
-
-function renderAgentExecutionSection(status, error) {
-  if (!status) {
-    return renderUnavailableSection('Legacy Agent Execution', error || 'Legacy agent execution controls unavailable');
-  }
-
-  const signals = status.last_signals || {};
-  const entries = Object.entries(signals);
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Legacy Agent Execution</h4>
-        <span class="paper-badge is-muted">LEGACY ${escapeHtml(String(status.mode || '-').toUpperCase())}</span>
-      </div>
-      <div class="exec-controls">
-        <button class="btn btn-primary" id="v2-start-btn">Start</button>
-        <button class="btn" id="v2-stop-btn">Stop</button>
-        <button class="btn" id="v2-revive-btn">Revive</button>
-        <button class="btn" id="v2-scan-btn">Scan Now</button>
-        <button class="btn ${status.mode === 'paper' ? 'active' : ''}" id="v2-paper-btn">Paper</button>
-        <button class="btn ${status.mode === 'live' ? 'active' : ''}" id="v2-live-btn">Live</button>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <h4>Current signals</h4>
-      <div class="signals-list">
-        ${entries.length === 0
-          ? '<div class="paper-empty">No signals yet</div>'
-          : entries
-              .map(
-                ([symbol, signal]) => `
-                  <div class="signal-row ${signal.blocked ? 'blocked' : ''}">
-                    <span class="signal-sym">${escapeHtml(symbol)}</span>
-                    <span class="signal-action ${escapeHtml(signal.action || '')}">${escapeHtml(String(signal.action || '-').toUpperCase())}</span>
-                    <span class="signal-conf">${signal.confidence ? `${Math.round(signal.confidence * 100)}%` : '-'}</span>
-                    <div class="signal-reason">${escapeHtml(signal.reason || '')}</div>
-                    ${signal.blocked ? `<div class="signal-block">Blocked: ${escapeHtml((signal.block_reasons || []).join('; '))}</div>` : ''}
-                  </div>
-                `,
-              )
-              .join('')}
-      </div>
-    </section>
-  `;
-}
-
-function renderPaperExecutionSection(state, error, lastStepResult) {
-  if (!state) {
-    return renderUnavailableSection('Paper Orders / Positions', error || 'Paper execution state unavailable');
-  }
-
-  const killSwitch = state.kill_switch || {};
-  const orders = state.open_orders || [];
-  const positions = state.open_positions || [];
-  const cooldowns = state.cooldowns || {};
-  const currentSymbol = marketState.currentSymbol || 'HYPEUSDT';
-  const currentInterval = marketState.currentInterval || '4h';
-  const busy = isPaperExecutionBusy();
-  const stepDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
-  const resetDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
-  const killDisabled = busy || paperExecutionState.loadingState || paperExecutionState.loadingConfig;
-  const stepLabel = paperExecutionState.stepping ? 'Stepping...' : 'Step once';
-  const resetLabel = paperExecutionState.resetting ? 'Resetting...' : 'Reset paper';
-  const killOnLabel = paperExecutionState.killSwitchUpdating && killSwitch.blocked ? 'Updating...' : 'Kill switch on';
-  const killOffLabel = paperExecutionState.killSwitchUpdating && !killSwitch.blocked ? 'Updating...' : 'Kill switch off';
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Paper Orders / Positions</h4>
-        <span class="paper-badge ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">${killSwitch.blocked ? 'Blocked' : 'Interactive'}</span>
-      </div>
-      <div class="paper-actions">
-        <button class="btn btn-primary" id="v2-paper-step-btn" ${stepDisabled ? 'disabled' : ''}>${stepLabel}</button>
-        <button class="btn" id="v2-paper-reset-btn" ${resetDisabled ? 'disabled' : ''}>${resetLabel}</button>
-        <button class="btn ${killSwitch.blocked ? '' : 'active'}" id="v2-paper-kill-on" ${killDisabled ? 'disabled' : ''}>${killOnLabel}</button>
-        <button class="btn ${killSwitch.blocked ? 'active' : ''}" id="v2-paper-kill-off" ${killDisabled ? 'disabled' : ''}>${killOffLabel}</button>
-      </div>
-      <form class="paper-form" id="v2-paper-step-form">
-        <label>Symbol<input type="text" name="symbol" value="${escapeHtml(currentSymbol)}" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Interval<input type="text" name="interval" value="${escapeHtml(currentInterval)}" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>
-          History Mode
-          <select name="history_mode" ${stepDisabled ? 'disabled' : ''}>
-            <option value="fast_window">fast_window</option>
-            <option value="full_history">full_history</option>
-          </select>
-        </label>
-        <label>Days<input type="number" name="days" value="365" min="1" step="1" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Bar Index<input type="number" name="bar_index" placeholder="auto next bar" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
-        <label>Strategy Window<input type="number" name="strategy_window_bars" value="100" min="20" step="10" ${stepDisabled ? 'disabled' : ''} /></label>
-      </form>
-      <div class="paper-note">Validated paper preset currently uses <strong>pre_limit</strong> with lookback 80 and strategy window 100. Current passing cluster is <strong>HYPEUSDT / RIVERUSDT</strong> on 1h, not every market.</div>
-      ${busy ? '<div class="paper-note">Paper execution request in progress...</div>' : ''}
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      ${renderPaperLastStep(lastStepResult)}
-      ${renderHistoryCoverageSection(lastStepResult?.history, { title: 'Last step history coverage' })}
-      <div class="paper-subgrid">
-        <div>
-          <h4>Open orders (${orders.length})</h4>
-          ${renderPaperOrderRows(orders)}
-        </div>
-        <div>
-          <h4>Open positions (${positions.length})</h4>
-          ${renderPaperPositionRows(positions)}
-        </div>
-      </div>
-      <div>
-        <h4>Cooldowns</h4>
-        ${renderPaperCooldownRows(cooldowns)}
-      </div>
-    </section>
-  `;
-}
-
-function renderLiveBridgeSection(status, error, paperState) {
-  if (!status) {
-    return renderUnavailableSection('Live Bridge', error || 'Live bridge status unavailable');
-  }
-
-  const exchangeLabel = escapeHtml(String(status.exchange || 'bitget').toUpperCase());
-  const enabledFlags = status.enabled_flags || {};
-  const whitelist = status.whitelist || {};
-  const limits = status.limits || {};
-  const reconciliation = status.reconciliation || {};
-  const reconciliationRequired = status.reconciliation_required_by_mode || {};
-  const selectedMode = status.default_mode || 'demo';
-  const reconcileDemo = reconciliation.demo || {};
-  const reconcileLive = reconciliation.live || {};
-  const latestResult = status.last_submission_result || status.last_preview_result || null;
-  const intents = getLiveEligibleIntents(paperState);
-  const defaultIntent = intents[0] || null;
-  const preflight = liveBridgeState.preflight;
-  const preflightError = liveBridgeState.preflightError;
-  const preflightLoading = liveBridgeState.preflightLoading;
-  const busy = isLiveBridgeBusy();
-  const submittedIntentIdsByMode = status.submitted_intent_ids_by_mode || {};
-  const submittedDemo = new Set(submittedIntentIdsByMode.demo || []);
-  const submittedLive = new Set(submittedIntentIdsByMode.live || []);
-  const defaultIntentSubmittedDemo = defaultIntent ? submittedDemo.has(defaultIntent.order_intent_id) : false;
-  const defaultIntentSubmittedLive = defaultIntent ? submittedLive.has(defaultIntent.order_intent_id) : false;
-  const submitDemoBlocked =
-    busy ||
-    !defaultIntent ||
-    !status.api_key_ready ||
-    !enabledFlags.enable_live_trading ||
-    !!reconciliationRequired.demo ||
-    !!reconcileDemo.blocked ||
-    defaultIntentSubmittedDemo;
-  const submitLiveBlocked =
-    busy ||
-    !defaultIntent ||
-    !status.api_key_ready ||
-    !enabledFlags.enable_live_trading ||
-    !enabledFlags.confirm_live_trading ||
-    enabledFlags.dry_run ||
-    !!reconciliationRequired.live ||
-    !!reconcileLive.blocked ||
-    defaultIntentSubmittedLive;
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Live Bridge</h4>
-        <span class="paper-badge ${status.api_key_ready ? 'is-ok' : 'is-danger'}">
-          ${status.api_key_ready ? `${exchangeLabel} READY` : `${exchangeLabel} KEYS MISSING`}
-        </span>
-      </div>
-      <div class="exec-stats-grid">
-        <div class="stat"><div class="stat-label">Default Mode</div><div class="stat-value">${escapeHtml(String(selectedMode).toUpperCase())}</div></div>
-        <div class="stat"><div class="stat-label">Enable Flag</div><div class="stat-value">${enabledFlags.enable_live_trading ? 'ON' : 'OFF'}</div></div>
-        <div class="stat"><div class="stat-label">Confirm Flag</div><div class="stat-value">${enabledFlags.confirm_live_trading ? 'ON' : 'OFF'}</div></div>
-        <div class="stat"><div class="stat-label">DRY_RUN</div><div class="stat-value">${enabledFlags.dry_run ? 'TRUE' : 'FALSE'}</div></div>
-        <div class="stat"><div class="stat-label">Live Slots</div><div class="stat-value">${limits.max_live_positions ?? '-'}</div></div>
-        <div class="stat"><div class="stat-label">Max Notional</div><div class="stat-value">${formatUsd(limits.max_live_notional)}</div></div>
-        <div class="stat"><div class="stat-label">Recon TTL</div><div class="stat-value">${limits.reconciliation_max_age_seconds ?? '-'}s</div></div>
-        <div class="stat"><div class="stat-label">Blocked Reason</div><div class="stat-value">${escapeHtml(status.blocked_reason || '-')}</div></div>
-      </div>
-      <div class="paper-subgrid">
-        <div>
-          <h4>Whitelist</h4>
-          <div class="paper-note">
-            <span>Symbols: ${escapeHtml((whitelist.symbols || []).join(', ') || '-')}</span>
-            <span>Timeframes: ${escapeHtml((whitelist.timeframes || []).join(', ') || '-')}</span>
-            <span>Trigger modes: ${escapeHtml((whitelist.trigger_modes || []).join(', ') || '-')}</span>
-          </div>
-        </div>
-        <div>
-          <h4>Reconciliation</h4>
-          <div class="paper-note">
-            <span>Demo: ${reconciliationRequired.demo ? 'REQUIRED' : reconcileDemo.blocked ? 'BLOCKED' : reconcileDemo.ok ? 'OK' : 'NOT RUN'}</span>
-            <span>Live: ${reconciliationRequired.live ? 'REQUIRED' : reconcileLive.blocked ? 'BLOCKED' : reconcileLive.ok ? 'OK' : 'NOT RUN'}</span>
-          </div>
-        </div>
-      </div>
-      ${enabledFlags.dry_run ? `<div class="paper-note paper-note-danger">Live mode remains hard-blocked while DRY_RUN=true. ${exchangeLabel} demo submit is still available after reconciliation.</div>` : ''}
-      <div class="paper-note">This bridge now submits approved intents to ${exchangeLabel}. Demo mode uses the exchange demo header and should be validated before any real-money toggle.</div>
-      ${defaultIntentSubmittedDemo || defaultIntentSubmittedLive ? '<div class="paper-note">Selected intent was already submitted on at least one live bridge mode. Re-submit is locally idempotent-blocked.</div>' : ''}
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <div class="paper-actions live-actions">
-        <button class="btn" id="v2-live-preflight-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.preflighting ? 'Preflighting...' : 'Run live preflight'}</button>
-        <button class="btn" id="v2-live-reconcile-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.reconciling ? 'Reconciling...' : 'Reconcile'}</button>
-        <button class="btn" id="v2-live-preview-btn" ${busy || !defaultIntent ? 'disabled' : ''}>${liveBridgeState.previewing ? 'Previewing...' : 'Preview selected intent'}</button>
-        <button class="btn" id="v2-live-submit-demo-btn" ${submitDemoBlocked ? 'disabled' : ''}>${liveBridgeState.submittingDemo ? 'Submitting demo...' : 'Submit to demo'}</button>
-        <button class="btn btn-danger" id="v2-live-submit-live-btn" ${submitLiveBlocked ? 'disabled' : ''}>${liveBridgeState.submittingLive ? 'Submitting live...' : 'Submit to live'}</button>
-        <button class="btn" id="v2-live-close-btn" ${busy ? 'disabled' : ''}>${liveBridgeState.closing ? 'Closing...' : 'Close live position'}</button>
-      </div>
-      <form class="paper-form" id="v2-live-bridge-form">
-        <label>
-          Intent
-          <select name="order_intent_id" ${busy || !defaultIntent ? 'disabled' : ''}>
-            ${renderLiveIntentOptions(intents)}
-          </select>
-        </label>
-        <label>
-          Mode
-          <select name="mode" ${busy ? 'disabled' : ''}>
-            <option value="demo" ${selectedMode === 'demo' ? 'selected' : ''}>demo</option>
-            <option value="live" ${selectedMode === 'live' ? 'selected' : ''}>live</option>
-          </select>
-        </label>
-        <label>
-          Close Symbol
-          <input type="text" name="close_symbol" value="${escapeHtml(defaultIntent?.symbol || marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} />
-        </label>
-        <label>
-          Preview Intent
-          <input type="text" value="${escapeHtml(defaultIntent ? describeIntent(defaultIntent) : 'No live-eligible paper intents')}" disabled />
-        </label>
-      </form>
-      ${renderLivePreflightSection(preflight, preflightError, preflightLoading)}
-      ${latestResult ? renderLiveResult(latestResult) : '<div class="paper-note">No live preview or submit result yet.</div>'}
-    </section>
-  `;
-}
-
-function renderRuntimeExecutionSection(instances, error) {
-  const records = instances || [];
-  const busy = isRuntimeBusy();
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Subaccount Runtime</h4>
-        <span class="paper-badge is-ok">Persistent Instances</span>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <form class="paper-form" id="v2-runtime-create-form">
-        <label>Label<input type="text" name="label" placeholder="BTC 4h demo" ${busy ? 'disabled' : ''} /></label>
-        <label>Symbol<input type="text" name="symbol" value="${escapeHtml(marketState.currentSymbol || 'BTCUSDT')}" ${busy ? 'disabled' : ''} /></label>
-        <label>Interval<input type="text" name="timeframe" value="${escapeHtml(marketState.currentInterval || '4h')}" ${busy ? 'disabled' : ''} /></label>
-        <label>Subaccount<input type="text" name="subaccount_label" placeholder="paper-a" ${busy ? 'disabled' : ''} /></label>
-        <label>
-          History Mode
-          <select name="history_mode" ${busy ? 'disabled' : ''}>
-            <option value="fast_window">fast_window</option>
-            <option value="full_history">full_history</option>
-          </select>
-        </label>
-        <label>Days<input type="number" name="days" value="365" min="1" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Analysis Bars<input type="number" name="analysis_bars" value="500" min="50" step="50" ${busy ? 'disabled' : ''} /></label>
-        <label>Trigger Modes<input type="text" name="trigger_modes" value="pre_limit" ${busy ? 'disabled' : ''} /></label>
-        <label>Lookback Bars<input type="number" name="lookback_bars" value="80" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
-        <label>Strategy Window<input type="number" name="window_bars" value="100" min="20" step="10" ${busy ? 'disabled' : ''} /></label>
-        <label>
-          Live Mode
-          <select name="live_mode" ${busy ? 'disabled' : ''}>
-            <option value="disabled">disabled</option>
-            <option value="demo">demo</option>
-            <option value="live">live</option>
-          </select>
-        </label>
-        <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${runtimePanelState.creating ? 'Creating...' : 'Create instance'}</button>
-      </form>
-      <div class="paper-note">Validated runtime preset currently defaults to <strong>pre_limit</strong>, lookback 80, and strategy window 100. Current passing cluster is <strong>HYPEUSDT / RIVERUSDT</strong> on 1h. Instances persist paper state, last processed bar, kill switch, and live bridge idempotency locally. Auto live submit stays opt-in and still must pass global Bitget gating.</div>
-      <div class="paper-subgrid">
-        ${records.length === 0 ? '<div class="paper-empty">No runtime instances configured yet.</div>' : records.map((record) => renderRuntimeInstanceRow(record)).join('')}
-      </div>
-    </section>
-  `;
-}
-
-function renderRuntimeInstanceRow(record) {
-  const busy = isRuntimeBusy(record.config.instance_id);
-  const paperState = record.status.paper_state;
-  const account = paperState?.account || {};
-  const runtimeBadgeClass = record.status.runtime_state === 'running' ? 'is-ok' : record.status.runtime_state === 'blocked' ? 'is-danger' : 'is-muted';
-  const actionLabel = runtimePanelState.startingInstanceId === record.config.instance_id
-    ? 'Starting...'
-    : runtimePanelState.stoppingInstanceId === record.config.instance_id
-      ? 'Stopping...'
-      : record.status.runtime_state === 'running'
-        ? 'Stop'
-        : 'Start';
-  const tickLabel = runtimePanelState.tickingInstanceId === record.config.instance_id ? 'Ticking...' : 'Tick once';
-  const killLabel = runtimePanelState.killInstanceId === record.config.instance_id
-    ? 'Updating...'
-    : paperState?.kill_switch?.blocked
-      ? 'Clear Kill'
-      : 'Kill';
-  return `
-    <div class="paper-order-row runtime-instance-row">
-      <div class="paper-order-main">
-        <span class="pos-sym">${escapeHtml(record.config.label)}</span>
-        <span class="paper-badge ${runtimeBadgeClass}">${escapeHtml(record.status.runtime_state.toUpperCase())}</span>
-        <span>${escapeHtml(record.config.symbol)} ${escapeHtml(record.config.timeframe)}</span>
-        <span>${escapeHtml(record.config.live_mode.toUpperCase())}</span>
-      </div>
-      <div class="paper-order-meta">
-        <span class="muted">subaccount ${escapeHtml(record.config.subaccount_label || 'default')}</span>
-        <span class="muted">last bar ${record.status.last_processed_bar ?? '-'}</span>
-        <span class="muted">equity ${formatUsd(account.equity)}</span>
-        <span class="muted">modes ${(record.config.strategy_config?.enabled_trigger_modes || ['pre_limit']).join(',')}</span>
-        <span class="muted">lookback ${record.config.strategy_config?.lookback_bars ?? '-'}</span>
-        <span class="muted">window ${record.config.strategy_config?.window_bars ?? '-'}</span>
-        <span class="muted">${escapeHtml((record.config.history_mode || 'fast_window').replace('_', ' '))} / ${record.config.analysis_bars} bars / ${record.config.days}d</span>
-      </div>
-      <div class="paper-actions">
-        <button class="btn" data-runtime-action="${record.status.runtime_state === 'running' ? 'stop' : 'start'}" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${actionLabel}</button>
-        <button class="btn" data-runtime-action="tick" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${tickLabel}</button>
-        <button class="btn ${paperState?.kill_switch?.blocked ? 'active' : ''}" data-runtime-action="kill" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${killLabel}</button>
-        <button class="btn btn-danger" data-runtime-action="delete" data-instance-id="${record.config.instance_id}" ${busy ? 'disabled' : ''}>${runtimePanelState.deletingInstanceId === record.config.instance_id ? 'Deleting...' : 'Delete'}</button>
-      </div>
-      ${renderHistoryCoverageSection(record.status.last_history, { title: 'Last tick history coverage', emptyMessage: 'No runtime tick executed yet.' })}
-      ${record.status.last_error ? `<div class="paper-error">${escapeHtml(record.status.last_error)}</div>` : ''}
+// ── Card ─────────────────────────────────────────────────────────────────
+function renderCard(inst) {
+  const c = inst.config||{}, s = inst.status||{}, id = c.instance_id||'';
+  const state = s.runtime_state||'stopped';
+  const isLive = c.live_mode === 'live';
+  const pnl = s.paper_state?.account?.realized_pnl;
+  const expanded = expandedId === id;
+  return `<div class="exec-strategy-card ${expanded?'is-expanded':''}" data-instance-id="${esc(id)}">
+    <div class="exec-strategy-header">
+      <span class="exec-strategy-symbol">${esc(c.symbol||'?')}</span>
+      <span class="exec-strategy-tf">${esc(c.timeframe||'?')}</span>
+      ${isLive?'<span style="color:#ff1744;font-size:10px;font-weight:700">实盘</span>':''}
+      ${!isLive&&pnl!=null?`<span class="exec-strategy-pnl ${pnlColorClass(pnl)}">${fmtPnl(pnl)}</span>`:''}
+      <span class="exec-strategy-state ${{running:'exec-state-running',stopped:'exec-state-stopped',blocked:'exec-state-blocked'}[state]||''}">${{running:'运行中',stopped:'停止',blocked:'阻止'}[state]||state}</span>
     </div>
-  `;
+    ${expanded ? renderDetail(inst) : ''}
+    <div class="exec-strategy-actions">
+      ${state==='running'?`<button class="exec-btn exec-btn-sm" data-action="stop" data-instance-id="${esc(id)}">停止</button>`:`<button class="exec-btn exec-btn-sm exec-btn-primary" data-action="start" data-instance-id="${esc(id)}">启动</button>`}
+      ${!isLive?`<button class="exec-btn exec-btn-sm" data-action="go-live" data-instance-id="${esc(id)}" style="color:var(--v2-red)">转实盘</button>`:''}
+      ${state!=='running'?`<button class="exec-btn exec-btn-sm exec-btn-danger" data-action="delete" data-instance-id="${esc(id)}">删除</button>`:''}
+    </div></div>`;
 }
 
-function renderLiveIntentOptions(intents) {
-  if (!intents.length) {
-    return '<option value="">No approved/submitted intents</option>';
+function renderDetail(inst) {
+  const c=inst.config||{},s=inst.status||{},ps=s.paper_state,sc=c.strategy_config||{};
+  const isLive=c.live_mode==='live';
+  const triggers=(Array.isArray(sc.enabled_trigger_modes)?sc.enabled_trigger_modes:[]).map(m=>({pre_limit:'限价预挂',rejection:'反转拒绝',failed_breakout:'假突破回收',retest:'突破回测'}[m]||m)).join(' + ');
+  let h=`<div class="exec-strategy-detail">
+    <div class="exec-detail-row"><span>策略</span><span>${triggers||'S/R'}</span></div>
+    <div class="exec-detail-row"><span>模式</span><span>${isLive?'🔴 实盘':'📋 模拟'}</span></div>
+    <div class="exec-detail-row"><span>Bar</span><span>${s.last_processed_bar??'-'}</span></div>
+    <div class="exec-detail-row"><span>更新</span><span>${rel(s.last_tick_at)}</span></div>`;
+  if(s.last_error) h+=`<div class="exec-strategy-error" style="white-space:normal;margin:4px 0">${esc(s.last_error).slice(0,100)}</div>`;
+  if(ps){
+    const a=ps.account||{},eq=isLive&&liveAccount?.ok?liveAccount.total_equity:(a.equity??10000);
+    h+=`<div class="exec-detail-row"><span>${isLive?'实盘权益':'模拟权益'}</span><span>${formatUsd(eq)}</span></div>
+      <div class="exec-detail-row"><span>盈亏</span><span class="${pnlColorClass(a.realized_pnl??0)}">${fmtPnl(a.realized_pnl??0)}</span></div>`;
+    for(const pos of(ps.open_positions||[])) h+=`<div class="exec-trade-mini"><span class="exec-dir-${pos.direction}">${pos.direction==='long'?'多':'空'}</span> ${formatUsd(pos.entry_price)} <span class="${pnlColorClass(pos.unrealized_pnl??0)}">${fmtPnl(pos.unrealized_pnl??0)}</span></div>`;
+    const closed=ps.recent_closed_positions||[];
+    if(closed.length){h+='<div class="exec-detail-subtitle">最近交易</div>';
+      for(const pos of closed.slice(-3).reverse()){const r={tp_hit:'盈',sl_hit:'损',expired:'期'}[pos.exit_reason]||'';
+        h+=`<div class="exec-trade-mini"><span class="exec-dir-${pos.direction}">${pos.direction==='long'?'多':'空'}</span> ${formatUsd(pos.entry_price)}→${formatUsd(pos.exit_price??0)} <span class="${pnlColorClass(pos.realized_pnl??0)}">${fmtPnl(pos.realized_pnl??0)}</span> ${r}</div>`;}}
   }
-  return intents
-    .map(
-      (intent) =>
-        `<option value="${escapeHtml(intent.order_intent_id)}">${escapeHtml(describeIntent(intent))}</option>`,
-    )
-    .join('');
+  return h+'</div>';
 }
 
-function renderLiveResult(result) {
-  const blocked = result.blocked || !result.ok;
-  return `
-    <div class="paper-note ${blocked ? 'paper-note-danger' : ''}">
-      <strong>${blocked ? 'Blocked' : result.idempotent_replay ? 'Accepted (cached)' : 'Accepted'}</strong>
-      <span>${escapeHtml(result.reason || 'OK')}</span>
-      <span>${escapeHtml(String(result.mode || '').toUpperCase())} | ${escapeHtml(result.symbol || '-')} | ${escapeHtml(String(result.side || '-').toUpperCase())}</span>
-      <span>Notional: ${formatUsd(result.submitted_notional ?? result.would_submit_notional)}</span>
-      <span>Exchange Order: ${escapeHtml(result.exchange_order_id || '-')}</span>
-    </div>
-  `;
-}
-
-function renderLivePreflightSection(preflight, error, loading) {
-  if (loading && !preflight) {
-    return '<div class="paper-note">Running live preflight...</div>';
-  }
-  if (!preflight) {
-    if (error) {
-      return `<div class="paper-error">${escapeHtml(error)}</div>`;
-    }
-    return '<div class="paper-note">No live preflight available yet.</div>';
-  }
-
-  const blockingReasons = preflight.blocking_reasons || [];
-  const nextActions = preflight.next_actions || [];
-  const checks = preflight.checks || [];
-  return `
-    <div class="paper-section paper-section-nested">
-      <div class="paper-section-header">
-        <h4>Live Preflight</h4>
-        <span class="paper-badge ${preflight.ready ? 'is-ok' : 'is-danger'}">${preflight.ready ? 'READY' : 'BLOCKED'}</span>
-      </div>
-      <div class="paper-note">
-        <strong>Mode:</strong> ${escapeHtml(String(preflight.mode || 'live').toUpperCase())} |
-        <strong>Intent:</strong> ${escapeHtml(preflight.selected_intent_id || 'none')} |
-        <strong>Symbol:</strong> ${escapeHtml(preflight.selected_symbol || '-')} |
-        <strong>Trigger:</strong> ${escapeHtml(preflight.selected_trigger_mode || '-')}
-      </div>
-      ${
-        blockingReasons.length
-          ? `<div class="paper-error">Blocking reasons: ${escapeHtml(blockingReasons.join(', '))}</div>`
-          : '<div class="paper-note">No blocking reasons. This bridge is ready from a code/gating perspective.</div>'
-      }
-      <div>
-        ${checks
-          .map(
-            (check) => `
-              <div class="paper-cooldown-row">
-                <span>${check.ok ? 'PASS' : 'FAIL'} - ${escapeHtml(check.label || check.check_id)}</span>
-                <span class="muted">${escapeHtml(check.detail || '-')}</span>
-              </div>
-            `,
-          )
-          .join('')}
-      </div>
-      ${
-        nextActions.length
-          ? `
-            <div class="paper-note">
-              <strong>Next actions:</strong> ${escapeHtml(nextActions.join(' | '))}
-            </div>
-          `
-          : ''
-      }
-    </div>
-  `;
-}
-
-function getLiveEligibleIntents(paperState) {
-  return [...(paperState?.intents || [])]
-    .filter((intent) => ['approved', 'submitted'].includes(intent.status))
-    .sort((left, right) => (right.created_at_bar ?? -1) - (left.created_at_bar ?? -1));
-}
-
-function getDefaultLiveIntent(paperState) {
-  const intents = getLiveEligibleIntents(paperState);
-  return intents[0] || null;
-}
-
-function getSelectedLiveIntentId() {
-  const form = $('#v2-live-bridge-form');
-  if (form instanceof HTMLFormElement) {
-    const selected = String(new FormData(form).get('order_intent_id') || '').trim();
-    if (selected) return selected;
-  }
-  const defaultIntent = getDefaultLiveIntent(paperExecutionState.state);
-  return defaultIntent?.order_intent_id || null;
-}
-
-function describeIntent(intent) {
-  return `${intent.symbol} ${String(intent.side || '-').toUpperCase()} ${intent.trigger_mode} ${intent.status}`;
-}
-
-function isLiveBridgeBusy() {
-  return !!(
-    liveBridgeState.loading ||
-    liveBridgeState.preflightLoading ||
-    liveBridgeState.reconciling ||
-    liveBridgeState.preflighting ||
-    liveBridgeState.previewing ||
-    liveBridgeState.submittingDemo ||
-    liveBridgeState.submittingLive ||
-    liveBridgeState.closing
-  );
-}
-
-function renderAgentRiskSection(status, error) {
-  if (!status) {
-    return renderUnavailableSection('Legacy Agent Risk', error || 'Legacy agent risk data unavailable');
-  }
-
-  const limits = status.risk_limits || {};
-  const maxPositionPct = (limits.max_position_pct ?? 0.05) * 100;
-  const maxExposurePct = (limits.max_total_exposure_pct ?? 0.15) * 100;
-  const maxDailyLossPct = (limits.max_daily_loss_pct ?? 0.02) * 100;
-  const maxDrawdownPct = (limits.max_drawdown_pct ?? 0.05) * 100;
-  const maxPositions = limits.max_positions ?? 3;
-  const cooldown = limits.cooldown_seconds ?? 3600;
-  const dailyLossPct = Math.max(0, (-Number(status.daily_pnl || 0) / (Number(status.equity) || 1)) * 100);
-  const drawdownPct = Math.max(
-    0,
-    ((Number(status.peak_equity || 0) - Number(status.equity || 0)) / (Number(status.peak_equity) || 1)) * 100,
-  );
-  const positionsUsed = Object.keys(status.positions || {}).length;
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Legacy Agent Risk</h4>
-        <span class="paper-badge is-muted">Legacy Agent</span>
-      </div>
-      <h4>Live risk meters</h4>
-      <div class="risk-meters">
-        ${renderRiskMeter('Daily Loss', dailyLossPct, maxDailyLossPct, '%')}
-        ${renderRiskMeter('Drawdown', drawdownPct, maxDrawdownPct, '%')}
-        ${renderRiskMeter('Positions', positionsUsed, maxPositions, '')}
-      </div>
-      <h4>Risk limits config</h4>
-      <form class="risk-form" id="v2-risk-form">
-        <label>Max Position %<input type="number" name="max_position_pct" value="${maxPositionPct.toFixed(1)}" step="0.5" /></label>
-        <label>Max Exposure %<input type="number" name="max_total_exposure_pct" value="${maxExposurePct.toFixed(1)}" step="1" /></label>
-        <label>Max Daily Loss %<input type="number" name="max_daily_loss_pct" value="${maxDailyLossPct.toFixed(2)}" step="0.1" /></label>
-        <label>Max Drawdown %<input type="number" name="max_drawdown_pct" value="${maxDrawdownPct.toFixed(1)}" step="1" /></label>
-        <label>Max Positions<input type="number" name="max_positions" value="${maxPositions}" step="1" /></label>
-        <label>Cooldown (s)<input type="number" name="cooldown_seconds" value="${cooldown}" step="60" /></label>
-        <button type="submit" class="btn btn-primary">Save</button>
-      </form>
-    </section>
-  `;
-}
-
-function renderPaperRiskSection(config, error) {
-  if (!config) {
-    return renderUnavailableSection('Paper Risk Config', error || 'Paper risk config unavailable');
-  }
-
-  const busy = isPaperExecutionBusy() || paperExecutionState.loadingConfig;
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Paper Execution Risk Config</h4>
-        <span class="paper-badge is-ok">/api/paper-execution/config</span>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <form class="paper-form paper-risk-form" id="v2-paper-risk-form">
-        <label>Risk Per Trade<input type="number" name="risk_per_trade" value="${Number(config.risk_per_trade).toFixed(4)}" step="0.0005" ${busy ? 'disabled' : ''} /></label>
-        <label>Max Concurrent Positions<input type="number" name="max_concurrent_positions" value="${config.max_concurrent_positions}" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Max Positions Per Symbol<input type="number" name="max_positions_per_symbol" value="${config.max_positions_per_symbol}" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Max Total Exposure<input type="number" name="max_total_exposure" value="${Number(config.max_total_exposure).toFixed(2)}" step="0.05" ${busy ? 'disabled' : ''} /></label>
-        <label>Max Daily Loss<input type="number" name="max_daily_loss" value="${Number(config.max_daily_loss).toFixed(4)}" step="0.001" ${busy ? 'disabled' : ''} /></label>
-        <label>Max Consecutive Losses<input type="number" name="max_consecutive_losses" value="${config.max_consecutive_losses}" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Cancel After Bars<input type="number" name="cancel_after_bars" value="${config.cancel_after_bars}" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Cooldown Bars After Loss<input type="number" name="cooldown_bars_after_loss" value="${config.cooldown_bars_after_loss}" step="1" ${busy ? 'disabled' : ''} /></label>
-        <label>Starting Equity<input type="number" name="starting_equity" value="${Number(config.starting_equity).toFixed(2)}" step="100" ${busy ? 'disabled' : ''} /></label>
-        <label class="paper-checkbox">
-          <input type="checkbox" name="allow_multiple_same_direction_per_symbol" ${config.allow_multiple_same_direction_per_symbol ? 'checked' : ''} ${busy ? 'disabled' : ''} />
-          Allow multiple same-direction positions per symbol
-        </label>
-        <button type="submit" class="btn btn-primary" ${busy ? 'disabled' : ''}>${paperExecutionState.loadingConfig ? 'Loading...' : 'Save Paper Config'}</button>
-      </form>
-    </section>
-  `;
-}
-
-function renderPaperOpsSection(state, error) {
-  if (!state) {
-    return renderUnavailableSection('Paper Diagnostics', error || 'Paper diagnostics unavailable');
-  }
-
-  const streamMap = state.account?.last_processed_bar_by_stream || {};
-  const entries = Object.entries(streamMap);
-  const killSwitch = state.kill_switch || {};
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Paper Execution Diagnostics</h4>
-        <span class="paper-badge ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">${killSwitch.blocked ? 'Blocked' : 'Healthy'}</span>
-      </div>
-      <div class="paper-diagnostics-grid">
-        <div class="stat"><div class="stat-label">Streams</div><div class="stat-value">${entries.length}</div></div>
-        <div class="stat"><div class="stat-label">Last Error</div><div class="stat-value">${escapeHtml(paperExecutionState.lastError || 'None')}</div></div>
-        <div class="stat"><div class="stat-label">Kill Switch</div><div class="stat-value">${killSwitch.blocked ? 'BLOCKED' : 'CLEAR'}</div></div>
-        <div class="stat"><div class="stat-label">Manual Block</div><div class="stat-value">${killSwitch.manual_blocked ? 'ON' : 'OFF'}</div></div>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      <h4>Current stream keys</h4>
-      ${
-        entries.length === 0
-          ? '<div class="paper-empty">No processed streams yet</div>'
-          : entries
-              .map(
-                ([stream, lastBar]) => `
-                  <div class="paper-cooldown-row">
-                    <span>${escapeHtml(stream)}</span>
-                    <span class="muted">last bar ${lastBar}</span>
-                  </div>
-                `,
-              )
-              .join('')
-      }
-      <div class="paper-kill-banner ${killSwitch.blocked ? 'is-danger' : 'is-ok'}">
-        <strong>Kill switch snapshot</strong>
-        <span>${escapeHtml(killSwitch.reason || 'No active block reason')}</span>
-      </div>
-    </section>
-  `;
-}
-
-function renderRuntimeOpsSection(events, error) {
-  const rows = events || [];
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Subaccount Runtime Events</h4>
-        <span class="paper-badge is-muted">${rows.length} recent</span>
-      </div>
-      ${error ? `<div class="paper-error">${escapeHtml(error)}</div>` : ''}
-      ${
-        rows.length === 0
-          ? '<div class="paper-empty">No runtime events yet</div>'
-          : rows
-              .slice()
-              .reverse()
-              .map(
-                (event) => `
-                  <div class="paper-fill-row">
-                    <span class="pos-sym">${escapeHtml(event.instance_id)}</span>
-                    <span class="paper-badge is-muted">${escapeHtml(event.event_type)}</span>
-                    <span class="muted">${escapeHtml(event.timestamp || '-')}</span>
-                  </div>
-                `,
-              )
-              .join('')
-      }
-    </section>
-  `;
-}
-
-function renderLegacyOpsSection(status, okx, healer, presets, logs) {
-  const params = status?.strategy_params || {};
-  const watchSymbols = status?.watch_symbols || [];
-  const tickInterval = status?.tick_interval_sec ?? 60;
-  const signalInterval = status?.signal_interval || '4h';
-
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>Ops</h4>
-        <span class="paper-badge is-muted">Legacy Agent</span>
-      </div>
-      <h4>Strategy Config</h4>
-      <form class="ops-form" id="v2-cfg-form">
-        <label>Timeframe
-          <select name="timeframe">
-            ${['5m', '15m', '1h', '4h', '1d']
-              .map((timeframe) => `<option value="${timeframe}" ${timeframe === signalInterval ? 'selected' : ''}>${timeframe}</option>`)
-              .join('')}
-          </select>
-        </label>
-        <label>Symbols (comma-separated)
-          <input type="text" name="symbols" value="${escapeHtml(watchSymbols.join(','))}" placeholder="BTCUSDT,ETHUSDT,..." />
-        </label>
-        <label>Tick Interval (sec)
-          <input type="number" name="tick_interval" value="${tickInterval}" min="10" max="600" />
-        </label>
-        <label>Max Position %
-          <input type="number" name="max_position_pct" value="${Number(status?.risk_limits?.max_position_pct || 5).toFixed(1)}" step="0.5" min="0.5" max="25" />
-        </label>
-        <label>Max Positions
-          <input type="number" name="max_positions" value="${status?.risk_limits?.max_positions || 3}" min="1" max="10" />
-        </label>
-        <button type="submit" class="btn btn-primary">Apply Config</button>
-      </form>
-
-      <h4>Strategy Params (V6)</h4>
-      <form class="ops-form params-grid" id="v2-params-form">
-        ${Object.entries(params)
-          .map(
-            ([key, value]) => `
-              <label>${escapeHtml(key)}<input type="number" name="${escapeHtml(key)}" value="${value}" step="${
-                typeof value === 'number' && !Number.isInteger(value) ? '0.01' : '1'
-              }" /></label>
-            `,
-          )
-          .join('')}
-        <button type="submit" class="btn btn-primary">Save Params</button>
-      </form>
-
-      <h4>Strategy Presets</h4>
-      <div class="ops-section">
-        <div class="preset-row">
-          <select id="v2-preset-select">
-            <option value="">-- Select preset --</option>
-            ${Object.keys(presets)
-              .map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`)
-              .join('')}
-          </select>
-          <button class="btn" id="v2-preset-load">Load</button>
-          <button class="btn" id="v2-preset-delete">Delete</button>
-        </div>
-        <div class="preset-row">
-          <input type="text" id="v2-preset-name" placeholder="New preset name" />
-          <button class="btn btn-primary" id="v2-preset-save">Save Current</button>
-        </div>
-        <div class="muted" id="v2-preset-status"></div>
-      </div>
-
-      <h4>Legacy OKX API Keys</h4>
-      <form class="ops-form" id="v2-okx-form">
-        <div class="muted">Legacy only. The new live bridge uses Bitget credentials from environment variables, not this form.</div>
-        <div class="muted">Status: ${okx?.has_keys ? '<span class="pnl-pos">Connected</span>' : 'No keys configured'}</div>
-        ${okx?.balance ? `<pre>${escapeHtml(JSON.stringify(okx.balance, null, 2).slice(0, 300))}</pre>` : ''}
-        <label>API Key<input type="password" name="api_key" placeholder="${okx?.has_keys ? 'already set - fill to update' : 'enter key'}" /></label>
-        <label>Secret<input type="password" name="secret" /></label>
-        <label>Passphrase<input type="password" name="passphrase" /></label>
-        <button type="submit" class="btn btn-primary">Save and Verify</button>
-      </form>
-
-      <h4>Telegram Notifications</h4>
-      <form class="ops-form" id="v2-tg-form">
-        <label>Bot Token<input type="password" name="bot_token" placeholder="token from @BotFather" /></label>
-        <label>Chat ID<input type="text" name="chat_id" placeholder="your chat id" /></label>
-        <div class="checkbox-row">
-          <label><input type="checkbox" name="notify_signals" checked /> Signals</label>
-          <label><input type="checkbox" name="notify_fills" checked /> Fills</label>
-          <label><input type="checkbox" name="notify_errors" /> Errors</label>
-          <label><input type="checkbox" name="notify_daily" /> Daily</label>
-        </div>
-        <button type="submit" class="btn btn-primary">Save and Test</button>
-      </form>
-
-      <h4>Agent Logs</h4>
-      <div class="ops-section">
-        <div class="agent-logs-view">
-          ${
-            logs.length === 0
-              ? '<div class="muted">No logs yet</div>'
-              : logs
-                  .slice()
-                  .reverse()
-                  .map(
-                    (log) => `
-                      <div class="log-line">
-                        <span class="log-time">${escapeHtml(log.time || '')}</span>
-                        <span class="log-msg">${escapeHtml(log.msg || '')}</span>
-                      </div>
-                    `,
-                  )
-                  .join('')
-          }
-        </div>
-      </div>
-
-      <h4>Self-Healer</h4>
-      <div class="ops-section">
-        <p>Running: <strong>${healer?.running ? 'YES' : 'NO'}</strong></p>
-        <p>Fix count: <strong>${healer?.fix_count ?? 0}</strong></p>
-        <p>AI: <strong>${healer?.has_ai ? 'enabled' : 'disabled'}</strong></p>
-        <button class="btn" id="v2-healer-trigger">Trigger heal</button>
-      </div>
-    </section>
-  `;
-}
-
-function renderCollapsibleLegacySection(title, innerHtml, open = false) {
-  return `
-    <details class="legacy-collapsible" ${open ? 'open' : ''}>
-      <summary>${escapeHtml(title)}</summary>
-      <div class="legacy-collapsible-body">
-        ${innerHtml}
-      </div>
-    </details>
-  `;
-}
-
-function renderPaperOrderRows(orders) {
-  if (!orders || orders.length === 0) {
-    return '<div class="paper-empty">No open paper orders</div>';
-  }
-
-  return orders
-    .map(
-      (order) => `
-        <div class="paper-order-row">
-          <div class="paper-order-main">
-            <span class="pos-sym">${escapeHtml(order.symbol)}</span>
-            <span class="paper-badge is-muted">${escapeHtml(String(order.side || '-').toUpperCase())}</span>
-            <span>${escapeHtml(String(order.order_type || '-').toUpperCase())}</span>
-            <span>${formatPrice(order.price)}</span>
-            <span>qty ${Number(order.quantity).toFixed(4)}</span>
-          </div>
-          <div class="paper-order-meta">
-            <span class="muted">${escapeHtml(order.signal_id)}</span>
-            <span class="muted">bar ${order.created_at_bar}</span>
-            <span class="muted">${escapeHtml(order.status || '')}</span>
-          </div>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-function renderPaperPositionRows(positions) {
-  if (!positions || positions.length === 0) {
-    return '<div class="paper-empty">No open paper positions</div>';
-  }
-
-  return positions
-    .map(
-      (position) => `
-        <div class="paper-order-row">
-          <div class="paper-order-main">
-            <span class="pos-sym">${escapeHtml(position.symbol)}</span>
-            <span class="paper-badge ${position.direction === 'long' ? 'is-ok' : 'is-danger'}">${escapeHtml(
-              String(position.direction || '-').toUpperCase(),
-            )}</span>
-            <span>entry ${formatPrice(position.entry_price)}</span>
-            <span>mark ${formatPrice(position.mark_price)}</span>
-            <span class="${pnlColorClass(position.unrealized_pnl)}">${formatUsd(position.unrealized_pnl)}</span>
-          </div>
-          <div class="paper-order-meta">
-            <span class="muted">qty ${Number(position.quantity).toFixed(4)}</span>
-            <span class="muted">stop ${formatPrice(position.stop_price)}</span>
-            <span class="muted">tp ${formatPrice(position.tp_price)}</span>
-          </div>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-function renderPaperFillRows(fills) {
-  if (!fills || fills.length === 0) {
-    return '<div class="paper-empty">No paper fills yet</div>';
-  }
-
-  return fills
-    .map(
-      (fill) => `
-        <div class="paper-fill-row">
-          <span class="pos-sym">${escapeHtml(fill.symbol)}</span>
-          <span class="paper-badge is-muted">${escapeHtml(String(fill.side || '-').toUpperCase())}</span>
-          <span>${formatPrice(fill.fill_price)}</span>
-          <span>qty ${Number(fill.quantity).toFixed(4)}</span>
-          <span class="muted">bar ${fill.filled_at_bar}</span>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-function renderPaperClosedPositionRows(positions) {
-  if (!positions || positions.length === 0) {
-    return '<div class="paper-empty">No closed paper positions yet</div>';
-  }
-
-  return positions
-    .map(
-      (position) => `
-        <div class="paper-fill-row">
-          <span class="pos-sym">${escapeHtml(position.symbol)}</span>
-          <span class="paper-badge is-muted">${escapeHtml(String(position.direction || '-').toUpperCase())}</span>
-          <span class="${pnlColorClass(position.realized_pnl)}">${formatUsd(position.realized_pnl)}</span>
-          <span class="muted">${escapeHtml(position.exit_reason || '-')}</span>
-          <span class="muted">bar ${position.closed_at_bar ?? '-'}</span>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-function renderPaperCooldownRows(cooldowns) {
-  const entries = Object.entries(cooldowns || {});
-  if (entries.length === 0) {
-    return '<div class="paper-empty">No active cooldowns</div>';
-  }
-
-  return entries
-    .map(
-      ([scope, untilBar]) => `
-        <div class="paper-cooldown-row">
-          <span>${escapeHtml(scope)}</span>
-          <span class="muted">until bar ${untilBar}</span>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-function renderPaperLastStep(lastStepResult) {
-  if (!lastStepResult) {
-    return '<div class="paper-note">No paper step executed yet in this session.</div>';
-  }
-  return `
-    <div class="paper-note">
-      <strong>Last step:</strong>
-      stream ${escapeHtml(lastStepResult.stream || '-')} |
-      processed ${escapeHtml((lastStepResult.processedBars || []).join(', ') || '-')} |
-      lastProcessedBar ${lastStepResult.lastProcessedBar ?? '-'}
-    </div>
-  `;
-}
-
-function renderHistoryCoverageSection(history, options = {}) {
-  const title = options.title || 'History coverage';
-  const emptyMessage = options.emptyMessage || 'No history coverage available yet.';
-  if (!history) {
-    return `<div class="paper-note">${escapeHtml(emptyMessage)}</div>`;
-  }
-
-  const loadedRange = formatHistoryRange(history.earliestLoadedTimestamp, history.latestLoadedTimestamp);
-  const analysisRange = formatHistoryRange(history.analysisEarliestTimestamp, history.analysisLatestTimestamp);
-  const loadedBars = history.loadedBarCount ?? '-';
-  const analysisBars = history.analysisInputBarCount ?? '-';
-  const listingStart = formatTimestampShort(history.listingStartTimestamp);
-  const sourceMode = history.dataSourceMode || '-';
-  const sourceKind = history.dataSourceKind || '-';
-  const requestedDays = history.requestedDays ?? '-';
-  const historyMode = history.historyMode || '-';
-  const truncated = history.analysisWasTrimmed || history.isTruncated;
-  const truncationReason = history.truncationReason || (history.analysisWasTrimmed ? 'analysis_bars' : '');
-
-  return `
-    <div class="paper-note">
-      <strong>${escapeHtml(title)}:</strong>
-      mode ${escapeHtml(historyMode)} |
-      source ${escapeHtml(sourceMode)} / ${escapeHtml(sourceKind)} |
-      requested ${requestedDays}d |
-      loaded ${loadedBars} bars (${escapeHtml(loadedRange)}) |
-      analysis ${analysisBars} bars (${escapeHtml(analysisRange)}) |
-      listing start ${escapeHtml(listingStart)} |
-      ${truncated ? `trimmed ${escapeHtml(String(truncationReason || 'true'))}` : 'not trimmed'}
-    </div>
-  `;
-}
-
-function formatHistoryRange(start, end) {
-  const startLabel = formatTimestampShort(start);
-  const endLabel = formatTimestampShort(end);
-  if (startLabel === '-' && endLabel === '-') return '-';
-  return `${startLabel} -> ${endLabel}`;
-}
-
-function formatTimestampShort(value) {
-  if (value === null || value === undefined || value === '') return '-';
-  const millis = Number(value) * 1000;
-  if (!Number.isFinite(millis)) return '-';
-  const date = new Date(millis);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toISOString().slice(0, 10);
-}
-
-function renderRiskMeter(label, currentValue, maxValue, unit) {
-  const pct = maxValue > 0 ? Math.min(100, (currentValue / maxValue) * 100) : 0;
-  const tone = pct < 50 ? 'green' : pct < 80 ? 'yellow' : 'red';
-  return `
-    <div class="meter ${tone}">
-      <div class="meter-label">${label}</div>
-      <div class="meter-bar"><div class="meter-fill" style="width:${pct}%"></div></div>
-      <div class="meter-value">${Number(currentValue).toFixed(2)}${unit} / ${Number(maxValue).toFixed(2)}${unit}</div>
-    </div>
-  `;
-}
-
-function renderUnavailableSection(title, reason) {
-  return `
-    <section class="paper-section">
-      <div class="paper-section-header">
-        <h4>${escapeHtml(title)}</h4>
-        <span class="paper-badge is-danger">Unavailable</span>
-      </div>
-      <div class="paper-error">${escapeHtml(reason || 'Unavailable')}</div>
-    </section>
-  `;
-}
-
-function wireLegacyExecutionControls() {
-  on('#v2-start-btn', 'click', async () => {
-    await agentSvc.start();
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] start refresh failed:', err));
-    }
-  });
-  on('#v2-stop-btn', 'click', async () => {
-    await agentSvc.stop();
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] stop refresh failed:', err));
-    }
-  });
-  on('#v2-revive-btn', 'click', async () => {
-    await agentSvc.revive();
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] revive refresh failed:', err));
-    }
-  });
-  on('#v2-scan-btn', 'click', async () => {
-    await agentSvc.getSignals();
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] signal refresh failed:', err));
-    }
-  });
-  on('#v2-paper-btn', 'click', async () => {
-    await agentSvc.setConfig({ mode: 'paper' });
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
-    }
-  });
-  on('#v2-live-btn', 'click', async () => {
-    await agentSvc.setConfig({ mode: 'live' });
-    await refreshAgentStatus().catch(() => null);
-    if (!repaintExecutionSections({ agent: true })) {
-      renderExecution(true).catch((err) => console.warn('[exec] mode refresh failed:', err));
-    }
-  });
-}
-
-function wirePaperExecutionControls() {
-  on('#v2-paper-step-btn', 'click', async () => {
-    const form = $('#v2-paper-step-form');
-    if (!(form instanceof HTMLFormElement)) return;
-    await runPaperAction(setPaperExecutionStepping, async () => {
-      const result = await paperExecSvc.stepPaperExecution(readStepPayload(form));
-      setPaperExecutionLastStep(result);
-      setPaperExecutionState(result.state);
-      if (result.state?.config) setPaperExecutionConfig(result.state.config);
-      clearPaperExecutionError();
-    });
-  });
-
-  on('#v2-paper-step-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    await runPaperAction(setPaperExecutionStepping, async () => {
-      const result = await paperExecSvc.stepPaperExecution(readStepPayload(form));
-      setPaperExecutionLastStep(result);
-      setPaperExecutionState(result.state);
-      if (result.state?.config) setPaperExecutionConfig(result.state.config);
-      clearPaperExecutionError();
-    });
-  });
-
-  on('#v2-paper-reset-btn', 'click', async () => {
-    await runPaperAction(setPaperExecutionResetting, async () => {
-      const state = await paperExecSvc.resetPaperExecution();
-      setPaperExecutionState(state);
-      if (state?.config) setPaperExecutionConfig(state.config);
-      setPaperExecutionLastStep(null);
-      clearPaperExecutionError();
-    });
-  });
-
-  on('#v2-paper-kill-on', 'click', async () => {
-    await runPaperAction(setPaperExecutionKillSwitchUpdating, async () => {
-      const state = await paperExecSvc.setPaperKillSwitch({ blocked: true, reason: 'manual_frontend_toggle' });
-      setPaperExecutionState(state);
-      if (state?.config) setPaperExecutionConfig(state.config);
-      clearPaperExecutionError();
-    });
-  });
-
-  on('#v2-paper-kill-off', 'click', async () => {
-    await runPaperAction(setPaperExecutionKillSwitchUpdating, async () => {
-      const state = await paperExecSvc.setPaperKillSwitch({ blocked: false, reason: '' });
-      setPaperExecutionState(state);
-      if (state?.config) setPaperExecutionConfig(state.config);
-      clearPaperExecutionError();
-    });
-  });
-}
-
-function wireLiveBridgeControls() {
-  on('#v2-live-preflight-btn', 'click', async () => {
-    await runLiveBridgeAction('preflighting', async () => {
-      await loadLiveExecutionPreflight(true);
-    });
-  });
-
-  on('#v2-live-reconcile-btn', 'click', async () => {
-    await runLiveBridgeAction('reconciling', async () => {
-      const form = $('#v2-live-bridge-form');
-      const mode = form instanceof HTMLFormElement ? readLiveMode(form) : 'demo';
-      await liveExecSvc.reconcileLiveExecution({ mode });
-      await loadLiveExecutionStatus(true);
-      await loadLiveExecutionPreflight(true).catch(() => null);
-    });
-  });
-
-  on('#v2-live-preview-btn', 'click', async () => {
-    const form = $('#v2-live-bridge-form');
-    if (!(form instanceof HTMLFormElement)) return;
-    await runLiveBridgeAction('previewing', async () => {
-      const result = await liveExecSvc.previewLiveExecution({
-        order_intent_id: readSelectedIntentId(form),
-        mode: readLiveMode(form),
-      });
-      liveBridgeState.lastError = null;
-      if (liveBridgeState.status) {
-        liveBridgeState.status = { ...liveBridgeState.status, last_preview_result: result };
-      }
-      await loadLiveExecutionPreflight(true).catch(() => null);
-    });
-  });
-
-  on('#v2-live-submit-demo-btn', 'click', async () => {
-    const form = $('#v2-live-bridge-form');
-    if (!(form instanceof HTMLFormElement)) return;
-    await runLiveBridgeAction('submittingDemo', async () => {
-      const result = await liveExecSvc.submitLiveExecution({
-        order_intent_id: readSelectedIntentId(form),
-        mode: 'demo',
-        confirm: true,
-      });
-      if (liveBridgeState.status) {
-        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
-      }
-      liveBridgeState.lastError = null;
-      await loadLiveExecutionStatus(true);
-      await loadLiveExecutionPreflight(true).catch(() => null);
-    });
-  });
-
-  on('#v2-live-submit-live-btn', 'click', async () => {
-    const form = $('#v2-live-bridge-form');
-    if (!(form instanceof HTMLFormElement)) return;
-    await runLiveBridgeAction('submittingLive', async () => {
-      const result = await liveExecSvc.submitLiveExecution({
-        order_intent_id: readSelectedIntentId(form),
-        mode: 'live',
-        confirm: true,
-      });
-      if (liveBridgeState.status) {
-        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
-      }
-      liveBridgeState.lastError = null;
-      await loadLiveExecutionStatus(true);
-      await loadLiveExecutionPreflight(true).catch(() => null);
-    });
-  });
-
-  on('#v2-live-close-btn', 'click', async () => {
-    const form = $('#v2-live-bridge-form');
-    if (!(form instanceof HTMLFormElement)) return;
-    await runLiveBridgeAction('closing', async () => {
-      const result = await liveExecSvc.closeLiveExecution({
-        symbol: String(new FormData(form).get('close_symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
-        mode: readLiveMode(form),
-        confirm: true,
-      });
-      if (liveBridgeState.status) {
-        liveBridgeState.status = { ...liveBridgeState.status, last_submission_result: result };
-      }
-      liveBridgeState.lastError = null;
-      await loadLiveExecutionStatus(true);
-      await loadLiveExecutionPreflight(true).catch(() => null);
-    });
-  });
-}
-
-function wireRuntimeControls() {
-  on('#v2-runtime-create-form', 'submit', async (event) => {
-    event.preventDefault();
-    if (isRuntimeBusy()) return;
-    runtimePanelState.creating = true;
-    await refreshRuntimeExecutionSection(true).catch(() => null);
-    try {
-      const form = event.target;
-      if (!(form instanceof HTMLFormElement)) return;
-      await runtimeSvc.createRuntimeInstance(readRuntimeCreatePayload(form));
-      await loadRuntimeInstances(true);
-    } catch (err) {
-      runtimePanelState.lastError = safeErrorMessage(err);
-    } finally {
-      runtimePanelState.creating = false;
-      await refreshRuntimeExecutionSection(true).catch(() => null);
-    }
-  });
-
-  $$('[data-runtime-action]').forEach((button) => {
-    on(button, 'click', async () => {
-      const instanceId = button.dataset.instanceId;
-      const action = button.dataset.runtimeAction;
-      if (!instanceId || !action || isRuntimeBusy(instanceId)) return;
-      await runRuntimeAction(instanceId, action);
-    });
-  });
-}
-
-function wireLegacyRiskForm() {
-  on('#v2-risk-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const data = Object.fromEntries(new FormData(form));
-    Object.keys(data).forEach((key) => {
-      data[key] = Number(data[key]);
-    });
-    await riskSvc.setRiskLimits(data);
-    renderRisk().catch((err) => renderTabError('risk', err));
-  });
-}
-
-function wirePaperRiskForm() {
-  on('#v2-paper-risk-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const formData = new FormData(form);
-    const payload = {
-      risk_per_trade: Number(formData.get('risk_per_trade')),
-      max_concurrent_positions: Number(formData.get('max_concurrent_positions')),
-      max_positions_per_symbol: Number(formData.get('max_positions_per_symbol')),
-      max_total_exposure: Number(formData.get('max_total_exposure')),
-      max_daily_loss: Number(formData.get('max_daily_loss')),
-      max_consecutive_losses: Number(formData.get('max_consecutive_losses')),
-      cancel_after_bars: Number(formData.get('cancel_after_bars')),
-      cooldown_bars_after_loss: Number(formData.get('cooldown_bars_after_loss')),
-      starting_equity: Number(formData.get('starting_equity')),
-      allow_multiple_same_direction_per_symbol: formData.get('allow_multiple_same_direction_per_symbol') === 'on',
-    };
-
-    await runPaperAction(setPaperExecutionLoadingConfig, async () => {
-      const config = await paperExecSvc.setPaperExecutionConfig(payload);
-      setPaperExecutionConfig(config);
-      if (paperExecutionState.state) {
-        setPaperExecutionState({ ...paperExecutionState.state, config });
-      }
-      clearPaperExecutionError();
-    });
-    renderRisk(true).catch((err) => renderTabError('risk', err));
-  });
-}
-
-function wireOpsForms() {
-  on('#v2-cfg-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const formData = new FormData(form);
-    const body = {
-      timeframe: formData.get('timeframe'),
-      symbols: String(formData.get('symbols') || '')
-        .split(',')
-        .map((symbol) => symbol.trim())
-        .filter(Boolean),
-      tick_interval: Number(formData.get('tick_interval')),
-      max_position_pct: Number(formData.get('max_position_pct')),
-      max_positions: Number(formData.get('max_positions')),
-    };
-    try {
-      await agentSvc.setStrategyConfig(body);
-      setStatusMsg('Config applied');
-      renderOps().catch((err) => renderTabError('ops', err));
-    } catch (err) {
-      setStatusMsg(`Config failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-params-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const formData = new FormData(form);
-    const params = {};
-    formData.forEach((value, key) => {
-      params[key] = Number(value);
-    });
-    try {
-      await agentSvc.setStrategyParams(params);
-      setStatusMsg('Params saved');
-    } catch (err) {
-      setStatusMsg(`Params failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-preset-load', 'click', async () => {
-    const name = $('#v2-preset-select')?.value;
-    if (!name) return;
-    try {
-      await agentSvc.loadPreset(name);
-      setPresetStatus(`Loaded: ${name}`);
-      renderOps().catch((err) => renderTabError('ops', err));
-    } catch (err) {
-      setPresetStatus(`Load failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-preset-delete', 'click', async () => {
-    const name = $('#v2-preset-select')?.value;
-    if (!name) return;
-    try {
-      await agentSvc.deletePreset(name);
-      setPresetStatus(`Deleted: ${name}`);
-      renderOps().catch((err) => renderTabError('ops', err));
-    } catch (err) {
-      setPresetStatus(`Delete failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-preset-save', 'click', async () => {
-    const name = $('#v2-preset-name')?.value.trim();
-    if (!name) {
-      setPresetStatus('Enter a name');
-      return;
-    }
-    try {
-      await agentSvc.savePreset(name);
-      setPresetStatus(`Saved: ${name}`);
-      renderOps().catch((err) => renderTabError('ops', err));
-    } catch (err) {
-      setPresetStatus(`Save failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-okx-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const formData = new FormData(form);
-    const apiKey = String(formData.get('api_key') || '').trim();
-    const secret = String(formData.get('secret') || '').trim();
-    const passphrase = String(formData.get('passphrase') || '').trim();
-    if (!apiKey || !secret || !passphrase) {
-      setStatusMsg('All 3 OKX fields required');
-      return;
-    }
-    try {
-      const response = await execSvc.setOkxKeys(apiKey, secret, passphrase);
-      setStatusMsg(response.ok ? 'OKX verified' : `OKX failed: ${response.reason || ''}`);
-      renderOps().catch((err) => renderTabError('ops', err));
-    } catch (err) {
-      setStatusMsg(`OKX request failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-tg-form', 'submit', async (event) => {
-    event.preventDefault();
-    const form = event.target;
-    if (!(form instanceof HTMLFormElement)) return;
-    const formData = new FormData(form);
-    const body = {
-      bot_token: formData.get('bot_token'),
-      chat_id: formData.get('chat_id'),
-      notify_signals: formData.get('notify_signals') === 'on',
-      notify_fills: formData.get('notify_fills') === 'on',
-      notify_errors: formData.get('notify_errors') === 'on',
-      notify_daily: formData.get('notify_daily') === 'on',
-    };
-    try {
-      const response = await opsSvc.setTelegramConfig(body);
-      setStatusMsg(response.ok ? 'Telegram test message sent' : `Telegram failed: ${response.reason || ''}`);
-    } catch (err) {
-      setStatusMsg(`Telegram failed: ${safeErrorMessage(err)}`);
-    }
-  });
-
-  on('#v2-healer-trigger', 'click', async () => {
-    await opsSvc.triggerHealer();
-    renderOps().catch((err) => renderTabError('ops', err));
-  });
-}
-
-function readStepPayload(form) {
-  const formData = new FormData(form);
-  const symbol = String(formData.get('symbol') || marketState.currentSymbol || 'HYPEUSDT').trim();
-  const interval = String(formData.get('interval') || marketState.currentInterval || '4h').trim();
-  const barIndexRaw = String(formData.get('bar_index') || '').trim();
-  const analysisBarsRaw = String(formData.get('analysis_bars') || '500').trim();
-  const triggerModes = String(formData.get('trigger_modes') || 'pre_limit')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const payload = {
-    symbol,
-    interval,
-    history_mode: String(formData.get('history_mode') || 'fast_window').trim(),
-    days: Number(formData.get('days') || 365),
-    analysis_bars: Number(analysisBarsRaw || 500),
-    trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],
-    lookback_bars: Number(formData.get('lookback_bars') || 80),
-    strategy_window_bars: Number(formData.get('strategy_window_bars') || 100),
-  };
-  if (barIndexRaw !== '') {
-    payload.bar_index = Number(barIndexRaw);
-  }
-  return payload;
-}
-
-async function runPaperAction(setter, fn) {
-  if (isPaperExecutionBusy()) return;
-  setter(true);
-  if (!repaintExecutionSections({ paper: true, live: true })) {
-    renderActive(true).catch((err) => console.warn('[exec] paper mutation pre-render failed:', err));
-  }
-  try {
-    await fn();
-  } catch (err) {
-    setPaperExecutionError(safeErrorMessage(err));
-  } finally {
-    setter(false);
-    if (!repaintExecutionSections({ paper: true, live: true })) {
-      renderActive(true).catch((err) => console.warn('[exec] paper mutation post-render failed:', err));
-    }
-  }
-}
-
-function readSelectedIntentId(form) {
-  const value = String(new FormData(form).get('order_intent_id') || '').trim();
-  if (!value) {
-    throw new Error('No live-eligible paper intent selected');
-  }
-  return value;
-}
-
-function readLiveMode(form) {
-  const value = String(new FormData(form).get('mode') || 'demo').trim().toLowerCase();
-  return value === 'live' ? 'live' : 'demo';
-}
-
-function readRuntimeCreatePayload(form) {
-  const formData = new FormData(form);
-  const triggerModes = String(formData.get('trigger_modes') || 'pre_limit')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  return {
-    label: String(formData.get('label') || '').trim() || `${marketState.currentSymbol || 'BTCUSDT'} ${marketState.currentInterval || '4h'}`,
-    symbol: String(formData.get('symbol') || marketState.currentSymbol || 'BTCUSDT').trim(),
-    timeframe: String(formData.get('timeframe') || marketState.currentInterval || '4h').trim(),
-    subaccount_label: String(formData.get('subaccount_label') || '').trim(),
-    history_mode: String(formData.get('history_mode') || 'fast_window').trim(),
-    analysis_bars: Number(formData.get('analysis_bars') || 500),
-    days: Number(formData.get('days') || 365),
-    live_mode: String(formData.get('live_mode') || 'disabled').trim(),
-    strategy_config: {
-      enabled_trigger_modes: triggerModes.length ? triggerModes : ['pre_limit'],
-      lookback_bars: Number(formData.get('lookback_bars') || 80),
-      window_bars: Number(formData.get('window_bars') || 100),
-    },
-  };
-}
-
-async function runLiveBridgeAction(flag, fn) {
-  if (isLiveBridgeBusy()) return;
-  liveBridgeState[flag] = true;
-  if (!repaintExecutionSections({ live: true })) {
-    renderActive(true).catch((err) => console.warn('[exec] live bridge pre-render failed:', err));
-  }
-  try {
-    await fn();
-  } catch (err) {
-    liveBridgeState.lastError = safeErrorMessage(err);
-  } finally {
-    liveBridgeState[flag] = false;
-    if (!repaintExecutionSections({ live: true })) {
-      renderActive(true).catch((err) => console.warn('[exec] live bridge post-render failed:', err));
-    }
-  }
-}
-
-function isRuntimeBusy(instanceId = null) {
-  const activeIds = [
-    runtimePanelState.tickingInstanceId,
-    runtimePanelState.startingInstanceId,
-    runtimePanelState.stoppingInstanceId,
-    runtimePanelState.killInstanceId,
-    runtimePanelState.deletingInstanceId,
-  ].filter(Boolean);
-  if (!instanceId) {
-    return runtimePanelState.creating || runtimePanelState.loading || activeIds.length > 0;
-  }
-  return activeIds.includes(instanceId);
-}
-
-async function runRuntimeAction(instanceId, action) {
-  const flagKey = action === 'tick'
-    ? 'tickingInstanceId'
-    : action === 'start'
-      ? 'startingInstanceId'
-      : action === 'stop'
-        ? 'stoppingInstanceId'
-        : action === 'kill'
-          ? 'killInstanceId'
-          : 'deletingInstanceId';
-  runtimePanelState[flagKey] = instanceId;
-  await refreshRuntimeExecutionSection(true).catch(() => null);
-  try {
-    if (action === 'tick') {
-      await runtimeSvc.tickRuntimeInstance(instanceId, {});
-    } else if (action === 'start') {
-      await runtimeSvc.startRuntimeInstance(instanceId);
-    } else if (action === 'stop') {
-      await runtimeSvc.stopRuntimeInstance(instanceId);
-    } else if (action === 'kill') {
-      const target = runtimePanelState.instances.find((record) => record.config.instance_id === instanceId);
-      const blocked = !(target?.status?.paper_state?.kill_switch?.blocked);
-      await runtimeSvc.setRuntimeKillSwitch(instanceId, {
-        blocked,
-        reason: blocked ? 'manual_runtime_panel' : '',
-      });
-    } else if (action === 'delete') {
-      await runtimeSvc.deleteRuntimeInstance(instanceId);
-    }
-    await loadRuntimeInstances(true);
-    await loadRuntimeEvents(true).catch(() => null);
-  } catch (err) {
-    runtimePanelState.lastError = safeErrorMessage(err);
-  } finally {
-    runtimePanelState[flagKey] = null;
-    await refreshRuntimeExecutionSection(true).catch(() => null);
-  }
-}
-
-function safeErrorMessage(err) {
-  if (!err) return 'Unknown error';
-  if (typeof err === 'string') return err;
-  if (err.body && typeof err.body === 'object' && err.body.detail) return String(err.body.detail);
-  if (err.message) return String(err.message);
-  return String(err);
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function setStatusMsg(message) {
-  console.log('[ops]', message);
-}
-
-function setPresetStatus(message) {
-  const element = $('#v2-preset-status');
-  if (element) element.textContent = message;
-}
+// ── Helpers ─────────────────────────────────────────────────────────────
+function sec(title, badge, content) { return `<div class="exec-section"><div class="exec-section-title">${title} <small style="color:var(--v2-muted)">${badge}</small></div>${content}</div>`; }
+function esc(s) { const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
+function fmtPnl(v) { return (v>=0?'+':'')+formatUsd(v); }
+function rel(ts) { if(!ts)return'-'; try{const d=Math.floor((Date.now()-(typeof ts==='number'?ts*1000:new Date(ts).getTime()))/1000); if(d<60)return`${d}秒前`;if(d<3600)return`${Math.floor(d/60)}分前`;if(d<86400)return`${Math.floor(d/3600)}时前`;return`${Math.floor(d/86400)}天前`;}catch{return'-';} }

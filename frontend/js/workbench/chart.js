@@ -126,6 +126,30 @@ export function initChart(containerId = 'chart-container') {
   subscribe('drawings.updated', () => renderStrategyOverlays());
   subscribe('drawings.viewMode', () => renderStrategyOverlays());
 
+  // Trade markers from execution panel (buy/sell arrows)
+  let execMarkers = [];
+  subscribe('execution.trade.markers', (markers) => {
+    execMarkers = markers || [];
+    applyExecMarkers();
+  });
+  subscribe('execution.strategy.deselected', () => {
+    execMarkers = [];
+    applyExecMarkers();
+  });
+
+  function applyExecMarkers() {
+    if (!candleSeries) return;
+    if (execMarkers.length === 0) {
+      // Don't clear — signal overlay manages its own markers
+      return;
+    }
+    try {
+      candleSeries.setMarkers(execMarkers);
+    } catch (err) {
+      console.warn('[chart] exec markers failed:', err);
+    }
+  }
+
   return chart;
 }
 
@@ -140,7 +164,7 @@ export async function loadCurrent(forcePatterns = false) {
     cancelDeferredOverlayLoad();
     abortOverlayRequests();
 
-    const days = marketState.historyMode === 'full_history' ? 365 : 90;
+    const days = 365; // Always load full year of data
     const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, days, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
@@ -248,9 +272,9 @@ async function loadPatterns(symbol, interval, overlayContext = null) {
     if (requestId !== patternRequestSeq || !isOverlayContextCurrent(overlayContext)) {
       return { ok: false, stale: true };
     }
+    // Pattern lines disabled — strategy overlay already draws S/R from snapshot.
+    // Drawing both layers creates duplicate noise on the chart.
     clearPatternLines(chart);
-    drawPatterns(chart, data.supportLines || [], data.resistanceLines || [], 8);
-    drawZones(chart, data.consolidationZones || []);
     return { ok: true, stale: false };
   } catch (err) {
     if (requestId !== patternRequestSeq || err?.name === 'AbortError' || !isOverlayContextCurrent(overlayContext)) {
@@ -420,10 +444,17 @@ function renderStrategyOverlays() {
   drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
   drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
 
-  // Draw horizontal S/R zones from strategy snapshot
-  const srZones = snapshot.horizontal_zones || [];
-  if (srZones.length > 0) {
-    drawHorizontalSRZones(chart, candleSeries, srZones);
+  // Draw horizontal S/R zones — only high-quality ones (strength > 40), max 2 per side
+  const srZones = (snapshot.horizontal_zones || [])
+    .filter((z) => z.strength > 40)
+    .sort((a, b) => b.strength - a.strength);
+  const supportZones = srZones.filter((z) => z.side === 'support').slice(0, 2);
+  const resistanceZones = srZones.filter((z) => z.side === 'resistance').slice(0, 2);
+  const filteredZones = [...supportZones, ...resistanceZones];
+  if (filteredZones.length > 0) {
+    drawHorizontalSRZones(chart, candleSeries, filteredZones);
+  } else {
+    clearHorizontalSRZones(chart);
   }
 
   renderManualLines();

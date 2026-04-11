@@ -1,0 +1,85 @@
+[
+  {
+    "variant_id": "SUIUSDT_1h_rejection_failed_breakout_retest_1_7976",
+    "name": "rej+fai+ret RR3.0",
+    "symbol": "SUIUSDT",
+    "timeframe": "1h",
+    "trigger_modes": [
+      "rejection",
+      "failed_breakout",
+      "retest"
+    ],
+    "params": {
+      "lookback_bars": 60,
+      "min_touches": 2,
+      "rr_target": 3.0,
+      "risk_per_trade": 0.005,
+      "score_threshold": 0.65
+    },
+    "total_trades": 3,
+    "win_rate": 66.7,
+    "profit_factor": 7.03,
+    "sharpe_ratio": 1.64,
+    "total_return_pct": 3.01,
+    "max_drawdown_pct": 0.5,
+    "avg_rr": 3.67,
+    "score": 0.8361,
+    "tested_at": 1775888236.8006127,
+    "generation": 1
+  },
+  {
+    "variant_id": "SOLUSDT_1h_pre_limit_rejection_failed_breakout_retest_1_1292",
+    "name": "pre+rej+fai+ret RR3.0",
+    "symbol": "SOLUSDT",
+    "timeframe": "1h",
+    "trigger_modes": [
+      "pre_limit",
+      "rejection",
+      "failed_breakout",
+      "retest"
+    ],
+    "params": {
+      "lookback_bars": 100,
+      "min_touches": 3,
+      "rr_target": 3.0,
+      "risk_per_trade": 0.002,
+      "score_threshold": 0.7
+    },
+    "total_trades": 3,
+    "win_rate": 66.7,
+    "profit_factor": 7.01,
+    "sharpe_ratio": 1.61,
+    "total_return_pct": 1.2,
+    "max_drawdown_pct": 0.2,
+    "avg_rr": 3.33,
+    "score": 0.8232,
+    "tested_at": 1775888247.67125,
+    "generation": 1
+  },
+  {
+    "variant_id": "SUIUSDT_15m_retest_1_9317",
+    "name": "ret RR3.0",
+    "symbol": "SUIUSDT",
+    "timeframe": "15m",
+    "trigger_modes": [
+      "retest"
+    ],
+    "params": {
+      "lookback_bars": 60,
+      "min_touches": 4,
+      "rr_target": 3.0,
+      "risk_per_trade": 0.002,
+      "score_threshold": 0.7
+    },
+    "total_trades": 5,
+    "win_rate": 20.0,
+    "profit_factor": 0.87,
+    "sharpe_ratio": -0.13,
+    "total_return_pct": -0.1,
+    "max_drawdown_pct": 0.6,
+    "avg_rr": 3.68,
+    "score": 0.3007,
+    "tested_at": 1775888259.2723036,
+    "generation": 1
+  }
+]

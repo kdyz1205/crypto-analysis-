@@ -131,6 +131,10 @@ def _evaluate_candidate_line(
 ) -> Trendline | None:
     slope = (right_pivot.price - left_pivot.price) / (right_pivot.index - left_pivot.index)
     intercept = left_pivot.price - (slope * left_pivot.index)
+    # Check invalidation across the ENTIRE line span (left pivot to current),
+    # not just from right pivot. Pierces between anchors must be caught too.
+    # Skip the anchor pivot bars themselves (they define the line, not pierce it).
+    anchor_indices = {left_pivot.index, right_pivot.index}
     invalidation_reason, invalidation_index = _detect_invalidation(
         df,
         atr,
@@ -138,8 +142,9 @@ def _evaluate_candidate_line(
         intercept,
         side=side,
         config=config,
-        start_index=right_pivot.index,
+        start_index=left_pivot.index,
         current_index=current_index,
+        skip_indices=anchor_indices,
     )
 
     confirming_refs: list[tuple[int, float, Pivot]] = []
@@ -149,8 +154,14 @@ def _evaluate_candidate_line(
         line_value = project_price(slope, intercept, pivot.index)
         residual = abs(pivot.price - line_value)
         max_error = config.max_line_error(float(atr.iloc[pivot.index]), float(df.iloc[pivot.index]["close"]))
-        if residual <= max_error:
-            confirming_refs.append((pivot.index, residual, pivot))
+        if residual > max_error:
+            continue
+        # Pivot must be on the correct side: support touches come from below, resistance from above
+        if side == "support" and pivot.price < line_value - max_error:
+            continue  # pivot far below support line = pierced, not touched
+        if side == "resistance" and pivot.price > line_value + max_error:
+            continue  # pivot far above resistance line = pierced, not touched
+        confirming_refs.append((pivot.index, residual, pivot))
     if invalidation_index is not None:
         confirming_refs = [item for item in confirming_refs if item[0] <= invalidation_index]
     confirming_refs = _dedupe_touch_refs(confirming_refs, config.min_touch_spacing_bars)
@@ -188,6 +199,29 @@ def _evaluate_candidate_line(
 
     recent_window_start = max(left_pivot.index, current_index - config.recent_test_window_bars + 1)
     recent_bar_touch_count = sum(1 for bar_index, _ in bar_touch_refs if bar_index >= recent_window_start)
+
+    # ── BODY-CROSS QUALITY CHECK ─────────────────────────────────────
+    # Professional trendlines: wicks can touch/cross the line, but bodies
+    # should stay on the correct side. Allow small tolerance (0.1 ATR)
+    # for body slightly crossing, but count violations. Too many = reject.
+    scan_end = invalidation_index if invalidation_index is not None else current_index
+    body_violation_count = 0
+    for bar_index in range(left_pivot.index + 1, scan_end + 1):
+        lv = project_price(slope, intercept, bar_index)
+        local_atr = float(atr.iloc[bar_index])
+        body_tol = local_atr * 0.03  # very tight: only 3% of ATR tolerance
+        o = float(df.iloc[bar_index]["open"])
+        c = float(df.iloc[bar_index]["close"])
+        bh = max(o, c)
+        bl = min(o, c)
+        if side == "support":
+            if bl < lv - body_tol:
+                body_violation_count += 1
+        else:
+            if bh > lv + body_tol:
+                body_violation_count += 1
+        if body_violation_count > 1:  # max 1 minor violation
+            return None
 
     latest_touch_price = next(item[2].price for item in reversed(confirming_refs) if item[0] == latest_touch_index)
     return Trendline(
@@ -295,21 +329,54 @@ def _touch_residual(df, bar_index: int, line_value: float, side: str) -> float:
 
 
 def _is_bar_touch(df, bar_index: int, line_value: float, side: str, config: StrategyConfig, atr_value: float, close_price: float) -> bool:
+    """A valid touch requires:
+    1. The wick reaches near the line (within tolerance)
+    2. The close stays on the CORRECT side of the line (not pierced through)
+    3. The body does NOT fully cross through the line
+    """
     tolerance = config.tolerance(atr_value, close_price)
+    open_price = float(df.iloc[bar_index]["open"])
+    close = float(df.iloc[bar_index]["close"])
+    body_high = max(open_price, close)
+    body_low = min(open_price, close)
+
     slack = config.close_touch_slack(atr_value, close_price)
+
     if side == "resistance":
         high = float(df.iloc[bar_index]["high"])
-        close = float(df.iloc[bar_index]["close"])
-        return abs(high - line_value) <= tolerance and close <= line_value + slack
+        # Wick must reach near the line
+        if abs(high - line_value) > tolerance:
+            return False
+        # Close must be BELOW or near the line (small slack allowed)
+        if close > line_value + slack:
+            return False
+        # Body should mostly be below the line
+        if body_high > line_value + tolerance:
+            return False
+        return True
+
+    # Support
     low = float(df.iloc[bar_index]["low"])
-    close = float(df.iloc[bar_index]["close"])
-    return abs(low - line_value) <= tolerance and close >= line_value - slack
+    # Wick must reach near the line
+    if abs(low - line_value) > tolerance:
+        return False
+    # Close must be ABOVE or near the line
+    if close < line_value - slack:
+        return False
+    # Body should mostly be above the line
+    if body_low < line_value - tolerance:
+        return False
+    return True
 
 
 def _is_non_touch_cross(df, bar_index: int, line_value: float, tolerance: float) -> bool:
+    """A cross is when the body spans across the line — either end beyond tolerance."""
     open_price = float(df.iloc[bar_index]["open"])
     close_price = float(df.iloc[bar_index]["close"])
-    return min(open_price, close_price) < (line_value - tolerance) and max(open_price, close_price) > (line_value + tolerance)
+    body_high = max(open_price, close_price)
+    body_low = min(open_price, close_price)
+    # Body crosses line if one side is above and the other below
+    return body_low < line_value and body_high > line_value
 
 
 def _detect_invalidation(
@@ -322,22 +389,37 @@ def _detect_invalidation(
     config: StrategyConfig,
     start_index: int,
     current_index: int,
+    skip_indices: set[int] | None = None,
 ) -> tuple[str | None, int | None]:
     consecutive_breaks = 0
+    _skip = skip_indices or set()
     for bar_index in range(start_index, current_index + 1):
+        if bar_index in _skip:
+            continue
         line_value = project_price(slope, intercept, bar_index)
         atr_value = float(atr.iloc[bar_index])
         close_price = float(df.iloc[bar_index]["close"])
+        open_price = float(df.iloc[bar_index]["open"])
         break_distance = config.break_distance(atr_value, close_price)
 
         if side == "resistance":
-            broken = close_price > line_value
+            # Body fully above the line = strong break
+            body_low = min(open_price, close_price)
+            if body_low > line_value + break_distance:
+                return "body_break", bar_index
+            # Close above line + break distance
             if close_price > line_value + break_distance:
                 return "break_distance", bar_index
+            broken = close_price > line_value
         else:
-            broken = close_price < line_value
+            # Body fully below the line = strong break
+            body_high = max(open_price, close_price)
+            if body_high < line_value - break_distance:
+                return "body_break", bar_index
+            # Close below line - break distance
             if close_price < line_value - break_distance:
                 return "break_distance", bar_index
+            broken = close_price < line_value
 
         consecutive_breaks = consecutive_breaks + 1 if broken else 0
         if consecutive_breaks >= config.break_close_count:

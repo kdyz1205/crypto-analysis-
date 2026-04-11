@@ -7,7 +7,7 @@ export const marketState = {
   allSymbols: [],
   lastCandles: [],
   pricePrecision: null,
-  historyMode: 'fast_window',
+  historyMode: 'full_history',
   historyMeta: null,
   currentScale: 'log',  // 'linear' | 'log' — default log for crypto volatility
   magnetMode: 'weak',      // 'weak' | 'strong'

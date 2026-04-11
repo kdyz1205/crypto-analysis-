@@ -33,6 +33,7 @@ export function drawPatterns(chart, supportLines = [], resistLines = [], maxLine
         lineWidth: 2,
         priceLineVisible: false,
         lastValueVisible: false,
+        autoscaleInfoProvider: () => null,
       });
 
       // Line may be specified as two endpoints or list of points
@@ -66,6 +67,7 @@ export function drawZones(chart, zones = []) {
         lineWidth: 1,
         priceLineVisible: false,
         lastValueVisible: false,
+        autoscaleInfoProvider: () => null,
       });
       if (zone.t1 != null && zone.t2 != null) {
         s.setData([
@@ -109,16 +111,18 @@ export function drawHorizontalSRZones(chart, candleSeries, zones = []) {
   for (const zone of zones) {
     try {
       const isSupport = zone.side === 'support';
-      const color = isSupport ? 'rgba(0, 230, 118, 0.6)' : 'rgba(255, 23, 68, 0.6)';
+      const color = isSupport ? 'rgba(0, 230, 118, 0.5)' : 'rgba(255, 23, 68, 0.5)';
+      const strength = zone.strength != null ? Math.round(zone.strength) : '';
+      const label = `${isSupport ? 'S' : 'R'} ${zone.touches}t${strength ? ' ' + strength : ''}`;
 
-      // Center line
+      // Single center line only — no upper/lower boundary noise
       const s = chart.addLineSeries({
         color,
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Solid,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
         priceLineVisible: false,
         lastValueVisible: true,
-        title: `${isSupport ? 'S' : 'R'} ${zone.touches}t`,
+        title: label,
         autoscaleInfoProvider: () => null,
       });
       s.setData([
@@ -126,36 +130,6 @@ export function drawHorizontalSRZones(chart, candleSeries, zones = []) {
         { time: t2, value: zone.price_center },
       ]);
       zoneSeries.push(s);
-
-      // Upper boundary (dotted)
-      const sUp = chart.addLineSeries({
-        color: color.replace('0.6', '0.25'),
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        autoscaleInfoProvider: () => null,
-      });
-      sUp.setData([
-        { time: t1, value: zone.price_high },
-        { time: t2, value: zone.price_high },
-      ]);
-      zoneSeries.push(sUp);
-
-      // Lower boundary (dotted)
-      const sLo = chart.addLineSeries({
-        color: color.replace('0.6', '0.25'),
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        autoscaleInfoProvider: () => null,
-      });
-      sLo.setData([
-        { time: t1, value: zone.price_low },
-        { time: t2, value: zone.price_low },
-      ]);
-      zoneSeries.push(sLo);
     } catch (err) {
       console.warn('[patterns] S/R zone draw failed:', err);
     }

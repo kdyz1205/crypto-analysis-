@@ -39,15 +39,17 @@ export function drawTrendlineOverlay(chart, snapshot, layerVisibility = {}) {
   if (!snapshot) return;
 
   const allLines = Array.isArray(snapshot.candidate_lines) ? [...snapshot.candidate_lines] : [];
+  // Only show active primary lines to reduce noise — max 6 total
   const primaryLines = allLines
-    .filter((line) => line.display_class === 'primary' || line.display_class === 'secondary')
-    .sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999));
-  const debugLines = allLines
-    .filter((line) => line.display_class === 'debug')
-    .sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999));
+    .filter((line) => line.display_class === 'primary' && line.is_active)
+    .sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999))
+    .slice(0, 6);
+  const debugLines = layerVisibility.debugTrendlines
+    ? allLines.filter((line) => line.display_class === 'debug').sort((a, b) => (a.display_rank || 999) - (b.display_rank || 999))
+    : [];
   const visibleLines = [
     ...(layerVisibility.primaryTrendlines !== false ? primaryLines : []),
-    ...(layerVisibility.debugTrendlines ? debugLines : []),
+    ...debugLines,
   ];
 
   if (visibleLines.length > 0) {

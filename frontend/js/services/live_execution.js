@@ -2,9 +2,15 @@ import { fetchJson } from '../util/fetch.js';
 
 export async function getLiveExecutionStatus() {
   const response = await fetchJson('/api/live-execution/status', {
-    timeout: 5000,
+    timeout: 15000,
   });
   return response.status;
+}
+
+export async function getLiveAccount(mode = 'live') {
+  return fetchJson(`/api/live-execution/account?mode=${encodeURIComponent(mode)}`, {
+    timeout: 30000,
+  });
 }
 
 export async function getLiveExecutionPreflight(params = {}) {

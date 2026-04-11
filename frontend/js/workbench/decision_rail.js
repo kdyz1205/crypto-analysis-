@@ -10,14 +10,12 @@ let pollTimer = null;
 const DECISION_RAIL_TIMEOUT_MS = 4000;
 
 async function fetchAll(symbol, interval) {
-  const [structure, summary, risk, candidates, snapshot] = await Promise.all([
+  const [structure, risk, snapshot] = await Promise.all([
     fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson('/api/agent/summary', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson('/api/agent/signal-candidates', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=500`, { timeout: 8000 }).catch(() => null),
   ]);
-  return { structure, summary, risk, candidates, snapshot };
+  return { structure, risk, snapshot };
 }
 
 function cardMarketState(structure) {
@@ -57,6 +55,28 @@ function cardMarketState(structure) {
   `;
 }
 
+function cardRegime(snapshot) {
+  const regime = snapshot?.snapshot?.market_regime;
+  if (!regime) return '';
+
+  const regimeLabel = { trending: '趋势', ranging: '震荡', compressed: '压缩', breakout: '突破' }[regime.regime] || regime.regime;
+  const dirLabel = { up: '上行', down: '下行', neutral: '中性' }[regime.trend_direction] || '-';
+  const volLabel = { expanding: '扩张', normal: '正常', compressed: '压缩' }[regime.volatility_state] || '-';
+  const dirClass = regime.trend_direction === 'up' ? 'pnl-pos' : regime.trend_direction === 'down' ? 'pnl-neg' : '';
+
+  return `
+    <div class="dr-card">
+      <h3>市场政权</h3>
+      <div class="dr-row"><span class="dr-label">政权</span><span class="dr-value"><strong>${regimeLabel}</strong></span></div>
+      <div class="dr-row"><span class="dr-label">方向</span><span class="dr-value ${dirClass}">${dirLabel} (${(regime.trend_strength * 100).toFixed(0)}%)</span></div>
+      <div class="dr-row"><span class="dr-label">ADX</span><span class="dr-value">${regime.adx}</span></div>
+      <div class="dr-row"><span class="dr-label">波动</span><span class="dr-value">${volLabel} (${regime.volatility_ratio.toFixed(2)}x)</span></div>
+      <div class="dr-row"><span class="dr-label">结构</span><span class="dr-value">${(regime.structure_score * 100).toFixed(0)}%</span></div>
+      <div class="dr-row"><span class="dr-label">区间度</span><span class="dr-value">${(regime.range_score * 100).toFixed(0)}%</span></div>
+    </div>
+  `;
+}
+
 function cardSRZones(snapshot, currentPrice) {
   const zones = snapshot?.snapshot?.horizontal_zones || [];
   const signals = snapshot?.snapshot?.signals || [];
@@ -71,11 +91,19 @@ function cardSRZones(snapshot, currentPrice) {
   const zoneRow = (z) => {
     const dist = price > 0 ? ((z.price_center - price) / price * 100).toFixed(1) : '?';
     const color = z.side === 'support' ? 'pnl-pos' : 'pnl-neg';
+    const sc = z.strength_components || {};
+    const scoreDetail = [
+      sc.touch_score != null ? `触${(sc.touch_score * 100).toFixed(0)}` : '',
+      sc.reaction_score != null ? `反${(sc.reaction_score * 100).toFixed(0)}` : '',
+      sc.trend_score != null ? `势${(sc.trend_score * 100).toFixed(0)}` : '',
+      sc.volume_failure_score != null ? `量${(sc.volume_failure_score * 100).toFixed(0)}` : '',
+    ].filter(Boolean).join(' ');
     return `
       <div class="dr-row">
-        <span class="dr-label ${color}">${z.side === 'support' ? '支撑' : '阻力'} ${z.touches}t</span>
+        <span class="dr-label ${color}">${z.side === 'support' ? '支撑' : '阻力'} ${z.touches}t <small>${Math.round(z.strength)}</small></span>
         <span class="dr-value">$${z.price_center.toFixed(2)} <small>(${dist}%)</small></span>
       </div>
+      ${scoreDetail ? `<div class="dr-row"><span class="dr-label muted" style="font-size:9px">${scoreDetail}</span></div>` : ''}
     `;
   };
 
@@ -96,49 +124,10 @@ function cardSRZones(snapshot, currentPrice) {
   `;
 }
 
-function cardCurrentSetup(candidates, symbol) {
-  if (!candidates || !candidates.candidates || candidates.candidates.length === 0) {
-    return `
-      <div class="dr-card">
-        <h3>当前机会</h3>
-        <p class="muted">暂无交易机会</p>
-      </div>
-    `;
-  }
-  const sigForSym = candidates.candidates.find((c) => c.symbol === symbol) || candidates.candidates[0];
-  const biasClass = sigForSym.side === 'long' ? 'pnl-pos' : 'pnl-neg';
-  return `
-    <div class="dr-card">
-      <h3>当前机会 ${sigForSym.symbol !== symbol ? `<span class="muted" style="font-size:10px">(${sigForSym.symbol})</span>` : ''}</h3>
-      <div class="dr-row">
-        <span class="dr-label">Bias</span>
-        <span class="dr-value ${biasClass}"><strong>${sigForSym.side?.toUpperCase()}</strong></span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">Setup Score</span>
-        <span class="dr-value">${sigForSym.setup_score}/100</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">Exec Score</span>
-        <span class="dr-value">${sigForSym.execution_score}/100</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">RR</span>
-        <span class="dr-value">${sigForSym.rr_estimate || '—'}R</span>
-      </div>
-      ${sigForSym.reason ? `<div class="dr-reason">${sigForSym.reason.slice(0, 120)}</div>` : ''}
-    </div>
-  `;
-}
-
 function cardRiskGate(risk) {
   if (!risk) return `<div class="dr-card"><h3>风控</h3><p class="muted">加载中...</p></div>`;
-  const stateClass = {
-    NORMAL: 'pnl-pos',
-    WATCH: '',
-    COOLDOWN: '',
-    HALTED: 'pnl-neg',
-  }[risk.state] || '';
+  const stateLabel = { NORMAL: '正常', WATCH: '观察', COOLDOWN: '冷却', HALTED: '停止' }[risk.state] || risk.state;
+  const stateClass = { NORMAL: 'pnl-pos', HALTED: 'pnl-neg' }[risk.state] || '';
 
   const m = risk.meters || {};
   const miniMeter = (label, obj) => {
@@ -157,8 +146,8 @@ function cardRiskGate(risk) {
     <div class="dr-card">
       <h3>风控</h3>
       <div class="dr-row">
-        <span class="dr-label">State</span>
-        <span class="dr-value ${stateClass}"><strong>${risk.state}</strong></span>
+        <span class="dr-label">状态</span>
+        <span class="dr-value ${stateClass}"><strong>${stateLabel}</strong></span>
       </div>
       ${risk.state_reason ? `<div class="dr-reason">${risk.state_reason}</div>` : ''}
       ${miniMeter('敞口', m.exposure)}
@@ -167,52 +156,10 @@ function cardRiskGate(risk) {
       ${miniMeter('持仓', m.positions)}
       ${risk.cooldown_remaining_sec > 0 ? `
         <div class="dr-row">
-          <span class="dr-label">Cooldown</span>
-          <span class="dr-value">${risk.cooldown_remaining_sec}s</span>
+          <span class="dr-label">冷却中</span>
+          <span class="dr-value">${risk.cooldown_remaining_sec}秒</span>
         </div>
       ` : ''}
-    </div>
-  `;
-}
-
-function cardTradeCandidate(candidates, summary, symbol) {
-  if (!candidates || candidates.count === 0) {
-    return `
-      <div class="dr-card">
-        <h3>Trade Candidate</h3>
-        <p class="muted">${summary?.last_block_reason ? 'Blocked: ' + summary.last_block_reason : 'No candidate'}</p>
-      </div>
-    `;
-  }
-  const c = candidates.candidates.find((x) => x.symbol === symbol) || candidates.candidates[0];
-  return `
-    <div class="dr-card">
-      <h3>Trade Candidate</h3>
-      <div class="dr-row">
-        <span class="dr-label">Symbol</span>
-        <span class="dr-value">${c.symbol} ${c.side?.toUpperCase()}</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">Entry</span>
-        <span class="dr-value">$${c.entry}</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">Stop</span>
-        <span class="dr-value pnl-neg">$${c.stop}</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">Target</span>
-        <span class="dr-value pnl-pos">$${c.target}</span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">RR</span>
-        <span class="dr-value"><strong>${c.rr_estimate || '—'}R</strong></span>
-      </div>
-      <div class="dr-row">
-        <span class="dr-label">State</span>
-        <span class="dr-value ${c.signal_state === 'READY' ? 'pnl-pos' : ''}">${c.signal_state}</span>
-      </div>
-      ${c.block_reason ? `<div class="dr-block">⚠ ${c.block_reason}</div>` : ''}
     </div>
   `;
 }
@@ -222,40 +169,17 @@ async function render() {
   if (!container) return;
 
   try {
-    const { structure, summary, risk, candidates, snapshot } = await fetchAll(marketState.currentSymbol, marketState.currentInterval);
+    const { structure, risk, snapshot } = await fetchAll(marketState.currentSymbol, marketState.currentInterval);
     const lastPrice = structure?.last_price || marketState.lastCandles?.at?.(-1)?.close || 0;
     setHtml(container, `
       ${cardMarketState(structure)}
+      ${cardRegime(snapshot)}
       ${cardSRZones(snapshot, lastPrice)}
       ${cardRiskGate(risk)}
-      ${cardTradeCandidate(candidates, summary, marketState.currentSymbol)}
-      <div class="dr-card dr-summary">
-        <h3>Agent</h3>
-        <div class="dr-row">
-          <span class="dr-label">State</span>
-          <span class="dr-value ${summary?.runtime_state === 'RUNNING' ? 'pnl-pos' : ''}">${summary?.runtime_state || '—'}</span>
-        </div>
-        <div class="dr-row">
-          <span class="dr-label">Mode</span>
-          <span class="dr-value">${summary?.mode?.toUpperCase() || '—'}</span>
-        </div>
-        <div class="dr-row">
-          <span class="dr-label">Equity</span>
-          <span class="dr-value">$${(summary?.equity ?? 0).toFixed(2)}</span>
-        </div>
-        <div class="dr-row">
-          <span class="dr-label">Daily PnL</span>
-          <span class="dr-value ${summary?.daily_pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">$${(summary?.daily_pnl ?? 0).toFixed(2)}</span>
-        </div>
-        <div class="dr-row">
-          <span class="dr-label">Health</span>
-          <span class="dr-value">${summary?.health_score ?? '—'}/100</span>
-        </div>
-      </div>
     `);
   } catch (err) {
     console.error('[decision-rail] render failed:', err);
-    setHtml(container, `<div class="dr-card"><h3>Decision Rail</h3><p class="muted">Error: ${err.message}</p></div>`);
+    setHtml(container, `<div class="dr-card"><h3>市场分析</h3><p class="muted">加载失败: ${err.message}</p></div>`);
   }
 }
 
@@ -284,8 +208,6 @@ function paintLoading() {
     loadingCard('市场状态'),
     loadingCard('S/R 区域'),
     loadingCard('风控'),
-    loadingCard('交易候选'),
-    loadingCard('策略'),
   ].join('');
 }
 

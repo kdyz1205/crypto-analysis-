@@ -54,16 +54,16 @@ class StrategyConfig:
     atr_period: int = 14
     tick_size: float = 0.0001
 
-    tol_atr_mult: float = 0.15
-    tol_pct: float = 0.002
+    tol_atr_mult: float = 0.10
+    tol_pct: float = 0.0015
     tick_mult: int = 3
     close_touch_slack_atr_mult: float = 0.05
     close_touch_slack_pct: float = 0.0005
 
-    line_error_atr_mult: float = 0.20
-    line_error_pct: float = 0.003
+    line_error_atr_mult: float = 0.12
+    line_error_pct: float = 0.002
     min_touches: int = 3
-    min_touch_spacing_bars: int = 5
+    min_touch_spacing_bars: int = 5  # default, overridden by timeframe_touch_spacing
     confirm_threshold: float = 60.0
 
     max_anchor_combinations_per_pivot: int = 8
@@ -76,7 +76,7 @@ class StrategyConfig:
     line_merge_slope_eps: float = 0.0005
     merge_price_atr_mult: float = 0.10
     merge_price_pct: float = 0.001
-    max_non_touch_crosses: int = 2
+    max_non_touch_crosses: int = 0
 
     target_touch_gap: int = 12
     min_slope_abs: float = 0.0001
@@ -108,10 +108,15 @@ class StrategyConfig:
     stop_tick_mult: int = 2
     rr_target: float = 2.0
 
-    break_close_count: int = 2
-    break_atr_mult: float = 0.20
-    break_pct: float = 0.003
+    break_close_count: int = 1
+    break_atr_mult: float = 0.15
+    break_pct: float = 0.002
     max_fresh_bars: int = 80
+
+    # Horizontal zone detection
+    zone_min_touches: int = 3  # min pivot touches to form a zone (was 2, too noisy)
+    zone_eps_atr_mult: float = 0.5  # clustering radius as ATR multiple (default)
+    zone_eps_pct: float = 0.01  # clustering radius as price percentage (default)
 
     min_body_unit: float = 1e-8
     timeframe_priority: Mapping[str, int] = field(default_factory=_default_timeframe_priority)
@@ -204,6 +209,38 @@ class StrategyConfig:
             self.break_pct * close_price,
         )
 
+    def dynamic_rr_target(
+        self,
+        *,
+        score: float = 0.5,
+        trend_aligned: bool = False,
+        zone_strength: float = 0.0,
+    ) -> float:
+        """Compute RR target dynamically based on signal quality.
+
+        - High score / strong zone / trend-aligned → larger target (up to 5.0)
+        - Low score / weak zone / counter-trend → smaller target (floor at 1.5)
+        """
+        base = self.rr_target  # default 2.0
+
+        # Score adjustment: strong signals get wider targets
+        if score > 0.75:
+            base += 1.0
+        elif score > 0.60:
+            base += 0.5
+
+        # Zone strength adjustment
+        if zone_strength > 70:
+            base += 1.0
+        elif zone_strength > 50:
+            base += 0.5
+
+        # Trend alignment bonus
+        if trend_aligned:
+            base += 0.5
+
+        return max(1.5, min(base, 5.0))
+
     def timeframe_rank(self, timeframe: str) -> int:
         if timeframe in self.timeframe_priority:
             return self.timeframe_priority[timeframe]
@@ -231,6 +268,15 @@ class StrategyConfig:
 
     def trigger_rank(self, trigger_mode: str) -> int:
         return int(self.trigger_mode_priority.get(trigger_mode, 0))
+
+    def touch_spacing_for_timeframe(self, timeframe: str) -> int:
+        """Shorter TFs need smaller spacing; longer TFs need wider spacing."""
+        spacing = {
+            "1m": 2, "3m": 3, "5m": 3,
+            "15m": 5, "1h": 8, "4h": 12,
+            "1d": 15, "1w": 20,
+        }
+        return spacing.get(timeframe, self.min_touch_spacing_bars)
 
     def _timeframe_minutes(self, timeframe: str) -> int:
         unit = timeframe[-1].lower()

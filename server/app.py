@@ -37,6 +37,13 @@ app = FastAPI(title="Crypto TA")
 
 @app.on_event("startup")
 async def _startup():
+    # Load .env FIRST so all modules can see BITGET_API_KEY etc.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(PROJECT_ROOT / ".env", override=True)
+    except ImportError:
+        pass
+
     agent_inst = init_agent()
     chat_inst = init_chat()
     healer_inst = init_healer()
@@ -92,6 +99,10 @@ async def _startup():
     print("[Scheduler] Started with 3 default handlers")
     await runtime.runtime_manager.startup()
     print("[Runtime] Subaccount runtime manager ready")
+
+    # Evolution engine disabled on startup to avoid API congestion.
+    # Start manually via POST /api/runtime/leaderboard/start when needed.
+    print("[Evolution] Engine available but not auto-started (avoids API congestion)")
 
 
 @app.on_event("shutdown")
