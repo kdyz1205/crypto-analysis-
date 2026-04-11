@@ -211,12 +211,12 @@ async def main():
                     await handle_strategy_command(text)
                     continue
 
-                if text.strip() == "/strategies" or text.strip() == "/运行中":
-                    await show_running_strategies()
+                if text.strip() in ("/strategies", "/catalog", "/策略库"):
+                    await show_catalog()
                     continue
 
-                if text.strip() == "/catalog" or text.strip() == "/策略库":
-                    await show_catalog()
+                if text.strip() in ("/running", "/运行中"):
+                    await show_running_strategies()
                     continue
 
                 if text.strip().startswith("/stop"):
