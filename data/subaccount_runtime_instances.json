@@ -672,7 +672,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T08:05:47.348674+00:00",
+        "last_tick_at": "2026-04-11T08:06:49.371050+00:00",
         "last_processed_bar": 94,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12228,8 +12228,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T08:05:47.286758+00:00",
-        "last_processed_bar": 482,
+        "last_tick_at": "2026-04-11T08:06:49.255266+00:00",
+        "last_processed_bar": 484,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -12281,7 +12281,7 @@
             "open_position_count": 0,
             "closed_trade_count": 3,
             "last_processed_bar_by_stream": {
-              "ADAUSDT:4h": 482
+              "ADAUSDT:4h": 484
             }
           },
           "kill_switch": {

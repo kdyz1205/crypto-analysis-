@@ -191,19 +191,23 @@ def _score_zone(
     # 1. Touch count score (more touches = stronger, cap at 6)
     touch_score = clamp(zone.touches / 6.0)
 
-    # 2. Reaction strength: average bounce/rejection after each touch
+    # 2. Reaction strength: directional bounce after each touch
+    # Support: price should go UP after touch. Resistance: price should go DOWN.
     reaction_scores = []
     for touch_idx in zone.touch_indices:
         if touch_idx + 3 >= len(df):
             continue
         touch_close = float(df.iloc[touch_idx]["close"])
-        # Look 3 bars ahead for reaction
         future_close = float(df.iloc[min(touch_idx + 3, len(df) - 1)]["close"])
         local_atr = float(atr.iloc[touch_idx]) if touch_idx < len(atr) else atr_value
         if local_atr <= 0:
             continue
-        reaction = abs(future_close - touch_close) / local_atr
-        reaction_scores.append(clamp(reaction / 2.0))  # 2 ATR reaction = max score
+        # Direction-aware: support expects up, resistance expects down
+        if zone.side == "support":
+            reaction = (future_close - touch_close) / local_atr  # positive = bounced up (good)
+        else:
+            reaction = (touch_close - future_close) / local_atr  # positive = rejected down (good)
+        reaction_scores.append(clamp(reaction / 2.0))  # 2 ATR directional reaction = max
 
     reaction_score = float(np.mean(reaction_scores)) if reaction_scores else 0.0
 
