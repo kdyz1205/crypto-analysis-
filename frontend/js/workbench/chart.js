@@ -127,7 +127,8 @@ export async function loadCurrent(forcePatterns = false) {
     cancelDeferredOverlayLoad();
     abortOverlayRequests();
 
-    const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, 365, null, marketState.historyMode);
+    const days = marketState.historyMode === 'full_history' ? 365 : 90;
+    const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, days, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
     }
@@ -307,7 +308,7 @@ function scheduleDeferredOverlayLoad(overlayContext) {
     overlayTimer = null;
     if (!isOverlayContextCurrent(scheduledContext)) return;
     void loadDeferredOverlays(scheduledContext);
-  }, 2000);
+  }, 100);
 }
 
 async function loadDeferredOverlays(overlayContext) {

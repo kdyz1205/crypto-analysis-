@@ -88,10 +88,11 @@ def test_factor_scores_are_clamped_and_explicit() -> None:
 
     assert 0.0 <= short_score <= 1.0
     assert 0.0 <= long_score <= 1.0
-    assert short_components["VolumeFailure"] == 0.0
-    assert short_components["TrendContext"] == 0.0
+    assert "VolumeConfirmation" in short_components
+    assert 0.0 <= short_components["VolumeConfirmation"] <= 1.0
+    assert 0.0 <= short_components["TrendContext"] <= 1.0
     assert short_components["ConfluenceScore"] == 0.0
-    assert long_components["VolumeFailure"] == 0.0
+    assert "VolumeConfirmation" in long_components
 
 
 def test_factor_uses_dynamic_projected_next_from_bar_index() -> None:

@@ -50,7 +50,7 @@ function boot() {
             markBoot('rail', 'error', err.message);
             console.error('[boot] decision rail:', err);
           });
-      }, 5000);
+      }, 200);
     }
 
     if (!streamConnectScheduled) {
@@ -63,7 +63,7 @@ function boot() {
         } catch (err) {
           markBoot('stream', 'error', err.message);
         }
-      }, 10000);
+      }, 300);
     }
   };
 

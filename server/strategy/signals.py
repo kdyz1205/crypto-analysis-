@@ -47,6 +47,12 @@ def generate_pre_limit_signals(candles, lines: Sequence[Trendline], config: Stra
             signal_type = "PRE_LIMIT_LONG"
             tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
 
+        # RR gate
+        risk = abs(entry_price - stop_price)
+        reward = abs(tp_price - entry_price)
+        if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
+            continue
+
         signals.append(
             _make_signal(
                 df,
@@ -96,6 +102,10 @@ def generate_rejection_signals(candles, lines: Sequence[Trendline], config: Stra
             entry_price = close_price
             stop_price = high + cfg.stop_buffer(atr_value, close_price)
             tp_price = entry_price - (cfg.rr_target * abs(stop_price - entry_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
+                continue
             signals.append(
                 _make_signal(
                     df,
@@ -124,6 +134,10 @@ def generate_rejection_signals(candles, lines: Sequence[Trendline], config: Stra
             entry_price = close_price
             stop_price = low - cfg.stop_buffer(atr_value, close_price)
             tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
+                continue
             signals.append(
                 _make_signal(
                     df,
@@ -177,6 +191,10 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
             entry_price = min(float(df.iloc[current_index]["close"]), prev_low - trigger_buffer)
             stop_price = prev_high + cfg.stop_buffer(float(atr.iloc[current_index]), float(df.iloc[current_index]["close"]))
             tp_price = entry_price - (cfg.rr_target * abs(stop_price - entry_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
+                continue
             signals.append(
                 _make_signal(
                     df,
@@ -204,6 +222,10 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
             entry_price = max(float(df.iloc[current_index]["close"]), prev_high + trigger_buffer)
             stop_price = prev_low - cfg.stop_buffer(float(atr.iloc[current_index]), float(df.iloc[current_index]["close"]))
             tp_price = entry_price + (cfg.rr_target * abs(entry_price - stop_price))
+            risk = abs(entry_price - stop_price)
+            reward = abs(tp_price - entry_price)
+            if risk > 0 and (reward / risk) < cfg.min_rr_ratio:
+                continue
             signals.append(
                 _make_signal(
                     df,
@@ -225,10 +247,25 @@ def generate_failed_breakout_signals(candles, lines: Sequence[Trendline], config
 
 def generate_signals(candles, lines: Sequence[Trendline], config: StrategyConfig | None = None) -> list[StrategySignal]:
     cfg = config or StrategyConfig()
+    df = ensure_candles_df(candles)
+    atr = calculate_atr(df, cfg.atr_period)
+    current_index = len(df) - 1
+    atr_value = float(atr.iloc[current_index]) if current_index >= 0 else 0.0
+
     signals: list[StrategySignal] = []
     signals.extend(generate_pre_limit_signals(candles, lines, cfg))
     signals.extend(generate_rejection_signals(candles, lines, cfg))
     signals.extend(generate_failed_breakout_signals(candles, lines, cfg))
+
+    # Profit-space gate: reject signals where opposing zone is too close
+    if cfg.min_profit_space_atr_mult > 0 and atr_value > 0:
+        signals = [
+            sig for sig in signals
+            if _check_profit_space(
+                sig.entry_price, sig.direction, lines, atr_value, cfg.min_profit_space_atr_mult
+            )
+        ]
+
     prioritized = prioritize_signals(signals, cfg)
     return resolve_signal_conflicts(prioritized)
 
@@ -337,6 +374,41 @@ def _lower_wick_ratio(df, bar_index: int, config: StrategyConfig) -> float:
     lower_wick = min(open_price, close_price) - low
     body = max(abs(close_price - open_price), config.min_body_unit)
     return lower_wick / body
+
+
+def _check_profit_space(
+    entry_price: float,
+    direction: str,
+    opposing_lines: Sequence[Trendline],
+    atr_value: float,
+    min_space_atr: float,
+) -> bool:
+    """Check if there's enough room to the nearest opposing zone."""
+    if not opposing_lines or atr_value <= 0:
+        return True
+
+    if direction == "long":
+        above = [
+            abs(line.projected_price_current - entry_price)
+            for line in opposing_lines
+            if line.side == "resistance" and line.projected_price_current > entry_price
+               and line.state == "confirmed"
+        ]
+        if not above:
+            return True
+        nearest_distance = min(above)
+    else:
+        below = [
+            abs(entry_price - line.projected_price_current)
+            for line in opposing_lines
+            if line.side == "support" and line.projected_price_current < entry_price
+               and line.state == "confirmed"
+        ]
+        if not below:
+            return True
+        nearest_distance = min(below)
+
+    return nearest_distance >= (min_space_atr * atr_value)
 
 
 __all__ = [

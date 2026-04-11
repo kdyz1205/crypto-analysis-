@@ -92,17 +92,24 @@ class LiveExecutionAdapter:
             return self._error_result("reference_price_unavailable", mode=mode, intent=intent)
 
         side = "buy" if intent.side == "long" else "sell"
-        body = {
+        order_type = getattr(intent, "order_type", "market") or "market"
+        body: dict[str, Any] = {
             "symbol": intent.symbol.upper(),
             "productType": self.product_type,
             "marginMode": self.margin_mode,
             "marginCoin": self.margin_coin,
             "side": side,
             "tradeSide": "open",
-            "orderType": "market",
+            "orderType": order_type,
             "size": normalized_size,
             "clientOid": self._client_order_id(intent),
         }
+        # For limit orders, include the price
+        if order_type == "limit":
+            limit_price = self._normalize_price(reference_price, contract)
+            if limit_price is None:
+                return self._error_result("price_precision_error", mode=mode, intent=intent)
+            body["price"] = limit_price
         response = await self._bitget_request("POST", "/api/v2/mix/order/place-order", mode=mode, body=body)
         if response.get("code") == "00000":
             data = response.get("data") or {}
@@ -341,6 +348,23 @@ class LiveExecutionAdapter:
             return None
         normalized = (requested / lot).to_integral_value(rounding=ROUND_DOWN) * lot
         if normalized <= 0 or normalized < min_trade:
+            return None
+        return LiveExecutionAdapter._decimal_to_string(normalized)
+
+    @staticmethod
+    def _normalize_price(price: float, contract: dict[str, Any]) -> str | None:
+        """Normalize price to contract tick size for limit orders."""
+        try:
+            requested = Decimal(str(price))
+            tick = Decimal(str(contract.get("pricePlace") or contract.get("tickSz") or "0.01"))
+            if tick <= 0:
+                tick = Decimal("0.01")
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+        if requested <= 0:
+            return None
+        normalized = (requested / tick).to_integral_value(rounding=ROUND_DOWN) * tick
+        if normalized <= 0:
             return None
         return LiveExecutionAdapter._decimal_to_string(normalized)
 

@@ -375,11 +375,11 @@ class LiveExecutionEngine:
             reasons.append("intent_already_submitted_live")
         if intent.status not in {"approved", "submitted"}:
             reasons.append(f"intent_status_not_live_eligible:{intent.status}")
-        if intent.symbol.upper() not in self.config.allowed_symbols:
+        if self.config.allowed_symbols and intent.symbol.upper() not in self.config.allowed_symbols:
             reasons.append("symbol_not_whitelisted")
-        if intent.timeframe not in self.config.allowed_timeframes:
+        if self.config.allowed_timeframes and intent.timeframe not in self.config.allowed_timeframes:
             reasons.append("timeframe_not_whitelisted")
-        if intent.trigger_mode not in self.config.allowed_trigger_modes:
+        if self.config.allowed_trigger_modes and intent.trigger_mode not in self.config.allowed_trigger_modes:
             reasons.append("trigger_mode_not_whitelisted")
         if float(intent.entry_price) * float(intent.quantity) > self.config.max_live_notional:
             reasons.append("live_notional_cap_exceeded")
@@ -486,11 +486,13 @@ __all__ = ["LiveBridgeConfig", "LiveExecutionEngine"]
 
 
 def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
-    raw = os.environ.get(name, "")
-    if not raw.strip():
+    raw = os.environ.get(name)
+    if raw is None:
         return default
+    if not raw.strip():
+        return ()  # explicitly empty = no restriction
     values = tuple(item.strip() for item in raw.split(",") if item.strip())
-    return values or default
+    return values or ()
 
 
 def _int_env(name: str, default: int) -> int:

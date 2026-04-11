@@ -117,6 +117,18 @@ class StrategyConfig:
     timeframe_priority: Mapping[str, int] = field(default_factory=_default_timeframe_priority)
     trigger_mode_priority: Mapping[str, int] = field(default_factory=_default_trigger_mode_priority)
 
+    # Volume confirmation
+    volume_surge_threshold: float = 1.5  # current vol must be >= 1.5x avg
+    volume_lookback_bars: int = 20  # bars to average volume over
+
+    # Trend context
+    trend_ema_period: int = 50  # EMA period for trend direction
+    trend_weight: float = 0.10  # weight of trend context in factor score
+
+    # Signal quality gates
+    min_rr_ratio: float = 2.0  # reject signals with RR below this
+    min_profit_space_atr_mult: float = 1.0  # min distance to opposing zone in ATR units
+
     def tolerance(self, atr_value: float, close_price: float) -> float:
         return max(
             self.tol_atr_mult * atr_value,
