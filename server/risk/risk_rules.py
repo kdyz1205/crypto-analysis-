@@ -12,6 +12,17 @@ from ..execution.types import (
 )
 from ..strategy.types import StrategySignal
 
+# Single source of truth for per-timeframe calibration.
+# Imported lazily to avoid circular imports.
+_CALIBRATION_CACHE = None
+
+def _get_calibration():
+    global _CALIBRATION_CACHE
+    if _CALIBRATION_CACHE is None:
+        from ..strategy.position_sizing import BACKTEST_CALIBRATION, get_calibrated_params
+        _CALIBRATION_CACHE = (BACKTEST_CALIBRATION, get_calibrated_params)
+    return _CALIBRATION_CACHE
+
 
 def cooldown_scope_key(symbol: str, timeframe: str, direction: str) -> str:
     return f"{symbol}:{timeframe}:{direction}"
@@ -144,19 +155,31 @@ def evaluate_signal_risk(
         )
 
     # Position sizing: risk_amount / stop_distance
-    # Floor stop distance by timeframe — calibrated from real backtest
-    # (8 coins, 365 days: median stops were 5m=1.0%, 1h=1.1%, 4h=1.1%)
+    # Floor + Kelly scaling from BACKTEST_CALIBRATION (single source of truth)
     entry = float(signal.entry_price)
     timeframe = getattr(signal, "timeframe", "1h")
-    _MIN_STOP_PCT_BY_TF = {
-        "1m": 0.002, "3m": 0.003, "5m": 0.004,
-        "15m": 0.005, "1h": 0.008, "4h": 0.010,
-        "1d": 0.015, "1w": 0.020,
-    }
-    min_stop_pct = _MIN_STOP_PCT_BY_TF.get(timeframe, 0.008)
+
+    # Get calibrated params from the single source
+    _, get_calibrated = _get_calibration()
+    cal_wr, cal_rr, cal_kelly = get_calibrated(timeframe)
+
+    # Stop floor: derived from calibration's median stop data
+    # Uncalibrated TFs use conservative 0.8% floor
+    from ..strategy.position_sizing import BACKTEST_CALIBRATION
+    if timeframe in BACKTEST_CALIBRATION:
+        _, _, _, _, median_stop_pct = BACKTEST_CALIBRATION[timeframe]
+        min_stop_pct = median_stop_pct * 0.5  # allow stops as tight as half the backtest median
+    else:
+        min_stop_pct = 0.008  # conservative default
     min_stop = entry * min_stop_pct if entry > 0 else stop_distance
     if stop_distance < min_stop:
         stop_distance = min_stop
+
+    # Scale risk_amount by half-Kelly if calibration data exists
+    if cal_kelly > 0:
+        kelly_risk = float(account.equity) * cal_kelly
+        risk_amount = min(risk_amount, kelly_risk)  # never exceed Kelly
+
     proposed_quantity = risk_amount / stop_distance
     pending_exposure = sum(float(order.quantity) * float(order.price) for order in pending_orders)
     reserved_exposure = float(account.total_exposure) + pending_exposure

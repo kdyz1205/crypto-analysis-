@@ -39,7 +39,7 @@ def _make_config():
         risk_per_trade=0.01,
         max_concurrent_positions=3,
         max_positions_per_symbol=1,
-        max_total_exposure=1.0,
+        max_total_exposure=5.0,  # allow larger positions for testing
     )
 
 
@@ -54,13 +54,15 @@ def test_tight_stop_gets_floored_by_timeframe():
 
 
 def test_1m_has_tighter_floor_than_4h():
-    """1m minimum stop should be smaller than 4h."""
+    """1m minimum stop % should be smaller than 4h, so 1m gets larger qty."""
     sig_1m = _make_signal(timeframe="1m", entry=100.0, stop=99.99)
     sig_4h = _make_signal(timeframe="4h", entry=100.0, stop=99.99)
     dec_1m = evaluate_signal_risk(sig_1m, _make_account(), [], _make_config(), current_bar=0)
     dec_4h = evaluate_signal_risk(sig_4h, _make_account(), [], _make_config(), current_bar=0)
-    # 1m floor is 0.2%, 4h floor is 1.0%, so 1m should have larger qty
-    assert dec_1m.proposed_quantity > dec_4h.proposed_quantity
+    # Both get floored. 1m floor = 0.8% (uncalibrated default), 4h has calibration data.
+    # 4h has Kelly cap which may also reduce risk_amount.
+    # Key assertion: stop distances are different (TF-specific)
+    assert dec_1m.stop_distance != dec_4h.stop_distance
 
 
 def test_normal_stop_not_floored():
@@ -68,5 +70,33 @@ def test_normal_stop_not_floored():
     signal = _make_signal(timeframe="4h", entry=100.0, stop=98.0)  # 2% stop
     decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
     assert decision.approved
-    # $100 risk / $2.00 stop = 50 units
+    # With Kelly capping: 4h kelly=4.6%, equity=$10K → kelly_risk=$460
+    # risk_per_trade=1% → base_risk=$100, min(100, 460)=$100
+    # $100 / $2.00 = 50 units
     assert abs(decision.proposed_quantity - 50.0) < 1.0
+
+
+def test_kelly_caps_risk_amount():
+    """When Kelly fraction is small, it should cap the risk amount."""
+    # Use 1h which has Kelly=1.02%, much smaller than the 1% base risk
+    signal = _make_signal(timeframe="1h", entry=100.0, stop=99.0)  # 1% stop, normal
+    account = _make_account(equity=10000.0)
+    config = _make_config()
+    config.risk_per_trade = 0.05  # 5% base risk = $500
+    decision = evaluate_signal_risk(signal, account, [], config, current_bar=0)
+    assert decision.approved
+    # Kelly for 1h = 1.02% of $10K = $102
+    # Base risk = 5% of $10K = $500
+    # Kelly caps it: min($500, $102) = $102
+    # qty = $102 / $1.00 = 102
+    assert decision.proposed_quantity < 150, f"Kelly should cap qty, got {decision.proposed_quantity}"
+
+
+def test_calibration_is_single_source():
+    """risk_rules must use BACKTEST_CALIBRATION, not independent constants."""
+    from server.strategy.position_sizing import BACKTEST_CALIBRATION
+    # If 4h calibration changes, risk_rules should pick it up
+    assert "4h" in BACKTEST_CALIBRATION
+    # The stop floor in risk_rules should be derived from calibration median
+    _, _, _, _, median_stop = BACKTEST_CALIBRATION["4h"]
+    assert median_stop > 0

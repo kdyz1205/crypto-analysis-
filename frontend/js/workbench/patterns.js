@@ -81,46 +81,81 @@ export function drawZones(chart, zones = []) {
 }
 
 /**
- * Draw horizontal S/R zones as colored price bands on the chart.
- * Each zone renders as two horizontal lines (price_low and price_high)
- * with different colors for support (green) and resistance (red).
+ * Draw horizontal S/R zones as line series (not price lines).
+ * Using addLineSeries with autoscaleInfoProvider: null so they
+ * don't stretch the Y-axis on zoom.
  */
+const zoneSeries = [];
+
+export function clearHorizontalSRZones(chart) {
+  for (const s of zoneSeries) {
+    try { chart.removeSeries(s); } catch {}
+  }
+  zoneSeries.length = 0;
+}
+
 export function drawHorizontalSRZones(chart, candleSeries, zones = []) {
-  if (!chart || !candleSeries || !zones?.length) return;
+  if (!chart || !zones?.length) return;
+  clearHorizontalSRZones(chart);
+
+  // Get time range from candle data for horizontal line endpoints
+  const lastCandle = candleSeries?.data?.()?.at?.(-1);
+  const firstCandle = candleSeries?.data?.()?.at?.(0);
+  if (!lastCandle || !firstCandle) return;
+
+  const t1 = firstCandle.time;
+  const t2 = lastCandle.time;
 
   for (const zone of zones) {
     try {
       const isSupport = zone.side === 'support';
-      const color = isSupport ? 'rgba(0, 230, 118, 0.35)' : 'rgba(255, 23, 68, 0.35)';
-      const borderColor = isSupport ? 'rgba(0, 230, 118, 0.7)' : 'rgba(255, 23, 68, 0.7)';
+      const color = isSupport ? 'rgba(0, 230, 118, 0.6)' : 'rgba(255, 23, 68, 0.6)';
 
-      // Draw upper boundary
-      candleSeries.createPriceLine({
-        price: zone.price_high,
-        color: borderColor,
-        lineWidth: 1,
-        lineStyle: LightweightCharts.LineStyle.Dotted,
-        axisLabelVisible: false,
-      });
-
-      // Draw center with label
-      candleSeries.createPriceLine({
-        price: zone.price_center,
-        color: color,
+      // Center line
+      const s = chart.addLineSeries({
+        color,
         lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Solid,
-        axisLabelVisible: true,
-        title: `${isSupport ? 'S' : 'R'} ${zone.touches}t str:${Math.round(zone.strength)}`,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: `${isSupport ? 'S' : 'R'} ${zone.touches}t`,
+        autoscaleInfoProvider: () => null,
       });
+      s.setData([
+        { time: t1, value: zone.price_center },
+        { time: t2, value: zone.price_center },
+      ]);
+      zoneSeries.push(s);
 
-      // Draw lower boundary
-      candleSeries.createPriceLine({
-        price: zone.price_low,
-        color: borderColor,
+      // Upper boundary (dotted)
+      const sUp = chart.addLineSeries({
+        color: color.replace('0.6', '0.25'),
         lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Dotted,
-        axisLabelVisible: false,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        autoscaleInfoProvider: () => null,
       });
+      sUp.setData([
+        { time: t1, value: zone.price_high },
+        { time: t2, value: zone.price_high },
+      ]);
+      zoneSeries.push(sUp);
+
+      // Lower boundary (dotted)
+      const sLo = chart.addLineSeries({
+        color: color.replace('0.6', '0.25'),
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dotted,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        autoscaleInfoProvider: () => null,
+      });
+      sLo.setData([
+        { time: t1, value: zone.price_low },
+        { time: t2, value: zone.price_low },
+      ]);
+      zoneSeries.push(sLo);
     } catch (err) {
       console.warn('[patterns] S/R zone draw failed:', err);
     }
