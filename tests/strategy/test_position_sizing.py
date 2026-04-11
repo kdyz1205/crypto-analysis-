@@ -2,6 +2,7 @@
 from server.strategy.position_sizing import (
     kelly_fraction,
     get_calibrated_params,
+    is_timeframe_verified,
     TIMEFRAME_STOP_ATR_MULT,
     BACKTEST_CALIBRATION,
 )
@@ -47,14 +48,33 @@ def test_get_calibrated_params_known_tf():
     assert hk > 0
 
 
-def test_get_calibrated_params_unknown_tf():
-    """Unknown timeframes get conservative defaults."""
+def test_get_calibrated_params_unknown_tf_returns_zero():
+    """Unknown timeframes get zeros — they must NOT trade."""
     wr, rr, hk = get_calibrated_params("2h")
-    assert wr > 0
-    assert rr > 0
-    assert hk > 0
-    # Should be more conservative than 4h
-    assert hk <= get_calibrated_params("4h")[2]
+    assert wr == 0.0
+    assert rr == 0.0
+    assert hk == 0.0
+
+
+def test_uncalibrated_5m_returns_zero():
+    """5m is explicitly not profitable — must return zeros."""
+    wr, rr, hk = get_calibrated_params("5m")
+    assert wr == 0.0 and rr == 0.0 and hk == 0.0
+
+
+def test_uncalibrated_15m_returns_zero():
+    """15m is explicitly not profitable — must return zeros."""
+    wr, rr, hk = get_calibrated_params("15m")
+    assert wr == 0.0 and rr == 0.0 and hk == 0.0
+
+
+def test_is_timeframe_verified():
+    assert is_timeframe_verified("4h") == True
+    assert is_timeframe_verified("1h") == True
+    assert is_timeframe_verified("5m") == False
+    assert is_timeframe_verified("15m") == False
+    assert is_timeframe_verified("1m") == False
+    assert is_timeframe_verified("unknown") == False
 
 
 def test_stop_atr_mult_increases_with_timeframe():

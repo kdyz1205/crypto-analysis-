@@ -277,13 +277,18 @@ BACKTEST_CALIBRATION = {
 
 def get_calibrated_params(timeframe: str) -> tuple[float, float, float]:
     """Return (win_rate, avg_rr, half_kelly) for a timeframe.
-    Falls back to conservative defaults if no calibration data.
+    Returns (0, 0, 0) for uncalibrated timeframes — they must NOT trade.
     """
     if timeframe in BACKTEST_CALIBRATION:
         wr, rr, _, hk, _ = BACKTEST_CALIBRATION[timeframe]
         return wr, rr, hk
-    # Uncalibrated timeframes: use most conservative profitable params
-    return 0.125, 5.0, 0.005
+    # Uncalibrated = no evidence of profitability = do not trade
+    return 0.0, 0.0, 0.0
+
+
+def is_timeframe_verified(timeframe: str) -> bool:
+    """True only if this timeframe has positive EV in backtest calibration."""
+    return timeframe in BACKTEST_CALIBRATION
 
 
 __all__ = [
@@ -294,5 +299,6 @@ __all__ = [
     "calculate_position_size",
     "calculate_stop_distance",
     "get_calibrated_params",
+    "is_timeframe_verified",
     "kelly_fraction",
 ]

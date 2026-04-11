@@ -95,8 +95,44 @@ def test_kelly_caps_risk_amount():
 def test_calibration_is_single_source():
     """risk_rules must use BACKTEST_CALIBRATION, not independent constants."""
     from server.strategy.position_sizing import BACKTEST_CALIBRATION
-    # If 4h calibration changes, risk_rules should pick it up
     assert "4h" in BACKTEST_CALIBRATION
-    # The stop floor in risk_rules should be derived from calibration median
     _, _, _, _, median_stop = BACKTEST_CALIBRATION["4h"]
     assert median_stop > 0
+
+
+def test_5m_signal_blocked_by_risk():
+    """5m is not in BACKTEST_CALIBRATION, must be blocked."""
+    signal = _make_signal(timeframe="5m", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert not decision.approved
+    assert "timeframe_not_verified" in decision.blocking_reason
+
+
+def test_15m_signal_blocked_by_risk():
+    """15m is not in BACKTEST_CALIBRATION, must be blocked."""
+    signal = _make_signal(timeframe="15m", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert not decision.approved
+    assert "timeframe_not_verified" in decision.blocking_reason
+
+
+def test_unknown_tf_blocked_by_risk():
+    """Random unknown TF must be blocked."""
+    signal = _make_signal(timeframe="7m", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert not decision.approved
+    assert "timeframe_not_verified" in decision.blocking_reason
+
+
+def test_4h_signal_approved():
+    """4h is verified profitable, must be approved."""
+    signal = _make_signal(timeframe="4h", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert decision.approved
+
+
+def test_1h_signal_approved():
+    """1h is verified profitable, must be approved."""
+    signal = _make_signal(timeframe="1h", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert decision.approved
