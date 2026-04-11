@@ -59,8 +59,8 @@ def detect_horizontal_zones(
     atr_value = float(atr.iloc[current_index])
     close_price = float(df.iloc[current_index]["close"])
 
-    # Clustering epsilon: max of ATR-based and percentage-based
-    eps = max(atr_value * 0.3, close_price * 0.005)
+    # Clustering epsilon: 1% of price or 0.5 ATR, whichever is larger
+    eps = max(atr_value * 0.5, close_price * 0.01)
 
     zones: list[HorizontalZone] = []
     for side, pivot_kind in [("resistance", "high"), ("support", "low")]:

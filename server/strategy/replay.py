@@ -20,6 +20,7 @@ from .state_machine import (
 )
 from .trendlines import detect_trendlines
 from .types import Pivot, StrategySignal, Trendline, ensure_candles_df
+from .zones import detect_horizontal_zones
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class ReplaySnapshot:
     signals: tuple[StrategySignal, ...]
     signal_states: tuple[SignalStateSnapshot, ...]
     invalidations: tuple[LineStateSnapshot, ...]
+    horizontal_zones: tuple = ()  # HorizontalZone objects
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -160,6 +162,11 @@ def build_latest_snapshot(
     invalidations = tuple(
         state for state in line_states if state.state in {"invalidated", "expired"}
     )
+    # Horizontal zone detection (always runs, even when trendlines are empty)
+    zones = tuple(detect_horizontal_zones(
+        df, pivots, cfg, symbol=symbol, timeframe=timeframe, max_zones_per_side=3,
+    ))
+
     return ReplaySnapshot(
         bar_index=current_index,
         timestamp=df.iloc[current_index]["timestamp"],
@@ -170,6 +177,7 @@ def build_latest_snapshot(
         signals=selected_signals,
         signal_states=signal_states,
         invalidations=invalidations,
+        horizontal_zones=zones,
     )
 
 

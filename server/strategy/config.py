@@ -80,7 +80,7 @@ class StrategyConfig:
 
     target_touch_gap: int = 12
     min_slope_abs: float = 0.0001
-    max_slope_abs: float = 0.0200
+    max_slope_abs: float = 0.1000  # relaxed for volatile crypto
     cleanliness_cross_cap: int = 3
     recent_test_window_bars: int = 30
     breakout_risk_test_cap: int = 4

@@ -76,10 +76,19 @@ export function initChart(containerId = 'chart-container') {
     scaleMargins: { top: 0.8, bottom: 0 },
   });
 
-  window.addEventListener('resize', () => {
+  // Resize chart on window resize AND container resize (fixes zoom disappear bug)
+  const resizeChart = () => {
     if (!chart || !el) return;
-    chart.applyOptions({ width: el.clientWidth, height: el.clientHeight });
-  });
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w > 0 && h > 0) {
+      chart.applyOptions({ width: w, height: h });
+    }
+  };
+  window.addEventListener('resize', resizeChart);
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(resizeChart).observe(el);
+  }
 
   ensureStrategyLayerPanel(el.parentElement || el);
   ensureChartModePanel(el.parentElement || el);

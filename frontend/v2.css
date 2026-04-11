@@ -31,11 +31,11 @@ body.v2-body {
 .v2-header {
   display: flex;
   align-items: center;
-  padding: 12px 20px;
+  padding: 6px 16px;
   background: linear-gradient(135deg, #0a0e17 0%, #111827 100%);
   border-bottom: 1px solid var(--v2-border);
-  gap: 20px;
-  height: 56px;
+  gap: 14px;
+  height: 42px;
   flex-shrink: 0;
   flex-wrap: nowrap;
   overflow: hidden;
@@ -146,21 +146,26 @@ body.v2-body {
   flex: 1;
   position: relative;
   background: var(--v2-bg);
+  overflow: hidden;
+  min-height: 0;  /* fix flex child collapse on zoom */
+  min-width: 0;
 }
 
 .v2-chart-container {
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 /* ── Decision Rail ── */
 .v2-decision-rail {
-  width: 320px;
+  width: 260px;
   background: var(--v2-bg-alt);
   border-left: 1px solid var(--v2-border);
-  padding: 16px;
+  padding: 10px;
   overflow-y: auto;
   flex-shrink: 0;
+  font-size: 12px;
 }
 
 .dr-card h3 {
@@ -1167,13 +1172,14 @@ body.combat-mode .boot-status { display: none; }
   top: 14px;
   left: 14px;
   z-index: 35;
-  width: 208px;
-  padding: 10px 12px;
+  width: 180px;
+  padding: 6px 8px;
   border: 1px solid rgba(42, 53, 72, 0.9);
-  background: rgba(10, 14, 23, 0.88);
+  background: rgba(10, 14, 23, 0.92);
   backdrop-filter: blur(10px);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  display: none;  /* hidden by default, toggle via settings */
 }
 
 .strategy-layer-title {
@@ -1260,13 +1266,14 @@ body.combat-mode .boot-status { display: none; }
   top: 196px;
   left: 14px;
   z-index: 34;
-  width: 260px;
-  padding: 12px;
+  width: 220px;
+  padding: 8px;
   border: 1px solid rgba(42, 53, 72, 0.9);
-  background: rgba(10, 14, 23, 0.88);
+  background: rgba(10, 14, 23, 0.92);
   backdrop-filter: blur(10px);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  display: none;  /* hidden by default */
 }
 
 .manual-panel-title {
