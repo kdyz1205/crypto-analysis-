@@ -164,6 +164,7 @@ class StrategySnapshotModel(BaseModel):
     signal_states: list[StrategySignalStateModel] = Field(default_factory=list)
     invalidations: list[StrategyLineStateModel] = Field(default_factory=list)
     horizontal_zones: list[dict[str, Any]] = Field(default_factory=list)
+    market_regime: dict[str, Any] | None = None
     orders: list[dict[str, Any]] = Field(default_factory=list)
 
 

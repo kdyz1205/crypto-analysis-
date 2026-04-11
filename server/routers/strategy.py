@@ -490,8 +490,18 @@ def _serialize_snapshot(
             }
             for z in getattr(snapshot, "horizontal_zones", ())
         ],
+        market_regime=_serialize_regime(getattr(snapshot, "market_regime", None)),
         orders=[],
     )
+
+
+def _serialize_regime(regime):
+    if regime is None:
+        return None
+    from dataclasses import asdict, is_dataclass
+    if is_dataclass(regime):
+        return asdict(regime)
+    return regime
 
 
 def _serialize_line(
