@@ -23804,6 +23804,230 @@
           }
         }
       }
+    },
+    {
+      "config": {
+        "instance_id": "e81cd247dedf829e",
+        "label": "TESTUSDT-S/R \u5168\u6a21\u5f0f\u7b56\u7565",
+        "symbol": "TESTUSDT",
+        "timeframe": "4h",
+        "subaccount_label": "",
+        "history_mode": "fast_window",
+        "analysis_bars": 500,
+        "days": 365,
+        "tick_interval_seconds": 60,
+        "auto_restart_on_boot": false,
+        "live_mode": "disabled",
+        "auto_live_preview": true,
+        "auto_live_submit": false,
+        "notes": "",
+        "paper_config": {
+          "risk_per_trade": 0.003,
+          "max_concurrent_positions": 3,
+          "max_positions_per_symbol": 1,
+          "max_total_exposure": 1.0,
+          "max_daily_loss": 0.02,
+          "max_consecutive_losses": 3,
+          "cancel_after_bars": 3,
+          "cooldown_bars_after_loss": 10,
+          "starting_equity": 1000.0,
+          "allow_multiple_same_direction_per_symbol": false
+        },
+        "strategy_config": {
+          "enabled_trigger_modes": [
+            "pre_limit",
+            "rejection",
+            "failed_breakout",
+            "retest"
+          ],
+          "lookback_bars": 80,
+          "min_touches": 3,
+          "confirm_threshold": null,
+          "score_threshold": null,
+          "rr_target": 2.0,
+          "window_bars": 80
+        }
+      },
+      "status": {
+        "runtime_state": "blocked",
+        "last_tick_at": "2026-04-11T15:35:37.847999+00:00",
+        "last_processed_bar": null,
+        "last_error": "Failed to download data for TESTUSDT 4h: Client error '400 Bad Request' for url 'https://api.bitget.com/api/v2/mix/market/history-candles?symbol=TESTUSDT&productType=usdt-futures&granularity=4H&limit=200&startTime=1768145737403&endTime=1775921737403'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "last_runtime_note": "tick_failed",
+        "last_live_result": null,
+        "paper_current_day": null,
+        "last_history": null,
+        "paper_state": {
+          "config": {
+            "risk_per_trade": 0.003,
+            "max_concurrent_positions": 3,
+            "max_positions_per_symbol": 1,
+            "max_total_exposure": 1.0,
+            "max_daily_loss": 0.02,
+            "max_consecutive_losses": 3,
+            "cancel_after_bars": 3,
+            "cooldown_bars_after_loss": 10,
+            "starting_equity": 1000.0,
+            "allow_multiple_same_direction_per_symbol": false
+          },
+          "account": {
+            "starting_equity": 1000.0,
+            "equity": 1000.0,
+            "realized_pnl": 0.0,
+            "unrealized_pnl": 0.0,
+            "daily_realized_pnl": 0.0,
+            "consecutive_losses": 0,
+            "total_exposure": 0.0,
+            "open_order_count": 0,
+            "open_position_count": 0,
+            "closed_trade_count": 0,
+            "last_processed_bar_by_stream": {}
+          },
+          "kill_switch": {
+            "blocked": false,
+            "manual_blocked": false,
+            "data_blocked": false,
+            "risk_blocked": false,
+            "reason": ""
+          },
+          "intents": [],
+          "open_orders": [],
+          "open_positions": [],
+          "recent_fills": [],
+          "recent_closed_positions": [],
+          "cooldowns": {}
+        },
+        "live_engine_state": null
+      }
+    },
+    {
+      "config": {
+        "instance_id": "6778794375fb5eb7",
+        "label": "BTCUSDT-S/R \u5168\u6a21\u5f0f\u7b56\u7565",
+        "symbol": "BTCUSDT",
+        "timeframe": "4h",
+        "subaccount_label": "",
+        "history_mode": "fast_window",
+        "analysis_bars": 500,
+        "days": 365,
+        "tick_interval_seconds": 60,
+        "auto_restart_on_boot": false,
+        "live_mode": "disabled",
+        "auto_live_preview": true,
+        "auto_live_submit": false,
+        "notes": "",
+        "paper_config": {
+          "risk_per_trade": 0.003,
+          "max_concurrent_positions": 3,
+          "max_positions_per_symbol": 1,
+          "max_total_exposure": 1.0,
+          "max_daily_loss": 0.02,
+          "max_consecutive_losses": 3,
+          "cancel_after_bars": 3,
+          "cooldown_bars_after_loss": 10,
+          "starting_equity": 1000.0,
+          "allow_multiple_same_direction_per_symbol": false
+        },
+        "strategy_config": {
+          "enabled_trigger_modes": [
+            "pre_limit",
+            "rejection",
+            "failed_breakout",
+            "retest"
+          ],
+          "lookback_bars": 80,
+          "min_touches": 3,
+          "confirm_threshold": null,
+          "score_threshold": null,
+          "rr_target": 2.0,
+          "window_bars": 80
+        }
+      },
+      "status": {
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T15:35:49.892431+00:00",
+        "last_processed_bar": 0,
+        "last_error": "",
+        "last_runtime_note": "recovered_stopped",
+        "last_live_result": null,
+        "paper_current_day": "2026-01-18",
+        "last_history": {
+          "pricePrecision": 1,
+          "exchange": "bitget",
+          "dataSourceMode": "hybrid",
+          "dataSourceKind": "csv",
+          "requestedDays": 365,
+          "baseInterval": "4h",
+          "resampledFromInterval": null,
+          "sourceBarCount": 2487,
+          "historyMode": "fast_window",
+          "loadedBarCount": 2191,
+          "earliestLoadedTimestamp": 1744383600,
+          "latestLoadedTimestamp": 1775919600,
+          "listingStartTimestamp": 1740124800,
+          "isFullHistory": false,
+          "isTruncated": true,
+          "truncationReason": "fast_window",
+          "analysisInputBarCount": 500,
+          "analysisEarliestTimestamp": 1768708800,
+          "analysisLatestTimestamp": 1775894400,
+          "analysisWasTrimmed": true
+        },
+        "paper_state": {
+          "config": {
+            "risk_per_trade": 0.003,
+            "max_concurrent_positions": 3,
+            "max_positions_per_symbol": 1,
+            "max_total_exposure": 1.0,
+            "max_daily_loss": 0.02,
+            "max_consecutive_losses": 3,
+            "cancel_after_bars": 3,
+            "cooldown_bars_after_loss": 10,
+            "starting_equity": 1000.0,
+            "allow_multiple_same_direction_per_symbol": false
+          },
+          "account": {
+            "starting_equity": 1000.0,
+            "equity": 1000.0,
+            "realized_pnl": 0.0,
+            "unrealized_pnl": 0.0,
+            "daily_realized_pnl": 0.0,
+            "consecutive_losses": 0,
+            "total_exposure": 0.0,
+            "open_order_count": 0,
+            "open_position_count": 0,
+            "closed_trade_count": 0,
+            "last_processed_bar_by_stream": {
+              "BTCUSDT:4h": 0
+            }
+          },
+          "kill_switch": {
+            "blocked": false,
+            "manual_blocked": false,
+            "data_blocked": false,
+            "risk_blocked": false,
+            "reason": ""
+          },
+          "intents": [],
+          "open_orders": [],
+          "open_positions": [],
+          "recent_fills": [],
+          "recent_closed_positions": [],
+          "cooldowns": {}
+        },
+        "live_engine_state": {
+          "last_preview_result": null,
+          "last_submission_result": null,
+          "reconciliation_by_mode": {
+            "demo": null,
+            "live": null
+          },
+          "submissions_by_mode": {
+            "demo": {},
+            "live": {}
+          }
+        }
+      }
     }
   ]
 }
