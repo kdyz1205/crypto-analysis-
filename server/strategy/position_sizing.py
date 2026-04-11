@@ -186,8 +186,8 @@ def calculate_position_size(
     timeframe: str = "1h",
     equity: float = 10000.0,
     base_risk_pct: float = 0.01,  # 1% base risk
-    win_rate: float = 0.229,      # from real backtest: 4h=22.9%
-    avg_rr: float = 5.62,         # from real backtest: 4h avg RR
+    win_rate: float = 0.0,        # MUST be provided per-timeframe from backtest data
+    avg_rr: float = 0.0,          # MUST be provided per-timeframe from backtest data
     has_volume_surge: bool = False,
     multi_tf_confluence: float = 0.0,
     trend_aligned: bool = True,
@@ -263,10 +263,36 @@ def calculate_position_size(
     )
 
 
+# Per-timeframe calibration from real backtest (8 coins, 365 days, 76 trades)
+# Only use timeframes that showed positive expected value
+BACKTEST_CALIBRATION = {
+    # tf: (win_rate, avg_rr, ev_per_trade, half_kelly, median_stop_pct)
+    "1h":  (0.125, 8.36, 0.170, 0.0102, 0.0108),  # marginal
+    "4h":  (0.229, 5.62, 0.516, 0.0460, 0.0114),  # solid
+    # 5m and 15m: NOT PROFITABLE in backtest — do not use for sizing
+    # "5m":  (0.0, 3.52, -1.0, 0.0, 0.0103),
+    # "15m": (0.0, 3.54, -1.0, 0.0, 0.0102),
+}
+
+
+def get_calibrated_params(timeframe: str) -> tuple[float, float, float]:
+    """Return (win_rate, avg_rr, half_kelly) for a timeframe.
+    Falls back to conservative defaults if no calibration data.
+    """
+    if timeframe in BACKTEST_CALIBRATION:
+        wr, rr, _, hk, _ = BACKTEST_CALIBRATION[timeframe]
+        return wr, rr, hk
+    # Uncalibrated timeframes: use most conservative profitable params
+    return 0.125, 5.0, 0.005
+
+
 __all__ = [
+    "BACKTEST_CALIBRATION",
+    "TIMEFRAME_STOP_ATR_MULT",
     "PositionSizeResult",
     "calculate_confidence",
     "calculate_position_size",
     "calculate_stop_distance",
+    "get_calibrated_params",
     "kelly_fraction",
 ]

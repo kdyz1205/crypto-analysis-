@@ -143,11 +143,20 @@ def evaluate_signal_risk(
             exposure_after_fill=float(account.total_exposure),
         )
 
-    # Position sizing: risk_amount / stop_distance, capped by stop distance sanity check
-    # If stop is extremely tight (< 0.1% of price), reduce size to avoid outsized positions
+    # Position sizing: risk_amount / stop_distance
+    # Floor stop distance by timeframe — calibrated from real backtest
+    # (8 coins, 365 days: median stops were 5m=1.0%, 1h=1.1%, 4h=1.1%)
     entry = float(signal.entry_price)
-    if entry > 0 and stop_distance < entry * 0.001:
-        stop_distance = entry * 0.001  # floor at 0.1% of price
+    timeframe = getattr(signal, "timeframe", "1h")
+    _MIN_STOP_PCT_BY_TF = {
+        "1m": 0.002, "3m": 0.003, "5m": 0.004,
+        "15m": 0.005, "1h": 0.008, "4h": 0.010,
+        "1d": 0.015, "1w": 0.020,
+    }
+    min_stop_pct = _MIN_STOP_PCT_BY_TF.get(timeframe, 0.008)
+    min_stop = entry * min_stop_pct if entry > 0 else stop_distance
+    if stop_distance < min_stop:
+        stop_distance = min_stop
     proposed_quantity = risk_amount / stop_distance
     pending_exposure = sum(float(order.quantity) * float(order.price) for order in pending_orders)
     reserved_exposure = float(account.total_exposure) + pending_exposure
