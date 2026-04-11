@@ -179,9 +179,10 @@ function qRender() { if (renderQueued) return; renderQueued = true; requestAnima
 function syncChart(id) {
   const inst = instances.find(i => i.config?.instance_id === id);
   if (!inst?.config) return;
-  marketState.currentSymbol = ''; marketState.currentInterval = '';
+  // Set interval silently first, then trigger symbol change (which loads chart)
+  marketState.currentInterval = inst.config.timeframe;
+  marketState.currentSymbol = '';
   setSymbol(inst.config.symbol);
-  setTimeout(() => setIntervalTF(inst.config.timeframe), 50);
   const ps = inst.status?.paper_state;
   if (!ps) { publish('execution.trade.markers', []); return; }
   const markers = [];
