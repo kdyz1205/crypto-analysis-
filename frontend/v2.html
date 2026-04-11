@@ -10,42 +10,73 @@
 </head>
 <body class="v2-body">
 
+  <!-- Top Navigation -->
   <header class="v2-header">
     <div class="v2-brand">Trading OS</div>
-    <div class="v2-symbol-group">
-      <select id="v2-symbol-select" class="v2-select"></select>
-    </div>
-    <div class="v2-tf-group" id="v2-tf-group">
-      <button class="v2-tf-btn" data-tf="1m">1m</button>
-      <button class="v2-tf-btn" data-tf="3m">3m</button>
-      <button class="v2-tf-btn" data-tf="5m">5m</button>
-      <button class="v2-tf-btn" data-tf="15m">15m</button>
-      <button class="v2-tf-btn" data-tf="1h">1h</button>
-      <button class="v2-tf-btn active" data-tf="4h">4h</button>
-      <button class="v2-tf-btn" data-tf="1d">1d</button>
-      <button class="v2-tf-btn" data-tf="1w">1w</button>
-    </div>
-    <div class="v2-chart-header" id="chart-header-v2">—</div>
+    <nav class="v2-nav" id="v2-nav">
+      <button class="v2-nav-btn active" data-view="market">市场</button>
+      <button class="v2-nav-btn" data-view="factory">策略工厂</button>
+      <button class="v2-nav-btn" data-view="simulate">模拟中心</button>
+      <button class="v2-nav-btn" data-view="leaderboard">排行榜</button>
+      <button class="v2-nav-btn" data-view="live">实盘库</button>
+      <button class="v2-nav-btn" data-view="monitor">监控</button>
+    </nav>
     <div class="v2-header-actions">
+      <select id="v2-symbol-select" class="v2-select"></select>
+      <div class="v2-tf-group" id="v2-tf-group">
+        <button class="v2-tf-btn" data-tf="1m">1m</button>
+        <button class="v2-tf-btn" data-tf="5m">5m</button>
+        <button class="v2-tf-btn" data-tf="15m">15m</button>
+        <button class="v2-tf-btn" data-tf="1h">1h</button>
+        <button class="v2-tf-btn active" data-tf="4h">4h</button>
+        <button class="v2-tf-btn" data-tf="1d">1d</button>
+      </div>
       <div class="v2-scale-toggle" id="v2-scale-toggle">
         <button class="btn v2-scale-btn" data-scale="linear">Lin</button>
         <button class="btn v2-scale-btn active" data-scale="log">Log</button>
       </div>
-      <button class="btn active" id="v2-ma-toggle" title="均线">MA</button>
-      <button class="btn" id="v2-combat-btn" title="全屏">全屏</button>
-      <button class="btn btn-primary" id="v2-exec-toggle">交易</button>
+      <button class="btn active" id="v2-ma-toggle">MA</button>
     </div>
   </header>
 
-  <main class="v2-workbench">
-    <div class="v2-chart-area">
-      <div id="chart-container" class="v2-chart-container"></div>
+  <!-- View: Market (default) -->
+  <main class="v2-view active" data-view="market">
+    <div class="v2-workbench">
+      <div class="v2-chart-area">
+        <div id="chart-container" class="v2-chart-container"></div>
+      </div>
+      <aside class="v2-decision-rail" id="v2-decision-rail">
+        <div class="dr-card"><h3>加载中...</h3></div>
+      </aside>
     </div>
-    <aside class="v2-decision-rail" id="v2-decision-rail">
-      <div class="dr-card"><h3>加载中...</h3></div>
-    </aside>
   </main>
 
+  <!-- View: Strategy Factory -->
+  <main class="v2-view" data-view="factory">
+    <div class="v2-view-content" id="view-factory"></div>
+  </main>
+
+  <!-- View: Simulation Center -->
+  <main class="v2-view" data-view="simulate">
+    <div class="v2-view-content" id="view-simulate"></div>
+  </main>
+
+  <!-- View: Leaderboard -->
+  <main class="v2-view" data-view="leaderboard">
+    <div class="v2-view-content" id="view-leaderboard"></div>
+  </main>
+
+  <!-- View: Live Strategy Library -->
+  <main class="v2-view" data-view="live">
+    <div class="v2-view-content" id="view-live"></div>
+  </main>
+
+  <!-- View: Monitor -->
+  <main class="v2-view" data-view="monitor">
+    <div class="v2-view-content" id="view-monitor"></div>
+  </main>
+
+  <!-- Legacy execution panel (kept for backward compat) -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
   <script type="module" src="/js/main.js"></script>
