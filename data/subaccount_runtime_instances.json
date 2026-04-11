@@ -672,7 +672,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:27.388123+00:00",
+        "last_tick_at": "2026-04-11T09:12:57.984639+00:00",
         "last_processed_bar": 95,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -11448,8 +11448,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:27.676031+00:00",
-        "last_processed_bar": 477,
+        "last_tick_at": "2026-04-11T09:12:58.163603+00:00",
+        "last_processed_bar": 480,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -11501,7 +11501,7 @@
             "open_position_count": 0,
             "closed_trade_count": 7,
             "last_processed_bar_by_stream": {
-              "ADAUSDT:5m": 477
+              "ADAUSDT:5m": 480
             }
           },
           "kill_switch": {
@@ -12228,7 +12228,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:27.417144+00:00",
+        "last_tick_at": "2026-04-11T09:12:58.010064+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12881,8 +12881,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:31.385417+00:00",
-        "last_processed_bar": 474,
+        "last_tick_at": "2026-04-11T09:13:01.826423+00:00",
+        "last_processed_bar": 477,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -12934,7 +12934,7 @@
             "open_position_count": 0,
             "closed_trade_count": 8,
             "last_processed_bar_by_stream": {
-              "PEPEUSDT:5m": 474
+              "PEPEUSDT:5m": 477
             }
           },
           "kill_switch": {
@@ -13699,8 +13699,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:27.367656+00:00",
-        "last_processed_bar": 492,
+        "last_tick_at": "2026-04-11T09:12:57.962192+00:00",
+        "last_processed_bar": 495,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -13752,7 +13752,7 @@
             "open_position_count": 0,
             "closed_trade_count": 9,
             "last_processed_bar_by_stream": {
-              "PEPEUSDT:4h": 492
+              "PEPEUSDT:4h": 495
             }
           },
           "kill_switch": {
@@ -23504,8 +23504,8 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T09:11:15.221261+00:00",
-        "last_processed_bar": 52,
+        "last_tick_at": "2026-04-11T09:13:15.433000+00:00",
+        "last_processed_bar": 54,
         "last_error": "",
         "last_runtime_note": "manual_start",
         "last_live_result": null,
@@ -23557,7 +23557,7 @@
             "open_position_count": 0,
             "closed_trade_count": 0,
             "last_processed_bar_by_stream": {
-              "HYPEUSDT:1h": 52
+              "HYPEUSDT:1h": 54
             }
           },
           "kill_switch": {
@@ -23586,6 +23586,25 @@
               "reason": "timeframe_not_verified:1h",
               "created_at_bar": 46,
               "created_at_ts": 1774263600.0
+            },
+            {
+              "order_intent_id": "b48e9e9ec464c767",
+              "signal_id": "a80d73b9dd48c47b",
+              "line_id": "ab4739ed61b07fd3",
+              "client_order_id": "paper-hypeusdt-a80d73b9dd",
+              "symbol": "HYPEUSDT",
+              "timeframe": "1h",
+              "side": "long",
+              "order_type": "limit",
+              "trigger_mode": "pre_limit",
+              "entry_price": 37.591072380952376,
+              "stop_price": 37.274615238095244,
+              "tp_price": 38.22398666666664,
+              "quantity": 0.0,
+              "status": "blocked",
+              "reason": "timeframe_not_verified:1h",
+              "created_at_bar": 54,
+              "created_at_ts": 1774292400.0
             }
           ],
           "open_orders": [],

@@ -139,12 +139,13 @@ export function initChart(containerId = 'chart-container') {
 
   function applyExecMarkers() {
     if (!candleSeries) return;
-    if (execMarkers.length === 0) {
-      // Don't clear — signal overlay manages its own markers
-      return;
-    }
+    if (execMarkers.length === 0) return;
     try {
-      candleSeries.setMarkers(execMarkers);
+      // Merge with existing signal markers instead of replacing
+      const existing = [];
+      try { const cur = candleSeries.markers?.() || []; existing.push(...cur); } catch {}
+      const merged = [...existing, ...execMarkers].sort((a, b) => a.time - b.time);
+      candleSeries.setMarkers(merged);
     } catch (err) {
       console.warn('[chart] exec markers failed:', err);
     }

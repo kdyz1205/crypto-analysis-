@@ -27,8 +27,8 @@ def start_web_server():
     return subprocess.Popen(
         [sys.executable, "run.py"],
         cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=None,  # print to console directly (PIPE can deadlock)
+        stderr=None,
     )
 
 
@@ -37,8 +37,8 @@ def start_evolution():
     return subprocess.Popen(
         [sys.executable, "run_evolution.py"],
         cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=None,  # print to console directly (PIPE can deadlock)
+        stderr=None,
     )
 
 
@@ -47,8 +47,8 @@ def start_tg_bot():
     return subprocess.Popen(
         [sys.executable, "run_tg_bot.py"],
         cwd=PROJECT_ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=None,  # print to console directly (PIPE can deadlock)
+        stderr=None,
     )
 
 

@@ -33,7 +33,7 @@ function cardMarketState(structure) {
       </div>
       <div class="dr-row">
         <span class="dr-label">MA 排列</span>
-        <span class="dr-value">${structure.ma_alignment}</span>
+        <span class="dr-value">${{'BULL_ORDERED':'多头排列','BEAR_ORDERED':'空头排列','MIXED':'混合','NEUTRAL':'中性'}[structure.ma_alignment] || structure.ma_alignment}</span>
       </div>
       <div class="dr-row">
         <span class="dr-label">Ribbon</span>
