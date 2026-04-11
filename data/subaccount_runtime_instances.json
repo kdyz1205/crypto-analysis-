@@ -672,7 +672,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T08:30:56.699661+00:00",
+        "last_tick_at": "2026-04-11T08:34:36.228006+00:00",
         "last_processed_bar": 94,
         "last_error": "",
         "last_runtime_note": "manual_start",
@@ -12228,7 +12228,7 @@
       },
       "status": {
         "runtime_state": "running",
-        "last_tick_at": "2026-04-11T08:30:56.895636+00:00",
+        "last_tick_at": "2026-04-11T08:34:41.230465+00:00",
         "last_processed_bar": 499,
         "last_error": "",
         "last_runtime_note": "manual_start",

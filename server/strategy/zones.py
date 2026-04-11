@@ -108,9 +108,7 @@ def detect_horizontal_zones(
                 strength_components=components,
             ))
 
-        # Filter out broken zones — price has moved far past them
-        scored = [z for z in scored if not _is_zone_broken(z, df, atr_value, close_price)]
-
+        # Don't filter broken zones here — let flip detection handle them later
         # Sort by strength descending, keep top N
         scored.sort(key=lambda z: -z.strength)
         zones.extend(scored[:max_zones_per_side])
