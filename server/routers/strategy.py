@@ -474,6 +474,22 @@ def _serialize_snapshot(
             display_meta=display_meta,
             timestamps=timestamps,
         ),
+        horizontal_zones=[
+            {
+                "zone_id": z.zone_id,
+                "side": z.side,
+                "price_low": z.price_low,
+                "price_high": z.price_high,
+                "price_center": z.price_center,
+                "width": z.width,
+                "touches": z.touches,
+                "strength": z.strength,
+                "strength_components": z.strength_components,
+                "first_touch_index": z.first_touch_index,
+                "last_touch_index": z.last_touch_index,
+            }
+            for z in getattr(snapshot, "horizontal_zones", ())
+        ],
         orders=[],
     )
 
