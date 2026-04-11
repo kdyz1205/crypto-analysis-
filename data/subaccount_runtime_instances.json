@@ -671,11 +671,11 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:32.214354+00:00",
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:26.683349+00:00",
         "last_processed_bar": 100,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
         "paper_current_day": "2026-04-11",
         "last_history": {
@@ -1077,13 +1077,13 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:32.115104+00:00",
-        "last_processed_bar": 450,
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:26.658127+00:00",
+        "last_processed_bar": 498,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
-        "paper_current_day": "2026-04-03",
+        "paper_current_day": "2026-04-11",
         "last_history": {
           "pricePrecision": 1,
           "exchange": "bitget",
@@ -1131,7 +1131,7 @@
             "open_position_count": 0,
             "closed_trade_count": 9,
             "last_processed_bar_by_stream": {
-              "BTCUSDT:4h": 450
+              "BTCUSDT:4h": 498
             }
           },
           "kill_switch": {
@@ -1142,25 +1142,6 @@
             "reason": ""
           },
           "intents": [
-            {
-              "order_intent_id": "a271af1168e03201",
-              "signal_id": "f04ec8bd12c13bf9",
-              "line_id": "1576e45f02a96907",
-              "client_order_id": "paper-btcusdt-f04ec8bd12",
-              "symbol": "BTCUSDT",
-              "timeframe": "4h",
-              "side": "long",
-              "order_type": "limit",
-              "trigger_mode": "pre_limit",
-              "entry_price": 66076.03150000001,
-              "stop_price": 65175.92,
-              "tp_price": 68022.5575,
-              "quantity": 0.0,
-              "status": "blocked",
-              "reason": "max_consecutive_losses_hit",
-              "created_at_bar": 257,
-              "created_at_ts": 1772380800.0
-            },
             {
               "order_intent_id": "948df3490b819c4d",
               "signal_id": "2f66afe45e3a83d4",
@@ -1521,6 +1502,25 @@
               "reason": "max_consecutive_losses_hit",
               "created_at_bar": 444,
               "created_at_ts": 1775102400.0
+            },
+            {
+              "order_intent_id": "fe9bd7380bd77675",
+              "signal_id": "b76e7044d93caabe",
+              "line_id": "137ea670824ef447",
+              "client_order_id": "paper-btcusdt-b76e7044d9",
+              "symbol": "BTCUSDT",
+              "timeframe": "4h",
+              "side": "short",
+              "order_type": "limit",
+              "trigger_mode": "pre_limit",
+              "entry_price": 72609.48111428569,
+              "stop_price": 73251.68402857143,
+              "tp_price": 67675.67760000001,
+              "quantity": 0.0,
+              "status": "blocked",
+              "reason": "max_consecutive_losses_hit",
+              "created_at_bar": 494,
+              "created_at_ts": 1775822400.0
             }
           ],
           "open_orders": [],
@@ -11447,11 +11447,11 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:18.793216+00:00",
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:16.374688+00:00",
         "last_processed_bar": 499,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
         "paper_current_day": "2026-04-11",
         "last_history": {
@@ -11462,18 +11462,18 @@
           "requestedDays": 365,
           "baseInterval": "5m",
           "resampledFromInterval": null,
-          "sourceBarCount": 80025,
+          "sourceBarCount": 80030,
           "historyMode": "fast_window",
-          "loadedBarCount": 80025,
+          "loadedBarCount": 80030,
           "earliestLoadedTimestamp": 1751815500,
-          "latestLoadedTimestamp": 1775942400,
+          "latestLoadedTimestamp": 1775943900,
           "listingStartTimestamp": 1751815500,
           "isFullHistory": false,
           "isTruncated": false,
           "truncationReason": "",
           "analysisInputBarCount": 500,
-          "analysisEarliestTimestamp": 1775766900,
-          "analysisLatestTimestamp": 1775917200,
+          "analysisEarliestTimestamp": 1775768400,
+          "analysisLatestTimestamp": 1775918700,
           "analysisWasTrimmed": true
         },
         "paper_state": {
@@ -12880,11 +12880,11 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:37.767200+00:00",
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:27.132890+00:00",
         "last_processed_bar": 499,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
         "paper_current_day": "2026-04-11",
         "last_history": {
@@ -12895,18 +12895,18 @@
           "requestedDays": 365,
           "baseInterval": "5m",
           "resampledFromInterval": null,
-          "sourceBarCount": 3091,
+          "sourceBarCount": 3096,
           "historyMode": "fast_window",
-          "loadedBarCount": 3091,
+          "loadedBarCount": 3096,
           "earliestLoadedTimestamp": 1775014200,
-          "latestLoadedTimestamp": 1775942400,
+          "latestLoadedTimestamp": 1775943900,
           "listingStartTimestamp": 1775014200,
           "isFullHistory": false,
           "isTruncated": false,
           "truncationReason": "",
           "analysisInputBarCount": 500,
-          "analysisEarliestTimestamp": 1775767200,
-          "analysisLatestTimestamp": 1775917200,
+          "analysisEarliestTimestamp": 1775768700,
+          "analysisLatestTimestamp": 1775918700,
           "analysisWasTrimmed": true
         },
         "paper_state": {
@@ -13698,11 +13698,11 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:36.471630+00:00",
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:26.711021+00:00",
         "last_processed_bar": 499,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
         "paper_current_day": "2026-04-11",
         "last_history": {
@@ -23503,13 +23503,13 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:08.258961+00:00",
-        "last_processed_bar": 66,
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:33.430346+00:00",
+        "last_processed_bar": 91,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
-        "paper_current_day": "2026-03-24",
+        "paper_current_day": "2026-03-25",
         "last_history": {
           "pricePrecision": 3,
           "exchange": "bitget",
@@ -23557,7 +23557,7 @@
             "open_position_count": 0,
             "closed_trade_count": 0,
             "last_processed_bar_by_stream": {
-              "HYPEUSDT:1h": 66
+              "HYPEUSDT:1h": 91
             }
           },
           "kill_switch": {
@@ -23695,13 +23695,13 @@
         }
       },
       "status": {
-        "runtime_state": "running",
-        "last_tick_at": "2026-04-11T14:29:31.485586+00:00",
-        "last_processed_bar": 11,
+        "runtime_state": "stopped",
+        "last_tick_at": "2026-04-11T14:54:41.016865+00:00",
+        "last_processed_bar": 36,
         "last_error": "",
-        "last_runtime_note": "manual_start",
+        "last_runtime_note": "manual_stop",
         "last_live_result": null,
-        "paper_current_day": "2026-03-22",
+        "paper_current_day": "2026-03-23",
         "last_history": {
           "pricePrecision": 4,
           "exchange": "bitget",
@@ -23749,7 +23749,7 @@
             "open_position_count": 0,
             "closed_trade_count": 0,
             "last_processed_bar_by_stream": {
-              "SUIUSDT:1h": 11
+              "SUIUSDT:1h": 36
             }
           },
           "kill_switch": {
