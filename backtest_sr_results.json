@@ -1,0 +1,50 @@
+{
+  "total_trades": 76,
+  "timeframes": {
+    "5m": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "avg_rr": 3.52,
+      "avg_stop_pct": 1.0293,
+      "median_stop_pct": 1.0293,
+      "ev_per_trade": -1.0,
+      "half_kelly": 0.0
+    },
+    "15m": {
+      "trades": 3,
+      "wins": 0,
+      "losses": 3,
+      "win_rate": 0.0,
+      "avg_rr": 3.54,
+      "avg_stop_pct": 1.0183,
+      "median_stop_pct": 1.0157,
+      "ev_per_trade": -1.0,
+      "half_kelly": 0.0
+    },
+    "1h": {
+      "trades": 24,
+      "wins": 3,
+      "losses": 21,
+      "win_rate": 0.125,
+      "avg_rr": 8.36,
+      "avg_stop_pct": 1.0894,
+      "median_stop_pct": 1.0802,
+      "ev_per_trade": 0.1698,
+      "half_kelly": 0.0102
+    },
+    "4h": {
+      "trades": 48,
+      "wins": 11,
+      "losses": 37,
+      "win_rate": 0.2292,
+      "avg_rr": 5.62,
+      "avg_stop_pct": 1.3563,
+      "median_stop_pct": 1.1418,
+      "ev_per_trade": 0.5161,
+      "half_kelly": 0.046
+    }
+  },
+  "symbols": {}
+}

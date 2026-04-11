@@ -18,27 +18,29 @@ from .zones import HorizontalZone
 
 
 # ATR multipliers for stop distance by timeframe
-# Smaller TF = tighter stops (in ATR terms)
+# Calibrated from real backtest data (8 coins, 365 days)
+# Median real stop sizes: 5m=1.03%, 15m=1.02%, 1h=1.09%, 4h=1.14%
 TIMEFRAME_STOP_ATR_MULT = {
-    "1m": 0.03,   # ~0.1% stop on most coins
-    "3m": 0.04,
-    "5m": 0.05,
-    "15m": 0.08,
-    "1h": 0.12,
-    "4h": 0.20,
-    "1d": 0.35,
-    "1w": 0.50,
+    "1m": 0.10,
+    "3m": 0.12,
+    "5m": 0.15,   # real: ~1.0% stop
+    "15m": 0.18,  # real: ~1.0% stop
+    "1h": 0.22,   # real: ~1.1% stop
+    "4h": 0.30,   # real: ~1.1-1.4% stop
+    "1d": 0.45,
+    "1w": 0.60,
 }
 
 # Base leverage limits by timeframe
+# Conservative: with 1%+ stops, high leverage = large dollar risk
 TIMEFRAME_MAX_LEVERAGE = {
-    "1m": 20,
-    "3m": 15,
-    "5m": 10,
-    "15m": 8,
-    "1h": 5,
-    "4h": 3,
-    "1d": 2,
+    "1m": 10,
+    "3m": 8,
+    "5m": 5,
+    "15m": 5,
+    "1h": 3,
+    "4h": 2,
+    "1d": 1,
     "1w": 1,
 }
 
@@ -184,8 +186,8 @@ def calculate_position_size(
     timeframe: str = "1h",
     equity: float = 10000.0,
     base_risk_pct: float = 0.01,  # 1% base risk
-    win_rate: float = 0.22,       # from backtest
-    avg_rr: float = 5.4,          # from backtest
+    win_rate: float = 0.229,      # from real backtest: 4h=22.9%
+    avg_rr: float = 5.62,         # from real backtest: 4h avg RR
     has_volume_surge: bool = False,
     multi_tf_confluence: float = 0.0,
     trend_aligned: bool = True,
