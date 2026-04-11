@@ -43,8 +43,8 @@ def test_calibration_table_no_unprofitable():
 
 def test_get_calibrated_params_known_tf():
     wr, rr, hk = get_calibrated_params("4h")
-    assert wr == 0.229
-    assert rr == 5.62
+    assert wr == 0.154
+    assert rr == 5.69
     assert hk > 0
 
 
@@ -62,17 +62,26 @@ def test_uncalibrated_5m_returns_zero():
     assert wr == 0.0 and rr == 0.0 and hk == 0.0
 
 
-def test_uncalibrated_15m_returns_zero():
-    """15m is explicitly not profitable — must return zeros."""
+def test_calibrated_15m_returns_values():
+    """15m is profitable in 15-coin backtest — must return real values."""
     wr, rr, hk = get_calibrated_params("15m")
+    assert wr > 0
+    assert rr > 0
+    assert hk > 0
+
+
+def test_uncalibrated_1h_returns_zero():
+    """1h is NOT profitable in 15-coin backtest — must return zeros."""
+    wr, rr, hk = get_calibrated_params("1h")
     assert wr == 0.0 and rr == 0.0 and hk == 0.0
 
 
 def test_is_timeframe_verified():
     assert is_timeframe_verified("4h") == True
-    assert is_timeframe_verified("1h") == True
+    assert is_timeframe_verified("15m") == True
+    # 1h was profitable in 8-coin test but NOT in 15-coin test
+    assert is_timeframe_verified("1h") == False
     assert is_timeframe_verified("5m") == False
-    assert is_timeframe_verified("15m") == False
     assert is_timeframe_verified("1m") == False
     assert is_timeframe_verified("unknown") == False
 

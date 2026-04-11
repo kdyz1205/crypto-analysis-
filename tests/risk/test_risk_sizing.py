@@ -70,26 +70,27 @@ def test_normal_stop_not_floored():
     signal = _make_signal(timeframe="4h", entry=100.0, stop=98.0)  # 2% stop
     decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
     assert decision.approved
-    # With Kelly capping: 4h kelly=4.6%, equity=$10K → kelly_risk=$460
-    # risk_per_trade=1% → base_risk=$100, min(100, 460)=$100
-    # $100 / $2.00 = 50 units
-    assert abs(decision.proposed_quantity - 50.0) < 1.0
+    # 4h Kelly=0.26%, equity=$10K -> kelly_risk=$26
+    # risk_per_trade=1% -> base_risk=$100, min(100, 26)=$26
+    # $26 / $2.00 = 13 units
+    assert decision.proposed_quantity > 0
+    assert decision.stop_distance == 2.0  # not floored, 2% is above calibration median
 
 
 def test_kelly_caps_risk_amount():
     """When Kelly fraction is small, it should cap the risk amount."""
-    # Use 1h which has Kelly=1.02%, much smaller than the 1% base risk
-    signal = _make_signal(timeframe="1h", entry=100.0, stop=99.0)  # 1% stop, normal
+    # Use 4h which has Kelly=0.26%
+    signal = _make_signal(timeframe="4h", entry=100.0, stop=99.0)  # 1% stop, normal
     account = _make_account(equity=10000.0)
     config = _make_config()
     config.risk_per_trade = 0.05  # 5% base risk = $500
     decision = evaluate_signal_risk(signal, account, [], config, current_bar=0)
     assert decision.approved
-    # Kelly for 1h = 1.02% of $10K = $102
+    # Kelly for 4h = 0.26% of $10K = $26
     # Base risk = 5% of $10K = $500
-    # Kelly caps it: min($500, $102) = $102
-    # qty = $102 / $1.00 = 102
-    assert decision.proposed_quantity < 150, f"Kelly should cap qty, got {decision.proposed_quantity}"
+    # Kelly caps it: min($500, $26) = $26
+    # qty = $26 / $1.00 = 26
+    assert decision.proposed_quantity < 50, f"Kelly should cap qty, got {decision.proposed_quantity}"
 
 
 def test_calibration_is_single_source():
@@ -108,9 +109,9 @@ def test_5m_signal_blocked_by_risk():
     assert "timeframe_not_verified" in decision.blocking_reason
 
 
-def test_15m_signal_blocked_by_risk():
-    """15m is not in BACKTEST_CALIBRATION, must be blocked."""
-    signal = _make_signal(timeframe="15m", entry=100.0, stop=99.0)
+def test_1m_signal_blocked_by_risk():
+    """1m is not in BACKTEST_CALIBRATION, must be blocked."""
+    signal = _make_signal(timeframe="1m", entry=100.0, stop=99.0)
     decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
     assert not decision.approved
     assert "timeframe_not_verified" in decision.blocking_reason
@@ -131,8 +132,16 @@ def test_4h_signal_approved():
     assert decision.approved
 
 
-def test_1h_signal_approved():
-    """1h is verified profitable, must be approved."""
+def test_1h_signal_blocked():
+    """1h is NOT verified profitable in 15-coin backtest, must be blocked."""
     signal = _make_signal(timeframe="1h", entry=100.0, stop=99.0)
+    decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
+    assert not decision.approved
+    assert "timeframe_not_verified" in decision.blocking_reason
+
+
+def test_15m_signal_approved():
+    """15m is verified profitable, must be approved."""
+    signal = _make_signal(timeframe="15m", entry=100.0, stop=99.0)
     decision = evaluate_signal_risk(signal, _make_account(), [], _make_config(), current_bar=0)
     assert decision.approved

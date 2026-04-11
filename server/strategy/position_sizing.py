@@ -263,15 +263,16 @@ def calculate_position_size(
     )
 
 
-# Per-timeframe calibration from real backtest (8 coins, 365 days, 76 trades)
-# Only use timeframes that showed positive expected value
+# Per-timeframe calibration from real backtest (15 coins, 365 days)
+# Only timeframes with POSITIVE expected value are included.
+# Format: (win_rate, avg_rr, ev_per_trade, half_kelly, median_stop_pct)
 BACKTEST_CALIBRATION = {
-    # tf: (win_rate, avg_rr, ev_per_trade, half_kelly, median_stop_pct)
-    "1h":  (0.125, 8.36, 0.170, 0.0102, 0.0108),  # marginal
-    "4h":  (0.229, 5.62, 0.516, 0.0460, 0.0114),  # solid
-    # 5m and 15m: NOT PROFITABLE in backtest — do not use for sizing
-    # "5m":  (0.0, 3.52, -1.0, 0.0, 0.0103),
-    # "15m": (0.0, 3.54, -1.0, 0.0, 0.0102),
+    "15m": (0.20, 7.07, 0.614, 0.0434, 0.01077),   # 10 trades, strong EV
+    "4h":  (0.154, 5.69, 0.029, 0.0026, 0.01262),   # 78 trades, marginal but positive
+    # --- NOT PROFITABLE (blocked from trading) ---
+    # "5m":  0% WR, -1.0R EV (4 trades)
+    # "1h":  7.7% WR, -0.366R EV (26 trades) — was profitable in 8-coin test, not in 15-coin
+    # "1d":  0% WR, -1.0R EV (19 trades)
 }
 
 

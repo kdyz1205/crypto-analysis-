@@ -1,0 +1,62 @@
+{
+  "5m": {
+    "trades": 4,
+    "wins": 0,
+    "losses": 4,
+    "win_rate": 0.0,
+    "avg_rr": 7.7,
+    "ev": -1.0,
+    "half_kelly": 0.0,
+    "median_stop_pct": 0.010518,
+    "avg_stop_pct": 0.010504,
+    "verdict": "NOT_PROFITABLE"
+  },
+  "15m": {
+    "trades": 10,
+    "wins": 2,
+    "losses": 8,
+    "win_rate": 0.2,
+    "avg_rr": 7.07,
+    "ev": 0.6137,
+    "half_kelly": 0.0434,
+    "median_stop_pct": 0.010767,
+    "avg_stop_pct": 0.01103,
+    "verdict": "PROFITABLE"
+  },
+  "1h": {
+    "trades": 26,
+    "wins": 2,
+    "losses": 24,
+    "win_rate": 0.0769,
+    "avg_rr": 7.24,
+    "ev": -0.3659,
+    "half_kelly": 0.0,
+    "median_stop_pct": 0.011036,
+    "avg_stop_pct": 0.012107,
+    "verdict": "NOT_PROFITABLE"
+  },
+  "4h": {
+    "trades": 78,
+    "wins": 12,
+    "losses": 66,
+    "win_rate": 0.1538,
+    "avg_rr": 5.69,
+    "ev": 0.029,
+    "half_kelly": 0.0026,
+    "median_stop_pct": 0.012618,
+    "avg_stop_pct": 0.016475,
+    "verdict": "PROFITABLE"
+  },
+  "1d": {
+    "trades": 19,
+    "wins": 0,
+    "losses": 19,
+    "win_rate": 0.0,
+    "avg_rr": 7.67,
+    "ev": -1.0,
+    "half_kelly": 0.0,
+    "median_stop_pct": 0.034383,
+    "avg_stop_pct": 0.0384,
+    "verdict": "NOT_PROFITABLE"
+  }
+}
