@@ -86,16 +86,23 @@ async def main():
                         lines.append(f"{emoji} {v['symbol']} {v['timeframe']} | {sign}{ret}% WR={v['win_rate']}%")
                     await tg_send("\n".join(lines))
 
-                # Alert on new #1
+                # Alert on new #1 with full factor details
                 if lb and lb[0]['score'] > last_top_score + 0.01:
                     last_top_score = lb[0]['score']
                     v = lb[0]
+                    triggers = ', '.join(v.get('trigger_modes', []))
+                    factors = ', '.join(v.get('factors', [])) or '基础S/R'
+                    params = v.get('params', {})
                     await tg_send(
                         f"🏆 <b>新冠军策略!</b>\n"
-                        f"{v['symbol']} {v['timeframe']} | {v['name']}\n"
-                        f"回报: {v['total_return_pct']:+.1f}% | 胜率: {v['win_rate']}%\n"
-                        f"Sharpe: {v['sharpe_ratio']} | 交易: {v['total_trades']}次\n"
-                        f"\n在网站复制此策略到实盘"
+                        f"<b>{v['symbol']} {v['timeframe']}</b>\n"
+                        f"触发: {triggers}\n"
+                        f"因子: {factors}\n"
+                        f"参数: RR={params.get('rr_target','?')} 触碰≥{params.get('min_touches','?')} 回看={params.get('lookback_bars','?')}\n"
+                        f"\n📊 回报: {v['total_return_pct']:+.1f}%\n"
+                        f"胜率: {v['win_rate']}% | Sharpe: {v['sharpe_ratio']}\n"
+                        f"交易: {v['total_trades']}次 | 回撤: {v['max_drawdown_pct']:.1f}%\n"
+                        f"\n👉 在网站 /api/runtime/leaderboard 复制"
                     )
 
     except KeyboardInterrupt:

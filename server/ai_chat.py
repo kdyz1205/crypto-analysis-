@@ -38,6 +38,11 @@ CLAUDE_CODE_CMD = os.environ.get(
     "CLAUDE_CODE_CMD",
     os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "npm", "claude.cmd"),
 )
+# Codex CLI as fallback when Claude has no credits
+CODEX_CMD = os.environ.get(
+    "CODEX_CMD",
+    os.path.join(os.path.expanduser("~"), "AppData", "Roaming", "npm", "codex.cmd"),
+)
 CLAUDE_CODE_TIMEOUT_SECONDS = int(os.environ.get("CLAUDE_CODE_TIMEOUT_SECONDS", "300"))
 CLAUDE_CODE_DANGEROUSLY_SKIP_PERMISSIONS = (
     os.environ.get("CLAUDE_CODE_DANGEROUSLY_SKIP_PERMISSIONS", "true").lower() == "true"
@@ -245,6 +250,32 @@ class AIChatEngine:
                 response_text = "(No response)"
 
         return response_text, new_session_id
+
+    async def _chat_with_codex_cli(self, user_message: str) -> tuple[str, None]:
+        """Fallback: use Codex CLI when Claude has no credits."""
+        import asyncio
+        import subprocess as _subprocess
+
+        args = [CODEX_CMD, "-q", "--full-auto"]
+
+        def _run():
+            env = os.environ.copy()
+            completed = _subprocess.run(
+                args,
+                input=user_message.encode("utf-8"),
+                stdout=_subprocess.PIPE,
+                stderr=_subprocess.PIPE,
+                cwd=str(PROJECT_ROOT),
+                timeout=CLAUDE_CODE_TIMEOUT_SECONDS,
+                env=env,
+            )
+            return completed.stdout.decode("utf-8", errors="replace").strip()
+
+        try:
+            result = await asyncio.to_thread(_run)
+            return result or "(No response from Codex)", None
+        except Exception as e:
+            return f"Error: {e}", None
 
     def _looks_like_billing_or_credit_error(self, text: str) -> bool:
         t = (text or "").lower()
@@ -1082,16 +1113,25 @@ class AIChatEngine:
                 cli_billing = self._looks_like_billing_or_credit_error(reply_text)
                 backend = "claude_code_cli"
 
-                # If the CLI fails due to billing/credit issues, automatically fall back to Gemini.
+                # If the CLI fails due to billing/credit issues, try Codex CLI then Gemini.
                 if cli_billing:
+                    # Try Codex CLI first
                     try:
-                        gemini_out = await self._chat_with_gemini_tool_call(session, model_key)
-                        reply_text = gemini_out.get("reply", reply_text)
-                        backend = gemini_out.get("backend", "gemini")
-                    except Exception as ge:
-                        # Keep CLI text if Gemini isn't available.
-                        backend = "claude_code_cli"
-                        print(f"[Gemini fallback failed] {type(ge).__name__}: {repr(ge)}")
+                        codex_text, _ = await self._chat_with_codex_cli(message)
+                        if codex_text and not codex_text.startswith("Error"):
+                            reply_text = codex_text
+                            backend = "codex_cli"
+                        else:
+                            raise ValueError("Codex failed")
+                    except Exception:
+                        # Then try Gemini
+                        try:
+                            gemini_out = await self._chat_with_gemini_tool_call(session, model_key)
+                            reply_text = gemini_out.get("reply", reply_text)
+                            backend = gemini_out.get("backend", "gemini")
+                        except Exception as ge:
+                            backend = "claude_code_cli"
+                            print(f"[Fallback failed] {type(ge).__name__}: {repr(ge)}")
 
                 session.add_assistant(reply_text)
                 self._save_memory(session)
