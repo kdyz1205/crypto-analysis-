@@ -1237,17 +1237,7 @@ body.combat-mode .boot-status { display: none; }
 }
 
 .chart-mode-panel {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 35;
-  width: 170px;
-  padding: 6px 8px;
-  border: 1px solid rgba(42, 53, 72, 0.9);
-  background: rgba(10, 14, 23, 0.88);
-  backdrop-filter: blur(10px);
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+  display: none;  /* replaced by header Log/Linear toggle */
 }
 
 .chart-mode-title {

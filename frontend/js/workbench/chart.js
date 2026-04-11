@@ -57,7 +57,11 @@ export function initChart(containerId = 'chart-container') {
     layout: { background: { color: '#0a0e17' }, textColor: '#e0e6ed' },
     grid: { vertLines: { color: '#1a2035' }, horzLines: { color: '#1a2035' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#2a3548' },
+    rightPriceScale: {
+      borderColor: '#2a3548',
+      autoScale: true,        // Y-axis auto-fits visible candles (like TradingView)
+      scaleMargins: { top: 0.05, bottom: 0.05 },
+    },
     timeScale: { borderColor: '#2a3548', timeVisible: true, secondsVisible: false },
   });
 
