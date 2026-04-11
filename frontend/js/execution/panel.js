@@ -242,7 +242,16 @@ function renderOverview() {
 function renderRunning() {
   const running = instances.filter(i => i.status?.runtime_state === 'running');
   if (!running.length) return '';
-  return sec('运行中', `(${running.length})`, running.map(renderCard).join(''));
+  const liveRunning = running.filter(i => i.config?.live_mode === 'live');
+  const paperRunning = running.filter(i => i.config?.live_mode !== 'live');
+  let html = '';
+  if (liveRunning.length) {
+    html += sec('实盘运行', `(${liveRunning.length})`, liveRunning.map(renderCard).join(''));
+  }
+  if (paperRunning.length) {
+    html += sec('模拟运行', `(${paperRunning.length})`, paperRunning.map(renderCard).join(''));
+  }
+  return html;
 }
 
 // ── 3. Strategy Catalog (read-only, click to see details) ───────────────
@@ -332,8 +341,8 @@ function renderCard(inst) {
     <div class="exec-strategy-header">
       <span class="exec-strategy-symbol">${esc(c.symbol||'?')}</span>
       <span class="exec-strategy-tf">${esc(c.timeframe||'?')}</span>
-      ${isLive?'<span style="color:#ff1744;font-size:10px;font-weight:700">实盘</span>':''}
-      ${!isLive&&pnl!=null?`<span class="exec-strategy-pnl ${pnlColorClass(pnl)}">${fmtPnl(pnl)}</span>`:''}
+      ${isLive?'<span style="color:#ff1744;font-size:10px;font-weight:700">实盘</span>':'<span style="color:var(--v2-muted);font-size:9px">模拟</span>'}
+      ${!isLive&&pnl!=null?`<span class="exec-strategy-pnl ${pnlColorClass(pnl)}" title="模拟盈亏，非真实资金">${fmtPnl(pnl)}</span>`:''}
       <span class="exec-strategy-state ${{running:'exec-state-running',stopped:'exec-state-stopped',blocked:'exec-state-blocked'}[state]||''}">${{running:'运行中',stopped:'停止',blocked:'阻止'}[state]||state}</span>
     </div>
     ${expanded ? renderDetail(inst) : ''}
