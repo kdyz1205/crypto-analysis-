@@ -1,0 +1,26 @@
+[
+  {
+    "manual_line_id": "manual-HYPEUSDT-4h-resistance-1712592000-1712678400",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "resistance",
+    "source": "manual",
+    "t_start": 1712592000,
+    "t_end": 1712678400,
+    "price_start": 100.0,
+    "price_end": 105.0,
+    "extend_left": false,
+    "extend_right": true,
+    "locked": false,
+    "label": "verified manual line",
+    "notes": "manual note from browser verify",
+    "comparison_status": "no_nearby_auto",
+    "override_mode": "display_only",
+    "nearest_auto_line_id": null,
+    "slope_diff": null,
+    "projected_price_diff": null,
+    "overlap_ratio": null,
+    "created_at": 1775859890,
+    "updated_at": 1775859897
+  }
+]

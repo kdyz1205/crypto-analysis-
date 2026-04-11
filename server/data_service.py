@@ -16,12 +16,15 @@ from .market import (
 # In-memory TTL cache for download_ohlcv results
 # Key: (symbol, interval) — days are handled by slicing/invalidation
 _ohlcv_cache: dict[tuple, tuple[float, int, pl.DataFrame]] = {}  # (ts, days, df)
-OHLCV_CACHE_TTL_SHORT = 300   # 5 minutes — for short intervals (5m, 15m, 1h)
-OHLCV_CACHE_TTL_HEAVY = 600   # 10 minutes — for heavy intervals (4h, 1d)
+OHLCV_CACHE_TTL_FAST = 60     # 1 minute — for 1m, 3m
+OHLCV_CACHE_TTL_SHORT = 300   # 5 minutes — for 5m, 15m, 1h
+OHLCV_CACHE_TTL_HEAVY = 600   # 10 minutes — for 4h, 1d, 1w
 
 def _cache_ttl(interval: str) -> int:
     """Return cache TTL in seconds based on interval."""
-    return OHLCV_CACHE_TTL_HEAVY if interval in ("4h", "1d") else OHLCV_CACHE_TTL_SHORT
+    if interval in ("1m", "3m"):
+        return OHLCV_CACHE_TTL_FAST
+    return OHLCV_CACHE_TTL_HEAVY if interval in ("4h", "1d", "1w") else OHLCV_CACHE_TTL_SHORT
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"

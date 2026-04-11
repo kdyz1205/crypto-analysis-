@@ -15,5 +15,5 @@ def test_config_has_trend_fields():
 
 def test_config_has_rr_gate_fields():
     cfg = StrategyConfig()
-    assert cfg.min_rr_ratio == 2.0
+    assert cfg.min_rr_ratio == 3.0
     assert cfg.min_profit_space_atr_mult == 1.0

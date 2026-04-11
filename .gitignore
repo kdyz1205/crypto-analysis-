@@ -54,3 +54,4 @@ sr_patterns_replay.ipynb
 .DS_Store
 Thumbs.db
 .vercel
+*.log

@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from .config import StrategyConfig, calculate_atr, clamp
+from .confluence import confluence_score_for_zone
 from .types import StrategySignal, ensure_candles_df, stable_id
 from .zones import HorizontalZone
 
@@ -20,6 +21,7 @@ def generate_zone_signals(
     *,
     symbol: str = "",
     timeframe: str = "",
+    other_tf_zones: Sequence[HorizontalZone] = (),
 ) -> list[StrategySignal]:
     """Generate pre-limit signals when price is near a high-quality S/R zone.
 
@@ -83,6 +85,10 @@ def generate_zone_signals(
             continue
 
         score = _zone_signal_score(zone, distance_to_zone, arm_dist, atr_value, close_price, df, current_index, cfg)
+        # Multi-TF confluence bonus
+        if other_tf_zones:
+            conf = confluence_score_for_zone(zone, other_tf_zones, [])
+            score = score + 0.15 * conf  # up to +15% score boost
         if score < 0.3:
             continue
 
@@ -152,6 +158,9 @@ def generate_zone_signals(
             continue
 
         score = _zone_signal_score(zone, distance_to_zone, arm_dist, atr_value, close_price, df, current_index, cfg)
+        if other_tf_zones:
+            conf = confluence_score_for_zone(zone, other_tf_zones, [])
+            score = score + 0.15 * conf
         if score < 0.3:
             continue
 

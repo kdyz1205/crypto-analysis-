@@ -23,7 +23,10 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Default 8001 to avoid conflict with anything left on 8000 (TIME_WAIT or other app)
 PORT = int(os.environ.get("PORT", 8001))
-URL = f"http://127.0.0.1:{PORT}"
+# Open v2 (Execution Center) by default; override with LAUNCH_PATH=/ for legacy UI
+_LAUNCH_PATH = os.environ.get("LAUNCH_PATH", "/v2").strip() or "/v2"
+if not _LAUNCH_PATH.startswith("/"):
+    _LAUNCH_PATH = "/" + _LAUNCH_PATH
 
 
 def open_browser(url_holder):
@@ -93,9 +96,16 @@ if __name__ == "__main__":
         if attempt > 0:
             time.sleep(1.0)
         if port_available(host, port):
-            url_holder = [f"http://127.0.0.1:{port}"]
+            launch = _LAUNCH_PATH
+            url_holder = [f"http://127.0.0.1:{port}{launch}"]
             threading.Thread(target=open_browser, args=(url_holder,), daemon=True).start()
-            print(f"\n  Crypto TA: {url_holder[0]}\n  Open in browser if not auto-opened.\n")
+            print(
+                f"\n  Crypto TA (v2): {url_holder[0]}\n"
+                f"  Legacy UI: http://127.0.0.1:{port}/\n"
+                f"  Open in browser if not auto-opened.\n"
+                f"\n  >>> Use HTTP only (not HTTPS). If Chrome says \"invalid response\",\n"
+                f"      you opened https:// — copy the line above exactly (starts with http://).\n"
+            )
             # reload=True: uvicorn watches .py files and auto-restarts on changes
             # This allows the self-healer to apply code fixes and have them take effect immediately
             uvicorn.run("server.app:app", host=host, port=port, reload=True,

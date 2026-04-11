@@ -1,0 +1,2117 @@
+{
+  "summary": {
+    "result_count": 1,
+    "trade_count": 2,
+    "total_pnl": 29.774953074775112,
+    "return_pct": 0.2977495307477511,
+    "win_rate_pct": 50.0,
+    "profit_factor": 1.9924984358258209,
+    "max_drawdown_pct": 0.3,
+    "by_market": [
+      {
+        "symbol": "HYPEUSDT",
+        "timeframe": "4h",
+        "trade_count": 2,
+        "total_pnl": 29.774953074775112,
+        "return_pct": 0.2977495307477511,
+        "win_rate_pct": 50.0,
+        "profit_factor": 1.9924984358258209,
+        "max_drawdown_pct": 0.3
+      }
+    ],
+    "signal_stats": {
+      "auto:long:failed_breakout": {
+        "seen": 1,
+        "approved": 0,
+        "blocked": 1,
+        "filled": 0,
+        "closed": 0,
+        "wins": 0,
+        "losses": 0,
+        "total_pnl": 0.0
+      },
+      "auto:long:rejection": {
+        "seen": 3,
+        "approved": 2,
+        "blocked": 1,
+        "filled": 0,
+        "closed": 2,
+        "wins": 1,
+        "losses": 1,
+        "total_pnl": 29.77495307477463
+      }
+    }
+  },
+  "results": [
+    {
+      "symbol": "HYPEUSDT",
+      "timeframe": "4h",
+      "bars_processed": 220,
+      "starting_equity": 10000.0,
+      "final_equity": 10029.774953074775,
+      "total_pnl": 29.774953074775112,
+      "return_pct": 0.2977495307477511,
+      "trade_count": 2,
+      "win_count": 1,
+      "loss_count": 1,
+      "win_rate_pct": 50.0,
+      "avg_trade_pnl": 14.887476537387315,
+      "median_trade_pnl": 14.887476537387315,
+      "profit_factor": 1.9924984358258209,
+      "max_drawdown_pct": 0.3,
+      "bars": [
+        {
+          "bar_index": 0,
+          "timestamp": 1772640000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 1,
+          "timestamp": 1772654400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 2,
+          "timestamp": 1772668800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 3,
+          "timestamp": 1772683200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 4,
+          "timestamp": 1772697600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 5,
+          "timestamp": 1772712000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 6,
+          "timestamp": 1772726400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 7,
+          "timestamp": 1772740800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 8,
+          "timestamp": 1772755200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 9,
+          "timestamp": 1772769600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 10,
+          "timestamp": 1772784000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 11,
+          "timestamp": 1772798400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 12,
+          "timestamp": 1772812800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 13,
+          "timestamp": 1772827200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 14,
+          "timestamp": 1772841600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 15,
+          "timestamp": 1772856000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 16,
+          "timestamp": 1772870400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 17,
+          "timestamp": 1772884800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 18,
+          "timestamp": 1772899200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 19,
+          "timestamp": 1772913600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 20,
+          "timestamp": 1772928000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 21,
+          "timestamp": 1772942400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 22,
+          "timestamp": 1772956800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 23,
+          "timestamp": 1772971200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 24,
+          "timestamp": 1772985600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 25,
+          "timestamp": 1773000000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 26,
+          "timestamp": 1773014400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 27,
+          "timestamp": 1773028800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 28,
+          "timestamp": 1773043200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 29,
+          "timestamp": 1773057600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 30,
+          "timestamp": 1773072000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 31,
+          "timestamp": 1773086400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 32,
+          "timestamp": 1773100800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 33,
+          "timestamp": 1773115200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 34,
+          "timestamp": 1773129600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 35,
+          "timestamp": 1773144000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 36,
+          "timestamp": 1773158400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 37,
+          "timestamp": 1773172800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 38,
+          "timestamp": 1773187200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 39,
+          "timestamp": 1773201600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 40,
+          "timestamp": 1773216000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 41,
+          "timestamp": 1773230400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 42,
+          "timestamp": 1773244800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 43,
+          "timestamp": 1773259200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 44,
+          "timestamp": 1773273600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 45,
+          "timestamp": 1773288000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 46,
+          "timestamp": 1773302400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 47,
+          "timestamp": 1773316800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 48,
+          "timestamp": 1773331200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 49,
+          "timestamp": 1773345600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 50,
+          "timestamp": 1773360000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 51,
+          "timestamp": 1773374400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 52,
+          "timestamp": 1773388800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 53,
+          "timestamp": 1773403200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 54,
+          "timestamp": 1773417600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 55,
+          "timestamp": 1773432000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 56,
+          "timestamp": 1773446400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 57,
+          "timestamp": 1773460800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 58,
+          "timestamp": 1773475200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 59,
+          "timestamp": 1773489600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 60,
+          "timestamp": 1773504000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 61,
+          "timestamp": 1773518400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 62,
+          "timestamp": 1773532800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 63,
+          "timestamp": 1773547200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 64,
+          "timestamp": 1773561600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 65,
+          "timestamp": 1773576000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 66,
+          "timestamp": 1773590400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 67,
+          "timestamp": 1773604800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 68,
+          "timestamp": 1773619200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 69,
+          "timestamp": 1773633600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 70,
+          "timestamp": 1773648000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 71,
+          "timestamp": 1773662400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 72,
+          "timestamp": 1773676800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 73,
+          "timestamp": 1773691200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 74,
+          "timestamp": 1773705600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 75,
+          "timestamp": 1773720000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 76,
+          "timestamp": 1773734400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 77,
+          "timestamp": 1773748800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 78,
+          "timestamp": 1773763200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 79,
+          "timestamp": 1773777600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 80,
+          "timestamp": 1773792000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 81,
+          "timestamp": 1773806400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 82,
+          "timestamp": 1773820800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 83,
+          "timestamp": 1773835200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 84,
+          "timestamp": 1773849600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 85,
+          "timestamp": 1773864000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 86,
+          "timestamp": 1773878400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 87,
+          "timestamp": 1773892800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 88,
+          "timestamp": 1773907200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 89,
+          "timestamp": 1773921600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 90,
+          "timestamp": 1773936000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 91,
+          "timestamp": 1773950400.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 92,
+          "timestamp": 1773964800.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 93,
+          "timestamp": 1773979200.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 94,
+          "timestamp": 1773993600.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 95,
+          "timestamp": 1774008000.0,
+          "equity": 10000.0,
+          "realized_pnl": 0.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 1
+        },
+        {
+          "bar_index": 96,
+          "timestamp": 1774022400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 97,
+          "timestamp": 1774036800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 98,
+          "timestamp": 1774051200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 99,
+          "timestamp": 1774065600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 100,
+          "timestamp": 1774080000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 101,
+          "timestamp": 1774094400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 102,
+          "timestamp": 1774108800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 103,
+          "timestamp": 1774123200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 104,
+          "timestamp": 1774137600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 105,
+          "timestamp": 1774152000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 106,
+          "timestamp": 1774166400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 107,
+          "timestamp": 1774180800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 108,
+          "timestamp": 1774195200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 109,
+          "timestamp": 1774209600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 110,
+          "timestamp": 1774224000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 111,
+          "timestamp": 1774238400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 112,
+          "timestamp": 1774252800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 113,
+          "timestamp": 1774267200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 114,
+          "timestamp": 1774281600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 115,
+          "timestamp": 1774296000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 116,
+          "timestamp": 1774310400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 117,
+          "timestamp": 1774324800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 118,
+          "timestamp": 1774339200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 119,
+          "timestamp": 1774353600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 120,
+          "timestamp": 1774368000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 121,
+          "timestamp": 1774382400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 122,
+          "timestamp": 1774396800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 123,
+          "timestamp": 1774411200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 124,
+          "timestamp": 1774425600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 125,
+          "timestamp": 1774440000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 126,
+          "timestamp": 1774454400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 127,
+          "timestamp": 1774468800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 128,
+          "timestamp": 1774483200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 129,
+          "timestamp": 1774497600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 130,
+          "timestamp": 1774512000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 131,
+          "timestamp": 1774526400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 132,
+          "timestamp": 1774540800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 133,
+          "timestamp": 1774555200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 134,
+          "timestamp": 1774569600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 135,
+          "timestamp": 1774584000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 136,
+          "timestamp": 1774598400.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 137,
+          "timestamp": 1774612800.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 138,
+          "timestamp": 1774627200.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 139,
+          "timestamp": 1774641600.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 140,
+          "timestamp": 1774656000.0,
+          "equity": 9970.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 1
+        },
+        {
+          "bar_index": 141,
+          "timestamp": 1774670400.0,
+          "equity": 10008.515121067512,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 38.51512106751129,
+          "open_position_count": 1,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 142,
+          "timestamp": 1774684800.0,
+          "equity": 10015.272159851285,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 45.27215985128516,
+          "open_position_count": 1,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 143,
+          "timestamp": 1774699200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 144,
+          "timestamp": 1774713600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 145,
+          "timestamp": 1774728000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 146,
+          "timestamp": 1774742400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 147,
+          "timestamp": 1774756800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 148,
+          "timestamp": 1774771200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 149,
+          "timestamp": 1774785600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 150,
+          "timestamp": 1774800000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 151,
+          "timestamp": 1774814400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 152,
+          "timestamp": 1774828800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 153,
+          "timestamp": 1774843200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 154,
+          "timestamp": 1774857600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 155,
+          "timestamp": 1774872000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 156,
+          "timestamp": 1774886400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 157,
+          "timestamp": 1774900800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 158,
+          "timestamp": 1774915200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 159,
+          "timestamp": 1774929600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 160,
+          "timestamp": 1774944000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 161,
+          "timestamp": 1774958400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 162,
+          "timestamp": 1774972800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 163,
+          "timestamp": 1774987200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 164,
+          "timestamp": 1775001600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 165,
+          "timestamp": 1775016000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 166,
+          "timestamp": 1775030400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 167,
+          "timestamp": 1775044800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 168,
+          "timestamp": 1775059200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 169,
+          "timestamp": 1775073600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 170,
+          "timestamp": 1775088000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 171,
+          "timestamp": 1775102400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 172,
+          "timestamp": 1775116800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 173,
+          "timestamp": 1775131200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 174,
+          "timestamp": 1775145600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 175,
+          "timestamp": 1775160000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 176,
+          "timestamp": 1775174400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 177,
+          "timestamp": 1775188800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 178,
+          "timestamp": 1775203200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 179,
+          "timestamp": 1775217600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 180,
+          "timestamp": 1775232000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 181,
+          "timestamp": 1775246400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 182,
+          "timestamp": 1775260800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 183,
+          "timestamp": 1775275200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 184,
+          "timestamp": 1775289600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 185,
+          "timestamp": 1775304000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 186,
+          "timestamp": 1775318400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 187,
+          "timestamp": 1775332800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 188,
+          "timestamp": 1775347200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 189,
+          "timestamp": 1775361600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 190,
+          "timestamp": 1775376000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 191,
+          "timestamp": 1775390400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 192,
+          "timestamp": 1775404800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 193,
+          "timestamp": 1775419200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 194,
+          "timestamp": 1775433600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 195,
+          "timestamp": 1775448000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 196,
+          "timestamp": 1775462400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 197,
+          "timestamp": 1775476800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 198,
+          "timestamp": 1775491200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 199,
+          "timestamp": 1775505600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 200,
+          "timestamp": 1775520000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 201,
+          "timestamp": 1775534400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 202,
+          "timestamp": 1775548800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 203,
+          "timestamp": 1775563200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 204,
+          "timestamp": 1775577600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 205,
+          "timestamp": 1775592000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 206,
+          "timestamp": 1775606400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 207,
+          "timestamp": 1775620800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 208,
+          "timestamp": 1775635200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 209,
+          "timestamp": 1775649600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 210,
+          "timestamp": 1775664000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 211,
+          "timestamp": 1775678400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 212,
+          "timestamp": 1775692800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 213,
+          "timestamp": 1775707200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 214,
+          "timestamp": 1775721600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 215,
+          "timestamp": 1775736000.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 216,
+          "timestamp": 1775750400.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 217,
+          "timestamp": 1775764800.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 218,
+          "timestamp": 1775779200.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        },
+        {
+          "bar_index": 219,
+          "timestamp": 1775793600.0,
+          "equity": 10029.774953074775,
+          "realized_pnl": 29.77495307477463,
+          "unrealized_pnl": 0.0,
+          "open_position_count": 0,
+          "open_order_count": 0
+        }
+      ],
+      "closed_positions": [
+        {
+          "position_id": "ed84940ee3a2226b",
+          "signal_id": "385701850a995e59",
+          "line_id": "7175856d05cd27d3",
+          "client_order_id": "paper-hypeusdt-385701850a",
+          "symbol": "HYPEUSDT",
+          "timeframe": "4h",
+          "direction": "long",
+          "quantity": 29.395543635584872,
+          "entry_price": 39.464,
+          "mark_price": 38.44343714285714,
+          "stop_price": 38.44343714285714,
+          "tp_price": 41.50512571428571,
+          "status": "closed",
+          "opened_at_bar": 96,
+          "closed_at_bar": 96,
+          "opened_at_ts": 1774022400.0,
+          "closed_at_ts": 1774022400.0,
+          "realized_pnl": -30.0,
+          "unrealized_pnl": 0.0,
+          "exit_price": 38.44343714285714,
+          "exit_reason": "stop_loss"
+        },
+        {
+          "position_id": "ba796e78c2291c74",
+          "signal_id": "5d75efd32a15bcba",
+          "line_id": "d2f4c29ad12bbfa9",
+          "client_order_id": "paper-hypeusdt-5d75efd32a",
+          "symbol": "HYPEUSDT",
+          "timeframe": "4h",
+          "direction": "long",
+          "quantity": 45.04692522515957,
+          "entry_price": 38.52,
+          "mark_price": 39.84694857142856,
+          "stop_price": 37.855025714285716,
+          "tp_price": 39.84694857142856,
+          "status": "closed",
+          "opened_at_bar": 141,
+          "closed_at_bar": 143,
+          "opened_at_ts": 1774670400.0,
+          "closed_at_ts": 1774699200.0,
+          "realized_pnl": 59.77495307477463,
+          "unrealized_pnl": 0.0,
+          "exit_price": 39.84694857142856,
+          "exit_reason": "take_profit"
+        }
+      ],
+      "signal_stats": {
+        "auto:long:failed_breakout": {
+          "seen": 1,
+          "approved": 0,
+          "blocked": 1,
+          "filled": 0,
+          "closed": 0,
+          "wins": 0,
+          "losses": 0,
+          "total_pnl": 0.0
+        },
+        "auto:long:rejection": {
+          "seen": 3,
+          "approved": 2,
+          "blocked": 1,
+          "filled": 0,
+          "closed": 2,
+          "wins": 1,
+          "losses": 1,
+          "total_pnl": 29.77495307477463
+        }
+      }
+    }
+  ],
+  "failures": []
+}

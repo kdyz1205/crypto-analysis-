@@ -162,32 +162,32 @@ def _failed_breakout_long_candles() -> pd.DataFrame:
 
 
 def test_generate_pre_limit_signal() -> None:
-    signals = generate_pre_limit_signals(_pre_limit_candles(), [_confirmed_resistance_line()], StrategyConfig())
+    signals = generate_pre_limit_signals(_pre_limit_candles(), [_confirmed_resistance_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["PRE_LIMIT_SHORT"]
 
 
 def test_generate_rejection_signal() -> None:
-    signals = generate_rejection_signals(_rejection_candles(), [_confirmed_resistance_line()], StrategyConfig())
+    signals = generate_rejection_signals(_rejection_candles(), [_confirmed_resistance_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["REJECTION_SHORT"]
 
 
 def test_generate_failed_breakout_signal() -> None:
-    signals = generate_failed_breakout_signals(_failed_breakout_candles(), [_confirmed_resistance_line()], StrategyConfig())
+    signals = generate_failed_breakout_signals(_failed_breakout_candles(), [_confirmed_resistance_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["FAILED_BREAKOUT_SHORT"]
 
 
 def test_generate_pre_limit_long_signal() -> None:
-    signals = generate_pre_limit_signals(_pre_limit_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    signals = generate_pre_limit_signals(_pre_limit_long_candles(), [_confirmed_support_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["PRE_LIMIT_LONG"]
 
 
 def test_generate_rejection_long_signal() -> None:
-    signals = generate_rejection_signals(_rejection_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    signals = generate_rejection_signals(_rejection_long_candles(), [_confirmed_support_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["REJECTION_LONG"]
 
 
 def test_generate_failed_breakout_long_signal() -> None:
-    signals = generate_failed_breakout_signals(_failed_breakout_long_candles(), [_confirmed_support_line()], StrategyConfig())
+    signals = generate_failed_breakout_signals(_failed_breakout_long_candles(), [_confirmed_support_line()], StrategyConfig(min_rr_ratio=2.0))
     assert [signal.signal_type for signal in signals] == ["FAILED_BREAKOUT_LONG"]
 
 

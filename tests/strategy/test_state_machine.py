@@ -71,7 +71,7 @@ def _armed_candles() -> pd.DataFrame:
 
 
 def test_line_state_progresses_confirmed_to_armed_to_triggered() -> None:
-    config = StrategyConfig()
+    config = StrategyConfig(min_rr_ratio=1.0)
     line = _confirmed_resistance_line()
 
     confirmed_snapshot = advance_line_states(
@@ -104,7 +104,7 @@ def test_line_state_progresses_confirmed_to_armed_to_triggered() -> None:
 
 
 def test_line_state_allows_candidate_to_armed_and_triggered_in_same_snapshot() -> None:
-    config = StrategyConfig()
+    config = StrategyConfig(min_rr_ratio=1.0)
     line = _confirmed_resistance_line()
 
     armed_snapshot = advance_line_states(
@@ -129,7 +129,7 @@ def test_line_state_allows_candidate_to_armed_and_triggered_in_same_snapshot() -
 
 
 def test_line_state_marks_invalidated_and_expired() -> None:
-    config = StrategyConfig()
+    config = StrategyConfig(min_rr_ratio=1.0)
     line = _confirmed_resistance_line()
 
     invalidated = advance_line_states(
@@ -155,7 +155,7 @@ def test_close_line_state_only_allows_triggered_to_closed() -> None:
     triggered = advance_line_states(
         _armed_candles(),
         [_confirmed_resistance_line()],
-        generate_pre_limit_signals(_armed_candles(), [_confirmed_resistance_line()], StrategyConfig()),
+        generate_pre_limit_signals(_armed_candles(), [_confirmed_resistance_line()], StrategyConfig(min_rr_ratio=1.0)),
         StrategyConfig(),
     )[0]
 
