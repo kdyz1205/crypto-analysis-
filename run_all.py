@@ -42,6 +42,16 @@ def start_evolution():
     )
 
 
+def start_tg_bot():
+    """Start TG bot as independent process — works without web server."""
+    return subprocess.Popen(
+        [sys.executable, "run_tg_bot.py"],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+
+
 def main():
     print("=" * 60)
     print("  Trading OS — Master Runner")
@@ -60,10 +70,15 @@ def main():
     print("[master] Starting evolution engine...")
     processes["evolution"] = start_evolution()
 
+    # Start TG bot (independent — works without web server)
+    print("[master] Starting TG bot...")
+    processes["tg_bot"] = start_tg_bot()
+
     print()
-    print("[master] All systems running. Press Ctrl+C to stop.")
+    print("[master] All 3 systems running. Press Ctrl+C to stop.")
     print("[master] Web: http://127.0.0.1:8001/v2")
-    print("[master] TG Bot: BRIDGE_MODE=true (Claude CLI)")
+    print("[master] TG Bot: polling for messages (Claude/Codex)")
+    print("[master] Evolution: auto-backtesting factor combinations")
     print()
 
     try:
@@ -75,8 +90,11 @@ def main():
                     if name == "web":
                         processes["web"] = start_web_server()
                     elif name == "evolution":
-                        time.sleep(5)  # wait before restart
+                        time.sleep(5)
                         processes["evolution"] = start_evolution()
+                    elif name == "tg_bot":
+                        time.sleep(3)
+                        processes["tg_bot"] = start_tg_bot()
             time.sleep(5)
     except KeyboardInterrupt:
         print("\n[master] Shutting down...")
