@@ -50,7 +50,7 @@ export function drawMAOverlays(chart, overlays, _candleTimes) {
     catch (err) { console.warn('[ma] setData failed', key, err); }
     seriesRefs[key].applyOptions({ visible });
   }
-  console.log('[ma] drew', Object.keys(seriesRefs).length, 'MA series');
+  // MA series drawn silently
 }
 
 export function toggleMAOverlays() {

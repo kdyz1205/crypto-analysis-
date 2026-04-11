@@ -13,7 +13,7 @@ async function fetchAll(symbol, interval) {
   const [structure, risk, snapshot] = await Promise.all([
     fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=500`, { timeout: 8000 }).catch(() => null),
+    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=200`, { timeout: 5000 }).catch(() => null),
   ]);
   return { structure, risk, snapshot };
 }

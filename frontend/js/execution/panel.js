@@ -160,9 +160,17 @@ function log(e) { console.warn('[exec]', e); }
 
 // ── Data ────────────────────────────────────────────────────────────────
 function refreshAll() {
-  paperSvc.getPaperExecutionState().then(s => { paperState = s; qRender(); }).catch(() => {});
-  runtimeSvc.getRuntimeInstances().then(r => { instances = r?.instances || []; qRender(); }).catch(() => {});
-  runtimeSvc.getLeaderboard(10).then(r => { leaderboard = r?.leaderboard || []; qRender(); }).catch(() => {});
+  // Core data — always fetch
+  let changed = false;
+  paperSvc.getPaperExecutionState().then(s => { paperState = s; changed = true; }).catch(() => {});
+  runtimeSvc.getRuntimeInstances().then(r => { instances = r?.instances || []; changed = true; }).catch(() => {});
+  // Leaderboard — only fetch every 3rd poll (evolution runs slowly)
+  if (!this._pollCount) this._pollCount = 0;
+  if (++this._pollCount % 3 === 0) {
+    runtimeSvc.getLeaderboard(10).then(r => { leaderboard = r?.leaderboard || []; }).catch(() => {});
+  }
+  // Single render after a short delay to batch all responses
+  setTimeout(() => { if (changed || true) qRender(); }, 300);
   if (!catalogLoaded) loadCatalog();
   if (accountMode === 'live') {
     const now = Date.now();

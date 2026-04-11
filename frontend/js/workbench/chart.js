@@ -164,7 +164,9 @@ export async function loadCurrent(forcePatterns = false) {
     cancelDeferredOverlayLoad();
     abortOverlayRequests();
 
-    const days = 365; // Always load full year of data
+    // Smart data loading: short timeframes load less data to stay fast
+    const tfDays = { '1m': 3, '3m': 7, '5m': 14, '15m': 30, '1h': 90, '4h': 365, '1d': 365, '1w': 365 };
+    const days = tfDays[currentInterval] || 90;
     const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, days, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
@@ -218,7 +220,7 @@ export async function loadCurrent(forcePatterns = false) {
     }
 
     updateHeader(currentSymbol, currentInterval, lastPrice);
-    console.log(`[chart] loaded ${candles.length} candles for ${currentSymbol} ${currentInterval}`);
+    // Loaded silently — no console spam
     publish('chart.load.succeeded', {
       symbol: currentSymbol,
       interval: currentInterval,
