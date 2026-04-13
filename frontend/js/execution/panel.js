@@ -233,6 +233,7 @@ function syncChart(id) {
   const markers = [];
   for (const pos of [...(ps.open_positions || []), ...(ps.recent_closed_positions || [])]) {
     if (pos.opened_at_ts) markers.push({ time: toUnix(pos.opened_at_ts), position: pos.direction==='short'?'aboveBar':'belowBar', color: pos.direction==='long'?'#00e676':'#ff1744', shape: pos.direction==='long'?'arrowUp':'arrowDown', text: pos.direction==='long'?'买':'卖' });
+    // SAFE: legacy alias fallback for old PaperAccountSummary serializations (sim only)
     if (pos.closed_at_ts) markers.push({ time: toUnix(pos.closed_at_ts), position: pos.direction==='short'?'belowBar':'aboveBar', color: (pos.realized_pnl??0)>=0?'#00e676':'#ff1744', shape:'square', text:(pos.realized_pnl??0)>=0?'盈':'损' });
   }
   markers.sort((a,b) => a.time - b.time);
@@ -270,6 +271,7 @@ function renderOverview() {
   const running = instances.filter(i => i.status?.runtime_state==='running').length;
   // Read both: realized_pnl_sim (simulated/pattern-virtual), realized_pnl_usd (real)
   // Backward-compat: realized_pnl mirrors realized_pnl_sim
+  // SAFE: legacy alias fallback for old PaperAccountSummary serializations (sim only)
   const simPnl = a.realized_pnl_sim ?? a.realized_pnl ?? 0;
   const realPnl = a.realized_pnl_usd ?? 0;
   return sec('概览', '模拟', `<div class="exec-overview-compact">
@@ -380,6 +382,7 @@ function renderCard(inst) {
   const acct = s.paper_state?.account || {};
   // Always pull both fields. simPnl is the pattern-virtual P&L (NEVER real money).
   // realPnl only appears after an exchange fill.
+  // SAFE: legacy alias fallback for old PaperAccountSummary serializations (sim only)
   const simPnl = acct.realized_pnl_sim ?? acct.realized_pnl ?? 0;
   const realPnl = acct.realized_pnl_usd ?? 0;
   const expanded = expandedId === id;
@@ -414,6 +417,7 @@ function renderDetail(inst) {
   if(s.last_error) h+=`<div class="exec-strategy-error" style="white-space:normal;margin:4px 0">${esc(s.last_error).slice(0,100)}</div>`;
   if(ps){
     const a=ps.account||{},eq=isLive&&liveAccount?.ok?liveAccount.total_equity:(a.equity??10000);
+    // SAFE: legacy alias fallback for old PaperAccountSummary serializations (sim only)
     const dSim = a.realized_pnl_sim ?? a.realized_pnl ?? 0;
     const dReal = a.realized_pnl_usd ?? 0;
     h+=`<div class="exec-detail-row"><span>${isLive?'实盘权益':'模拟权益'}</span><span>${formatUsd(eq)}</span></div>
@@ -423,6 +427,7 @@ function renderDetail(inst) {
     const closed=ps.recent_closed_positions||[];
     if(closed.length){h+='<div class="exec-detail-subtitle">最近交易</div>';
       for(const pos of closed.slice(-3).reverse()){const r={tp_hit:'盈',sl_hit:'损',expired:'期'}[pos.exit_reason]||'';
+        // SAFE: legacy alias fallback for old PaperAccountSummary serializations (sim only)
         h+=`<div class="exec-trade-mini"><span class="exec-dir-${pos.direction}">${pos.direction==='long'?'多':'空'}</span> ${formatUsd(pos.entry_price)}→${formatUsd(pos.exit_price??0)} <span class="${pnlColorClass(pos.realized_pnl??0)}">${fmtPnl(pos.realized_pnl??0)}</span> ${r}</div>`;}}
   }
   return h+'</div>';

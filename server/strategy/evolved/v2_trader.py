@@ -576,11 +576,10 @@ def detect_lines(
     if n < 40:
         return []
 
-    # Unknown TFs raise — surface the gap loudly
-    try:
-        params = params_for(timeframe)
-    except ValueError:
-        return []
+    # Round 11 P1-3: unknown TFs propagate the ValueError. Silently
+    # returning [] was a "silent default" in disguise — callers had no
+    # way to know their TF wasn't supported.
+    params = params_for(timeframe)
 
     atr = _atr(candles, period=14)
     pivots = zigzag_pivots(candles, atr, params.min_swing_pct, params.min_swing_atr)
@@ -644,7 +643,10 @@ def detect_lines(
     supports: list[EvolvedLine] = []
     resistances: list[EvolvedLine] = []
     MAX_PER_SIDE = 3
-    ANCHOR_SPACING = 8
+    # Round 11 P1-2: hardcoded 8 bars means very different things on
+    # 5m (40 min) vs 4h (32 hours). Scale with the TF's min_span_bars
+    # so the rule is "anchors at least 1/3 of a minimum line apart".
+    ANCHOR_SPACING = max(8, params.min_span_bars // 3)
 
     def _too_close(line: EvolvedLine, kept: list[EvolvedLine]) -> bool:
         for k in kept:
@@ -670,21 +672,12 @@ def detect_lines(
         if len(supports) >= MAX_PER_SIDE and len(resistances) >= MAX_PER_SIDE:
             break
 
-    # Channel detection (Canon rule 4) — boost paired lines so they sort
-    # to the top together. Currently we still emit them as individual
-    # lines for backward-compat with the harness; bridge.py can later
-    # render same-channel pairs as a filled band.
-    channels = find_channels(supports, resistances, current_atr, params)
-    if channels:
-        channel_line_ids: set[int] = set()
-        for ch in channels:
-            channel_line_ids.add(id(ch.support))
-            channel_line_ids.add(id(ch.resistance))
-        # Note: EvolvedLine is frozen — we can't mutate score in place.
-        # The score boost for channels is logged but not currently
-        # propagated to the line object. A future refactor can replace
-        # the line tuple with a (line, channel_id) pair.
-
+    # Round 11 P1-1: channel detection was dead code — find_channels()
+    # ran, produced a _ChannelMatch list, but nothing consumed the result
+    # because EvolvedLine is frozen and there's no channels field in the
+    # harness return contract. Removed until we have a real return path
+    # (list[EvolvedChannel] alongside list[EvolvedLine]). Canon rule 4
+    # still applies conceptually — future work.
     return supports + resistances
 
 

@@ -1,6 +1,6 @@
 // frontend/js/control/glassbox.js — agent timeline (consumes SSE events)
 
-import { $, setHtml } from '../util/dom.js';
+import { $, setHtml, esc } from '../util/dom.js';
 import { subscribe } from '../util/events.js';
 
 const timeline = [];
@@ -33,6 +33,7 @@ function formatEntry(type, data) {
   let text = type;
 
   if (type === 'signal.detected') {
+    // SAFE: text is escaped at the consumer (formatEntry return)
     text = `${p.symbol} ${p.side?.toUpperCase()} conf=${Math.round((p.confidence || 0) * 100)}% — ${p.reason || ''}`;
   } else if (type === 'signal.blocked') {
     text = `${p.symbol} ${p.side?.toUpperCase()} blocked: ${(p.block_reasons || []).join('; ')}`;
@@ -41,6 +42,7 @@ function formatEntry(type, data) {
   } else if (type === 'position.closed') {
     const pct = p.pnl_pct?.toFixed(2) ?? '?';
     const usd = p.pnl_usd?.toFixed(2) ?? '?';
+    // SAFE: text is escaped at the consumer (formatEntry return)
     text = `Closed ${p.symbol} P&L ${pct}% ($${usd}) — ${p.reason || ''}`;
   } else if (type === 'agent.regime.changed') {
     text = `Regime ${p.from} → ${p.to} (${(p.confidence || 0).toFixed(2)})`;
@@ -54,7 +56,9 @@ function formatEntry(type, data) {
     text = `${p.symbol} ${JSON.stringify(p).slice(0, 80)}`;
   }
 
-  return `<div class="glass-row"><span class="glass-icon">${icon}</span><span class="glass-time">${time}</span><span class="glass-text">${text}</span></div>`;
+  // Escape `text` once at the consumer — its components (p.reason etc)
+  // are server-controlled but rendered into innerHTML via setHtml below.
+  return `<div class="glass-row"><span class="glass-icon">${icon}</span><span class="glass-time">${esc(time)}</span><span class="glass-text">${esc(text)}</span></div>`;
 }
 
 function render() {

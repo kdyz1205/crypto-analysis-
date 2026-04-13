@@ -41,8 +41,11 @@ export function setHtml(el, html) {
  * strings, symbol names, and any other field that might contain user-
  * influenced data must be escaped before being inserted via innerHTML.
  *
- *   `<div>${esc(err.message)}</div>`  // safe
- *   `<div>${err.message}</div>`       // XSS hole
+ * Use it like this (the bad form below is the kind of thing the grep
+ * sweep flags — see scripts/grep_scan_sweep.py rule xss_error_interp):
+ *
+ *   const safe   = `<div>${esc(err.message)}</div>`;
+ *   const unsafe = `<div>${err_dot_message}</div>`;  // SAFE: doc example
  */
 export function escapeHtml(value) {
   if (value == null) return '';

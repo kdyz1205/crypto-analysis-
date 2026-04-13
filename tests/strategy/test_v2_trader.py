@@ -167,10 +167,13 @@ def test_detect_lines_too_short_returns_empty():
     assert detect_lines(df, "4h", "TEST") == []
 
 
-def test_detect_lines_unknown_tf_returns_empty():
-    """detect_lines catches the params_for ValueError and returns []."""
+def test_detect_lines_unknown_tf_raises():
+    """Round 11 P1-3: detect_lines propagates the params_for ValueError
+    instead of swallowing it. Silent defaults hide bugs; let callers
+    (bridge.py) decide how to recover."""
     df = _make_candles(100)
-    assert detect_lines(df, "nonexistent_tf", "TEST") == []
+    with pytest.raises(ValueError, match="no parameters for timeframe"):
+        detect_lines(df, "nonexistent_tf", "TEST")
 
 
 def test_detect_lines_max_6():

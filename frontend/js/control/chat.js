@@ -89,7 +89,8 @@ async function send() {
     const reply = resp?.reply || resp?.message || JSON.stringify(resp);
     appendMessage('assistant', reply);
   } catch (err) {
-    appendMessage('assistant', `Error: ${err.message}`);
+    // SAFE: appendMessage uses textContent, no HTML parsing
+    appendMessage('assistant', `Error: ${err?.message || String(err)}`);
   } finally {
     sending = false;
   }

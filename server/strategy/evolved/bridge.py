@@ -21,24 +21,32 @@ def _evolved_detector_enabled() -> bool:
 
 
 def _get_active_detector():
-    """Pick which evolved variant to use. Defaults to v2_trader (canon-based).
+    """Pick which evolved variant to use. Default: v2_trader (canon-based).
 
-    Override via EVOLVED_VARIANT env var.
+    Override via EVOLVED_VARIANT env var. If the tag isn't recognized,
+    we raise ImportError so the caller falls back to production — we do
+    NOT silently swap to a different detector.
     """
     tag = os.getenv("EVOLVED_VARIANT", "v2_trader").strip()
     if tag == "v0_baseline":
         return None  # let production path run
     try:
-        if tag == "v1_clean":
-            from .v1_clean import detect_lines
+        if tag == "v2_trader":
+            from .v2_trader import detect_lines
         elif tag == "v1a_filtered":
             from .v1a_filtered import detect_lines
+        elif tag == "v1_clean":
+            from .v1_clean import detect_lines
         elif tag == "v1b_recency":
             from .v1b_recency import detect_lines
+        elif tag == "v1c_fadeonly":
+            from .v1c_fadeonly import detect_lines
         else:
-            from .v2_trader import detect_lines
+            # Unknown tag → explicit failure (caller falls back to production)
+            raise ImportError(f"Unknown EVOLVED_VARIANT tag: {tag!r}")
         return detect_lines
-    except ImportError:
+    except ImportError as e:
+        print(f"[evolved_bridge] detector load failed: {e}", flush=True)
         return None
 
 

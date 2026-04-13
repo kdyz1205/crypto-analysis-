@@ -1,6 +1,6 @@
 // frontend/js/research/drawer.js — research drawer with backtest + ribbon
 
-import { $, setHtml, on } from '../util/dom.js';
+import { $, setHtml, on, esc } from '../util/dom.js';
 import { uiState, setResearchDrawer, setResearchSubTab } from '../state/ui.js';
 import { marketState } from '../state/market.js';
 import { subscribe } from '../util/events.js';
@@ -58,7 +58,7 @@ async function runBacktest() {
   try {
     const data = await researchSvc.runBacktest(currentSymbol, currentInterval, 365);
     if (data.error) {
-      setHtml(result, `<div class="muted">Error: ${data.error}</div>`);
+      setHtml(result, `<div class="muted">Error: ${esc(data.error)}</div>`);
       return;
     }
     setHtml(result, `
@@ -75,7 +75,7 @@ async function runBacktest() {
     `);
     if (status) status.textContent = `${currentSymbol} ${currentInterval} — done`;
   } catch (err) {
-    setHtml(result, `<div class="muted">Error: ${err.message}</div>`);
+    setHtml(result, `<div class="muted">Error: ${esc(err?.message || String(err))}</div>`);
   }
 }
 
@@ -86,7 +86,7 @@ async function runRibbon() {
   try {
     const data = await researchSvc.getMaRibbon(currentSymbol);
     if (data.error) {
-      setHtml(result, `<div class="muted">Error: ${data.error}</div>`);
+      setHtml(result, `<div class="muted">Error: ${esc(data.error)}</div>`);
       return;
     }
     const tiers = data.timeframes || {};
@@ -103,7 +103,7 @@ async function runRibbon() {
       </div>
     `);
   } catch (err) {
-    setHtml(result, `<div class="muted">Error: ${err.message}</div>`);
+    setHtml(result, `<div class="muted">Error: ${esc(err?.message || String(err))}</div>`);
   }
 }
 

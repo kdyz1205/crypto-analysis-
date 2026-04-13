@@ -1,26 +1,29 @@
 // frontend/js/workbench/decision_rail.js
 // 4 cards: Market State · Current Setup · Risk Gate · Trade Candidate
 
-import { $, setHtml } from '../util/dom.js';
+import { $, setHtml, esc } from '../util/dom.js';
 import { marketState } from '../state/market.js';
 import { subscribe } from '../util/events.js';
 import { fetchJson } from '../util/fetch.js';
 
 let pollTimer = null;
-const DECISION_RAIL_TIMEOUT_MS = 4000;
+// Round 11 P0-3: cold-cache snapshot can take 4-5 s (evolved detector +
+// data fetch). The previous 4000 ms was shorter than the API itself, so
+// every first-load decision rail call timed out and showed "加载中".
+const DECISION_RAIL_TIMEOUT_MS = 30000;
 
 async function fetchAll(symbol, interval) {
   const [structure, risk, snapshot] = await Promise.all([
     fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
     fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=200`, { timeout: 5000 }).catch(() => null),
+    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=200`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
   ]);
   return { structure, risk, snapshot };
 }
 
 function cardMarketState(structure) {
   if (!structure || structure.error) {
-    return `<div class="dr-card"><h3>市场状态</h3><p class="muted">${structure?.error || '加载中...'}</p></div>`;
+    return `<div class="dr-card"><h3>市场状态</h3><p class="muted">${esc(structure?.error || '加载中...')}</p></div>`;
   }
   const trendLabel = structure.trend_label === 'UPTREND' ? '上升趋势' : structure.trend_label === 'DOWNTREND' ? '下降趋势' : '震荡';
   const trendClass = structure.trend_label === 'UPTREND' ? 'pnl-pos' : structure.trend_label === 'DOWNTREND' ? 'pnl-neg' : '';
@@ -292,7 +295,7 @@ async function cardPatternStats(snapshot, symbol, interval, selectedLineId = nul
       </div>
     `;
   } catch (err) {
-    return `<div class="dr-card"><h3>历史概率</h3><p class="muted">${err.message}</p></div>`;
+    return `<div class="dr-card"><h3>历史概率</h3><p class="muted">${esc(err?.message || String(err))}</p></div>`;
   }
 }
 
@@ -359,7 +362,7 @@ async function render() {
     refreshPatternCard();
   } catch (err) {
     console.error('[decision-rail] render failed:', err);
-    setHtml(container, `<div class="dr-card"><h3>市场分析</h3><p class="muted">加载失败: ${err.message}</p></div>`);
+    setHtml(container, `<div class="dr-card"><h3>市场分析</h3><p class="muted">加载失败: ${esc(err?.message || String(err))}</p></div>`);
   }
 }
 
@@ -396,6 +399,12 @@ export function initDecisionRail() {
   pollTimer = setInterval(safeRender, 30000);
   subscribe('market.symbol.changed', safeRender);
   subscribe('market.interval.changed', safeRender);
+  // Round 11 P0-1: kick off the FIRST render immediately. Without this,
+  // the rail sits at "加载中..." for the full 30 s until the interval
+  // fires for the first time. (Symbol/interval-change subscriptions also
+  // fire on first chart load but only AFTER candles are ready, which
+  // is also slow.)
+  void safeRender();
 }
 
 export function stopDecisionRail() {

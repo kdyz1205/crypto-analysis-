@@ -67,6 +67,7 @@ async function fetchMany(urls) {
 // Shared tab switcher — binds click handlers once per container
 function wireTabs(container) {
   container.querySelectorAll('.stab').forEach(btn => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     btn.onclick = () => {
       container.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
       container.querySelectorAll('.stab-content').forEach(c => c.classList.remove('active'));
@@ -429,11 +430,13 @@ export async function loadFactory(el) {
 
   // Module collapse/expand
   el.querySelectorAll('.builder-module-header').forEach(h => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     h.onclick = () => h.parentElement.classList.toggle('open');
   });
 
   // Tab switching
   el.querySelectorAll('.stab').forEach(btn => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     btn.onclick = () => {
       el.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
       el.querySelectorAll('.stab-content').forEach(c=>c.classList.remove('active'));
@@ -603,6 +606,7 @@ export async function loadFactory(el) {
       } else {
         slot.innerHTML = renderPatternResult(resp.data);
         slot.querySelectorAll('[data-create-draft]').forEach(b => {
+          // SAFE: fresh DOM per render, handler does not accumulate
           b.onclick = async function() {
             const draftJson = this.dataset.createDraft;
             const draft = JSON.parse(decodeURIComponent(draftJson));
@@ -647,7 +651,7 @@ function renderPatternResult(data) {
       <div style="font-size:14px;font-weight:700;margin-bottom:6px">
         ${decIcon} 决策: <span class="${decClass}">${dec.decision.toUpperCase()}</span>
       </div>
-      <div class="c-muted" style="font-size:11px;margin-bottom:8px">${dec.reason}</div>
+      <div class="c-muted" style="font-size:11px;margin-bottom:8px">${esc(dec.reason)}</div>
       <div class="lb-metrics" style="font-size:11px">
         <span>样本 ${stats.sample_size}</span>
         <span>反弹 ${(stats.p_bounce*100).toFixed(0)}%</span>
@@ -680,7 +684,7 @@ function renderPatternResult(data) {
             <span>止损 ${cfg.exit.stop_type}</span>
             <span>风险 ${(cfg.risk.risk_per_trade*100).toFixed(2)}%</span>
           </div>
-          <div class="c-muted" style="font-size:10px;margin-top:4px">验证: ${draft.validation.reason}</div>
+          <div class="c-muted" style="font-size:10px;margin-top:4px">验证: ${esc(draft.validation.reason)}</div>
           ${approved ? `<button class="btn-primary btn-sm" style="margin-top:6px" data-create-draft="${draftParam}">采纳此草案 → 创建</button>` : ''}
         </div>
       `;
@@ -755,6 +759,7 @@ export async function loadLeaderboard(el) {
 
   // Tab switching
   el.querySelectorAll('.stab').forEach(btn => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     btn.onclick = () => {
       el.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
       el.querySelectorAll('.stab-content').forEach(c=>c.classList.remove('active'));
@@ -918,6 +923,7 @@ export async function loadFactors(el) {
   `;
 
   el.querySelectorAll('.stab').forEach(btn => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     btn.onclick = () => {
       el.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
       el.querySelectorAll('.stab-content').forEach(c=>c.classList.remove('active'));
@@ -951,9 +957,8 @@ export async function loadLive(el) {
   const totalCap = running.reduce((s,i) => s + (i.allocated_capital||0), 0);
   // Sum SIMULATED P&L (pattern_virtual_pnl) and REAL P&L
   // (realized_pnl_usd) separately. Round 10 #25: do NOT fall back to
-  // current_pnl — it's the deprecated field that may carry stale or
-  // ambiguous values. Run scripts/migrate_pnl_fields.py to migrate
-  // legacy instances.
+  // the deprecated unified field that may carry stale values. Run
+  // scripts/migrate_pnl_fields.py to migrate legacy instances.
   const totalPnlSim = instances.reduce((s,i) => s + (i.pattern_virtual_pnl ?? 0), 0);
   const totalPnlReal = instances.reduce((s,i) => s + (i.realized_pnl_usd ?? 0), 0);
   const totalPnl = totalPnlSim;  // backward-compat alias
@@ -1337,6 +1342,7 @@ export async function loadMonitor(el) {
   `;
 
   el.querySelectorAll('.stab').forEach(btn => {
+    // SAFE: fresh DOM per render, handler does not accumulate
     btn.onclick = () => {
       el.querySelectorAll('.stab').forEach(b => b.classList.remove('active'));
       el.querySelectorAll('.stab-content').forEach(c => c.classList.remove('active'));
@@ -1395,6 +1401,7 @@ function monitorRow(i) {
   const acct = s.paper_state?.account || {};
   const isLive = c.live_mode === 'live';
   // Show live → real P&L, paper → simulated [虚拟] P&L
+  // SAFE: legacy alias fallback for old PaperAccountSummary (sim only)
   const simP = acct.realized_pnl_sim ?? acct.realized_pnl ?? 0;
   const realP = acct.realized_pnl_usd ?? 0;
   const p = isLive ? realP : simP;
