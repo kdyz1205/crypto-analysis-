@@ -1,0 +1,14 @@
+{
+  "id": "c58067657c45",
+  "deployment_draft_id": "b88e36b2062e",
+  "strategy_id": "e2f0bd3015cb",
+  "running_status": "stopped",
+  "allocated_capital": 15.0,
+  "current_pnl": 0.0,
+  "current_drawdown": 0.0,
+  "open_positions": 0,
+  "total_trades": 0,
+  "started_at": 1775950963.4305463,
+  "last_action_at": 1775950964.620804,
+  "error": ""
+}

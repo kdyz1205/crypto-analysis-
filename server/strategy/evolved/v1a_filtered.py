@@ -48,8 +48,18 @@ def detect_lines(candles: pd.DataFrame, timeframe: str, symbol: str) -> list[Evo
     if len(pivots) < 2:
         return []
 
-    highs = sorted([p for p in pivots if p.kind == "high"], key=lambda p: p.idx)
-    lows = sorted([p for p in pivots if p.kind == "low"], key=lambda p: p.idx)
+    # Use the SAME pivot pool as v1_clean for clean A/B comparison:
+    # top_k prominence-ranked, then sorted by idx for stable iteration.
+    highs = sorted(
+        sorted([p for p in pivots if p.kind == "high"],
+               key=lambda p: p.prominence, reverse=True)[:params.top_k_pivots],
+        key=lambda p: p.idx,
+    )
+    lows = sorted(
+        sorted([p for p in pivots if p.kind == "low"],
+               key=lambda p: p.prominence, reverse=True)[:params.top_k_pivots],
+        key=lambda p: p.idx,
+    )
 
     closes = candles["close"].astype(float).values
     lookback = min(n, 500)

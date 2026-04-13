@@ -166,7 +166,7 @@ export async function loadCurrent(forcePatterns = false) {
     abortOverlayRequests();
 
     // Smart data loading: short timeframes load less data to stay fast
-    const tfDays = { '1m': 3, '3m': 7, '5m': 14, '15m': 30, '1h': 90, '4h': 365, '1d': 365, '1w': 365 };
+    const tfDays = { '1m': 7, '3m': 14, '5m': 30, '15m': 60, '1h': 180, '4h': 730, '1d': 1095, '1w': 1095 };
     const days = tfDays[currentInterval] || 90;
     const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, days, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {

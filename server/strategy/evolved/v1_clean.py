@@ -212,28 +212,33 @@ def _count_confirming_touches(
     break_atr: float,
     min_bars_between_touches: int,
 ) -> tuple[int, list[int], bool]:
-    """Count how many extremes of the correct KIND touch the line between
-    p1 and the end of the data.
+    """Count confirming touches ONLY within the line's formation window
+    [p1.idx, p2.idx]. Does NOT look forward past p2, because doing so
+    means we'd discard any line that eventually breaks — but a line that
+    was traded profitably from formation until break is a valid setup.
+
+    Invalidation check is likewise restricted to the window between anchors.
 
     Return (touch_count, touch_bar_indices, is_invalidated).
-    Invalidation: a close on the wrong side by more than break_atr × ATR,
-    between the anchors or after them.
     """
-    n = len(df)
     highs = df["high"].values
     lows = df["low"].values
     closes = df["close"].values
 
     touch_indices: list[int] = [p1.idx, p2.idx]
-    last_touch_bar = p2.idx
+    last_touch_bar = p1.idx  # start counting touches after p1
 
-    for bar in range(p1.idx, n):
+    # Only scan between anchors (inclusive). The harness is responsible
+    # for walk-forward trading AFTER p2; its organic touch discovery
+    # and break detection handle forward invalidation.
+    for bar in range(p1.idx + 1, p2.idx):
         line_p = _line_price(p1.idx, p1.price, p2.idx, p2.price, bar)
         atr_at = atr[bar]
         tol = tolerance_atr * atr_at
         break_thresh = break_atr * atr_at
 
-        # Invalidation check (wrong-side close)
+        # Invalidation check between anchors (a strong close-through
+        # between anchors means the two pivots don't form a coherent line)
         if side == "support":
             if closes[bar] < line_p - break_thresh:
                 return len(touch_indices), touch_indices, True
@@ -241,13 +246,9 @@ def _count_confirming_touches(
             if closes[bar] > line_p + break_thresh:
                 return len(touch_indices), touch_indices, True
 
-        if bar == p1.idx or bar == p2.idx:
-            continue
         if bar - last_touch_bar < min_bars_between_touches:
             continue
 
-        # For support, we look at the bar's LOW hitting the line from above.
-        # For resistance, we look at the bar's HIGH hitting from below.
         if side == "support":
             if lows[bar] <= line_p + tol and lows[bar] >= line_p - tol * 2:
                 touch_indices.append(bar)

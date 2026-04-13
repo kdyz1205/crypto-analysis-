@@ -254,10 +254,12 @@ def evaluate_variant(
     variant_module_path: str,
     config: EvalConfig,
     output_dir: Path | None = None,
+    harness_override: HarnessParams | None = None,
 ) -> EvalResult:
     variant_name = variant_module_path.rsplit(".", 1)[-1]
     mod = import_module(variant_module_path)
     detect_fn: DetectFn = getattr(mod, "detect_lines")
+    harness = harness_override or config.harness
 
     per_slice: list[dict] = []
     all_train_traces: list[SetupTrace] = []
@@ -273,10 +275,10 @@ def evaluate_variant(
             train, test = split_train_test(candles, config.train_fraction)
 
             train_traces, train_summary = _eval_slice(
-                detect_fn, variant_name, symbol, tf, train, "train", config.harness,
+                detect_fn, variant_name, symbol, tf, train, "train", harness,
             )
             test_traces, test_summary = _eval_slice(
-                detect_fn, variant_name, symbol, tf, test, "test", config.harness,
+                detect_fn, variant_name, symbol, tf, test, "test", harness,
             )
 
             all_train_traces.extend(train_traces)
@@ -326,16 +328,30 @@ def evaluate_variant(
 # Fitness
 # ────────────────────────────────────────────────────────────────
 def _fitness(m: dict, config: EvalConfig) -> float:
+    """Fitness = total_R scaled by sqrt(win_rate) (penalises degenerate WR).
+
+    Earlier formula `wr × avg_R × sqrt(n)` had a structural bug: it
+    multiplicatively rewarded low-trade, high-WR, high-avg-R variants
+    (like v0 with its 90% biased WR) over high-trade variants that earned
+    much more total R but with a more realistic 60-65% WR.
+
+    New formula uses total_R as the primary metric — the actual money
+    made — with a sqrt(WR) modifier so variants can't win by getting
+    10 freak trades right.
+    """
     n = m.get("n_setups_triggered", 0)
-    wr = m.get("fade_win_rate", 0.0)
-    avg_R = m.get("avg_total_R", 0.0)
     if n < config.min_total_triggered:
-        # Small gradient so larger-but-still-insufficient samples rank higher,
-        # but capped strictly below zero so no "underpowered" variant can
-        # ever beat a legit one.
         return min(-100.0 + n / 2.0, -1.0)
-    raw = wr * avg_R * math.sqrt(n)
+
     total_R = m.get("total_R", 0.0)
+    wr = m.get("fade_win_rate", 0.0)
+
+    # Scale total_R by sqrt(WR). A 50% WR is neutral; 25% WR halves the
+    # total, 75% WR gives a 1.22× boost. Keeps total_R as the dominant term
+    # but penalises lucky-streak variants.
+    raw = total_R * math.sqrt(max(wr, 0.01))
+
+    # Drawdown penalty
     if total_R < config.max_allowed_dd_R:
         raw -= (config.max_allowed_dd_R - total_R) * 0.1
     return raw

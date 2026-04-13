@@ -128,6 +128,7 @@ def build_latest_snapshot(
     timeframe: str = "",
     enabled_trigger_modes: Sequence[str] | None = None,
     active_directions: Mapping[str, str] | None = None,
+    skip_trendline_detection: bool = False,
 ) -> ReplaySnapshot:
     cfg = config or StrategyConfig()
     df = ensure_candles_df(candles)
@@ -136,7 +137,14 @@ def build_latest_snapshot(
 
     current_index = len(df) - 1
     pivots = tuple(detect_pivots(df, cfg))
-    detection = detect_trendlines(df, pivots, cfg, symbol=symbol, timeframe=timeframe)
+    if skip_trendline_detection:
+        # Fast path used when an evolved trendline detector will replace the
+        # output anyway (see EVOLVED_TRENDLINES env). Avoids the expensive
+        # O(pivots² × bars) production trendline pipeline.
+        from .types import TrendlineDetectionResult
+        detection = TrendlineDetectionResult(candidate_lines=(), active_lines=())
+    else:
+        detection = detect_trendlines(df, pivots, cfg, symbol=symbol, timeframe=timeframe)
 
     # Market regime detection (runs before signal generation so it can gate signals)
     regime = detect_regime(df, cfg)

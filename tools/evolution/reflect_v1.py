@@ -40,13 +40,18 @@ def slice_by(rows: list[dict], predicate) -> list[dict]:
     return [r for r in rows if predicate(r)]
 
 
+MIN_BUCKET_N = 20  # sample-size cutoff — below this the signal is noise
+
+
 def scan_feature(rows: list[dict], feature: str, bins: list[tuple]) -> list[tuple]:
-    """Scan a numeric feature across bins. Returns [(bin_label, metrics)]."""
+    """Scan a numeric feature across bins. Only returns buckets with
+    enough samples to be significant (>= MIN_BUCKET_N triggered).
+    """
     out = []
     for lo, hi in bins:
         sub = [r for r in rows if lo <= r.get(feature, 0) < hi]
-        if sub:
-            agg = aggregate(sub)
+        agg = aggregate(sub)
+        if agg.get("n", 0) >= MIN_BUCKET_N:
             out.append((f"{lo}..{hi}", agg))
     return out
 
@@ -54,8 +59,12 @@ def scan_feature(rows: list[dict], feature: str, bins: list[tuple]) -> list[tupl
 def main():
     path = Path(__file__).parent.parent.parent / "data/evolution/rounds/round_00/v1_clean_traces.jsonl"
     rows = load_traces(path)
-    test = [r for r in rows if r.get("split") == "test"]
-    print(f"v1 test traces: {len(test)}")
+    # CRITICAL: reflect on TRAIN only. Using TEST for reflection and then
+    # evaluating a variant on the same TEST set is in-sample lookahead.
+    # Round 1 filters (v1a) were derived from test-split reflection → any
+    # "improvement" on test is fitting the test distribution.
+    test = [r for r in rows if r.get("split") == "train"]
+    print(f"v1 TRAIN traces (used for reflection — NOT touching test): {len(test)}")
 
     overall = aggregate(test)
     print(f"overall: {overall}")

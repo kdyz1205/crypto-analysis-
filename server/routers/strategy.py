@@ -38,11 +38,11 @@ router = APIRouter(prefix="/api/strategy", tags=["strategy"])
 VALID_INTERVALS = {"5m", "15m", "1h", "4h", "1d"}
 VALID_HISTORY_MODES = {"fast_window", "full_history"}
 DEFAULT_DAYS_BY_INTERVAL = {
-    "5m": 7,
-    "15m": 21,
-    "1h": 120,
-    "4h": 365,
-    "1d": 365,
+    "5m": 30,       # was 7 — too little for trendline formation
+    "15m": 60,      # was 21
+    "1h": 180,      # was 120
+    "4h": 730,      # was 365 — 2 years for proper structure
+    "1d": 1095,     # was 365 — 3 years
 }
 SNAPSHOT_CACHE_LIMIT = 32
 REPLAY_CACHE_LIMIT = 16
@@ -234,7 +234,12 @@ def _build_strategy_snapshot_response(
     history: dict[str, Any],
     drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategySnapshotResponse:
-    snapshot = build_latest_snapshot(candles_df, cfg, symbol=symbol, timeframe=interval)
+    import os as _os
+    _evolved_on = _os.getenv("EVOLVED_TRENDLINES", "0").lower() in ("1","true","yes")
+    snapshot = build_latest_snapshot(
+        candles_df, cfg, symbol=symbol, timeframe=interval,
+        skip_trendline_detection=_evolved_on,
+    )
     snapshot = augment_snapshot_with_manual_signals(
         snapshot,
         candles_df,
@@ -243,6 +248,29 @@ def _build_strategy_snapshot_response(
         timeframe=interval,
     )
     snapshot_payload = _serialize_snapshot(snapshot, candles_df)
+
+    # Optional: replace production trendlines with evolved detector output.
+    # Controlled by env EVOLVED_TRENDLINES=1 (and optionally EVOLVED_VARIANT).
+    import os as _os
+    _evolved_on = _os.getenv("EVOLVED_TRENDLINES", "0").lower() in ("1","true","yes")
+    print(f"[strategy] build_snapshot {symbol}/{interval}: evolved={_evolved_on}", flush=True)
+    if _evolved_on:
+        try:
+            from server.strategy.evolved.bridge import try_build_evolved_lines
+            evolved = try_build_evolved_lines(candles_df, symbol, interval)
+            print(f"[strategy] evolved returned {len(evolved) if evolved is not None else 'None'}", flush=True)
+            if evolved is not None:
+                from server.schemas.strategy import StrategyLineModel
+                evolved_models = [StrategyLineModel.model_validate(d) for d in evolved]
+                snapshot_payload.candidate_lines = evolved_models
+                snapshot_payload.active_lines = [l for l in evolved_models if l.is_active]
+                snapshot_payload.touch_points = []
+                snapshot_payload.invalidations = []
+                print(f"[strategy] replaced with {len(evolved_models)} evolved lines", flush=True)
+        except Exception as e:
+            import traceback
+            print(f"[strategy] evolved detector failed: {e}\n{traceback.format_exc()}", flush=True)
+
     return StrategySnapshotResponse(
         symbol=symbol,
         interval=interval,

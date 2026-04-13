@@ -54,12 +54,19 @@ class HarnessParams:
     fee_rt: float = 0.0006
     slippage: float = 0.0003
     # Line life cycle
-    # NOTE: max_setups_per_line was 5 — reflection on v1 baseline showed
-    # setup touch_number >= 5 is negative EV (WR 40%, avg_R -0.3). Cap at 3.
-    max_setups_per_line: int = 3
+    # `max_setups_per_line` is the NUMBER OF SETUPS allowed per line.
+    # touch_number = 2 + setup_count, so:
+    #   =1 → only touch=3 is traded
+    #   =2 → touches 3, 4 are traded  ← reflection sweet spot
+    #   =3 → touches 3, 4, 5 (5 is marginal/negative on v1_clean)
+    max_setups_per_line: int = 2
     max_life_bars: int = 400
     break_threshold_atr: float = 0.5
     min_bars_between_touches: int = 3
+    # When False, disable the flip leg entirely. Round 1 flip legs had
+    # WR ≤17% against a 2R target (needs ≥33% to breakeven) → structural
+    # cost. Use True to enable, False for fade-only variants.
+    enable_flip: bool = True
 
 
 # ──────────────────────────────────────────────────────────────
@@ -241,7 +248,7 @@ def run_backtest(
             # Flip leg on stop out (only). Enter at the NEXT bar's open price,
             # not at the stale fade-stop price. This avoids the entry-bar-stop
             # death spiral where the wick of the same bar kills every flip.
-            if fade.reason == "stop":
+            if fade.reason == "stop" and params.enable_flip:
                 flip_start = fade.exit_index + 1
                 if flip_start < n:
                     flip = _simulate_flip_after(
