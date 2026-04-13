@@ -159,24 +159,61 @@ function handleComposerSubmit(btn) {
 function log(e) { console.warn('[exec]', e); }
 
 // ── Data ────────────────────────────────────────────────────────────────
+let _consecutiveFails = 0;
+let _connectionError = null;
+let _liveStatusFirstAttempt = 0;
+
 function refreshAll() {
   // Core data — always fetch
   let changed = false;
-  paperSvc.getPaperExecutionState().then(s => { paperState = s; changed = true; }).catch(() => {});
-  runtimeSvc.getRuntimeInstances().then(r => { instances = r?.instances || []; changed = true; }).catch(() => {});
+  paperSvc.getPaperExecutionState()
+    .then(s => { paperState = s; changed = true; _consecutiveFails = 0; _connectionError = null; })
+    .catch(err => {
+      console.error('[paper] fetch failed:', err);
+      _consecutiveFails += 1;
+      if (_consecutiveFails >= 3) {
+        _connectionError = `paper execution 服务无响应 (${_consecutiveFails} 次失败)`;
+        qRender();
+      }
+    });
+  runtimeSvc.getRuntimeInstances()
+    .then(r => { instances = r?.instances || []; changed = true; })
+    .catch(err => console.error('[runtime] fetch failed:', err));
   // Leaderboard — only fetch every 3rd poll (evolution runs slowly)
   if (!refreshAll._pollCount) refreshAll._pollCount = 0;
   if (++refreshAll._pollCount % 3 === 0) {
-    runtimeSvc.getLeaderboard(10).then(r => { leaderboard = r?.leaderboard || []; }).catch(() => {});
+    runtimeSvc.getLeaderboard(10)
+      .then(r => { leaderboard = r?.leaderboard || []; })
+      .catch(err => console.error('[leaderboard] fetch failed:', err));
   }
   // Single render after a short delay to batch all responses
   setTimeout(() => { if (changed || true) qRender(); }, 300);
   if (!catalogLoaded) loadCatalog();
   if (accountMode === 'live') {
     const now = Date.now();
-    if (now - liveStatusCacheTime > CACHE_TTL) liveSvc.getLiveExecutionStatus().then(s => { liveStatus = s; liveStatusCacheTime = Date.now(); qRender(); }).catch(() => {});
-    if (now - liveAccountCacheTime > CACHE_TTL) liveSvc.getLiveAccount('live').then(a => { liveAccount = a; liveAccountCacheTime = Date.now(); qRender(); }).catch(() => {});
+    if (!_liveStatusFirstAttempt) _liveStatusFirstAttempt = now;
+    if (now - liveStatusCacheTime > CACHE_TTL) {
+      liveSvc.getLiveExecutionStatus()
+        .then(s => { liveStatus = s; liveStatusCacheTime = Date.now(); qRender(); })
+        .catch(err => {
+          console.error('[live status] fetch failed:', err);
+          // 15s timeout: if we still have no liveStatus after 15s, show error
+          if (now - _liveStatusFirstAttempt > 15000 && !liveStatus) {
+            _connectionError = 'Live API key 未就绪 — 检查 .env 配置';
+            qRender();
+          }
+        });
+    }
+    if (now - liveAccountCacheTime > CACHE_TTL) {
+      liveSvc.getLiveAccount('live')
+        .then(a => { liveAccount = a; liveAccountCacheTime = Date.now(); qRender(); })
+        .catch(err => console.error('[live account] fetch failed:', err));
+    }
   }
+}
+
+export function getConnectionError() {
+  return _connectionError;
 }
 async function loadCatalog() { catalogLoaded = true; try { catalog = (await runtimeSvc.getStrategyCatalog())?.templates || []; } catch {} qRender(); }
 function startPolling() { stopPolling(); pollTimer = setInterval(() => { if (panelOpen) refreshAll(); }, POLL_MS); }
@@ -231,9 +268,14 @@ function renderOverview() {
   const a = paperState?.account;
   if (!a) return sec('概览', '模拟', '<div class="exec-note">加载中...</div>');
   const running = instances.filter(i => i.status?.runtime_state==='running').length;
+  // Read both: realized_pnl_sim (simulated/pattern-virtual), realized_pnl_usd (real)
+  // Backward-compat: realized_pnl mirrors realized_pnl_sim
+  const simPnl = a.realized_pnl_sim ?? a.realized_pnl ?? 0;
+  const realPnl = a.realized_pnl_usd ?? 0;
   return sec('概览', '模拟', `<div class="exec-overview-compact">
     <div class="exec-ov-item"><span class="exec-ov-label">权益</span><span class="exec-ov-value">${formatUsd(a.equity??10000)}</span></div>
-    <div class="exec-ov-item"><span class="exec-ov-label">盈亏</span><span class="exec-ov-value ${pnlColorClass(a.realized_pnl??0)}">${fmtPnl(a.realized_pnl??0)}</span></div>
+    <div class="exec-ov-item"><span class="exec-ov-label">模拟盈亏</span><span class="exec-pnl-virtual">[虚拟]</span><span class="exec-ov-value ${pnlColorClass(simPnl)}">${fmtPnl(simPnl)}</span></div>
+    <div class="exec-ov-item"><span class="exec-ov-label">实盘盈亏</span><span class="exec-ov-value exec-pnl-real ${pnlColorClass(realPnl)}">${fmtPnl(realPnl)}</span></div>
     <div class="exec-ov-item"><span class="exec-ov-label">运行</span><span class="exec-ov-value">${running}</span></div>
     <div class="exec-ov-item"><span class="exec-ov-label">总数</span><span class="exec-ov-value">${instances.length}</span></div></div>`);
 }
@@ -335,15 +377,22 @@ function renderCard(inst) {
   const c = inst.config||{}, s = inst.status||{}, id = c.instance_id||'';
   const state = s.runtime_state||'stopped';
   const isLive = c.live_mode === 'live';
-  const pnl = s.paper_state?.account?.realized_pnl;
+  const acct = s.paper_state?.account || {};
+  // Always pull both fields. simPnl is the pattern-virtual P&L (NEVER real money).
+  // realPnl only appears after an exchange fill.
+  const simPnl = acct.realized_pnl_sim ?? acct.realized_pnl ?? 0;
+  const realPnl = acct.realized_pnl_usd ?? 0;
   const expanded = expandedId === id;
   return `<div class="exec-strategy-card ${expanded?'is-expanded':''}" data-instance-id="${esc(id)}">
     <div class="exec-strategy-header">
       <span class="exec-strategy-symbol">${esc(c.symbol||'?')}</span>
       <span class="exec-strategy-tf">${esc(c.timeframe||'?')}</span>
       ${isLive?'<span style="color:#ff1744;font-size:10px;font-weight:700">实盘</span>':'<span style="color:var(--v2-muted);font-size:9px">模拟</span>'}
-      ${!isLive&&pnl!=null?`<span class="exec-strategy-pnl ${pnlColorClass(pnl)}" title="模拟盈亏，非真实资金">${fmtPnl(pnl)}</span>`:''}
-      <span class="exec-strategy-state ${{running:'exec-state-running',stopped:'exec-state-stopped',blocked:'exec-state-blocked'}[state]||''}">${{running:'运行中',stopped:'停止',blocked:'阻止'}[state]||state}</span>
+      ${isLive
+        ? `<span class="exec-strategy-pnl exec-pnl-real ${pnlColorClass(realPnl)}" title="实盘盈亏（交易所成交）">${fmtPnl(realPnl)}</span>`
+        : `<span class="exec-strategy-pnl ${pnlColorClass(simPnl)}" title="模拟盈亏，非真实资金"><span class="exec-pnl-virtual">[虚拟]</span> ${fmtPnl(simPnl)}</span>`
+      }
+      <span class="exec-strategy-state ${{running:'exec-state-running',stopped:'exec-state-stopped',paused:'exec-state-paused',error:'exec-state-error',blocked:'exec-state-blocked',pending:'exec-state-pending'}[state]||''}">${({running:'运行中',stopped:'已停止',paused:'已暂停',error:'异常',blocked:'阻止',pending:'等待中'}[state])||state}</span>
     </div>
     ${expanded ? renderDetail(inst) : ''}
     <div class="exec-strategy-actions">
@@ -365,8 +414,11 @@ function renderDetail(inst) {
   if(s.last_error) h+=`<div class="exec-strategy-error" style="white-space:normal;margin:4px 0">${esc(s.last_error).slice(0,100)}</div>`;
   if(ps){
     const a=ps.account||{},eq=isLive&&liveAccount?.ok?liveAccount.total_equity:(a.equity??10000);
+    const dSim = a.realized_pnl_sim ?? a.realized_pnl ?? 0;
+    const dReal = a.realized_pnl_usd ?? 0;
     h+=`<div class="exec-detail-row"><span>${isLive?'实盘权益':'模拟权益'}</span><span>${formatUsd(eq)}</span></div>
-      <div class="exec-detail-row"><span>盈亏</span><span class="${pnlColorClass(a.realized_pnl??0)}">${fmtPnl(a.realized_pnl??0)}</span></div>`;
+      <div class="exec-detail-row"><span>模拟盈亏</span><span><span class="exec-pnl-virtual">[虚拟]</span> <span class="${pnlColorClass(dSim)}">${fmtPnl(dSim)}</span></span></div>
+      <div class="exec-detail-row"><span>实盘盈亏</span><span class="exec-pnl-real ${pnlColorClass(dReal)}">${fmtPnl(dReal)}</span></div>`;
     for(const pos of(ps.open_positions||[])) h+=`<div class="exec-trade-mini"><span class="exec-dir-${pos.direction}">${pos.direction==='long'?'多':'空'}</span> ${formatUsd(pos.entry_price)} <span class="${pnlColorClass(pos.unrealized_pnl??0)}">${fmtPnl(pos.unrealized_pnl??0)}</span></div>`;
     const closed=ps.recent_closed_positions||[];
     if(closed.length){h+='<div class="exec-detail-subtitle">最近交易</div>';

@@ -4,6 +4,10 @@ import { publish } from '../util/events.js';
 
 let source = null;
 let reconnectTimer = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_BACKOFF_MS = 3000;
+const MAX_BACKOFF_MS = 30000;
 
 const EVENT_TYPES = [
   'connected', 'ping',
@@ -36,16 +40,29 @@ export function connectStream() {
     });
   }
 
-  source.onopen = () => console.log('[stream] connected');
+  source.onopen = () => {
+    console.log('[stream] connected');
+    reconnectAttempts = 0;  // reset backoff on successful connect
+  };
   source.onerror = () => {
-    console.warn('[stream] disconnected, will retry in 3s');
     source?.close();
     source = null;
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      console.warn('[stream] giving up after', reconnectAttempts, 'attempts');
+      return;
+    }
+    // Exponential backoff: 3s × 1.5^attempts, capped at 30s
+    const backoff = Math.min(
+      BASE_BACKOFF_MS * Math.pow(1.5, reconnectAttempts),
+      MAX_BACKOFF_MS,
+    );
+    reconnectAttempts += 1;
+    console.warn(`[stream] disconnected (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}), retry in ${Math.round(backoff/1000)}s`);
     if (!reconnectTimer) {
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connectStream();
-      }, 3000);
+      }, backoff);
     }
   };
 

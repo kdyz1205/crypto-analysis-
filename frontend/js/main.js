@@ -52,14 +52,24 @@ function boot() {
   console.log('[main] Trading OS ready');
 }
 
+let _previousView = 'market';
+
 function wireHeaderButtons() {
   // View navigation
   const nav = $('#v2-nav');
   if (nav) {
-    nav.addEventListener('click', (e) => {
+    nav.addEventListener('click', async (e) => {
       const btn = e.target.closest('.v2-nav-btn');
       if (!btn) return;
       const view = btn.dataset.view;
+      // Tear down market-only timers when leaving the market view
+      if (_previousView === 'market' && view !== 'market') {
+        try {
+          const { stopDecisionRail } = await import('./workbench/decision_rail.js');
+          stopDecisionRail();
+        } catch {}
+      }
+      _previousView = view;
       // Switch active nav button
       nav.querySelectorAll('.v2-nav-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
@@ -71,6 +81,18 @@ function wireHeaderButtons() {
       loadView(view);
     });
   }
+
+  // Cross-view handoff: open Factory with pre-filled pattern from chart
+  window.__openFactoryWithPattern = (payload) => {
+    // Stash payload for the factory loader to pick up
+    window.__factoryPrefill = payload;
+    // Switch to factory tab
+    nav?.querySelectorAll('.v2-nav-btn').forEach(b => b.classList.remove('active'));
+    nav?.querySelector('[data-view="factory"]')?.classList.add('active');
+    document.querySelectorAll('.v2-view').forEach(v => v.classList.remove('active'));
+    document.querySelector('.v2-view[data-view="factory"]')?.classList.add('active');
+    loadView('factory');
+  };
 
   on('#v2-ma-toggle', 'click', () => {
     const visible = toggleMAOverlays();
@@ -108,20 +130,60 @@ function wireHeaderButtons() {
 
 // ── View Loaders ────────────────────────────────────────────────────────
 
-import { loadFactory, loadSimulate, loadLeaderboard, loadLive, loadMonitor } from './views.js';
+import { loadDashboard, loadFactory, loadLeaderboard, loadFactors, loadLive, loadMonitor } from './views.js';
+
+const _viewLoaders = {
+  dashboard: loadDashboard, factory: loadFactory, leaderboard: loadLeaderboard,
+  factors: loadFactors, live: loadLive, monitor: loadMonitor,
+};
+const _viewLoaded = new Set(); // track which views have been loaded at least once
 
 async function loadView(view) {
   if (view === 'market') return;
   const el = $(`#view-${view}`);
   if (!el) return;
-  el.innerHTML = '<div style="padding:40px;text-align:center;color:var(--v2-muted)">加载中...</div>';
+  const loader = _viewLoaders[view];
+  if (!loader) return;
+
+  // First load: show skeleton. Subsequent loads: keep old content, refresh in background.
+  if (!_viewLoaded.has(view)) {
+    el.innerHTML = skeletonFor(view);
+  } else {
+    // Add subtle loading indicator without wiping content
+    el.style.opacity = '0.7';
+  }
+
   try {
-    if (view === 'factory') await loadFactory(el);
-    else if (view === 'simulate') await loadSimulate(el);
-    else if (view === 'leaderboard') await loadLeaderboard(el);
-    else if (view === 'live') await loadLive(el);
-    else if (view === 'monitor') await loadMonitor(el);
-  } catch (e) { el.innerHTML = `<p style="color:var(--v2-red);padding:20px">加载失败: ${e.message}</p>`; }
+    await loader(el);
+    _viewLoaded.add(view);
+  } catch (e) {
+    // Only show error if we have nothing to show
+    if (!_viewLoaded.has(view)) {
+      el.innerHTML = `<p style="color:var(--v2-red);padding:20px">加载失败: ${e.message}</p>`;
+    }
+  } finally {
+    el.style.opacity = '';
+  }
+}
+
+function skeletonFor(view) {
+  const sk = `<div class="skel-line" style="width:60%"></div>`;
+  const skw = `<div class="skel-line" style="width:40%"></div>`;
+  const card = `<div class="skel-card"></div>`;
+  const row = `<div class="skel-row"></div>`;
+  if (view === 'dashboard') return `
+    <div style="padding:20px">
+      ${sk}<div style="height:12px"></div>
+      <div class="dash-cards">${card}${card}${card}${card}${card}</div>
+      <div class="dash-grid"><div>${row}${row}${row}</div><div>${row}${row}${row}</div></div>
+    </div>`;
+  if (view === 'leaderboard' || view === 'factors') return `
+    <div style="padding:20px">
+      ${sk}<div style="height:12px"></div>
+      <div class="view-stats">${card}${card}${card}${card}</div>
+      ${row}${row}${row}${row}${row}${row}
+    </div>`;
+  return `<div style="padding:20px">${sk}<div style="height:12px"></div>${row}${row}${row}${row}</div>`;
 }
 
 /*

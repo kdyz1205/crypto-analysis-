@@ -126,4 +126,38 @@ def detect_lines(candles: pd.DataFrame, timeframe: str, symbol: str) -> list[Evo
                 ))
 
     lines.sort(key=lambda l: l.score, reverse=True)
-    return lines[:20]
+
+    # ── Cluster-level dedupe + top-K per side ──────────────────────────
+    # The pair-wise enumeration above produces many lines that visually
+    # collapse to the same line — same right anchor with different "earlier
+    # touches" all project to the same price band. Cluster by projected
+    # price at the current bar (within 0.5 ATR) and keep only the highest-
+    # scoring representative of each cluster. Then cap to max_per_side.
+    current_idx = n - 1
+    current_atr_now = float(atr[current_idx])
+    cluster_radius = 0.5 * current_atr_now
+    max_per_side = 4
+
+    def _project_at_now(l: EvolvedLine) -> float:
+        span = max(1, l.end_index - l.start_index)
+        slope = (l.end_price - l.start_price) / span
+        return l.start_price + slope * (current_idx - l.start_index)
+
+    deduped: dict[str, list[EvolvedLine]] = {"support": [], "resistance": []}
+    current_close = float(closes[current_idx])
+    for l in lines:
+        bucket = deduped[l.side]
+        if len(bucket) >= max_per_side:
+            continue  # already full for this side
+        proj = _project_at_now(l)
+        # Skip ghosts: lines projecting nowhere near current price
+        if abs(proj - current_close) > 5.0 * current_atr_now:
+            continue
+        # Cluster: dedupe against already-kept lines on same side
+        if any(abs(_project_at_now(kept) - proj) <= cluster_radius for kept in bucket):
+            continue
+        bucket.append(l)
+
+    final = deduped["support"] + deduped["resistance"]
+    final.sort(key=lambda l: l.score, reverse=True)
+    return final

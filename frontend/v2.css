@@ -294,6 +294,127 @@ body.v2-body {
 .empty-icon { font-size: 32px; margin-bottom: 8px; }
 .empty-state small { font-size: 11px; opacity: 0.7; }
 
+/* ── Design System ───────────────────────────────────────────── */
+
+/* Page title */
+.page-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; color: var(--v2-text); }
+.page-title .c-muted { font-weight: 400; }
+
+/* KPI row */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.kpi { background: var(--v2-card); border: 1px solid var(--v2-border); border-radius: 8px; padding: 12px; text-align: center; }
+.kpi-val { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.kpi-label { font-size: 11px; color: var(--v2-muted); margin-top: 2px; }
+
+/* Cards */
+.card { background: var(--v2-card); border: 1px solid var(--v2-border); border-radius: 8px; padding: 14px; }
+.card-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--v2-text); }
+.card-kv { display: flex; flex-direction: column; gap: 3px; }
+.card-kv > div { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(42,53,72,0.08); }
+.card-kv > div > span:first-child { color: var(--v2-muted); }
+.card-alert { background: rgba(255,23,68,0.1); border: 1px solid rgba(255,23,68,0.3); border-radius: 4px; padding: 6px 8px; font-size: 11px; color: #ff9aac; margin-top: 8px; }
+
+/* Layouts */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; margin-top: 14px; }
+@media (max-width: 900px) { .two-col, .three-col { grid-template-columns: 1fr; } }
+
+/* Mini rows */
+.mini-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px solid rgba(42,53,72,0.06); }
+.mono { font-family: monospace; font-size: 11px; }
+
+/* Trend bars */
+.trend-bars { display: flex; gap: 3px; align-items: flex-end; height: 55px; padding: 4px 0; }
+.trend-bar { width: 14px; border-radius: 2px; flex-shrink: 0; }
+
+/* Log list */
+.log-list { max-height: 220px; overflow-y: auto; }
+.log-row { font-size: 11px; padding: 3px 0; border-bottom: 1px solid rgba(42,53,72,0.06); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Empty */
+.empty { text-align: center; padding: 24px 12px; color: var(--v2-muted); font-size: 12px; }
+
+/* Badges */
+.badge { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+.badge-green { background: rgba(0,200,83,0.15); color: var(--v2-green); }
+.badge-red { background: rgba(255,23,68,0.15); color: var(--v2-red); }
+.badge-warn { background: rgba(255,171,0,0.15); color: #ffab00; }
+.badge-muted { background: rgba(42,53,72,0.2); color: var(--v2-muted); }
+.badge-low { background: rgba(0,200,83,0.15); color: var(--v2-green); }
+.badge-medium { background: rgba(255,171,0,0.15); color: #ffab00; }
+.badge-high { background: rgba(255,23,68,0.15); color: var(--v2-red); }
+
+/* Tags */
+.tag-row { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0; }
+
+/* List items */
+.list-item { padding: 10px 0; border-bottom: 1px solid var(--v2-border); }
+.list-item:last-child { border-bottom: none; }
+.list-item-top { display: flex; justify-content: space-between; align-items: center; }
+
+/* Leaderboard cards */
+.lb-card { border-bottom: 1px solid var(--v2-border); padding: 10px 0; }
+.lb-card:last-child { border-bottom: none; }
+.lb-card-main { display: flex; align-items: flex-start; gap: 10px; }
+.lb-rank { font-size: 16px; min-width: 32px; text-align: center; padding-top: 2px; }
+.lb-card-info { flex: 1; min-width: 0; }
+.lb-card-top { display: flex; justify-content: space-between; align-items: center; }
+.lb-metrics { display: flex; gap: 10px; font-size: 11px; color: var(--v2-muted); margin-top: 3px; flex-wrap: wrap; }
+.lb-tags { display: flex; gap: 4px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
+.lb-actions { display: flex; gap: 6px; flex-shrink: 0; padding-top: 2px; }
+
+/* Expand */
+.expand-btn { background: none; border: 1px solid var(--v2-border); color: var(--v2-muted); font-size: 10px; padding: 2px 8px; border-radius: 3px; cursor: pointer; }
+.expand-btn:hover { border-color: var(--v2-primary); color: var(--v2-primary); }
+.expand-area { padding: 8px 0 4px 42px; }
+
+/* Factor table */
+.factor-table { font-size: 12px; }
+.factor-header { display: flex; gap: 8px; padding: 6px 4px; border-bottom: 2px solid var(--v2-border); font-weight: 600; color: var(--v2-muted); font-size: 11px; }
+.factor-header span, .factor-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.factor-row { display: flex; gap: 8px; padding: 5px 4px; border-bottom: 1px solid rgba(42,53,72,0.06); }
+.factor-row:hover { background: rgba(42,53,72,0.04); }
+
+/* Buttons */
+.btn-primary { background: var(--v2-primary); color: white; border: none; padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.btn-primary:hover { opacity: 0.9; }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-secondary { background: transparent; border: 1px solid var(--v2-border); color: var(--v2-text); padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+.btn-sm { padding: 3px 10px; font-size: 11px; }
+.btn-danger { background: rgba(255,23,68,0.1); border: 1px solid rgba(255,23,68,0.3); color: #ff9aac; padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
+
+/* Builder */
+.builder-section { margin-bottom: 10px; }
+.builder-section label { display: block; font-size: 11px; color: var(--v2-muted); margin-bottom: 3px; }
+.builder-section select, .builder-section input { width: 100%; background: var(--v2-bg); border: 1px solid var(--v2-border); color: var(--v2-text); padding: 6px 8px; border-radius: 4px; font-size: 12px; }
+.builder-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* Builder modules (collapsible) */
+.builder-module { border: 1px solid var(--v2-border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
+.builder-module-header { padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: rgba(42,53,72,0.15); user-select: none; }
+.builder-module-header:hover { background: rgba(42,53,72,0.25); }
+.builder-module-body { display: none; padding: 10px 12px; }
+.builder-module.open .builder-module-body { display: block; }
+.builder-module.open .builder-module-header { border-bottom: 1px solid var(--v2-border); }
+
+/* Condition cards */
+.condition-card { background: rgba(42,53,72,0.1); border: 1px solid var(--v2-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; }
+.chip-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { display: flex; align-items: center; gap: 3px; font-size: 11px; padding: 3px 8px; border: 1px solid var(--v2-border); border-radius: 4px; cursor: pointer; }
+.chip input { width: 12px; height: 12px; }
+
+/* Colors */
+.c-green { color: var(--v2-green); }
+.c-red { color: var(--v2-red); }
+.c-primary { color: var(--v2-primary); }
+.c-muted { color: var(--v2-muted); }
+
+/* Skeleton */
+@keyframes skel-pulse { 0%,100%{opacity:.15} 50%{opacity:.3} }
+.skel-line { height: 14px; border-radius: 4px; background: var(--v2-border); animation: skel-pulse 1.2s ease-in-out infinite; margin-bottom: 8px; }
+.skel-card { height: 72px; border-radius: 8px; background: var(--v2-border); animation: skel-pulse 1.2s ease-in-out infinite; }
+.skel-row { height: 40px; border-radius: 6px; background: var(--v2-border); animation: skel-pulse 1.2s ease-in-out infinite; margin-bottom: 6px; }
+
 /* State classes for new views */
 .state-run { color: var(--v2-green); font-size: 10px; font-weight: 600; }
 .state-stop { color: var(--v2-muted); font-size: 10px; }
@@ -595,6 +716,23 @@ body.v2-body {
   font-weight: 600;
   margin-left: auto;
   margin-right: 6px;
+}
+/* "[虚拟]" badge — visually marks pattern-engine simulated P&L so users
+   never confuse it with real exchange-fill profits. */
+.exec-pnl-virtual {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(160, 160, 160, 0.18);
+  color: var(--v2-muted, #999);
+  font-size: 9px;
+  font-weight: 700;
+  margin: 0 3px;
+  text-transform: none;
+  letter-spacing: 0.3px;
+}
+.exec-pnl-real {
+  font-weight: 700;
 }
 .exec-strategy-state {
   font-size: 10px;

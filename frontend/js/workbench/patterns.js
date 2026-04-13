@@ -100,22 +100,27 @@ export function drawHorizontalSRZones(chart, candleSeries, zones = []) {
   if (!chart || !zones?.length) return;
   clearHorizontalSRZones(chart);
 
-  // Get time range from candle data for horizontal line endpoints
   const lastCandle = candleSeries?.data?.()?.at?.(-1);
   const firstCandle = candleSeries?.data?.()?.at?.(0);
   if (!lastCandle || !firstCandle) return;
 
-  const t1 = firstCandle.time;
+  // Only extend zone lines from recent history, not full chart width
+  const totalBars = (lastCandle.time - firstCandle.time);
+  const t1 = firstCandle.time + Math.floor(totalBars * 0.3); // start from 30% in
   const t2 = lastCandle.time;
 
   for (const zone of zones) {
     try {
+      // Skip ghost zones with missing/invalid price (was painting them at y=0)
+      if (zone == null) continue;
+      if (zone.price_center == null || !Number.isFinite(Number(zone.price_center))) continue;
+      if (zone.price_center <= 0) continue;
       const isSupport = zone.side === 'support';
-      const color = isSupport ? 'rgba(0, 230, 118, 0.5)' : 'rgba(255, 23, 68, 0.5)';
-      const strength = zone.strength != null ? Math.round(zone.strength) : '';
-      const label = `${isSupport ? 'S' : 'R'} ${zone.touches}t${strength ? ' ' + strength : ''}`;
+      const strength = zone.strength != null ? Math.round(zone.strength) : 0;
+      const label = `${isSupport ? 'S' : 'R'} ${zone.touches}t ${strength}`;
 
-      // Single center line only — no upper/lower boundary noise
+      // Thin dashed line at center — clean like professional charts
+      const color = isSupport ? 'rgba(0, 230, 118, 0.6)' : 'rgba(255, 82, 82, 0.6)';
       const s = chart.addLineSeries({
         color,
         lineWidth: 1,

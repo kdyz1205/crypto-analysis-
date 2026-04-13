@@ -148,15 +148,33 @@ class KillSwitchState:
 class PaperAccountSummary:
     starting_equity: float
     equity: float
-    realized_pnl: float
-    unrealized_pnl: float
-    daily_realized_pnl: float
-    consecutive_losses: int
-    total_exposure: float
-    open_order_count: int
-    open_position_count: int
-    closed_trade_count: int
+    # Split P&L into simulated vs real:
+    #  - realized_pnl_sim: pattern engine virtual outcomes, paper backtest
+    #    P&L, anything that did NOT come from an exchange fill. This is
+    #    NEVER real money and should be visually marked [虚拟] in the UI.
+    #  - realized_pnl_usd: only updated after an actual exchange fill ack.
+    #    Defaults to 0; should never be touched by paper / pattern code.
+    realized_pnl_sim: float = 0.0
+    realized_pnl_usd: float = 0.0
+    # Backward-compat alias (== realized_pnl_sim). Existing callers reading
+    # realized_pnl will see the simulated value, which preserves prior
+    # behaviour while migration finishes.
+    realized_pnl: float = 0.0
+    unrealized_pnl: float = 0.0
+    daily_realized_pnl: float = 0.0
+    consecutive_losses: int = 0
+    total_exposure: float = 0.0
+    open_order_count: int = 0
+    open_position_count: int = 0
+    closed_trade_count: int = 0
     last_processed_bar_by_stream: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Keep backward-compat alias in sync if caller only set realized_pnl
+        if self.realized_pnl and not self.realized_pnl_sim:
+            self.realized_pnl_sim = self.realized_pnl
+        elif self.realized_pnl_sim and not self.realized_pnl:
+            self.realized_pnl = self.realized_pnl_sim
 
 
 @dataclass(slots=True)

@@ -62,8 +62,11 @@ export function drawSignalOverlay(candleSeries, snapshot, layerVisibility = {}) 
       }
       const line = lineLookup.get(invalidation.line_id);
       const markerTime = invalidation.invalidation_timestamp ?? line?.invalidation_timestamp ?? snapshot.timestamp;
+      // Skip invalid timestamps — earlier code happily passed NaN through
+      // Math.floor(NaN)=NaN and lightweight-charts plotted markers at T=0.
+      if (markerTime == null || !Number.isFinite(Number(markerTime))) continue;
       markers.push({
-        time: Math.floor(markerTime),
+        time: Math.floor(Number(markerTime)),
         position: invalidation.side === 'resistance' ? 'aboveBar' : 'belowBar',
         color: '#94a3b8',
         shape: 'square',
@@ -72,9 +75,24 @@ export function drawSignalOverlay(candleSeries, snapshot, layerVisibility = {}) 
     }
   }
 
-  markers.sort((a, b) => a.time - b.time);
+  // Merge with existing markers (e.g. exec markers from the order overlay)
+  // instead of clobbering them. Dedupe by (time, shape, color) tuple.
+  let existing = [];
   try {
-    candleSeries.setMarkers(markers);
+    existing = candleSeries.markers?.() || [];
+  } catch {}
+  const merged = [...existing, ...markers];
+  const seen = new Set();
+  const dedup = [];
+  for (const m of merged) {
+    const key = `${m.time}-${m.shape}-${m.color}-${m.position}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedup.push(m);
+  }
+  dedup.sort((a, b) => a.time - b.time);
+  try {
+    candleSeries.setMarkers(dedup);
   } catch (err) {
     console.warn('[strategy overlay] failed to set markers', err);
   }
