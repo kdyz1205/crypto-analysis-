@@ -163,28 +163,32 @@ def _find_pivots(df: pd.DataFrame, width: int, atr: np.ndarray) -> list[V1Pivot]
             if l < left_l.max() or l < right_l.max():
                 pivots.append(V1Pivot(idx=i, kind="low", price=float(l), prominence=0.0))
 
-    # Compute prominence for each: distance to nearest more-extreme same-kind
-    # pivot, normalized by ATR at the pivot bar.
-    highs_only = [p for p in pivots if p.kind == "high"]
-    lows_only = [p for p in pivots if p.kind == "low"]
-
+    # Compute prominence for each pivot: distance to opposite-side extreme
+    # within a LOCAL ±30-bar window, normalized by ATR.
+    #
+    # BUG FIX: the previous version used "to the next more-extreme same-kind
+    # pivot" as the window, which means GLOBAL extreme pivots (the deepest
+    # low or highest high in the whole slice) had no boundary — their
+    # window stretched to the entire dataset, and the resulting
+    # `(window_high - p.price) / atr_at_pivot_bar` blew up to ~500 because
+    # the pivot's own ATR was tiny. That made the global extreme an
+    # "invincible pivot" that any line connecting to it dominated the score
+    # — producing visual fans (all lines radiating from one anchor).
+    #
+    # Local window keeps prominence values in a comparable range (~5-40)
+    # across all pivots and prevents the fan pathology.
+    LOCAL_W = 30
+    n_bars = len(df)
     pivots_with_prom: list[V1Pivot] = []
     for p in pivots:
         atr_at = atr[p.idx]
+        lo = max(0, p.idx - LOCAL_W)
+        hi = min(n_bars - 1, p.idx + LOCAL_W)
         if p.kind == "high":
-            # prominence = how much lower the nearest higher high is (on either side)
-            higher_left = [q for q in highs_only if q.idx < p.idx and q.price > p.price]
-            higher_right = [q for q in highs_only if q.idx > p.idx and q.price > p.price]
-            left_bound = max((q.idx for q in higher_left), default=0)
-            right_bound = min((q.idx for q in higher_right), default=len(df) - 1)
-            window_low = df["low"].iloc[left_bound:right_bound + 1].min()
+            window_low = df["low"].iloc[lo:hi + 1].min()
             prom = (p.price - float(window_low)) / max(atr_at, 1e-9)
         else:
-            lower_left = [q for q in lows_only if q.idx < p.idx and q.price < p.price]
-            lower_right = [q for q in lows_only if q.idx > p.idx and q.price < p.price]
-            left_bound = max((q.idx for q in lower_left), default=0)
-            right_bound = min((q.idx for q in lower_right), default=len(df) - 1)
-            window_high = df["high"].iloc[left_bound:right_bound + 1].max()
+            window_high = df["high"].iloc[lo:hi + 1].max()
             prom = (float(window_high) - p.price) / max(atr_at, 1e-9)
         pivots_with_prom.append(V1Pivot(idx=p.idx, kind=p.kind, price=p.price, prominence=prom))
 

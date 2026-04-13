@@ -17,6 +17,22 @@ import pandas as pd
 
 
 @dataclass(frozen=True, slots=True)
+class EvolvedChannel:
+    """A pair of near-parallel lines forming a price channel.
+
+    Murphy Ch.5: "Once a trendline is in place, a parallel line can be
+    drawn across the reaction highs to form a channel." Channels are
+    structurally meaningful; pairs of lines should be rendered together,
+    not as two independent lines.
+    """
+    upper: "EvolvedLine"
+    lower: "EvolvedLine"
+    width_atr: float       # average vertical distance between lines, in ATR
+    parallelism: float     # 1.0 = perfectly parallel, 0 = orthogonal
+    score: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
 class EvolvedLine:
     """Minimal line shape consumed by the backtest harness.
 

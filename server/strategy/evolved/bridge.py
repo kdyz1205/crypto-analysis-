@@ -21,20 +21,22 @@ def _evolved_detector_enabled() -> bool:
 
 
 def _get_active_detector():
-    """Pick which evolved variant to use. Defaults to v1a_filtered (Round 1 winner).
+    """Pick which evolved variant to use. Defaults to v2_trader (canon-based).
 
-    Override via EVOLVED_VARIANT env var (e.g., 'v1b_recency').
+    Override via EVOLVED_VARIANT env var.
     """
-    tag = os.getenv("EVOLVED_VARIANT", "v1a_filtered").strip()
+    tag = os.getenv("EVOLVED_VARIANT", "v2_trader").strip()
     if tag == "v0_baseline":
         return None  # let production path run
     try:
         if tag == "v1_clean":
             from .v1_clean import detect_lines
+        elif tag == "v1a_filtered":
+            from .v1a_filtered import detect_lines
         elif tag == "v1b_recency":
             from .v1b_recency import detect_lines
         else:
-            from .v1a_filtered import detect_lines
+            from .v2_trader import detect_lines
         return detect_lines
     except ImportError:
         return None
