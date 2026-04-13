@@ -31,6 +31,10 @@ class EvolvedChannel:
     parallelism: float     # 1.0 = perfectly parallel, 0 = orthogonal
     score: float = 0.0
 
+    def midline_price_at(self, bar_index: int) -> float:
+        """Average of upper and lower line prices at bar_index."""
+        return (self.upper.price_at(bar_index) + self.lower.price_at(bar_index)) / 2.0
+
 
 @dataclass(frozen=True, slots=True)
 class EvolvedLine:
