@@ -616,3 +616,4 @@ export function stopLiveUpdates() {
 }
 
 export function getChart() { return chart; }
+export function getCandleSeries() { return candleSeries; }

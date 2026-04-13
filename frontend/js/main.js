@@ -1,6 +1,9 @@
 // frontend/js/main.js — clean boot: UI shell first, data async
 
-import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays } from './workbench/chart.js';
+import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, getChart, getCandleSeries } from './workbench/chart.js';
+import { initManualTrendlineController, refreshManualDrawings } from './workbench/drawings/manual_trendline_controller.js';
+import { initDrawTool } from './workbench/drawings/draw_tool.js';
+import { initDrawToolbar } from './workbench/drawings/draw_toolbar.js';
 import { initTicker } from './workbench/ticker.js';
 import { initTimeframe } from './workbench/timeframe.js';
 import { initDecisionRail, refreshDecisionRail } from './workbench/decision_rail.js';
@@ -10,7 +13,7 @@ import { connectStream } from './services/stream.js';
 import { initBootStatus, markBoot } from './ui/boot_status.js';
 import { $, on, esc } from './util/dom.js';
 import { subscribe } from './util/events.js';
-import { setScale } from './state/market.js';
+import { setScale, marketState } from './state/market.js';
 
 function boot() {
   console.log('[main] Trading OS booting...');
@@ -29,11 +32,28 @@ function boot() {
       streamConnected = true;
       setTimeout(() => { try { connectStream(); } catch {} }, 300);
     }
+    try { void refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval); } catch {}
   };
 
   initBootStatus();
 
   try { initChart('chart-container'); markBoot('chart', 'pending', 'loading'); } catch (err) { markBoot('chart', 'error', err.message); }
+  try {
+    const chartObj = getChart();
+    const containerEl = document.getElementById('chart-container');
+    if (chartObj && containerEl) initManualTrendlineController(chartObj, containerEl);
+  } catch (err) { console.warn('[boot] manual drawing:', err); }
+  // Drawing tool (TradingView-style): rubber-band preview + floating toolbar.
+  // Must come after chart init so candleSeries is available.
+  try {
+    const chartObj = getChart();
+    const cs = getCandleSeries();
+    const containerEl = document.getElementById('chart-container');
+    if (chartObj && cs && containerEl) {
+      initDrawTool(chartObj, cs, containerEl);
+      initDrawToolbar(containerEl);
+    }
+  } catch (err) { console.warn('[boot] draw tool:', err); }
   try { initTimeframe('#v2-tf-group'); } catch {}
   try { initDecisionRail(); } catch {}
   try {
