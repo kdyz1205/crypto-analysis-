@@ -25,6 +25,7 @@ from .routers import (
     ops, chat, onchain,
     stream, memory, schedule,
     strategy, paper_execution, live_execution, drawings, runtime,
+    tools_api, conditionals,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
@@ -57,6 +58,13 @@ async def _startup():
     telegram_sub.register()
     sse_sub.register()
     print("[EventBus] Phase 3 subscribers registered")
+
+    # Start conditional-order watcher (polls pending virtual orders)
+    try:
+        from .conditionals.watcher import start_watcher as _start_cond_watcher
+        _start_cond_watcher()
+    except Exception as _e:
+        print(f"[ConditionalWatcher] failed to start: {_e}")
 
     # Hermes-inspired: register default scheduler handlers + start loop
     from .core import memory as mem_core
@@ -92,11 +100,38 @@ async def _startup():
         mem_core.save_memory(ns, key, content, params.get("metadata"))
         return f"Saved memory {ns}/{key}"
 
+    async def _handler_pattern_rebuild(params: dict) -> str:
+        """Scheduled pattern database rebuild for top symbols."""
+        from tools.pattern_batch import start_batch_build, is_running
+        if is_running():
+            return "batch build already in progress"
+        symbols = params.get("symbols") or ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","HYPEUSDT","DOGEUSDT","PEPEUSDT","ADAUSDT"]
+        timeframes = params.get("timeframes") or ["15m","1h","4h","1d"]
+        days = params.get("days", 730)
+        result = await start_batch_build(symbols, timeframes, days=days)
+        return f"pattern rebuild started: {len(symbols)}x{len(timeframes)} jobs"
+
+    async def _handler_pattern_recompute(params: dict) -> str:
+        """Scheduled pattern stats recompute from live outcome flags."""
+        from tools.pattern_writeback import process_recompute_flags
+        result = process_recompute_flags()
+        return f"recomputed {result['processed']} symbol_timeframes"
+
+    async def _handler_health_digest(params: dict) -> str:
+        """Scheduled closed-loop health digest — automatic snapshot to disk."""
+        from tools.health_digest import build_digest, save_digest
+        digest = build_digest(hours=params.get("hours", 24))
+        path = save_digest(digest)
+        return f"digest saved: {digest['summary_line']}"
+
     sched_core.register_handler("daily_summary", _handler_daily_summary)
     sched_core.register_handler("agent_scan", _handler_agent_scan)
     sched_core.register_handler("memory_note", _handler_memory_note)
+    sched_core.register_handler("pattern_rebuild", _handler_pattern_rebuild)
+    sched_core.register_handler("pattern_recompute", _handler_pattern_recompute)
+    sched_core.register_handler("health_digest", _handler_health_digest)
     sched_core.start_scheduler()
-    print("[Scheduler] Started with 3 default handlers")
+    print("[Scheduler] Started with 6 default handlers")
     await runtime.runtime_manager.startup()
     print("[Runtime] Subaccount runtime manager ready")
 
@@ -154,4 +189,6 @@ app.include_router(onchain.router)      # /api/onchain/* (proxy to 8002)
 app.include_router(stream.router)       # /api/stream, /api/stream/status, /api/events/history
 app.include_router(memory.router)       # /api/memory/*  (Hermes persistent memory)
 app.include_router(schedule.router)     # /api/schedule/* (Hermes natural-language scheduler)
+app.include_router(tools_api.router)    # /api/tools/* (research leaderboard, audit, failures, factors)
+app.include_router(conditionals.router) # /api/conditionals/* + /api/drawings/manual/analyze
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer

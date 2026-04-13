@@ -4,6 +4,7 @@ import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays } from './wo
 import { initTicker } from './workbench/ticker.js';
 import { initTimeframe } from './workbench/timeframe.js';
 import { initDecisionRail, refreshDecisionRail } from './workbench/decision_rail.js';
+import { initConditionalPanel } from './workbench/conditional_panel.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
 import { connectStream } from './services/stream.js';
 import { initBootStatus, markBoot } from './ui/boot_status.js';
@@ -35,6 +36,10 @@ function boot() {
   try { initChart('chart-container'); markBoot('chart', 'pending', 'loading'); } catch (err) { markBoot('chart', 'error', err.message); }
   try { initTimeframe('#v2-tf-group'); } catch {}
   try { initDecisionRail(); } catch {}
+  try {
+    const condHost = document.getElementById('v2-cond-rail');
+    if (condHost) initConditionalPanel(condHost);
+  } catch (err) { console.warn('[boot] conditional panel:', err); }
   try { initExecutionPanel(); } catch {}
 
   wireHeaderButtons();

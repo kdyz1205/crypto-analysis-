@@ -14,10 +14,11 @@
   <header class="v2-header">
     <div class="v2-brand">Trading OS</div>
     <nav class="v2-nav" id="v2-nav">
+      <button class="v2-nav-btn" data-view="dashboard">仪表盘</button>
       <button class="v2-nav-btn active" data-view="market">市场</button>
       <button class="v2-nav-btn" data-view="factory">策略工厂</button>
-      <button class="v2-nav-btn" data-view="simulate">模拟中心</button>
       <button class="v2-nav-btn" data-view="leaderboard">排行榜</button>
+      <button class="v2-nav-btn" data-view="factors">因子</button>
       <button class="v2-nav-btn" data-view="live">实盘库</button>
       <button class="v2-nav-btn" data-view="monitor">监控</button>
     </nav>
@@ -48,7 +49,13 @@
       <aside class="v2-decision-rail" id="v2-decision-rail">
         <div class="dr-card"><h3>加载中...</h3></div>
       </aside>
+      <aside class="v2-cond-rail" id="v2-cond-rail"></aside>
     </div>
+  </main>
+
+  <!-- View: Dashboard -->
+  <main class="v2-view" data-view="dashboard">
+    <div class="v2-view-content" id="view-dashboard"></div>
   </main>
 
   <!-- View: Strategy Factory -->
@@ -56,9 +63,9 @@
     <div class="v2-view-content" id="view-factory"></div>
   </main>
 
-  <!-- View: Simulation Center -->
-  <main class="v2-view" data-view="simulate">
-    <div class="v2-view-content" id="view-simulate"></div>
+  <!-- View: Factors -->
+  <main class="v2-view" data-view="factors">
+    <div class="v2-view-content" id="view-factors"></div>
   </main>
 
   <!-- View: Leaderboard -->
