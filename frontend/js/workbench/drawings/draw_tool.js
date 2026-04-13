@@ -38,6 +38,12 @@ let _phase = 'idle';         // 'idle' | 'picking_first' | 'picking_second'
 let _anchorA = null;         // { time, price }
 let _ghostSeries = null;     // LineSeries currently rendered as the rubber-band preview
 
+// RAF throttle for crosshair move: LC fires it at 60fps+ which freezes the
+// browser when setData forces a full redraw on 3000+ candles. We coalesce
+// all moves within a frame into one pending update.
+let _pendingB = null;
+let _rafId = null;
+
 // ─────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────
@@ -82,10 +88,12 @@ export function startDrawing(tool) {
   _phase = 'picking_first';
   if (_container) _container.classList.add('draw-mode-crosshair');
   publish('drawtool.mode', { tool, phase: _phase });
-  console.log(`[draw_tool] start ${tool}, phase=picking_first`);
+  console.log(`[draw_tool] ▶ startDrawing(${tool}) phase=picking_first`);
 }
 
 export function cancelDrawing(reason = 'cancel') {
+  if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
+  _pendingB = null;
   if (_ghostSeries) {
     try { _chart.removeSeries(_ghostSeries); } catch {}
     _ghostSeries = null;
@@ -95,6 +103,7 @@ export function cancelDrawing(reason = 'cancel') {
   _anchorA = null;
   if (_container) _container.classList.remove('draw-mode-crosshair');
   publish('drawtool.mode', { tool: null, phase: 'idle', reason });
+  console.log(`[draw_tool] ■ cancelDrawing(${reason})`);
 }
 
 export function getDrawState() {
@@ -105,24 +114,33 @@ export function getDrawState() {
 // Event handlers
 // ─────────────────────────────────────────────────────────────
 function onChartClick(param) {
+  console.log(`[draw_tool] chart click phase=${_phase}`, {
+    time: param?.time,
+    hasPoint: !!param?.point,
+    pointX: param?.point?.x,
+    pointY: param?.point?.y,
+  });
   if (_phase === 'idle') return;
 
   const anchor = resolveAnchor(param);
   if (!anchor) {
-    console.warn('[draw_tool] could not resolve click to (time, price)', param);
+    console.warn('[draw_tool] ⚠ could not resolve click to (time, price)', param);
     return;
   }
 
   if (_phase === 'picking_first') {
     _anchorA = anchor;
     _phase = 'picking_second';
+    // Pre-create the ghost series NOW so the first mousemove doesn't have
+    // to allocate inside a RAF callback.
+    ensureGhostSeries();
     publish('drawtool.mode', { tool: _activeTool, phase: _phase, anchor });
-    console.log(`[draw_tool] anchor A captured`, anchor);
+    console.log(`[draw_tool] ▶ anchor A captured`, anchor);
     return;
   }
 
   if (_phase === 'picking_second') {
-    // Commit the line
+    console.log(`[draw_tool] ▶ anchor B captured, committing`, anchor);
     commitLine(_anchorA, anchor);
     cancelDrawing('committed');
   }
@@ -132,7 +150,7 @@ function onCrosshairMove(param) {
   if (_phase !== 'picking_second' || !_anchorA) return;
   if (!param || !param.point) return;
 
-  // Convert pixel x → time, pixel y → price
+  // Convert pixel x → time, pixel y → price (cheap, O(1) each)
   const ts = _chart.timeScale();
   let time = param.time;
   if (time == null) {
@@ -146,7 +164,37 @@ function onCrosshairMove(param) {
   }
   if (price == null) return;
 
-  updateGhost(_anchorA, { time: Number(time), price: Number(price) });
+  // RAF-throttle: store the latest pending endpoint and schedule one redraw.
+  // Coalesces 60+ moves/sec into 1 update/frame. This is the fix for the
+  // "page freezes while drawing" bug — setData on every raw move forces
+  // LC to redraw all 3000+ candles at 60fps, killing the main thread.
+  _pendingB = { time: Number(time), price: Number(price) };
+  if (_rafId == null) {
+    _rafId = requestAnimationFrame(() => {
+      _rafId = null;
+      if (_pendingB && _anchorA && _phase === 'picking_second') {
+        updateGhost(_anchorA, _pendingB);
+      }
+    });
+  }
+}
+
+function ensureGhostSeries() {
+  if (_ghostSeries || !_chart) return;
+  try {
+    _ghostSeries = _chart.addLineSeries({
+      color: ghostColor(),
+      lineWidth: 2,
+      lineStyle: 2,          // dashed
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+      autoscaleInfoProvider: () => ({ priceRange: null }),
+    });
+    console.log('[draw_tool] ghost series created');
+  } catch (e) {
+    console.error('[draw_tool] addLineSeries failed', e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -154,26 +202,27 @@ function onCrosshairMove(param) {
 // ─────────────────────────────────────────────────────────────
 function updateGhost(a, b) {
   if (!_chart || !a || !b) return;
-  const color = ghostColor();
+  ensureGhostSeries();
+  if (!_ghostSeries) return;
 
-  if (!_ghostSeries) {
-    _ghostSeries = _chart.addLineSeries({
-      color,
-      lineWidth: 2,
-      lineStyle: 2,          // dashed while previewing
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-      autoscaleInfoProvider: () => ({ priceRange: null }),
-    });
-  }
-
-  // Order by time so LC is happy
+  // LC requires ASCENDING time order
   const pts = (a.time <= b.time)
     ? [{ time: a.time, value: a.price }, { time: b.time, value: b.price }]
     : [{ time: b.time, value: b.price }, { time: a.time, value: a.price }];
 
-  try { _ghostSeries.setData(pts); } catch (e) { console.warn('[draw_tool] ghost setData', e); }
+  // Also ensure both times are integer seconds (LC is picky about types)
+  pts[0].time = Math.floor(Number(pts[0].time));
+  pts[1].time = Math.floor(Number(pts[1].time));
+  if (pts[0].time === pts[1].time) {
+    // A single-point line is illegal; skip
+    return;
+  }
+
+  try {
+    _ghostSeries.setData(pts);
+  } catch (e) {
+    console.warn('[draw_tool] ghost setData failed', e, pts);
+  }
 }
 
 function ghostColor() {
