@@ -120,7 +120,25 @@ def build_live_outcome_record(instance: dict) -> LiveOutcomeRecord:
         origin_decision_rule=instance.get("decision_rule", ""),
         symbol=instance.get("symbol", ""),
         timeframe=tf,
-        side="long" if success else "short",  # placeholder; real exchange wiring will provide actual side
+        # Round 1/10 #11: side comes from the strategy intent, NOT inferred
+        # from win/loss (that flipped half the pattern DB's directions).
+        # Lookup order:
+        #   1. Explicit side recorded on the instance (set by paper / live engine)
+        #   2. The pattern_decision direction (reversal=fade → opposite of trend,
+        #      breakout=continuation → with trend) — but we don't know trend
+        #      here, so we fall back to:
+        #   3. The S/R side the pattern was anchored on:
+        #      - support pattern → expect bounce up → long
+        #      - resistance pattern → expect rejection down → short
+        #   4. Empty string if nothing is determinable (caller can drop)
+        side=(
+            instance.get("trade_side")
+            or (
+                "long" if instance.get("pattern_anchor_side") == "support"
+                else "short" if instance.get("pattern_anchor_side") == "resistance"
+                else ""
+            )
+        ),
         entry_time=started,
         exit_time=now,
         bars_held=bars_held,

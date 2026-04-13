@@ -46,6 +46,26 @@ def _stable_line_id(variant: str, symbol: str, side: str, p1: int, p2: int) -> s
     return sha1(f"{variant}|{symbol}|{side}|{p1}|{p2}".encode()).hexdigest()[:16]
 
 
+def _coerce_timestamps_to_seconds(candles: pd.DataFrame) -> list[int]:
+    """Round 10 #6: candles['timestamp'] may be datetime64[ns] (~1e18) or
+    seconds-since-epoch int (~1e9). Convert defensively to UNIX seconds.
+    """
+    ts = candles["timestamp"]
+    if pd.api.types.is_datetime64_any_dtype(ts):
+        return (ts.astype("int64") // 1_000_000_000).tolist()
+    # Numeric — sample first value to detect ns vs s
+    arr = ts.astype("int64").tolist()
+    if not arr:
+        return arr
+    first = arr[0]
+    if first > 10_000_000_000_000:  # > 10^13 → ms or ns
+        if first > 10_000_000_000_000_000:  # ns
+            return [int(v // 1_000_000_000) for v in arr]
+        # ms
+        return [int(v // 1_000) for v in arr]
+    return arr
+
+
 def _line_to_dict(
     line: EvolvedLine,
     candles: pd.DataFrame,
@@ -55,7 +75,7 @@ def _line_to_dict(
 ) -> dict[str, Any]:
     """Minimal StrategyLineModel-compatible dict produced from an EvolvedLine."""
     n = len(candles)
-    timestamps = candles["timestamp"].astype(int).tolist()
+    timestamps = _coerce_timestamps_to_seconds(candles)
 
     a_idx = int(line.start_index)
     b_idx = int(line.end_index)

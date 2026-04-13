@@ -234,8 +234,14 @@ def _build_strategy_snapshot_response(
     history: dict[str, Any],
     drawings_signature: tuple[Any, ...] | None = None,
 ) -> StrategySnapshotResponse:
+    # Round 10 #5: read env var ONCE and use the same value for both
+    # skip_trendline_detection and the bridge replacement decision.
+    # Previously this was read twice — if the value changed between
+    # reads the production detector could run AND the evolved detector
+    # would replace its output, wasting all the fast-path savings.
     import os as _os
-    _evolved_on = _os.getenv("EVOLVED_TRENDLINES", "0").lower() in ("1","true","yes")
+    _evolved_on = _os.getenv("EVOLVED_TRENDLINES", "0").lower() in ("1", "true", "yes")
+
     snapshot = build_latest_snapshot(
         candles_df, cfg, symbol=symbol, timeframe=interval,
         skip_trendline_detection=_evolved_on,
@@ -249,27 +255,29 @@ def _build_strategy_snapshot_response(
     )
     snapshot_payload = _serialize_snapshot(snapshot, candles_df)
 
-    # Optional: replace production trendlines with evolved detector output.
-    # Controlled by env EVOLVED_TRENDLINES=1 (and optionally EVOLVED_VARIANT).
-    import os as _os
-    _evolved_on = _os.getenv("EVOLVED_TRENDLINES", "0").lower() in ("1","true","yes")
-    print(f"[strategy] build_snapshot {symbol}/{interval}: evolved={_evolved_on}", flush=True)
+    # Replace production trendline payload with evolved detector output.
     if _evolved_on:
         try:
             from server.strategy.evolved.bridge import try_build_evolved_lines
             evolved = try_build_evolved_lines(candles_df, symbol, interval)
-            print(f"[strategy] evolved returned {len(evolved) if evolved is not None else 'None'}", flush=True)
             if evolved is not None:
                 from server.schemas.strategy import StrategyLineModel
                 evolved_models = [StrategyLineModel.model_validate(d) for d in evolved]
                 snapshot_payload.candidate_lines = evolved_models
                 snapshot_payload.active_lines = [l for l in evolved_models if l.is_active]
+                # Round 10 #5: line_states, touch_points, invalidations
+                # all reference production line_ids. If we don't clear
+                # them, the frontend gets evolved lines + production
+                # state machine entries → mismatched line_id everywhere.
+                snapshot_payload.line_states = []
                 snapshot_payload.touch_points = []
                 snapshot_payload.invalidations = []
-                print(f"[strategy] replaced with {len(evolved_models)} evolved lines", flush=True)
+                snapshot_payload.signals = []
+                snapshot_payload.signal_states = []
         except Exception as e:
-            import traceback
-            print(f"[strategy] evolved detector failed: {e}\n{traceback.format_exc()}", flush=True)
+            import logging
+            logging.exception("[strategy] evolved detector failed for %s/%s",
+                              symbol, interval)
 
     return StrategySnapshotResponse(
         symbol=symbol,

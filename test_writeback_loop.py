@@ -135,14 +135,17 @@ async def main():
     assert instance.get('decision_rule'), "Instance missing decision_rule"
 
     # STEP 5: Stop the instance WITHOUT injecting fake P&L.
-    # Previously this block wrote current_pnl=0.45 directly to the prod
-    # instance JSON, which then propagated through the writeback machinery
-    # into pattern engine and rule effectiveness DBs as a fake "+$0.45 win".
-    # Six instance files were polluted that way and showed up as fake
-    # profit in the live-management UI. Now we just stop the instance with
-    # whatever real P&L it has (typically 0 since 0 trades).
+    # Round 10 #26: this block previously hardcoded
+    # data/strategies/live_instances/ even though the top-of-file gate
+    # required TEST_DATA_DIR — totally bypassing the safety harness.
+    # Now we resolve the path inside TEST_DATA_DIR.
     print("\n[5/6] Stopping instance (no fake P&L injection)...")
-    instance_path = Path(f"data/strategies/live_instances/{instance['id']}.json")
+    instance_path = Path(TEST_DATA_DIR) / "live_instances" / f"{instance['id']}.json"
+    if not instance_path.exists():
+        print(f"    instance file missing at {instance_path}; "
+              f"this test requires LIVE_MANAGER_DATA_DIR to be set so "
+              f"create_instance_from_draft writes to TEST_DATA_DIR")
+        return
     inst_data = json.loads(instance_path.read_text(encoding="utf-8"))
     inst_data['started_at'] = time.time() - 3 * 14400  # 3 bars ago on 4h (timing only)
     instance_path.write_text(json.dumps(inst_data, indent=2), encoding="utf-8")

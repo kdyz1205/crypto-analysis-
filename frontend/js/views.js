@@ -5,6 +5,7 @@
 
 import { fetchJson, invalidateCachePrefix } from './util/fetch.js';
 import { formatUsd, pnlColorClass } from './util/format.js';
+import { esc } from './util/dom.js';
 
 async function doAction(btn, url, method, parentEl, reloader) {
   const orig = btn.textContent;
@@ -143,7 +144,7 @@ export async function loadDashboard(el) {
           ${digest.alerts.map(a => `
             <div class="mini-row" style="font-size:11px">
               <span class="${a.severity==='warning'?'c-red':'c-muted'}">${a.severity==='warning'?'⚠':'ℹ'} ${a.type}</span>
-              <span>${a.message}</span>
+              <span>${esc(a.message)}</span>
             </div>
           `).join('')}
         </div>
@@ -194,7 +195,7 @@ export async function loadDashboard(el) {
           <div><span>已测试因子</span><span>${fc.tested||0}</span></div>
           <div><span>排行榜</span><span>${d.leaderboard_size||0} 条</span></div>
         </div>
-        ${st.last_error ? `<div class="card-alert">最近错误: ${st.last_error}</div>` : ''}
+        ${st.last_error ? `<div class="card-alert">最近错误: ${esc(st.last_error)}</div>` : ''}
       </div>
     </div>
 
@@ -456,8 +457,14 @@ export async function loadFactory(el) {
         <div class="builder-section"><label>阈值</label><input name="cond-thr" type="number" value="50" step="1"/></div>
         <div class="builder-section"><label>参数</label><input name="cond-period" type="number" value="14" step="1"/></div>
       </div>
-      <button class="btn-sm btn-danger" onclick="this.closest('.condition-card').remove()">删除</button>
+      <button class="btn-sm btn-danger js-cond-remove">删除</button>
     `;
+    // Wire the remove button via addEventListener (Round 5/10 #19: no
+    // inline onclick — XSS-shaped + breaks under strict CSP).
+    const removeBtn = card.querySelector('.js-cond-remove');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', () => card.remove());
+    }
     el.querySelector('#cond-list')?.appendChild(card);
   });
 
@@ -592,7 +599,7 @@ export async function loadFactory(el) {
       });
       const resp = await fetchJson('/api/tools/patterns/recommend-strategies?' + params.toString(), { timeout: 30000, noCache: true });
       if (!resp.ok) {
-        slot.innerHTML = `<div class="c-red">失败: ${resp.error}</div>`;
+        slot.innerHTML = `<div class="c-red">失败: ${esc(resp.error || resp.detail || 'unknown')}</div>`;
       } else {
         slot.innerHTML = renderPatternResult(resp.data);
         slot.querySelectorAll('[data-create-draft]').forEach(b => {
@@ -615,7 +622,7 @@ export async function loadFactory(el) {
         });
       }
     } catch (e) {
-      slot.innerHTML = `<div class="c-red">错误: ${e.message}</div>`;
+      slot.innerHTML = `<div class="c-red">错误: ${esc(e?.message || String(e))}</div>`;
     }
     btn.disabled = false; btn.textContent = orig;
   });
@@ -942,10 +949,13 @@ export async function loadLive(el) {
   const running = instances.filter(i => i.running_status === 'running');
   const pending = drafts.filter(d => ['draft','pending_approval','approved'].includes(d.status));
   const totalCap = running.reduce((s,i) => s + (i.allocated_capital||0), 0);
-  // Sum SIMULATED P&L (pattern_virtual_pnl). Real exchange P&L
-  // (realized_pnl_usd) is summed separately.
-  const totalPnlSim = instances.reduce((s,i) => s + (i.pattern_virtual_pnl ?? i.current_pnl ?? 0), 0);
-  const totalPnlReal = instances.reduce((s,i) => s + (i.realized_pnl_usd || 0), 0);
+  // Sum SIMULATED P&L (pattern_virtual_pnl) and REAL P&L
+  // (realized_pnl_usd) separately. Round 10 #25: do NOT fall back to
+  // current_pnl — it's the deprecated field that may carry stale or
+  // ambiguous values. Run scripts/migrate_pnl_fields.py to migrate
+  // legacy instances.
+  const totalPnlSim = instances.reduce((s,i) => s + (i.pattern_virtual_pnl ?? 0), 0);
+  const totalPnlReal = instances.reduce((s,i) => s + (i.realized_pnl_usd ?? 0), 0);
   const totalPnl = totalPnlSim;  // backward-compat alias
 
   el.innerHTML = `
@@ -1017,7 +1027,7 @@ export async function loadLive(el) {
         ${instances.map(i => {
           // Pattern-virtual P&L (simulation) vs realized USD (real exchange).
           // Total real trades is what counts. If 0 trades → no real P&L.
-          const sim_v = i.pattern_virtual_pnl ?? i.current_pnl ?? 0;
+          const sim_v = i.pattern_virtual_pnl ?? 0;
           const real_v = i.realized_pnl_usd ?? 0;
           const trades = i.total_trades || 0;
           const dd = i.current_drawdown||0;
@@ -1049,7 +1059,7 @@ export async function loadLive(el) {
                 <div class="c-muted" style="margin-top:2px;font-family:monospace;font-size:9px">pattern: ${(i.source_pattern_id || '-').slice(0,12)} | instance: ${(i.id || '').slice(0,8)}</div>
               </div>
             ` : ''}
-            ${i.error ? `<div class="card-alert" style="margin:4px 0">${i.error}</div>` : ''}
+            ${i.error ? `<div class="card-alert" style="margin:4px 0">${esc(i.error)}</div>` : ''}
             <div style="display:flex;gap:6px;margin-top:6px">
               ${i.running_status==='running' ? `<button class="btn-sm" data-action="pause" data-url="/api/tools/live-instances/${i.id}/pause">暂停策略</button>` : ''}
               ${i.running_status==='paused' ? `<button class="btn-primary btn-sm" data-action="resume" data-url="/api/tools/live-instances/${i.id}/resume">恢复运行</button>` : ''}
@@ -1164,7 +1174,7 @@ export async function loadMonitor(el) {
       ${kpi('异常数量', summary.total || 0, hasErrors ? 'c-red' : 'c-muted')}
     </div>
 
-    ${st.last_error ? `<div class="card-alert" style="margin-bottom:12px">最近错误: ${st.last_error}</div>` : ''}
+    ${st.last_error ? `<div class="card-alert" style="margin-bottom:12px">最近错误: ${esc(st.last_error)}</div>` : ''}
 
     <div class="two-col">
       <div>
@@ -1252,7 +1262,7 @@ export async function loadMonitor(el) {
                 <div class="mini-row"><span class="c-muted">${r.symbol_timeframe}</span><span>${r.patterns} patterns</span></div>
               `).join('')}
               ${(batchProgress.errors||[]).length > 0 ? `
-                <div class="card-alert" style="margin-top:6px">错误 ${batchProgress.errors.length} 条: ${batchProgress.errors.slice(-2).map(e => e.job + ': ' + (e.error||'').slice(0,50)).join(', ')}</div>
+                <div class="card-alert" style="margin-top:6px">错误 ${batchProgress.errors.length} 条: ${esc(batchProgress.errors.slice(-2).map(e => e.job + ': ' + (e.error||'').slice(0,50)).join(', '))}</div>
               ` : ''}
               <button class="btn-secondary btn-sm" style="margin-top:8px" data-action="start-batch-build">重新建库 (20x4)</button>
               <button class="btn-secondary btn-sm" style="margin-top:8px" data-action="process-recompute">处理重算标记</button>
@@ -1297,7 +1307,7 @@ export async function loadMonitor(el) {
                   ${wb.symbol || ''} ${wb.timeframe || ''} | 决策: ${wb.decision_type || '-'} | 规则: ${wb.rule_id || '-'}
                 </div>
                 ${ruleUpdate.live_count ? `<div class="c-primary" style="font-size:10px">→ ${ruleUpdate.rule_id}: 累计 ${ruleUpdate.live_count} 次, EV ${ruleUpdate.live_ev}</div>` : ''}
-                ${wb.pattern_writeback?.ok ? `<div class="c-green" style="font-size:10px">→ pattern DB 已更新</div>` : wb.pattern_writeback?.error ? `<div class="c-red" style="font-size:10px">pattern DB 错误: ${wb.pattern_writeback.error}</div>` : ''}
+                ${wb.pattern_writeback?.ok ? `<div class="c-green" style="font-size:10px">→ pattern DB 已更新</div>` : wb.pattern_writeback?.error ? `<div class="c-red" style="font-size:10px">pattern DB 错误: ${esc(wb.pattern_writeback.error)}</div>` : ''}
               </div>`;
             }).join('')}
           </div>
@@ -1317,7 +1327,7 @@ export async function loadMonitor(el) {
               ${failures.length === 0 ? '<div class="c-muted" style="padding:8px">暂无异常</div>' : ''}
               ${failures.map(f => {
                 const stageDesc = failStageTranslate[f.stage] || f.stage;
-                return `<div class="log-row"><span class="c-red">${stageDesc}</span> <span class="c-muted">${f.symbol || ''} | ${f.error || ''}</span></div>`;
+                return `<div class="log-row"><span class="c-red">${esc(stageDesc)}</span> <span class="c-muted">${esc(f.symbol || '')} | ${esc(f.error || '')}</span></div>`;
               }).join('')}
             </div>
           </div>

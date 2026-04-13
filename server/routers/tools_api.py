@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, HTTPException
 from collections import Counter
 
 router = APIRouter(prefix="/api/tools", tags=["tools"])
@@ -23,22 +23,55 @@ async def api_tools_leaderboard(limit: int = Query(20, ge=1, le=50)):
     }}
 
 
+_SAFE_ID_RE = __import__("re").compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _safe_id(value: str | None, *, what: str = "id") -> str | None:
+    """Validate an ID-shaped string for use in a file path. Rejects path
+    separators, dots, and anything beyond [A-Za-z0-9_-] (max 64 chars).
+
+    Round 1/10 #15: previously the path was constructed via
+    `Path("...") / f"{strategy_id}.json"` with NO validation, so a request
+    for strategy_id="../../../etc/passwd" would read arbitrary files.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or not _SAFE_ID_RE.match(s):
+        return None
+    return s
+
+
 @router.get("/leaderboard/{entry_id}")
 async def api_tools_leaderboard_entry(entry_id: str):
     """Single leaderboard entry with linked draft."""
     import json
     from pathlib import Path
     from tools.ranking import get_entry
-    entry = get_entry(entry_id)
+
+    safe_entry_id = _safe_id(entry_id, what="entry_id")
+    if safe_entry_id is None:
+        raise HTTPException(400, "invalid entry_id")
+
+    entry = get_entry(safe_entry_id)
     if not entry:
         return {"ok": False, "error": "not found", "data": None}
-    draft_path = Path("data/strategies/drafts") / f"{entry.get('strategy_id', '')}.json"
+
+    safe_strategy_id = _safe_id(entry.get("strategy_id"), what="strategy_id")
     draft = None
-    if draft_path.exists():
+    if safe_strategy_id is not None:
+        drafts_dir = Path("data/strategies/drafts").resolve()
+        candidate = (drafts_dir / f"{safe_strategy_id}.json").resolve()
+        # Defense-in-depth: ensure the resolved path is still inside drafts/
         try:
-            draft = json.loads(draft_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+            candidate.relative_to(drafts_dir)
+        except ValueError:
+            raise HTTPException(400, "invalid strategy_id")
+        if candidate.exists():
+            try:
+                draft = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                pass
     return {"ok": True, "error": None, "data": {"entry": entry, "draft": draft}}
 
 
@@ -128,10 +161,12 @@ async def api_patterns_match(
         result = match_pattern(
             pdf, anchor1_idx, anchor1_price, anchor2_idx, anchor2_price,
             side, symbol, timeframe, k=k,
+            current_time_position=1.0,  # live query — block future writebacks
         )
         return {"ok": True, "error": None, "data": result}
     except Exception as e:
-        return {"ok": False, "error": str(e), "data": None}
+        # Don't leak full traceback — just the message.
+        return {"ok": False, "error": str(e)[:200], "data": None}
 
 
 @router.post("/patterns/batch-build")
@@ -352,6 +387,7 @@ async def api_patterns_recommend(
         match_result = match_pattern(
             pdf, anchor1_idx, anchor1_price, anchor2_idx, anchor2_price,
             side, symbol, timeframe, k=k,
+            current_time_position=1.0,  # live query — block future writebacks
         )
         decision = decide_strategy_type(match_result)
         drafts = generate_strategy_configs(decision, match_result, symbol, timeframe, both_variants=both_variants)
@@ -371,8 +407,11 @@ async def api_patterns_recommend(
             "approved_drafts": [d for d in validated_drafts if d["approved"]],
         }}
     except Exception as e:
-        import traceback
-        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()[-500:], "data": None}
+        # Round 10 #16: don't leak full traceback to unauthenticated clients.
+        # Log it server-side and return only the exception message.
+        import logging
+        logging.exception("[recommend_strategies] failed for %s/%s", symbol, timeframe)
+        return {"ok": False, "error": str(e)[:200], "data": None}
 
 
 @router.post("/patterns/create-from-recommendation")

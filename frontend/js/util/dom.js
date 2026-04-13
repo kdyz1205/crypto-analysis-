@@ -34,3 +34,25 @@ export function setHtml(el, html) {
   const node = typeof el === 'string' ? $(el) : el;
   if (node) node.innerHTML = html;
 }
+
+/**
+ * Escape a string for safe interpolation into innerHTML / template literals.
+ * Round 1/10 #18-25 + Round 9 stage 4: server error messages, exception
+ * strings, symbol names, and any other field that might contain user-
+ * influenced data must be escaped before being inserted via innerHTML.
+ *
+ *   `<div>${esc(err.message)}</div>`  // safe
+ *   `<div>${err.message}</div>`       // XSS hole
+ */
+export function escapeHtml(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Short alias for use in dense template literals
+export const esc = escapeHtml;

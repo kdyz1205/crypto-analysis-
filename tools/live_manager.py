@@ -244,43 +244,63 @@ def retire_live_instance(instance_id: str) -> dict:
     return _transition_instance(instance_id, "retired", from_states=["stopped"])
 
 
+# Per-instance write lock to prevent concurrent stop calls from
+# double-firing the writeback pipeline. Round 1/10 #9.
+import threading as _threading
+_INSTANCE_LOCKS: dict[str, _threading.Lock] = {}
+_INSTANCE_LOCKS_GUARD = _threading.Lock()
+
+
+def _get_instance_lock(instance_id: str) -> _threading.Lock:
+    with _INSTANCE_LOCKS_GUARD:
+        lock = _INSTANCE_LOCKS.get(instance_id)
+        if lock is None:
+            lock = _threading.Lock()
+            _INSTANCE_LOCKS[instance_id] = lock
+        return lock
+
+
 def _transition_instance(instance_id: str, to_status: str, from_states: list[str]) -> dict:
-    i = _load_instance(instance_id)
-    if not i:
-        return {"ok": False, "error": "instance not found", "data": None}
-    current = i.get("running_status", "")
-    if current not in from_states:
-        return {"ok": False, "error": f"cannot transition from '{current}' to '{to_status}'", "data": None}
-    old = current
-    i["running_status"] = to_status
-    i["last_action_at"] = time.time()
+    # Acquire per-instance lock for the entire read-mutate-write cycle.
+    # Without this, two concurrent stop() calls would both:
+    #   1. Read instance with outcome_written_back=False
+    #   2. Run writeback (double pattern DB entry, double rule_effectiveness)
+    #   3. Mark written_back=True (race-safe but the damage is done)
+    lock = _get_instance_lock(instance_id)
+    with lock:
+        i = _load_instance(instance_id)
+        if not i:
+            return {"ok": False, "error": "instance not found", "data": None}
+        current = i.get("running_status", "")
+        if current not in from_states:
+            return {"ok": False, "error": f"cannot transition from '{current}' to '{to_status}'", "data": None}
+        old = current
+        i["running_status"] = to_status
+        i["last_action_at"] = time.time()
 
-    # ═══ CLOSED LOOP: auto-writeback on stop ═══
-    writeback_result = None
-    if to_status == "stopped" and not i.get("outcome_written_back"):
-        try:
-            outcome = _compute_realized_outcome(i)
-            # Persist realized outcome on the instance BEFORE writeback
-            # (writeback function reads these fields)
-            for k, v in outcome.items():
-                i[k] = v
-            i["stopped_at"] = time.time()
-            # NOTE: don't set outcome_written_back=True yet — let run_full_writeback
-            # do its work first, then set the flag after success
+        # ═══ CLOSED LOOP: auto-writeback on stop ═══
+        # The lock above guarantees exactly one stop() reaches the
+        # outcome_written_back check, even under racy concurrent calls.
+        writeback_result = None
+        if to_status == "stopped" and not i.get("outcome_written_back"):
+            try:
+                outcome = _compute_realized_outcome(i)
+                for k, v in outcome.items():
+                    i[k] = v
+                i["stopped_at"] = time.time()
 
-            # Delegate to the full writeback pipeline
-            from .pattern_writeback import run_full_writeback
-            writeback_result = run_full_writeback(i)
-            if writeback_result and writeback_result.get("ok"):
-                i["outcome_written_back"] = True
-        except Exception as e:
-            import traceback
-            write_audit("system", "writeback_failed", "live_instance", instance_id, {
-                "error": str(e)[:200],
-                "traceback": traceback.format_exc()[-400:],
-            })
+                from .pattern_writeback import run_full_writeback
+                writeback_result = run_full_writeback(i)
+                if writeback_result and writeback_result.get("ok"):
+                    i["outcome_written_back"] = True
+            except Exception as e:
+                import traceback
+                write_audit("system", "writeback_failed", "live_instance", instance_id, {
+                    "error": str(e)[:200],
+                    "traceback": traceback.format_exc()[-400:],
+                })
 
-    _save_instance_dict(i)
+        _save_instance_dict(i)
 
     # Also update the draft status
     draft_id = i.get("deployment_draft_id", "")
@@ -347,65 +367,10 @@ def _compute_realized_outcome(instance: dict) -> dict:
     }
 
 
-def _writeback_to_pattern_engine(instance: dict, outcome: dict) -> dict:
-    """Feed the realized outcome back into pattern DB and rule effectiveness tracker."""
-    from .pattern_engine import writeback_trade_outcome
-    from .rule_effectiveness import record_outcome as record_rule_outcome
-
-    symbol = instance.get("symbol", "")
-    timeframe = instance.get("timeframe", "4h")
-    source_pattern_id = instance.get("source_pattern_id", "")
-    rule_id = instance.get("decision_rule", "")
-    decision_type = instance.get("pattern_decision", "")
-    strategy_id = instance.get("strategy_id", "")
-    instance_id = instance.get("id", "")
-
-    result = {
-        "symbol": symbol, "timeframe": timeframe,
-        "source_pattern_id": source_pattern_id,
-        "rule_id": rule_id,
-        "decision_type": decision_type,
-        "pattern_writeback": None,
-        "rule_update": None,
-    }
-
-    # 1. Pattern DB writeback (only if we have a source pattern)
-    if source_pattern_id and symbol:
-        try:
-            pattern_payload = {
-                "profit_atr": outcome["realized_return_atr"],
-                "max_return_atr": max(outcome["realized_return_atr"], 0),
-                "max_drawdown_atr": outcome["realized_drawdown_atr"],
-                "hit_target": outcome["outcome_success"],
-                "hit_stop": not outcome["outcome_success"],
-                "bars_in_trade": outcome["bars_held"],
-            }
-            wb = writeback_trade_outcome(
-                symbol, timeframe, source_pattern_id, strategy_id, pattern_payload
-            )
-            result["pattern_writeback"] = wb
-        except Exception as e:
-            result["pattern_writeback"] = {"error": str(e)[:200]}
-
-    # 2. Rule effectiveness update (always, even without pattern_id)
-    if rule_id:
-        try:
-            rule_stats = record_rule_outcome(rule_id, decision_type, {
-                **outcome,
-                "instance_id": instance_id,
-                "stopped_at": time.time(),
-            })
-            if rule_stats:
-                result["rule_update"] = {
-                    "rule_id": rule_id,
-                    "live_count": rule_stats.live_count,
-                    "live_win_rate": round(rule_stats.live_win_rate(), 3),
-                    "live_ev": rule_stats.live_expected_value(),
-                }
-        except Exception as e:
-            result["rule_update"] = {"error": str(e)[:200]}
-
-    return result
+# Round 1/10 #10: deleted dead `_writeback_to_pattern_engine` function
+# (~58 lines). It was defined but never called — `_transition_instance`
+# uses `pattern_writeback.run_full_writeback` directly. Keeping dead code
+# is a maintenance trap and review noise.
 
 
 # ── Storage helpers ─────────────────────────────────────────────────────

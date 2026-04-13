@@ -33,13 +33,22 @@ class PatternFeatures:
     side: str = ""                  # support | resistance
     rsi: float = 50.0               # RSI at anchor2
     ma_distance_atr: float = 0.0    # (close - EMA50) / ATR
-    touch_quality: float = 1.0      # 0-1, based on wick reaction
+    # Round 1/10 #2: touch_quality was hardcoded to 1.0 (constant column),
+    # contributing 0 variance to KNN distance and 0 correlation in
+    # learn_feature_weights → 0 weight. Dead feature dim. Field kept for
+    # backward-compat on serialized records but NOT included in to_vector.
+    touch_quality: float = 1.0
     symbol: str = ""
     timeframe: str = ""
 
     def to_vector(self) -> list[float]:
         """Convert to numerical vector for distance calculations.
         Categorical fields are encoded as multiple dims.
+
+        NOTE: touch_quality was removed from the vector (it was a constant
+        and added zero signal). The vector is now 9-dim, not 10. Anything
+        that hardcodes the dim count must be updated in lockstep — see
+        _NUMERICAL_IDX / _CATEGORICAL_IDX below.
         """
         trend_up = 1.0 if self.trend_context == "uptrend" else 0.0
         trend_down = 1.0 if self.trend_context == "downtrend" else 0.0
@@ -55,7 +64,6 @@ class PatternFeatures:
             support,
             self.rsi / 100.0,
             self.ma_distance_atr,
-            self.touch_quality,
         ]
 
 
@@ -777,7 +785,7 @@ def learn_metric_from_pairs(
 # ── Similarity Search (multi-metric, normalized, leak-free) ────────────
 
 # Indices in feature vector: [slope_atr, log_length, volatility, trend_up, trend_down, trend_range, support, rsi, ma_dist, touch_quality]
-_NUMERICAL_IDX = [0, 1, 2, 7, 8, 9]  # slope, length, vol, rsi, ma_dist, touch_quality
+_NUMERICAL_IDX = [0, 1, 2, 7, 8]     # slope, length, vol, rsi, ma_dist (touch_quality removed)
 _CATEGORICAL_IDX = [3, 4, 5, 6]      # trend flags + support flag
 
 
@@ -1147,7 +1155,7 @@ def detect_anomaly(
     # Layer 1: Z-score per feature dim
     z_scores = [(current_vec[i] - means[i]) / stds[i] for i in range(len(current_vec))]
     outliers = []
-    feature_names = ["slope_atr", "log_length", "volatility", "trend_up", "trend_down", "trend_range", "support", "rsi", "ma_dist", "touch_quality"]
+    feature_names = ["slope_atr", "log_length", "volatility", "trend_up", "trend_down", "trend_range", "support", "rsi", "ma_dist"]
     for i, z in enumerate(z_scores):
         if abs(z) > threshold:
             outliers.append({"feature": feature_names[i], "z_score": round(z, 2)})
@@ -1286,10 +1294,37 @@ def match_pattern(
             "top_matches": [],
         }
 
-    # Layer 1: Anomaly detection (z-score + NN + PCA)
+    # Self-exclusion: prevent the query line from matching its own prior
+    # writeback record in the DB. find_similar uses (symbol, timeframe,
+    # anchor1_idx, anchor2_idx) within ±2 bars to identify self.
+    self_exclusion = (int(anchor1_idx), int(anchor2_idx))
+
+    # Pre-filter the database by side + time-position so that learned
+    # weights are trained on the SAME pool find_similar will query —
+    # avoids the "circular reasoning" of training on the full DB and
+    # querying back against the full DB (Round 9/10 bug #3).
+    eligible: list = []
+    for r in database:
+        if r.features.side != side:
+            continue
+        if current_time_position is not None and r.time_position > current_time_position:
+            continue
+        # Self-exclusion at training time too — don't let a previously
+        # written-back copy of this exact line teach the model that
+        # "this exact line is profitable".
+        if (r.features.symbol == symbol
+                and r.features.timeframe == timeframe
+                and abs(getattr(r, "anchor1_idx", -999) - self_exclusion[0]) <= 2
+                and abs(getattr(r, "anchor2_idx", -999) - self_exclusion[1]) <= 2):
+            continue
+        eligible.append(r)
+
+    # Layer 1: Anomaly detection (uses full DB — anomaly is "is this
+    # structure unusual relative to ALL history?", which is a separate
+    # question from "what happened to similar lines on this side?")
     anomaly = detect_anomaly(current, database, use_pca=True)
 
-    # Layer 2: Determine feature weights
+    # Layer 2: Determine feature weights from the FILTERED pool only
     weights_source = "outcome"
     learned_weights = None
     if use_human_labels:
@@ -1303,16 +1338,19 @@ def match_pattern(
         except Exception:
             pass
 
-    if learned_weights is None:
-        learned_weights = learn_feature_weights(database, target="profitable")
+    if learned_weights is None and eligible:
+        # Train on filtered eligible (NOT the full database) to avoid
+        # circular reasoning — Round 10 #3.
+        learned_weights = learn_feature_weights(eligible, target="profitable")
 
-    # Layer 3: Find similar (leak-free)
+    # Layer 3: Find similar (leak-free + self-excluded)
     similar = find_similar(
         current, database, k=k,
         same_side_only=True,
         metric=metric,
         max_time_position=current_time_position,
         learned_weights=learned_weights,
+        exclude_anchors=self_exclusion,  # Round 10 #1: actually pass it
     )
 
     # Layer 4: Stats with cross-split validation
