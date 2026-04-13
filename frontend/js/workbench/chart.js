@@ -32,7 +32,7 @@ let overlayScheduleSeq = 0;
 let overlayTimer = null;
 let strategyAbortController = null;
 let patternAbortController = null;
-const OVERLAY_REQUEST_TIMEOUT_MS = 4000;
+const OVERLAY_REQUEST_TIMEOUT_MS = 30000;
 
 export function initChart(containerId = 'chart-container') {
   const el = $('#' + containerId);
@@ -265,7 +265,7 @@ export async function loadCurrent(forcePatterns = false) {
 
 async function loadPatterns(symbol, interval, overlayContext = null) {
   const requestId = ++patternRequestSeq;
-  patternAbortController?.abort();
+  // Don't abort in-flight — requestId check drops stale responses.
   patternAbortController = new AbortController();
   try {
     const data = await patternsSvc.getPatterns(symbol, interval, 90, 'full', null, {
@@ -290,7 +290,9 @@ async function loadPatterns(symbol, interval, overlayContext = null) {
 
 async function loadStrategy(symbol, interval, overlayContext = null) {
   const requestId = ++strategyRequestSeq;
-  strategyAbortController?.abort();
+  // Don't abort in-flight requests — stale responses are filtered by the
+  // requestId check below. Aborting causes ERR_ABORTED cascades when
+  // multiple overlay loads are scheduled in rapid succession at boot.
   strategyAbortController = new AbortController();
   try {
     const configKey = `${symbol}:${interval}`;
@@ -389,8 +391,9 @@ function cancelDeferredOverlayLoad() {
 }
 
 function abortOverlayRequests() {
-  strategyAbortController?.abort();
-  patternAbortController?.abort();
+  // No-op: stale responses are dropped by the requestId check inside
+  // each loader. Explicit aborts cause ERR_ABORTED cascades at boot
+  // when loadCurrent fires multiple times from subscribed events.
 }
 
 function isChartLoadCurrent(loadSeq, symbol, interval) {
@@ -443,7 +446,8 @@ function renderStrategyOverlays() {
       : (snapshot.invalidations || []).filter((item) => !suppressedAutoLineIds.has(item.line_id)),
   };
 
-  drawTrendlineOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
+  const candleTimes = (marketState.lastCandles || []).map((c) => c.time);
+  drawTrendlineOverlay(chart, filteredSnapshot, strategyState.layerVisibility, candleTimes);
   drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
   drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
 

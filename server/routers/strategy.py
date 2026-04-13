@@ -63,22 +63,6 @@ async def api_strategy_config(
     cfg = StrategyConfig()
     price_precision: int | None = None
 
-    if normalized_symbol:
-        try:
-            _, market_payload, price_precision, cfg = await _load_strategy_inputs(
-                normalized_symbol,
-                interval,
-                end_time=None,
-                days=DEFAULT_DAYS_BY_INTERVAL.get(interval, 120),
-                history_mode="fast_window",
-                analysis_bars=None,
-            )
-            if market_payload:
-                price_precision = market_payload.get("pricePrecision", price_precision)
-        except Exception:
-            # Config should still be available even if market lookup fails.
-            pass
-
     return serialize_config_response(
         cfg,
         symbol=normalized_symbol,
