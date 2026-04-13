@@ -1,0 +1,52 @@
+#!/bin/sh
+# Pre-commit gate. Round 11 ticket requirement: every commit must pass:
+#   1. scripts/grep_scan_sweep.py     (no orphaned bug patterns)
+#   2. pytest tests/strategy/test_v2_trader.py  (21/21)
+#   3. browser_review.py              (no console errors, decision rail OK)
+#
+# To bypass in genuine emergency: `git commit --no-verify`
+# (Don't make a habit of it.)
+#
+# NOTE: we intentionally do NOT use `set -e`. With `set -e`, a failing
+# command aborts the shell *before* we can print our friendly "BLOCKED"
+# message — so the user just sees raw stderr and an exit code with no
+# hint what to do. Instead each gate uses the `cmd || { echo ...; exit 1; }`
+# pattern so the message is guaranteed to land before the shell exits.
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+echo
+echo "-- pre-commit gate 1/3: grep_scan_sweep --"
+python scripts/grep_scan_sweep.py --ci || {
+    echo
+    echo "BLOCKED: grep_scan_sweep found orphaned bug pattern(s)."
+    echo "         Run  python scripts/grep_scan_sweep.py  to see them."
+    echo "         Fix them, or annotate legitimate ones with // SAFE / # SAFE."
+    exit 1
+}
+
+echo
+echo "-- pre-commit gate 2/3: pytest test_v2_trader --"
+python -m pytest tests/strategy/test_v2_trader.py -q || {
+    echo
+    echo "BLOCKED: v2_trader tests failed."
+    echo "         Run  pytest tests/strategy/test_v2_trader.py -v  for details."
+    exit 1
+}
+
+# Browser review needs a running server; only run it if /api/health is up.
+echo
+echo "-- pre-commit gate 3/3: browser_review (only if server is up) --"
+if curl -s -m 2 -o /dev/null -w "%{http_code}" http://localhost:8000/api/health 2>/dev/null | grep -q 200; then
+    python browser_review.py || {
+        echo
+        echo "BLOCKED: browser_review found console errors or stuck UI."
+        echo "         Check data/logs/browser_review/audit.json for details."
+        exit 1
+    }
+else
+    echo "  (server not up on :8000 -- skipping browser_review for this commit)"
+fi
+
+echo
+echo "All 3 gates passed. Proceeding with commit."

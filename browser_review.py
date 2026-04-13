@@ -95,7 +95,7 @@ def main():
 
         results = {}
 
-        print("[1/6] Loading root /static/v2.html...")
+        print(f"[1/6] Loading {BASE}...")
         t0 = time.time()
         try:
             page.goto(BASE, wait_until="domcontentloaded", timeout=60000)

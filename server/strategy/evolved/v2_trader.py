@@ -78,52 +78,40 @@ from .base import EvolvedLine
 TF_PARAMS: dict[str, dict] = {
     "1m":  dict(min_swing_pct=0.008, min_swing_atr=1.2, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=15,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=15),
     "3m":  dict(min_swing_pct=0.010, min_swing_atr=1.3, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=15,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=15),
     "5m":  dict(min_swing_pct=0.012, min_swing_atr=1.5, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=15,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=15),
     "15m": dict(min_swing_pct=0.015, min_swing_atr=1.5, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "30m": dict(min_swing_pct=0.018, min_swing_atr=1.8, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "1h":  dict(min_swing_pct=0.020, min_swing_atr=2.0, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "2h":  dict(min_swing_pct=0.025, min_swing_atr=2.2, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "4h":  dict(min_swing_pct=0.030, min_swing_atr=2.5, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "6h":  dict(min_swing_pct=0.035, min_swing_atr=2.7, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "12h": dict(min_swing_pct=0.040, min_swing_atr=2.8, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "1d":  dict(min_swing_pct=0.050, min_swing_atr=3.0, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
     "1w":  dict(min_swing_pct=0.080, min_swing_atr=3.5, top_k_pivots=6,
                 breakaway_atr=0.5, wick_tol_atr=0.3, proximity_atr=6.0,
-                min_genuine_touches=3, min_span_bars=20,
-                parallel_slope_tol=0.15, parallel_residual_atr=1.0),
+                min_genuine_touches=3, min_span_bars=20),
 }
 
 
@@ -137,8 +125,6 @@ class V2Params:
     proximity_atr: float          # max distance from current price (Canon rule 6)
     min_genuine_touches: int      # 3 by canon (Canon rule 2)
     min_span_bars: int            # reject lines that span too few bars
-    parallel_slope_tol: float     # channel detection: slope similarity (0.15 = 15%)
-    parallel_residual_atr: float  # channel detection: residual std / ATR
 
 
 def params_for(timeframe: str) -> V2Params:
@@ -499,61 +485,14 @@ def score_line(
     )
 
 
-# ──────────────────────────────────────────────────────────────
-# Channel detection (Canon rule 4: channels > individual lines)
-# ──────────────────────────────────────────────────────────────
-@dataclass(frozen=True, slots=True)
-class _ChannelMatch:
-    support: EvolvedLine
-    resistance: EvolvedLine
-    width_atr: float
-    parallelism: float
-
-
-def find_channels(
-    support_lines: list[EvolvedLine],
-    resistance_lines: list[EvolvedLine],
-    atr_now: float,
-    params: V2Params,
-) -> list[_ChannelMatch]:
-    """Find parallel support/resistance pairs that form channels.
-
-    Two lines form a channel if:
-      - slopes match within params.parallel_slope_tol (e.g. 15%)
-      - vertical distance at midpoint is reasonable (< 8 ATR)
-      - one is consistently above the other (no crossing in active window)
-
-    O(S * R) where S, R <= 6 — trivial.
-    """
-    out: list[_ChannelMatch] = []
-    for s in support_lines:
-        for r in resistance_lines:
-            ss = (s.end_price - s.start_price) / max(1, s.end_index - s.start_index)
-            sr = (r.end_price - r.start_price) / max(1, r.end_index - r.start_index)
-            denom = max(abs(ss), abs(sr), 1e-9)
-            slope_diff = abs(ss - sr) / denom
-            if slope_diff > params.parallel_slope_tol:
-                continue
-
-            # Width at midpoint
-            mid_idx = (s.start_index + s.end_index + r.start_index + r.end_index) // 4
-            s_p = s.start_price + ss * (mid_idx - s.start_index)
-            r_p = r.start_price + sr * (mid_idx - r.start_index)
-            width = abs(r_p - s_p)
-            width_atr = width / max(atr_now, 1e-9)
-            if width_atr > 8.0 or width_atr < 0.3:
-                continue
-
-            # Resistance must be ABOVE support (no crossing)
-            if r_p <= s_p:
-                continue
-
-            parallelism = max(0.0, 1.0 - slope_diff / params.parallel_slope_tol)
-            out.append(_ChannelMatch(
-                support=s, resistance=r,
-                width_atr=width_atr, parallelism=parallelism,
-            ))
-    return out
+# Round 11 P1-1: channel detection (find_channels + _ChannelMatch +
+# parallel_slope_tol / parallel_residual_atr params) was dead code.
+# detect_lines called it but couldn't consume the result because
+# EvolvedLine is frozen and there was no list[EvolvedChannel] return
+# path. Fully removed (not just "unused") so a future maintainer
+# doesn't reach for half-implemented scaffolding. Canon rule 4
+# (channels > individual lines) will come back when we have a real
+# two-element return contract.
 
 
 # ──────────────────────────────────────────────────────────────
@@ -690,6 +629,5 @@ __all__ = [
     "top_k_by_amplitude",
     "genuine_touches",
     "score_line",
-    "find_channels",
     "detect_lines",
 ]
