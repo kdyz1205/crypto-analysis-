@@ -37,6 +37,14 @@ export function initManualTrendlineController(chart, container) {
 
   if (typeof chart.subscribeClick === 'function') {
     chart.subscribeClick((param) => {
+      // Debug: always log so devtools reveals clicks even if they're ignored
+      console.log('[manual-draw] chart click', {
+        time: param?.time,
+        point: param?.point,
+        drawSide: drawingsState.drawSide,
+        editTarget: drawingsState.editTarget,
+        candleCount: (marketState.lastCandles || []).length,
+      });
       void handleChartClick(param);
     });
   }
@@ -411,10 +419,60 @@ function getSelectedDraft(selected) {
 }
 
 function resolveCandleAnchor(param, side) {
-  const time = normalizeChartTime(param?.time);
-  if (time == null) return null;
-  const candle = (marketState.lastCandles || []).find((item) => Number(item.time) === Number(time));
-  if (!candle) return null;
+  const candles = marketState.lastCandles || [];
+  if (!candles.length) {
+    console.warn('[manual-draw] no candles loaded yet');
+    return null;
+  }
+
+  // Step 1: try the direct time from the click event
+  let time = normalizeChartTime(param?.time);
+
+  // Step 2: if time missing (click landed between bars / on indicator),
+  // use x-pixel → time via lightweight-charts API
+  if (time == null && param?.point && controllerChart?.timeScale) {
+    try {
+      const ts = controllerChart.timeScale().coordinateToTime(param.point.x);
+      time = normalizeChartTime(ts);
+    } catch (err) {
+      console.warn('[manual-draw] coordinateToTime failed:', err);
+    }
+  }
+
+  // Step 3: still null? fall back to the nearest candle by x-pixel guess.
+  if (time == null) {
+    // Last resort: use the most recent candle — user will see the line and
+    // can adjust. Better than silently doing nothing.
+    const last = candles[candles.length - 1];
+    time = Number(last.time);
+    console.warn('[manual-draw] fallback: using latest candle time', time);
+  }
+
+  // Step 4: find the exact or nearest candle
+  let candle = candles.find((c) => Number(c.time) === Number(time));
+  if (!candle) {
+    // Snap to the closest candle
+    let best = null;
+    let bestDiff = Infinity;
+    for (const c of candles) {
+      const diff = Math.abs(Number(c.time) - Number(time));
+      if (diff < bestDiff) {
+        best = c;
+        bestDiff = diff;
+      }
+    }
+    candle = best;
+    if (candle) {
+      time = Number(candle.time);
+      console.log('[manual-draw] snapped to nearest candle', time);
+    }
+  }
+
+  if (!candle) {
+    console.warn('[manual-draw] could not resolve any candle for click');
+    return null;
+  }
+
   return {
     time: Number(time),
     price: side === 'support' ? Number(candle.low) : Number(candle.high),
