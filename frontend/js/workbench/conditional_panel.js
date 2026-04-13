@@ -71,16 +71,54 @@ export function initConditionalPanel(container) {
 
   // Single delegation listener for all buttons inside the panel
   panel.addEventListener('click', onPanelClick);
+  panel.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-action="pick-line"]');
+    if (sel) {
+      const newId = sel.value;
+      const line = drawingsState.lines.find((l) => l.manual_line_id === newId);
+      if (line) {
+        currentLine = line;
+        void onDrawingSelected();
+      }
+    }
+  });
 
   // React when user selects a drawn line
   subscribe('drawings.selected', () => onDrawingSelected());
 
-  // Also react when drawings list updates (user may draw a new line)
+  // Also react when drawings list updates (user may draw a new line).
+  // Auto-select the most recently created line so the panel jumps to
+  // whatever the user just drew.
   subscribe('drawings.updated', () => {
-    // Auto-select the newly created line if there was none before
-    if (!currentLine && drawingsState.lines.length) {
-      onDrawingSelected();
+    const lines = drawingsState.lines || [];
+    if (!lines.length) {
+      currentLine = null;
+      currentAnalyze = null;
+      renderStatsSlot({ loading: false });
+      return;
     }
+    // Pick the newest by created_at, fallback to last in array
+    const newest = lines.reduce(
+      (a, b) => ((b.created_at || 0) > (a.created_at || 0) ? b : a),
+      lines[0],
+    );
+    currentLine = newest;
+    void onDrawingSelected();
+  });
+
+  // Also react to the explicit draw_tool commit event — fires right after
+  // a line is pushed to backend so we get the freshest analyze without
+  // waiting for the 10s pending refresh loop.
+  subscribe('drawtool.committed', () => {
+    // drawings.updated will already fire via refreshManualDrawings, but
+    // we subscribe separately in case the wiring gets reordered.
+    setTimeout(() => {
+      const lines = drawingsState.lines || [];
+      if (lines.length) {
+        currentLine = lines[lines.length - 1];
+        void onDrawingSelected();
+      }
+    }, 500);
   });
 
   // Pending orders refresh loop
@@ -130,7 +168,15 @@ function onPanelClick(e) {
   if (!btn) return;
   const action = btn.dataset.action;
   if (action === 'setup-order') {
-    openOrderModal();
+    const kind = btn.dataset.kind || 'bounce';
+    openOrderModal(kind);
+  } else if (action === 'pick-line') {
+    const newId = btn.value;
+    const line = drawingsState.lines.find((l) => l.manual_line_id === newId);
+    if (line) {
+      currentLine = line;
+      void onDrawingSelected();
+    }
   } else if (action === 'cancel-cond') {
     const cid = btn.dataset.cid;
     if (cid && confirm('Cancel this conditional?')) {
@@ -161,83 +207,114 @@ function renderStatsSlot({ loading }) {
   }
 
   if (!currentLine) {
-    body.innerHTML = '<p class="muted">选择或绘制一条支撑/阻力线以查看历史概率</p>';
+    body.innerHTML = '<p class="muted">画一条线,然后这里出现设置按钮</p>';
     return;
   }
 
+  // Pick a line from the selector (if user picked) else use currentLine
+  const lineOptions = drawingsState.lines
+    .slice(-10)
+    .reverse()
+    .map((l) => {
+      const sel = l.manual_line_id === currentLine.manual_line_id ? 'selected' : '';
+      const label = `${l.side === 'support' ? 'S' : 'R'} ${(l.price_start || 0).toFixed(2)}→${(l.price_end || 0).toFixed(2)}`;
+      return `<option value="${esc(l.manual_line_id)}" ${sel}>${esc(label)}</option>`;
+    })
+    .join('');
+
+  const selectorHtml = drawingsState.lines.length > 1
+    ? `<div class="cond-line-selector">
+         <label>线</label>
+         <select data-action="pick-line">${lineOptions}</select>
+       </div>`
+    : '';
+
+  let statsHtml = '';
   if (!currentAnalyze?.ok) {
-    const err = currentAnalyze?.error || '未知错误';
-    body.innerHTML = `
-      <div class="cond-line-info">
-        <strong>${esc(currentLine.side === 'support' ? '支撑' : '阻力')}</strong>
-        @ ${esc(currentLine.symbol)} ${esc(currentLine.timeframe)}
-      </div>
-      <p class="muted">分析失败: ${esc(err)}</p>
-      <button data-action="setup-order" class="cond-btn cond-btn-primary">
-        仍然设置条件单 →
-      </button>
-    `;
-    return;
+    const err = currentAnalyze?.error || '无数据';
+    statsHtml = `<p class="muted" style="font-size:10px">无历史样本 (${esc(err)}) — 可以直接挂单</p>`;
+  } else {
+    const stats = currentAnalyze.stats || {};
+    const n = stats.sample_size || 0;
+    const pBounce = stats.p_bounce;
+    const pBreak = stats.p_break;
+    const ev = stats.expected_value;
+    const trust = stats.trustworthiness || 'none';
+    const trustColor = { high: '#00e676', medium: '#fbbf24', low: '#ff8a80', none: '#888' }[trust] || '#888';
+    if (n === 0) {
+      statsHtml = '<p class="muted" style="font-size:10px">暂无历史样本 — 可以直接挂单</p>';
+    } else {
+      statsHtml = `
+        <div class="cond-stats-grid">
+          <div><span>样本</span><b>${n}</b></div>
+          <div><span>反弹</span><b style="color:${pBounce >= 0.5 ? '#00e676' : '#888'}">${fmtPct(pBounce)}</b></div>
+          <div><span>破位</span><b>${fmtPct(pBreak)}</b></div>
+          <div><span>期望值</span><b style="color:${ev > 0 ? '#00e676' : '#ff8a80'}">${fmtR(ev)}</b></div>
+          <div style="grid-column:span 2"><span>可信度</span><b style="color:${trustColor}">${esc(trust)}</b></div>
+        </div>
+      `;
+    }
   }
-
-  const stats = currentAnalyze.stats || {};
-  const n = stats.sample_size || 0;
-  const pBounce = stats.p_bounce;
-  const pBreak = stats.p_break;
-  const pFake = stats.p_fake_break;
-  const ev = stats.expected_value;
-  const conf = stats.confidence;
-  const trust = stats.trustworthiness || 'none';
-  const trustColor = { high: '#00e676', medium: '#fbbf24', low: '#ff8a80', none: '#888' }[trust] || '#888';
 
   body.innerHTML = `
+    ${selectorHtml}
     <div class="cond-line-info">
       <strong>${esc(currentLine.side === 'support' ? '支撑' : '阻力')}</strong>
       @ ${esc(currentLine.symbol)} ${esc(currentLine.timeframe)}
-      · ${esc((currentLine.price_start || 0).toFixed(2))} → ${esc((currentLine.price_end || 0).toFixed(2))}
+      · ${esc((currentLine.price_start || 0).toFixed(3))} → ${esc((currentLine.price_end || 0).toFixed(3))}
     </div>
-    <div class="cond-stats-grid">
-      <div><span>样本</span><b>${n}</b></div>
-      <div><span>反弹概率</span><b style="color:${pBounce >= 0.5 ? '#00e676' : '#888'}">${fmtPct(pBounce)}</b></div>
-      <div><span>破位概率</span><b>${fmtPct(pBreak)}</b></div>
-      <div><span>假突破</span><b>${fmtPct(pFake)}</b></div>
-      <div><span>期望值</span><b style="color:${ev > 0 ? '#00e676' : '#ff8a80'}">${fmtR(ev)}</b></div>
-      <div><span>可信度</span><b style="color:${trustColor}">${esc(trust)} ${conf != null ? fmtPct(conf) : ''}</b></div>
-    </div>
-    <div class="cond-actions">
-      <button data-action="setup-order" class="cond-btn cond-btn-primary">
-        设置条件单 →
+    ${statsHtml}
+    <div class="cond-actions cond-actions-dual">
+      <button data-action="setup-order" data-kind="bounce" class="cond-btn cond-btn-primary cond-btn-bounce">
+        反弹单 →
+      </button>
+      <button data-action="setup-order" data-kind="breakout" class="cond-btn cond-btn-primary cond-btn-breakout">
+        突破单 →
       </button>
     </div>
   `;
 }
 
 // ──────────────────────────────────────────────────────────────
-// Order modal
+// Order modal — supports bounce and breakout
 // ──────────────────────────────────────────────────────────────
-function openOrderModal() {
+function openOrderModal(kind = 'bounce') {
   if (!currentLine) return;
-  const dir = currentLine.side === 'support' ? 'long' : 'short';
+
+  // Direction matrix:
+  //   support + bounce  → long  | support + breakout   → short
+  //   resistance + bounce → short | resistance + breakout → long
+  const direction = (() => {
+    if (currentLine.side === 'support') return kind === 'bounce' ? 'long' : 'short';
+    return kind === 'bounce' ? 'short' : 'long';
+  })();
+
+  const kindLabel = kind === 'bounce' ? '反弹单' : '突破单';
+  const kindDesc = kind === 'bounce'
+    ? `价格摸到${currentLine.side === 'support' ? '支撑' : '阻力'}时进场押反弹`
+    : `价格 close 穿过${currentLine.side === 'support' ? '支撑' : '阻力'}时进场押突破`;
+  const dirColor = direction === 'long' ? '#00e676' : '#ff5252';
+
+  // Default offset in price points: 0.5% of the line's end price
+  const defaultOffsetPts = Math.max(0.01, (currentLine.price_end || 40) * 0.002);
+  const defaultStopPts = Math.max(0.02, (currentLine.price_end || 40) * 0.005);
 
   const modal = document.createElement('div');
   modal.className = 'cond-modal-bg';
   modal.innerHTML = `
     <div class="cond-modal">
-      <h3>配置条件单 · ${esc(currentLine.symbol)} ${esc(currentLine.timeframe)}</h3>
+      <h3>${esc(kindLabel)} · ${esc(currentLine.symbol)} ${esc(currentLine.timeframe)}
+        <span style="color:${dirColor};font-size:12px">${direction.toUpperCase()}</span>
+      </h3>
+      <div class="cond-modal-desc">${esc(kindDesc)}</div>
+
       <div class="cond-modal-row">
-        <label>方向</label>
-        <select id="cm-direction">
-          <option value="long" ${dir === 'long' ? 'selected' : ''}>long (从 support 反弹)</option>
-          <option value="short" ${dir === 'short' ? 'selected' : ''}>short (从 resistance 拒绝)</option>
-        </select>
+        <label>进场距离 (价格点)</label>
+        <input type="number" id="cm-offset-pts" value="${defaultOffsetPts.toFixed(3)}" step="0.001" min="0" />
       </div>
       <div class="cond-modal-row">
-        <label>进场偏移 (ATR)</label>
-        <input type="number" id="cm-offset" value="0" step="0.05" min="-2" max="2" />
-      </div>
-      <div class="cond-modal-row">
-        <label>Stop (ATR)</label>
-        <input type="number" id="cm-stop" value="0.3" step="0.05" min="0.1" max="2" />
+        <label>Stop 距离 (价格点)</label>
+        <input type="number" id="cm-stop-pts" value="${defaultStopPts.toFixed(3)}" step="0.001" min="0.001" />
       </div>
       <div class="cond-modal-row">
         <label>RR 目标</label>
@@ -258,8 +335,8 @@ function openOrderModal() {
       <div class="cond-modal-row">
         <label>挂到交易所</label>
         <select id="cm-submit">
-          <option value="false" selected>不,只警报 (推荐)</option>
-          <option value="true">是,实盘下单</option>
+          <option value="false" selected>不,仅警报 (推荐先试)</option>
+          <option value="true">是,自动下真单</option>
         </select>
       </div>
       <div class="cond-modal-row">
@@ -271,7 +348,7 @@ function openOrderModal() {
       </div>
       <div class="cond-modal-actions">
         <button class="cond-btn" id="cm-cancel">取消</button>
-        <button class="cond-btn cond-btn-primary" id="cm-confirm">确认挂单</button>
+        <button class="cond-btn cond-btn-primary" id="cm-confirm">确认挂 ${esc(kindLabel)}</button>
       </div>
     </div>
   `;
@@ -287,15 +364,16 @@ function openOrderModal() {
       manual_line_id: currentLine.manual_line_id,
       trigger: {
         tolerance_atr: parseFloat(q('#cm-tol').value) || 0.2,
-        poll_seconds: 60,  // server auto-derives if 60 is default
+        poll_seconds: 60,
         max_age_seconds: Math.round(parseFloat(q('#cm-expiry').value || 48) * 3600),
         max_distance_atr: 5.0,
         break_threshold_atr: 0.5,
       },
       order: {
-        direction: q('#cm-direction').value,
-        entry_offset_atr: parseFloat(q('#cm-offset').value) || 0,
-        stop_atr: parseFloat(q('#cm-stop').value) || 0.3,
+        direction,
+        order_kind: kind,
+        entry_offset_points: parseFloat(q('#cm-offset-pts').value) || 0,
+        stop_points: parseFloat(q('#cm-stop-pts').value) || 0.1,
         rr_target: parseFloat(q('#cm-rr').value) || 2.0,
         notional_usd: parseFloat(q('#cm-notional').value) || 200,
         submit_to_exchange: q('#cm-submit').value === 'true',
@@ -310,7 +388,7 @@ function openOrderModal() {
       await refreshPending();
     } catch (err) {
       btn.disabled = false;
-      btn.textContent = '确认挂单';
+      btn.textContent = `确认挂 ${kindLabel}`;
       alert(`创建失败: ${err?.message || err}`);
     }
   };
@@ -379,12 +457,14 @@ function renderPendingSlot() {
       )
       .join('');
 
+    const kindLabel = c.order.order_kind === 'breakout' ? '突破' : '反弹';
+    const kindColor = c.order.order_kind === 'breakout' ? '#ffa726' : '#00e676';
     return `
       <div class="cond-row" data-cid="${esc(c.conditional_id)}">
         <div class="cond-row-header">
           <span class="cond-dot" style="background:${statusColor}"></span>
           <strong>${esc(c.symbol)} ${esc(c.timeframe)}</strong>
-          <span class="cond-side">${esc(c.side)}</span>
+          <span class="cond-kind" style="color:${kindColor}">${esc(kindLabel)}</span>
           <span class="cond-dir">${esc(c.order.direction)}</span>
           <span class="cond-status" style="color:${statusColor}">${esc(c.status)}</span>
           <span class="cond-spacer"></span>

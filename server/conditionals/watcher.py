@@ -125,13 +125,26 @@ async def _poll_one(cond: ConditionalOrder, now: int) -> None:
     distance_atr = distance / atr if atr > 0 else 0.0
 
     tolerance = cond.trigger.tolerance_atr * atr
+    break_thresh = cond.trigger.break_threshold_atr * atr
+
+    # Distinguish "price broke through line" vs "price touched line"
+    # For support: broken = close BELOW line by break_thresh
+    # For resistance: broken = close ABOVE line by break_thresh
+    broken = False
+    if cond.side == "support" and (line_price - market_price) > break_thresh:
+        broken = True
+    elif cond.side == "resistance" and (market_price - line_price) > break_thresh:
+        broken = True
+
     touched = distance <= tolerance
 
-    # Book-keeping event (don't spam events every poll)
-    event_kind = "poll"
-    event_msg = f"market={market_price:.4f} line={line_price:.4f} dist_atr={distance_atr:.3f}"
+    event_msg = (
+        f"market={market_price:.4f} line={line_price:.4f} "
+        f"dist_atr={distance_atr:.3f} kind={cond.order.order_kind} "
+        f"touched={touched} broken={broken}"
+    )
 
-    # Auto-cancel rules
+    # Auto-cancel: drifted too far (applies to both kinds — line is unreachable)
     if distance_atr > cond.trigger.max_distance_atr:
         _update_last_poll(cond, now, market_price, line_price, distance_atr)
         _append_event(cond, ConditionalEvent(
@@ -145,47 +158,68 @@ async def _poll_one(cond: ConditionalOrder, now: int) -> None:
         )
         return
 
-    # Line-broken check (close-through)
-    # For support: market closes BELOW line by break_threshold_atr
-    # For resistance: market closes ABOVE line by break_threshold_atr
-    break_thresh = cond.trigger.break_threshold_atr * atr
-    broken = False
-    if cond.side == "support" and (line_price - market_price) > break_thresh:
-        broken = True
-    elif cond.side == "resistance" and (market_price - line_price) > break_thresh:
-        broken = True
-    if broken:
+    # ── BOUNCE kind ────────────────────────────────────────────
+    if cond.order.order_kind == "bounce":
+        # Line broken = line is dead for bounce trade → cancel
+        if broken:
+            _update_last_poll(cond, now, market_price, line_price, distance_atr)
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="line_broken",
+                price=market_price, line_price=line_price, distance_atr=distance_atr,
+                message=f"bounce: line broken by {distance_atr:.2f} ATR, cancelling",
+            ))
+            _store.set_status(
+                cond.conditional_id, "cancelled",
+                reason=f"bounce: line broken by {distance_atr:.1f} ATR",
+            )
+            return
+
+        # Trigger on touch
+        if touched:
+            _update_last_poll(cond, now, market_price, line_price, distance_atr)
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="triggered",
+                price=market_price, line_price=line_price, distance_atr=distance_atr,
+                message=f"BOUNCE triggered: dist {distance_atr:.3f} ATR ≤ {cond.trigger.tolerance_atr}",
+            ))
+            _store.set_status(cond.conditional_id, "triggered", reason="bounce_touched")
+            await _handle_trigger(cond, market_price, line_price, atr)
+            return
+
+        # Normal poll (still waiting for touch)
         _update_last_poll(cond, now, market_price, line_price, distance_atr)
         _append_event(cond, ConditionalEvent(
-            ts=now, kind="line_broken",
+            ts=now, kind="tolerance_check",
             price=market_price, line_price=line_price, distance_atr=distance_atr,
-            message=f"market broke {cond.side} by {distance_atr:.2f} ATR",
+            message=event_msg,
         ))
-        _store.set_status(
-            cond.conditional_id, "cancelled",
-            reason=f"line broken by {distance_atr:.1f} ATR",
-        )
         return
 
-    # Trigger
-    if touched:
+    # ── BREAKOUT kind ──────────────────────────────────────────
+    if cond.order.order_kind == "breakout":
+        # Trigger when the line IS broken (close-through beyond break_thresh)
+        if broken:
+            _update_last_poll(cond, now, market_price, line_price, distance_atr)
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="triggered",
+                price=market_price, line_price=line_price, distance_atr=distance_atr,
+                message=f"BREAKOUT triggered: close through {cond.side} by {distance_atr:.2f} ATR",
+            ))
+            _store.set_status(cond.conditional_id, "triggered", reason="breakout_confirmed")
+            await _handle_trigger(cond, market_price, line_price, atr)
+            return
+
+        # Not yet broken — keep watching
         _update_last_poll(cond, now, market_price, line_price, distance_atr)
         _append_event(cond, ConditionalEvent(
-            ts=now, kind="triggered",
+            ts=now, kind="tolerance_check",
             price=market_price, line_price=line_price, distance_atr=distance_atr,
-            message=f"touched: dist {distance_atr:.3f} ATR within tolerance {cond.trigger.tolerance_atr}",
+            message=event_msg,
         ))
-        _store.set_status(cond.conditional_id, "triggered", reason="line_touched")
-        await _handle_trigger(cond, market_price, line_price, atr)
         return
 
-    # Normal poll update
+    # Unknown kind — defensive fallback
     _update_last_poll(cond, now, market_price, line_price, distance_atr)
-    _append_event(cond, ConditionalEvent(
-        ts=now, kind="tolerance_check",
-        price=market_price, line_price=line_price, distance_atr=distance_atr,
-        message=event_msg,
-    ))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -267,28 +301,89 @@ async def _submit_exchange(cond: ConditionalOrder, market_price: float, atr: flo
 
 
 async def _submit_live(cond, qty, market_price, atr):
-    """Submit to Bitget/OKX via existing live_adapter."""
-    # Intentionally minimal — wires into existing infra without duplicating logic
-    try:
-        from server.execution.live_adapter import place_market_order  # type: ignore
-    except ImportError:
-        # If the helper doesn't exist yet, log and stop.
-        # The user explicitly wanted visible exchange records, so we refuse
-        # to silently pretend we placed the order.
-        raise RuntimeError(
-            "live_adapter.place_market_order not available; "
-            "cannot submit to exchange. Please wire this up or use paper mode."
-        )
-    resp = await place_market_order(
-        symbol=cond.symbol, direction=cond.order.direction,
-        quantity=qty, stop_atr=cond.order.stop_atr,
-        rr_target=cond.order.rr_target,
+    """Submit to Bitget via the existing LiveExecutionAdapter.submit_live_entry.
+
+    Constructs an OrderIntent from the conditional's order config and
+    calls into the SAME adapter the Phase 1 live execution uses, so
+    this path shares all the contract-resolution, size-normalization,
+    and error-handling logic already validated there.
+    """
+    from server.execution.live_adapter import LiveExecutionAdapter
+    from server.execution.types import OrderIntent, stable_execution_id
+
+    # Direction-adjusted entry / stop / tp prices
+    dir_sign = 1 if cond.order.direction == "long" else -1
+    entry_offset = cond.order.entry_offset_atr * atr * dir_sign
+    entry_price = market_price + entry_offset
+    stop_distance = cond.order.stop_atr * atr
+    stop_price = entry_price - stop_distance * dir_sign
+    if cond.order.tp_price is not None:
+        tp_price = float(cond.order.tp_price)
+    elif cond.order.rr_target is not None:
+        tp_price = entry_price + cond.order.rr_target * stop_distance * dir_sign
+    else:
+        tp_price = 0.0
+
+    # Build intent — use conditional_id as the stable lineage so duplicate
+    # triggers can't double-submit (adapter dedupes by clientOid).
+    intent_id = stable_execution_id("cond", cond.conditional_id, "entry")
+    signal_id = stable_execution_id("cond_sig", cond.conditional_id)
+    client_oid = stable_execution_id("cond_coid", cond.conditional_id)
+    intent = OrderIntent(
+        order_intent_id=intent_id,
+        signal_id=signal_id,
+        line_id=cond.manual_line_id,
+        client_order_id=client_oid,
+        symbol=cond.symbol,
+        timeframe=cond.timeframe,
+        side=cond.order.direction,  # type: ignore
+        order_type="market",
+        trigger_mode="conditional_touch",
+        entry_price=float(entry_price),
+        stop_price=float(stop_price),
+        tp_price=float(tp_price),
+        quantity=float(qty),
+        status="approved",
+        reason=f"conditional {cond.conditional_id} triggered",
+        created_at_bar=-1,
+        created_at_ts=now_ts(),
     )
-    _append_event(cond, ConditionalEvent(
-        ts=now_ts(), kind="exchange_acked",
-        message=f"live ack: {resp}",
-        extra={"exchange_response": resp},
-    ))
+
+    adapter = LiveExecutionAdapter()
+    if not adapter.has_api_keys():
+        raise RuntimeError(
+            "Bitget API keys not configured (.env BITGET_API_KEY / BITGET_SECRET / BITGET_PASSPHRASE). "
+            "Cannot submit to live exchange. Use exchange_mode='paper' or configure keys."
+        )
+
+    mode = cond.order.exchange_mode  # "paper" was already routed to _submit_paper
+    resp = await adapter.submit_live_entry(intent, mode=mode)  # type: ignore
+
+    if resp.get("ok"):
+        exchange_id = resp.get("exchange_order_id") or ""
+        # Persist exchange_order_id on the conditional for audit
+        cond.exchange_order_id = exchange_id
+        cond.fill_price = float(resp.get("submitted_price") or market_price)
+        cond.fill_qty = float(qty)
+        try:
+            _store.update(cond)
+        except ValueError:
+            pass
+        _append_event(cond, ConditionalEvent(
+            ts=now_ts(), kind="exchange_acked",
+            price=market_price,
+            message=f"Bitget ack: order_id={exchange_id}",
+            extra={"exchange_response": resp},
+        ))
+    else:
+        reason = resp.get("reason") or "unknown"
+        _append_event(cond, ConditionalEvent(
+            ts=now_ts(), kind="exchange_error",
+            price=market_price,
+            message=f"Bitget rejected: {reason}",
+            extra={"exchange_response": resp},
+        ))
+        _store.set_status(cond.conditional_id, "failed", reason=f"bitget rejected: {reason}")
 
 
 async def _submit_paper(cond, qty, market_price, atr):

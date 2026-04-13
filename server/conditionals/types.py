@@ -36,13 +36,34 @@ class TriggerConfig:
 
 @dataclass(frozen=True, slots=True)
 class OrderConfig:
-    """What to do when the trigger fires."""
-    # Direction — usually auto-picked from line side (support → long, resistance → short)
+    """What to do when the trigger fires.
+
+    order_kind determines BOTH the trigger condition AND the natural
+    direction (combined with line side):
+
+        line side    kind       direction   trigger
+        ---------    ----       ---------   -------
+        support      bounce     long        price within tolerance of line
+        support      breakout   short       close through line by breakaway_atr
+        resistance   bounce     short       price within tolerance of line
+        resistance   breakout   long        close through line by breakaway_atr
+
+    The same manual line can have multiple ConditionalOrders with
+    different kinds — e.g. one bounce + one breakout, letting the first
+    confirmed outcome determine which gets triggered.
+    """
+    # Direction — computed from (side, kind) if not explicitly provided
     direction: Literal["long", "short"]
-    # Entry offset as fraction of ATR from the line. Positive = further away
-    # in the "safe" direction (for support, above the line; for resistance, below).
+    # Trigger kind — "bounce" = touch within tolerance; "breakout" = close through
+    order_kind: Literal["bounce", "breakout"] = "bounce"
+    # Entry offset in ABSOLUTE price POINTS (e.g. 0.05 = 5 cents away from line).
+    # If None, falls back to entry_offset_atr. Points is more intuitive for
+    # the user "put my order 0.10 above support".
+    entry_offset_points: float | None = None
+    # Entry offset as fraction of ATR from the line. Used if _points is None.
     entry_offset_atr: float = 0.0
-    # Stop distance from the line, in ATR, opposite of the "safe" direction.
+    # Stop distance in ABSOLUTE price POINTS (takes precedence over stop_atr)
+    stop_points: float | None = None
     stop_atr: float = 0.3
     # Take profit — choose ONE:
     #   rr_target:   fixed R multiple (e.g. 2.0 = 2R target)

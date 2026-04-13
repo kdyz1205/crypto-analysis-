@@ -47,8 +47,11 @@ class _TriggerReq(BaseModel):
 
 
 class _OrderReq(BaseModel):
-    direction: Literal["long", "short"] | None = None  # auto from side if None
+    direction: Literal["long", "short"] | None = None  # auto from (side, kind) if None
+    order_kind: Literal["bounce", "breakout"] = "bounce"
+    entry_offset_points: float | None = None  # absolute price offset, takes precedence
     entry_offset_atr: float = 0.0
+    stop_points: float | None = None
     stop_atr: float = 0.3
     rr_target: float | None = 2.0
     tp_price: float | None = None
@@ -68,8 +71,17 @@ class ConditionalCreateReq(BaseModel):
                     "Stored verbatim for later audit.")
 
 
-def _auto_direction(side: str) -> str:
-    return "long" if side == "support" else "short"
+def _auto_direction(side: str, kind: str) -> str:
+    """Direction matrix:
+        support + bounce     → long  (buy the bounce)
+        support + breakout   → short (sell the breakdown)
+        resistance + bounce  → short (sell the rejection)
+        resistance + breakout → long (buy the breakout)
+    """
+    if side == "support":
+        return "long" if kind == "bounce" else "short"
+    # resistance
+    return "short" if kind == "bounce" else "long"
 
 
 def _auto_poll_seconds(timeframe: str) -> int:
@@ -87,12 +99,12 @@ async def api_create_conditional(req: ConditionalCreateReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Auto-derive sensible defaults
-    direction = req.order.direction or _auto_direction(drawing.side)
-    if direction == "long" and drawing.side == "resistance":
-        raise HTTPException(400, "direction=long cannot be set on a resistance line")
-    if direction == "short" and drawing.side == "support":
-        raise HTTPException(400, "direction=short cannot be set on a support line")
+    # Auto-derive direction from (line side, order kind). The user can still
+    # override, but the default covers all 4 combinations — it's no longer
+    # true that "long cannot be on a resistance line" (a breakout trader
+    # DOES go long on a resistance break).
+    kind = req.order.order_kind
+    direction = req.order.direction or _auto_direction(drawing.side, kind)
 
     poll = req.trigger.poll_seconds or _auto_poll_seconds(drawing.timeframe)
 
@@ -116,7 +128,10 @@ async def api_create_conditional(req: ConditionalCreateReq):
         ),
         order=OrderConfig(
             direction=direction,  # type: ignore
+            order_kind=kind,
+            entry_offset_points=req.order.entry_offset_points,
             entry_offset_atr=req.order.entry_offset_atr,
+            stop_points=req.order.stop_points,
             stop_atr=req.order.stop_atr,
             rr_target=req.order.rr_target,
             tp_price=req.order.tp_price,
