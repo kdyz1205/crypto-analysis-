@@ -9,10 +9,15 @@ import {
   setManualDrawings,
   setPendingAnchor,
   setSelectedManualLine,
+  setTradePlanCounts,
+  toggleLineVisibility,
+  toggleMultiSelected,
+  clearMultiSelected,
 } from '../../state/drawings.js';
+import * as condSvc from '../../services/conditionals.js';
 import * as drawingsSvc from '../../services/drawings.js';
 import { subscribe } from '../../util/events.js';
-import { drawManualTrendlineOverlay, clearManualTrendlineOverlay } from '../overlays/manual_trendline_overlay.js';
+import { clearManualTrendlineOverlay } from '../overlays/manual_trendline_overlay.js';
 
 let controllerChart = null;
 let controllerContainer = null;
@@ -35,27 +40,29 @@ export function initManualTrendlineController(chart, container) {
   panel.addEventListener('change', onPanelChange);
   panel.addEventListener('input', onPanelInput);
 
-  if (typeof chart.subscribeClick === 'function') {
-    chart.subscribeClick((param) => {
-      // Debug: always log so devtools reveals clicks even if they're ignored
-      console.log('[manual-draw] chart click', {
-        time: param?.time,
-        point: param?.point,
-        drawSide: drawingsState.drawSide,
-        editTarget: drawingsState.editTarget,
-        candleCount: (marketState.lastCandles || []).length,
-      });
-      void handleChartClick(param);
-    });
-  }
+  // DISABLED: chart_drawing.js is now the single source of truth for
+  // chart click → drawing. Two competing subscribers were racing to
+  // consume the second click of two-click trendline mode, leaving the
+  // user's preview line stuck to the cursor with no way to commit.
+  // The old controller's sidebar/panel features (refresh, render via
+  // legacy overlay) still work, but its click subscription is off.
+  // if (typeof chart.subscribeClick === 'function') {
+  //   chart.subscribeClick((param) => {
+  //     console.log('[manual-draw] chart click', { ... });
+  //     void handleChartClick(param);
+  //   });
+  // }
 
-  subscribe('drawings.updated', () => renderPanel());
+  subscribe('drawings.updated', () => { renderPanel(); void refreshTradePlanCounts(); });
   subscribe('drawings.loading', () => renderPanel());
   subscribe('drawings.error', () => renderPanel());
   subscribe('drawings.mode', () => renderPanel());
   subscribe('drawings.anchor', () => renderPanel());
   subscribe('drawings.selected', () => renderPanel());
   subscribe('drawings.editTarget', () => renderPanel());
+  subscribe('drawings.multiSelected', () => renderPanel());
+  subscribe('drawings.visibility', () => renderPanel());
+  subscribe('drawings.tradePlanCounts', () => renderPanel());
   subscribe('strategy.snapshot.updated', () => renderManualLines());
   subscribe('market.symbol.changed', () => {
     void refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
@@ -69,12 +76,29 @@ export function initManualTrendlineController(chart, container) {
 
 export async function refreshManualDrawings(symbol, timeframe) {
   if (!symbol || !timeframe) return;
+  // Don't overwrite drawingsState.lines while the user is mid-drag — it
+  // would snap the line back to server state and lose their gesture.
+  try {
+    const { isDragging } = await import('./chart_drawing.js');
+    if (isDragging()) {
+      console.log('[drawings] refresh skipped — drag in progress');
+      return;
+    }
+  } catch {}
   const requestSeq = ++drawingsRequestSeq;
   setDrawingsLoading(true);
   try {
     const response = await drawingsSvc.getManualDrawings(symbol, timeframe);
     if (requestSeq !== drawingsRequestSeq) return;
-    setManualDrawings(response.drawings || []);
+    // Merge: keep any local _pending lines (optimistic inserts whose POST
+    // is still in flight) so the user doesn't see their just-drawn line
+    // vanish during a background refresh. Only lines for THIS symbol+tf.
+    const serverLines = response.drawings || [];
+    const pending = (drawingsState.lines || []).filter(
+      (l) => l._pending && l.symbol === symbol && l.timeframe === timeframe
+        && !serverLines.some((s) => s.manual_line_id === l.manual_line_id),
+    );
+    setManualDrawings([...serverLines, ...pending]);
     setDrawingsError(null);
   } catch (err) {
     if (requestSeq !== drawingsRequestSeq) return;
@@ -87,19 +111,9 @@ export async function refreshManualDrawings(symbol, timeframe) {
 }
 
 export function renderManualLines() {
-  if (!controllerChart) return;
-  const snapshot = marketState.lastCandles || [];
-  const latestTime = snapshot.length ? snapshot[snapshot.length - 1].time : 0;
-  const earliestTime = snapshot.length ? snapshot[0].time : 0;
-  if (drawingsState.viewMode === 'auto_only') {
-    clearManualTrendlineOverlay(controllerChart);
-    return;
-  }
-  drawManualTrendlineOverlay(controllerChart, drawingsState.lines, {
-    latestTime,
-    earliestTime,
-    selectedLineId: drawingsState.selectedLineId,
-  });
+  // Manual lines are now rendered by the SVG overlay (svg_line_editor.js).
+  // Clear any legacy lightweight-charts line series so they don't duplicate.
+  if (controllerChart) clearManualTrendlineOverlay(controllerChart);
 }
 
 export function getSuppressedAutoLineIds() {
@@ -165,14 +179,66 @@ function renderLineList(lines, selectedLineId) {
   if (!lines.length) {
     return '<div class="manual-panel-empty">No manual lines for this chart yet.</div>';
   }
-  return lines
-    .map((line) => `
-      <button class="manual-line-row ${line.manual_line_id === selectedLineId ? 'is-selected' : ''}" data-action="select-line" data-line-id="${line.manual_line_id}">
-        <span class="manual-line-main">${escapeHtml(line.label || line.manual_line_id)}</span>
-        <span class="manual-line-meta">${escapeHtml(line.side)} | ${escapeHtml(line.override_mode)} | ${escapeHtml(line.comparison_status || 'uncompared')}</span>
-      </button>
-    `)
+  const hidden = drawingsState.hiddenLineIds || new Set();
+  const multi = drawingsState.multiSelectedIds || new Set();
+  const counts = drawingsState.tradePlanCounts || {};
+  const multiBar = multi.size > 0
+    ? `<div class="manual-panel-actions manual-multi-bar">
+         <span class="manual-multi-count">${multi.size} selected</span>
+         <button class="btn btn-danger" data-action="multi-delete">Delete Selected</button>
+         <button class="btn" data-action="multi-clear">Clear</button>
+       </div>`
+    : '';
+  const rows = lines
+    .map((line) => {
+      const id = line.manual_line_id;
+      const isHidden = hidden.has(id);
+      const isMulti = multi.has(id);
+      const isSel = id === selectedLineId;
+      const n = counts[id] || 0;
+      const tpBadge = n > 0
+        ? `<span class="manual-tp-badge" title="${n} trade plan(s)">${n}</span>`
+        : '';
+      const classes = [
+        'manual-line-row',
+        isSel ? 'is-selected' : '',
+        isMulti ? 'is-multi' : '',
+        isHidden ? 'is-hidden' : '',
+      ].filter(Boolean).join(' ');
+      return `
+        <div class="${classes}" data-line-id="${escapeHtml(id)}">
+          <input type="checkbox" class="manual-line-check" data-action="multi-toggle"
+            data-line-id="${escapeHtml(id)}" ${isMulti ? 'checked' : ''}/>
+          <button class="manual-line-eye" data-action="toggle-visibility"
+            data-line-id="${escapeHtml(id)}" title="${isHidden ? 'Show' : 'Hide'}">
+            ${isHidden ? '○' : '●'}
+          </button>
+          <button class="manual-line-body" data-action="jump-line" data-line-id="${escapeHtml(id)}">
+            <span class="manual-line-main">${escapeHtml(line.label || id)}</span>
+            <span class="manual-line-meta">${escapeHtml(line.side)} · ${escapeHtml(line.comparison_status || 'uncompared')}</span>
+          </button>
+          ${tpBadge}
+        </div>
+      `;
+    })
     .join('');
+  return multiBar + rows;
+}
+
+async function refreshTradePlanCounts() {
+  try {
+    const resp = await condSvc.listConditionals('all', marketState.currentSymbol);
+    const counts = {};
+    for (const c of resp?.conditionals || []) {
+      if (c.status === 'cancelled' || c.status === 'failed') continue;
+      const id = c.manual_line_id;
+      if (!id) continue;
+      counts[id] = (counts[id] || 0) + 1;
+    }
+    setTradePlanCounts(counts);
+  } catch (err) {
+    console.warn('[manual-panel] tradePlan count refresh failed', err);
+  }
 }
 
 function renderSelectedActions(selected) {
@@ -255,7 +321,7 @@ async function onPanelClick(event) {
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     return;
   }
-  if (action === 'select-line') {
+  if (action === 'select-line' || action === 'jump-line') {
     const lineId = target.dataset.lineId || null;
     setSelectedManualLine(lineId);
     const current = drawingsState.lines.find((line) => line.manual_line_id === lineId) || null;
@@ -263,6 +329,40 @@ async function onPanelClick(event) {
       ? { manualLineId: current.manual_line_id, label: current.label || '', notes: current.notes || '' }
       : null;
     setEditTarget(null);
+    if (action === 'jump-line') {
+      // Scroll chart to line
+      try {
+        const mod = await import('./chart_drawing.js');
+        mod.jumpToLine(lineId);
+      } catch {}
+    }
+    return;
+  }
+  if (action === 'toggle-visibility') {
+    event.stopPropagation();
+    toggleLineVisibility(target.dataset.lineId || null);
+    return;
+  }
+  if (action === 'multi-toggle') {
+    event.stopPropagation();
+    toggleMultiSelected(target.dataset.lineId || null);
+    return;
+  }
+  if (action === 'multi-clear') {
+    clearMultiSelected();
+    return;
+  }
+  if (action === 'multi-delete') {
+    const ids = Array.from(drawingsState.multiSelectedIds || []);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} line(s)? This also cancels their pending orders.`)) return;
+    for (const id of ids) {
+      try { await drawingsSvc.deleteManualDrawing(id); }
+      catch (err) { console.warn('[manual-panel] delete failed', id, err); }
+    }
+    clearMultiSelected();
+    setSelectedManualLine(null);
+    await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     return;
   }
   if (!selected) return;

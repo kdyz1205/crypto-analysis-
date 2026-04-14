@@ -24,13 +24,16 @@ class TriggerConfig:
     tolerance_atr: float = 0.2
     # How often the watcher polls, in seconds. Defaults tuned per TF below.
     poll_seconds: int = 60
-    # Auto-cancel after this many seconds without triggering. 0 = no expiry.
-    max_age_seconds: int = 48 * 3600
-    # Auto-cancel if price drifts beyond this × ATR from the line.
-    # Means: "the line is too far from market to reasonably trigger soon."
-    max_distance_atr: float = 5.0
-    # Auto-cancel if price closes through the line by >= this × ATR.
-    # Means: "the line is visually broken."
+    # Auto-cancel after this many seconds without triggering. 0 = unlimited.
+    # User policy: lines live forever until user deletes. Default disabled.
+    max_age_seconds: int = 0
+    # Auto-cancel if price drifts beyond this × ATR from the line. 0 = unlimited.
+    # User policy: no drift cancel — line stays armed forever.
+    max_distance_atr: float = 0.0
+    # If price closes through the line by >= this × ATR, the line is "broken".
+    # Under the user's strategy this does NOT cancel — it triggers auto-reverse
+    # (the line flips polarity and a new conditional is spawned in the opposite
+    # direction). See reverse_* on OrderConfig.
     break_threshold_atr: float = 0.5
 
 
@@ -82,6 +85,24 @@ class OrderConfig:
     submit_to_exchange: bool = False
     # Exchange account mode (only if submit_to_exchange=True)
     exchange_mode: Literal["paper", "live"] = "paper"
+    # Line-relative percentages — the ONLY supported offset mode. Every
+    # replan re-applies these to the NEW projected line price, so sloped
+    # lines get their orders moved every bar. 0 = not set (rejected by
+    # the watcher; must be explicitly provided by the API / modal).
+    tolerance_pct_of_line: float = 0.0
+    stop_offset_pct_of_line: float = 0.0
+    # Cross-margin leverage (e.g. 10 for 10x). If set, notional size is
+    # computed as account_equity * leverage. Overrides notional_usd /
+    # equity_pct / risk_pct. Required for the UI's leverage-based modal.
+    leverage: float | None = None
+    # Auto-reverse on stop-loss. When the stop gets hit, the watcher
+    # spawns a NEW conditional on the SAME manual_line_id with direction
+    # flipped and these reverse_* params applied. None = no reverse.
+    reverse_enabled: bool = False
+    reverse_entry_offset_pct: float = 0.0
+    reverse_stop_offset_pct: float = 0.0
+    reverse_rr_target: float | None = None
+    reverse_leverage: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,12 +177,23 @@ class ConditionalOrder:
     def line_price_at(self, ts: int) -> float:
         """Project the line's price at timestamp `ts`.
 
-        Linear interpolation from (t_start, price_start) to (t_end, price_end),
-        extended beyond t_end.
+        CLAMPED within [t_start, t_end]. Outside the anchor window we
+        snap to the nearest anchor instead of extrapolating, because:
+          - lines drawn entirely in the future (chart's right-offset
+            empty bars) extrapolate backward to negative prices when
+            slope is positive
+          - lines drawn entirely in the past extrapolate forward to
+            absurdly high/low prices when projected far ahead
+        Both are correct math but useless for trading. Snapping gives
+        the user "the closest meaningful price the line says".
         """
         span = self.t_end - self.t_start
         if span <= 0:
             return self.price_start
+        if ts <= self.t_start:
+            return self.price_start
+        if ts >= self.t_end:
+            return self.price_end
         slope_per_sec = (self.price_end - self.price_start) / span
         return self.price_start + slope_per_sec * (ts - self.t_start)
 

@@ -8,8 +8,7 @@
 // state machine in between. Status feedback comes from subscribing to
 // drawtool.mode events.
 
-import { startDrawing, cancelDrawing, getDrawState } from './draw_tool.js';
-import { subscribe } from '../../util/events.js';
+import { startTrendlineTool } from './chart_drawing.js';
 import * as drawingsSvc from '../../services/drawings.js';
 import { marketState } from '../../state/market.js';
 
@@ -21,14 +20,11 @@ export function initDrawToolbar(containerEl) {
   toolbar = document.createElement('div');
   toolbar.className = 'draw-toolbar';
   toolbar.innerHTML = `
-    <button class="dtb-btn dtb-support"   data-tool="trendline-support"   title="画支撑线 (S)">
-      <span class="dtb-icon">╱</span><span>支撑</span>
+    <button class="dtb-btn dtb-trendline" data-tool="trendline" title="画线 (T)">
+      <span class="dtb-icon">╱</span><span>画线</span>
     </button>
-    <button class="dtb-btn dtb-resistance" data-tool="trendline-resistance" title="画阻力线 (R)">
-      <span class="dtb-icon">╲</span><span>阻力</span>
-    </button>
-    <button class="dtb-btn dtb-cancel"    data-tool="cancel"              title="取消 (Esc)">✕</button>
-    <button class="dtb-btn dtb-clear"     data-tool="clear"               title="清空当前 symbol/tf 的所有手画线">清空</button>
+    <button class="dtb-btn dtb-cancel" data-tool="cancel" title="取消 (Esc)">✕</button>
+    <button class="dtb-btn dtb-clear"  data-tool="clear"  title="清空当前 symbol/tf 的所有线">清空</button>
     <div class="dtb-status"></div>
   `;
   containerEl.appendChild(toolbar);
@@ -39,7 +35,9 @@ export function initDrawToolbar(containerEl) {
     if (!btn) return;
     const tool = btn.dataset.tool;
     if (tool === 'cancel') {
-      cancelDrawing('toolbar_cancel');
+      // chart_drawing handles Esc itself via document keydown
+      const ev = new KeyboardEvent('keydown', { key: 'Escape' });
+      document.dispatchEvent(ev);
       return;
     }
     if (tool === 'clear') {
@@ -47,45 +45,26 @@ export function initDrawToolbar(containerEl) {
       drawingsSvc
         .clearManualDrawings(marketState.currentSymbol, marketState.currentInterval)
         .then(() => {
-          // trigger refresh via the existing controller
           import('./manual_trendline_controller.js').then((mod) => {
             mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
           });
         })
-        .catch((err) => alert(`清空失败: ${err?.message || err}`));
+        .catch((err) => alert(`清空失败: ${err?.message || err}`));  // SAFE: alert() renders text, not HTML
       return;
     }
-    startDrawing(tool);
+    startTrendlineTool();
   });
 
-  // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    // Only when NOT typing in an input
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) return;
-    if (e.key === 's' || e.key === 'S') startDrawing('trendline-support');
-    else if (e.key === 'r' || e.key === 'R') startDrawing('trendline-resistance');
-  });
-
-  subscribe('drawtool.mode', onModeChange);
+  // (T-shortcut also handled inside chart_drawing.js itself)
 
   updateStatus('idle', null);
   return toolbar;
 }
 
-function onModeChange(detail) {
-  const { tool, phase, anchor, reason } = detail || {};
-  updateStatus(phase, tool, reason);
-
-  // Toggle active class on the button matching the current tool
-  toolbar.querySelectorAll('.dtb-btn[data-tool]').forEach((b) => {
-    b.classList.toggle('is-active', b.dataset.tool === tool);
-  });
-}
-
 function updateStatus(phase, tool, reason) {
   if (!statusEl) return;
   if (phase === 'idle') {
-    statusEl.textContent = '按 S 画支撑 · R 画阻力 · Esc 取消';
+    statusEl.textContent = '按 T 画线 · Esc 取消';
     statusEl.className = 'dtb-status';
     return;
   }

@@ -46,6 +46,7 @@ class ConditionalOrderStore:
         *,
         status: ConditionalStatus | None = None,
         symbol: str | None = None,
+        manual_line_id: str | None = None,
     ) -> list[ConditionalOrder]:
         with self._lock:
             items = self._read_all()
@@ -53,6 +54,8 @@ class ConditionalOrderStore:
             items = [i for i in items if i.status == status]
         if symbol:
             items = [i for i in items if i.symbol == symbol]
+        if manual_line_id:
+            items = [i for i in items if i.manual_line_id == manual_line_id]
         items.sort(key=lambda i: i.created_at, reverse=True)
         return items
 
@@ -189,10 +192,22 @@ class ConditionalOrderStore:
         return d
 
     def _dict_to_order(self, d: dict[str, Any]) -> ConditionalOrder:
-        """Inverse of _order_to_dict. Reconstructs nested dataclasses."""
-        trigger = TriggerConfig(**d.get("trigger", {}))
-        order_cfg = OrderConfig(**d.get("order", {}))
-        events = [ConditionalEvent(**e) for e in d.get("events", [])]
+        """Inverse of _order_to_dict. Reconstructs nested dataclasses.
+        Filters keys defensively so schema drift in the JSON file (extra
+        fields from older or newer code versions) doesn't silently drop
+        the entire conditional via TypeError."""
+        from dataclasses import fields as _dc_fields
+
+        def _filter(payload: dict, dc_cls) -> dict:
+            valid = {f.name for f in _dc_fields(dc_cls)}
+            return {k: v for k, v in (payload or {}).items() if k in valid}
+
+        trigger = TriggerConfig(**_filter(d.get("trigger", {}), TriggerConfig))
+        order_cfg = OrderConfig(**_filter(d.get("order", {}), OrderConfig))
+        events = [
+            ConditionalEvent(**_filter(e, ConditionalEvent))
+            for e in d.get("events", [])
+        ]
         return ConditionalOrder(
             conditional_id=d["conditional_id"],
             manual_line_id=d["manual_line_id"],

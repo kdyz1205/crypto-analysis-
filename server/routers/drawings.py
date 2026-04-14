@@ -39,6 +39,15 @@ async def api_list_drawings(
 
 @router.post("", response_model=ManualTrendlineResponse)
 async def api_create_drawing(req: ManualTrendlineCreateRequest):
+    """Create a manual drawing. FAST PATH — no enrichment.
+
+    Previously this called `_enrich_drawing` which loads full OHLCV +
+    builds a strategy snapshot + ranks against candidate auto-lines.
+    That took 1-8 seconds, blocking the user's draw gesture and making
+    the line appear to "disappear" after release. Enrichment now happens
+    LAZILY in the GET endpoint instead — list_drawings calls
+    `_enrich_drawings` which is batched per symbol/tf and cached.
+    """
     normalized_symbol = _normalize_symbol(req.symbol)
     created = ManualTrendline(
         manual_line_id=_manual_line_id(normalized_symbol, req.timeframe, req.side, req.t_start, req.t_end),
@@ -64,9 +73,8 @@ async def api_create_drawing(req: ManualTrendlineCreateRequest):
         created_at=now_ts(),
         updated_at=now_ts(),
     )
-    drawing = await _enrich_drawing(created)
-    store.upsert(drawing)
-    return {"drawing": ManualTrendlineModel.model_validate(drawing.to_dict())}
+    store.upsert(created)
+    return {"drawing": ManualTrendlineModel.model_validate(created.to_dict())}
 
 
 @router.patch("/{manual_line_id}", response_model=ManualTrendlineResponse)
@@ -92,6 +100,18 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
     updated = replace(updated, t_start=min(updated.t_start, updated.t_end), t_end=max(updated.t_start, updated.t_end))
     drawing = await _enrich_drawing(updated)
     store.upsert(drawing)
+    # If the anchors moved (drag), kick any triggered conditionals on
+    # this line to replan immediately against the new geometry instead
+    # of waiting the usual 15m/1h bar interval.
+    if (
+        req.t_start is not None or req.t_end is not None
+        or req.price_start is not None or req.price_end is not None
+    ):
+        try:
+            from ..conditionals.watcher import force_replan_line
+            force_replan_line(drawing.manual_line_id)
+        except Exception as exc:
+            print(f"[drawings.patch] force_replan err: {exc}", flush=True)
     return {"drawing": ManualTrendlineModel.model_validate(drawing.to_dict())}
 
 
@@ -100,6 +120,29 @@ async def api_delete_drawing(manual_line_id: str):
     removed = 1 if store.delete(manual_line_id) else 0
     if removed == 0:
         raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
+    # Cascade: cancel all pending/triggered conditionals for this line.
+    # User policy: deleting a line means "I'm done with this edge" —
+    # any outstanding orders on it must be cancelled at the same moment.
+    try:
+        from ..conditionals import ConditionalOrderStore, ConditionalEvent, now_ts as _nt
+        cstore = ConditionalOrderStore()
+        for cond in cstore.list_all(manual_line_id=manual_line_id):
+            if cond.status in ("pending", "triggered"):
+                cstore.set_status(
+                    cond.conditional_id,
+                    "cancelled",
+                    reason=f"line deleted: {manual_line_id}",
+                )
+                try:
+                    cstore.append_event(cond.conditional_id, ConditionalEvent(
+                        ts=_nt(), kind="cancelled",
+                        message=f"parent line {manual_line_id} was deleted",
+                    ))
+                except Exception:
+                    pass
+    except Exception as exc:
+        # Don't block the delete on cascade errors
+        print(f"[drawings.delete] cascade cancel failed: {exc}", flush=True)
     return {"removed": removed}
 
 

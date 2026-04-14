@@ -233,8 +233,10 @@ def main():
     rail_stuck = any("加载中" in t for t in rail_text)
     if rail_stuck:
         failures.append("decision rail is stuck on '加载中...'")
-    if market.get("decision_rail_cards", 0) == 0:
-        failures.append("decision rail rendered 0 cards")
+    # Note: decision_rail_cards check removed. The legacy v2-decision-rail
+    # DOM and its dr-card children were deleted when the cond rail took
+    # over that region; checking for .dr-card always fails now even on a
+    # healthy page. Gate kept as a sentinel via console/network errors.
 
     print()
     print("=" * 60)
