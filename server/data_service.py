@@ -16,9 +16,24 @@ from .market import (
 # In-memory TTL cache for download_ohlcv results
 # Key: (symbol, interval) — days are handled by slicing/invalidation
 _ohlcv_cache: dict[tuple, tuple[float, int, pl.DataFrame]] = {}  # (ts, days, df)
-OHLCV_CACHE_TTL_FAST = 60     # 1 minute — for 1m, 3m
-OHLCV_CACHE_TTL_SHORT = 300   # 5 minutes — for 5m, 15m, 1h
-OHLCV_CACHE_TTL_HEAVY = 600   # 10 minutes — for 4h, 1d, 1w
+
+# Full-result cache: short TTL cache of the entire JSON dict returned by
+# get_ohlcv(). Keyed by (symbol, interval, end_time, days, history_mode).
+# The raw-DF cache above still fires on API downloads, but this one
+# additionally short-circuits the expensive post-processing (resample +
+# row iteration + overlays + precision lookup) which takes 2-4s for
+# 500-bar charts. 30s TTL for slow TFs, 5s for fast TFs.
+_ohlcv_result_cache: dict[tuple, tuple[float, dict]] = {}
+
+def _result_cache_ttl(interval: str) -> float:
+    fast = {"1m": 3.0, "3m": 5.0, "5m": 8.0, "15m": 15.0, "30m": 20.0}
+    return fast.get(interval, 30.0)
+# Aggressive TTL so the currently-forming bar refreshes in near-real-time
+# for live trading. The cache exists only to protect against burst polls
+# within a single chart render, not to shield from live price moves.
+OHLCV_CACHE_TTL_FAST = 3      # 1m, 3m
+OHLCV_CACHE_TTL_SHORT = 5     # 5m, 15m, 1h
+OHLCV_CACHE_TTL_HEAVY = 5     # 4h, 1d, 1w
 
 def _cache_ttl(interval: str) -> int:
     """Return cache TTL in seconds based on interval."""
@@ -65,23 +80,39 @@ CSV_COLUMNS = [
     "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore",
 ]
 
-# Which base interval to download for each requested interval
+# Which base interval to download for each requested interval.
+# Bitget supports all of these natively — no resample needed.
 RESAMPLE_MAP = {
-    "5m": ("5m", None),
-    "15m": ("5m", "15m"),
-    "1h": ("1h", None),
-    "4h": ("4h", None),   # OKX supports 4H natively — no resample needed
-    "1d": ("1d", None),
+    "1m":  ("1m", None),
+    "3m":  ("3m", None),
+    "5m":  ("5m", None),
+    "15m": ("15m", None),
+    "30m": ("30m", None),
+    "1h":  ("1h", None),
+    "2h":  ("2h", None),
+    "4h":  ("4h", None),
+    "6h":  ("6h", None),
+    "12h": ("12h", None),
+    "1d":  ("1d", None),
+    "1w":  ("1w", None),
 }
 
-# How many days of base data to download per interval
-# Maximized: fetch as much history as OKX provides (~2000 candles per timeframe)
+# How many days of base data to download per interval.
+# Sized so each TF gets MEANINGFUL history for trendline / pattern analysis,
+# not just enough for a single-screen chart. Pagination handles the volume.
 DOWNLOAD_DAYS = {
-    "5m": 7,       # 5m × 2000 = ~7 days
-    "15m": 21,     # 15m × 2000 = ~21 days
-    "1h": 90,      # 1h × 2000 = ~83 days
-    "4h": 365,     # 4h × 2000 = ~333 days → fetch 1 year
-    "1d": 365 * 5, # 1d × 2000 = ~5.5 years → fetch max
+    "1m":  7,        # 7d × 1440 candles/day = ~10k bars
+    "3m":  21,       # 21d × 480 = ~10k
+    "5m":  30,       # 30d × 288 = ~8.6k
+    "15m": 90,       # 90d × 96 = ~8.6k
+    "30m": 180,      # 180d × 48 = ~8.6k
+    "1h":  365,      # 1y × 24 = 8.7k
+    "2h":  365 * 2,  # 2y
+    "4h":  365 * 3,  # 3y × 6/d = 6.6k
+    "6h":  365 * 4,  # 4y
+    "12h": 365 * 5,  # 5y
+    "1d":  365 * 6,  # 6y × 1 = 2.2k
+    "1w":  365 * 6,  # 6y / 7 = 313 weeks
 }
 
 # Interval durations in milliseconds (for staleness / gap detection)
@@ -280,7 +311,10 @@ async def get_top_volume_symbols(top_n: int = 20) -> list[str]:
             result = [p[0] for p in pairs]
 
         _top_vol_cache = (time.time(), result)
-        print(f"[Data] Top {top_n} by volume: {', '.join(result[:top_n])}")
+        try:
+            print(f"[Data] Top {top_n} by volume: {', '.join(result[:top_n])}")
+        except UnicodeEncodeError:
+            pass  # Windows cp1252 stdout; safe to skip
         return result[:top_n]
 
     except Exception as e:
@@ -524,7 +558,11 @@ def _okx_rows_to_records(rows: list) -> list:
     return records
 
 
-_BITGET_INTERVAL_MAP = {"1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D", "1w": "1W"}
+_BITGET_INTERVAL_MAP = {
+    "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "1H", "2h": "2H", "4h": "4H", "6h": "6H", "12h": "12H",
+    "1d": "1D", "1w": "1W",
+}
 _BITGET_INTERVAL_MS = {
     "1m": 1 * 60 * 1000,
     "3m": 3 * 60 * 1000,
@@ -536,7 +574,7 @@ _BITGET_INTERVAL_MS = {
     "1w": 7 * 24 * 60 * 60 * 1000,
 }
 _BITGET_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000
-BITGET_CANDLES_PAGE_LIMIT = 200
+BITGET_CANDLES_PAGE_LIMIT = 200  # Bitget v2 history-candles hard max
 
 
 async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> pl.DataFrame:
@@ -581,7 +619,19 @@ async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> 
             break
         cursor_end = oldest_ts - 1
         page_count += 1
-        await asyncio.sleep(0.06)
+        await asyncio.sleep(0.02)
+
+    # Fetch the CURRENT forming bar from the live endpoint AFTER history
+    # so the dedup (keep="last") below prefers live values. history-candles
+    # does NOT include the still-forming bar, but /candles does.
+    try:
+        live_rows = await client.get_candles(
+            symbol.upper(), granularity, limit=3, history=False,
+        )
+        if live_rows:
+            all_records.extend(bitget_candles_to_records(live_rows))
+    except Exception as e:
+        print(f"[data_service] live candle fetch failed for {symbol}: {e}")
 
     if not all_records:
         raise ValueError(f"No data returned for {symbol} {interval}")
@@ -690,7 +740,7 @@ async def _download_ohlcv_okx(symbol: str, interval: str, days: int = 30) -> pl.
             # After first page from /candles, switch to /history-candles for deeper history
             if not use_history_endpoint:
                 use_history_endpoint = True
-            await asyncio.sleep(0.06)  # ~40/2s rate limit → ~50ms between requests
+            await asyncio.sleep(0.02)  # ~40/2s rate limit → ~50ms between requests
 
         if not all_records:
             raise ValueError(f"No data returned from OKX for {symbol} {interval}. The symbol may not exist or have no trading history.")
@@ -748,6 +798,16 @@ def _get_last_timestamp_ms(df: pl.DataFrame) -> int | None:
         return None
     # Binance data is UTC; naive datetimes must be tagged as UTC for correct epoch
     return int(last_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _get_first_timestamp_ms(df: pl.DataFrame) -> int | None:
+    """Get the first open_time as epoch milliseconds (UTC)."""
+    if df is None or df.is_empty():
+        return None
+    first_dt = df["open_time"].min()
+    if first_dt is None:
+        return None
+    return int(first_dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
 async def _fetch_candles_since_okx(symbol: str, interval: str, start_ms: int) -> pl.DataFrame:
@@ -1085,6 +1145,16 @@ async def get_ohlcv(
     In OFFLINE_ONLY mode, this will **only** use existing CSV files and will
     never hit the Binance API, so you won't see IP/region restriction errors.
     """
+    # Short-TTL result cache — short-circuits the full pipeline (resample,
+    # row iter, overlays, precision) which takes 2-4s per call even when
+    # the underlying DataFrame is cached.
+    result_key = (symbol.upper(), interval, end_time, days, history_mode)
+    cached = _ohlcv_result_cache.get(result_key)
+    if cached is not None:
+        cached_ts, cached_result = cached
+        if (time.time() - cached_ts) < _result_cache_ttl(interval):
+            return cached_result
+
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
     loaded_from_csv = False
     used_api_tail = False
@@ -1130,24 +1200,45 @@ async def get_ohlcv(
                 try:
                     df = _load_csv(csv_path)
                     loaded_from_csv = True
-                    is_okx_file = csv_path.name.upper().startswith("OKX_")
-                    if not is_okx_file:
-                        last_ms = _get_last_timestamp_ms(df)
-                        now_ms = int(time.time() * 1000)
-                        interval_ms = INTERVAL_MS.get(base_interval, 60 * 60 * 1000)
-                        if last_ms is not None and (now_ms - last_ms) >= interval_ms * 2:
-                            try:
-                                df = await _incremental_update(symbol, base_interval)
-                                used_api_tail = True
-                            except Exception as e:
-                                print(f"Warning: Incremental update failed for {symbol}, using existing CSV: {e}")
+                    # Check if the CSV covers the requested history span.
+                    # If the user asked for 365 days but CSV only has 106,
+                    # we MUST go back to the API for the missing history.
+                    # Previously this was silently truncated.
+                    csv_first_ms = _get_first_timestamp_ms(df)
+                    csv_last_ms = _get_last_timestamp_ms(df)
+                    needed_first_ms = int(time.time() * 1000) - requested_days * 24 * 60 * 60 * 1000
+                    csv_too_short = (
+                        csv_first_ms is not None
+                        and csv_first_ms > needed_first_ms + 24 * 60 * 60 * 1000  # 1d slack
+                    )
+                    if csv_too_short:
+                        print(
+                            f"[data_service] CSV for {symbol} {base_interval} only covers "
+                            f"from {csv_first_ms} but {requested_days}d needs from {needed_first_ms}. "
+                            f"Re-downloading full range.",
+                            flush=True,
+                        )
+                        download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
+                        df = await download_ohlcv(symbol, base_interval, days=download_days)
+                        loaded_from_api = True
                     else:
-                        if EXCHANGE.lower() == "okx":
-                            try:
-                                df = await _append_okx_live(df, symbol, base_interval)
-                                used_api_tail = True
-                            except Exception as e:
-                                print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
+                        is_okx_file = csv_path.name.upper().startswith("OKX_")
+                        if not is_okx_file:
+                            interval_ms = INTERVAL_MS.get(base_interval, 60 * 60 * 1000)
+                            now_ms = int(time.time() * 1000)
+                            if csv_last_ms is not None and (now_ms - csv_last_ms) >= interval_ms * 2:
+                                try:
+                                    df = await _incremental_update(symbol, base_interval)
+                                    used_api_tail = True
+                                except Exception as e:
+                                    print(f"Warning: Incremental update failed for {symbol}, using existing CSV: {e}")
+                        else:
+                            if EXCHANGE.lower() == "okx":
+                                try:
+                                    df = await _append_okx_live(df, symbol, base_interval)
+                                    used_api_tail = True
+                                except Exception as e:
+                                    print(f"Warning: OKX live append failed for {symbol}, using CSV only: {e}")
                 except Exception:
                     download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                     df = await download_ohlcv(symbol, base_interval, days=download_days)
@@ -1241,6 +1332,16 @@ async def get_ohlcv(
             resampled_from_interval=base_interval if resample_to else None,
         )
     )
+    # Populate result cache + evict stale entries
+    _ohlcv_result_cache[result_key] = (time.time(), result)
+    if len(_ohlcv_result_cache) > 100:
+        now_ts_v = time.time()
+        stale_keys = [
+            k for k, (t, _) in _ohlcv_result_cache.items()
+            if (now_ts_v - t) > _result_cache_ttl(k[1]) * 4
+        ]
+        for k in stale_keys:
+            del _ohlcv_result_cache[k]
     return result
 
 

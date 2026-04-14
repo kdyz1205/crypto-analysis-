@@ -64,12 +64,10 @@ export function initManualTrendlineController(chart, container) {
   subscribe('drawings.visibility', () => renderPanel());
   subscribe('drawings.tradePlanCounts', () => renderPanel());
   subscribe('strategy.snapshot.updated', () => renderManualLines());
-  subscribe('market.symbol.changed', () => {
-    void refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
-  });
-  subscribe('market.interval.changed', () => {
-    void refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
-  });
+  // NOTE: no refreshManualDrawings subscriber on market.symbol.changed /
+  // market.interval.changed — loadCurrent() in chart.js already calls
+  // refreshManualDrawings after it reloads OHLCV, so adding it here
+  // double-fires the GET /api/drawings and collides via AbortController.
 
   renderPanel();
 }

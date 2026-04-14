@@ -1,12 +1,11 @@
 // frontend/js/main.js — clean boot: UI shell first, data async
 
 import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, getChart, getCandleSeries } from './workbench/chart.js';
-import { initManualTrendlineController, refreshManualDrawings } from './workbench/drawings/manual_trendline_controller.js';
-import { initDrawTool } from './workbench/drawings/draw_tool.js';
+import { initManualTrendlineController } from './workbench/drawings/manual_trendline_controller.js';
+import { initChartDrawing, startTrendlineTool } from './workbench/drawings/chart_drawing.js';
 import { initDrawToolbar } from './workbench/drawings/draw_toolbar.js';
 import { initTicker } from './workbench/ticker.js';
 import { initTimeframe } from './workbench/timeframe.js';
-import { initDecisionRail, refreshDecisionRail } from './workbench/decision_rail.js';
 import { initConditionalPanel } from './workbench/conditional_panel.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
 import { connectStream } from './services/stream.js';
@@ -23,16 +22,22 @@ function boot() {
 
   const afterChartLoad = () => {
     markBoot('chart', 'ok', 'loaded');
+    // WebSocket handles tick-level updates. This slow poll only catches
+    // bar rollover and historical corrections. 30s is plenty.
     if (!liveUpdatesStarted) { startLiveUpdates(30000); liveUpdatesStarted = true; }
     if (!railRefreshed) {
       railRefreshed = true;
-      setTimeout(() => refreshDecisionRail().then(() => markBoot('rail', 'ok', 'loaded')).catch(() => {}), 200);
+      markBoot('rail', 'ok', 'merged');
     }
     if (!streamConnected) {
       streamConnected = true;
       setTimeout(() => { try { connectStream(); } catch {} }, 300);
     }
-    try { void refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval); } catch {}
+    // NOTE: refreshManualDrawings is NOT called here on purpose —
+    // loadCurrent() already calls it inside chart.js after OHLCV loads.
+    // Calling it here too causes two simultaneous GET /api/drawings
+    // requests to collide via AbortController, producing the
+    // "signal is aborted without reason" alert.
   };
 
   initBootStatus();
@@ -50,22 +55,24 @@ function boot() {
     const cs = getCandleSeries();
     const containerEl = document.getElementById('chart-container');
     if (chartObj && cs && containerEl) {
-      initDrawTool(chartObj, cs, containerEl);
+      initChartDrawing(chartObj, cs, containerEl);
       initDrawToolbar(containerEl);
     }
   } catch (err) { console.warn('[boot] draw tool:', err); }
   try { initTimeframe('#v2-tf-group'); } catch {}
-  try { initDecisionRail(); } catch {}
   try {
     const condHost = document.getElementById('v2-cond-rail');
-    if (condHost) initConditionalPanel(condHost);
+    if (condHost) {
+      initConditionalPanel(condHost);
+      initCondRailResizer(condHost);
+    }
   } catch (err) { console.warn('[boot] conditional panel:', err); }
   try { initExecutionPanel(); } catch {}
 
   wireHeaderButtons();
   subscribe('chart.load.succeeded', afterChartLoad);
 
-  initTicker('v2-symbol-select')
+  initTicker('v2-symbol-combo')
     .then(() => markBoot('symbols', 'ok', 'loaded'))
     .catch((err) => console.error('[boot] ticker:', err));
 
@@ -75,6 +82,55 @@ function boot() {
   });
 
   console.log('[main] Trading OS ready');
+}
+
+// Drag-to-resize the right-side conditional rail.
+function initCondRailResizer(rail) {
+  const resizer = document.createElement('div');
+  resizer.className = 'v2-cond-rail-resizer';
+  rail.appendChild(resizer);
+
+  // Load saved width from localStorage
+  try {
+    const saved = parseInt(localStorage.getItem('v2.condRail.width') || '0', 10);
+    if (saved >= 220 && saved <= 900) rail.style.flex = `0 0 ${saved}px`;
+  } catch {}
+
+  let startX = 0;
+  let startW = 0;
+  let dragging = false;
+
+  const onMove = (ev) => {
+    if (!dragging) return;
+    // The rail is on the RIGHT side — dragging the resizer LEFT widens it.
+    const dx = startX - ev.clientX;
+    const newW = Math.max(220, Math.min(900, startW + dx));
+    rail.style.flex = `0 0 ${newW}px`;
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    resizer.classList.remove('is-dragging');
+    document.body.style.cursor = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    try {
+      const w = rail.getBoundingClientRect().width;
+      localStorage.setItem('v2.condRail.width', String(Math.round(w)));
+    } catch {}
+    // Tell the chart to reflow after the resize
+    try { window.dispatchEvent(new Event('resize')); } catch {}
+  };
+  resizer.addEventListener('mousedown', (ev) => {
+    ev.preventDefault();
+    dragging = true;
+    startX = ev.clientX;
+    startW = rail.getBoundingClientRect().width;
+    resizer.classList.add('is-dragging');
+    document.body.style.cursor = 'col-resize';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 }
 
 let _previousView = 'market';
@@ -87,13 +143,6 @@ function wireHeaderButtons() {
       const btn = e.target.closest('.v2-nav-btn');
       if (!btn) return;
       const view = btn.dataset.view;
-      // Tear down market-only timers when leaving the market view
-      if (_previousView === 'market' && view !== 'market') {
-        try {
-          const { stopDecisionRail } = await import('./workbench/decision_rail.js');
-          stopDecisionRail();
-        } catch {}
-      }
       _previousView = view;
       // Switch active nav button
       nav.querySelectorAll('.v2-nav-btn').forEach(b => b.classList.remove('active'));

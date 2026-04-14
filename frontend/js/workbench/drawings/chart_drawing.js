@@ -542,8 +542,17 @@ async function commitDraft() {
     real = resp?.drawing;
     console.log('[chart_drawing] commit ok', real?.manual_line_id);
   } catch (err) {
+    // AbortError is NOT a failure — it means a later refresh superseded
+    // this POST mid-flight. The temp line is still in the store; the
+    // next refresh will replace it with the real server line. Stay silent.
+    const isAbort = err?.name === 'AbortError'
+      || (typeof err?.message === 'string' && err.message.includes('aborted'));
+    if (isAbort) {
+      console.debug('[chart_drawing] commit POST aborted by superseding request — temp line kept');
+      return;
+    }
     console.error('[chart_drawing] commit failed', err);
-    // Roll back optimistic insert
+    // Real error: roll back optimistic insert
     const cur = (drawingsState.lines || []).filter((l) => l.manual_line_id !== tempId);
     setManualDrawings(cur);
     if (drawingsState.selectedLineId === tempId) setSelectedManualLine(null);
