@@ -577,8 +577,19 @@ _BITGET_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000
 BITGET_CANDLES_PAGE_LIMIT = 200  # Bitget v2 history-candles hard max
 
 
-async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> pl.DataFrame:
-    """Download OHLCV data from Bitget USDT futures and normalize to the shared schema."""
+async def _download_ohlcv_bitget(
+    symbol: str,
+    interval: str,
+    days: int = 30,
+    *,
+    end_ms: int | None = None,
+) -> pl.DataFrame:
+    """Download OHLCV data from Bitget USDT futures and normalize to the shared schema.
+
+    If `end_ms` is provided, the window is [end_ms - days*86400e3, end_ms]
+    so the caller can ask for a historical chunk ending at a specific
+    timestamp. Defaults to now (current behavior).
+    """
     import asyncio
     import pandas as pd
 
@@ -590,7 +601,8 @@ async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> 
         http_client=_get_http_client(),
         product_type=BITGET_PRODUCT_TYPE,
     )
-    end_ms = int(time.time() * 1000)
+    if end_ms is None:
+        end_ms = int(time.time() * 1000)
     start_ms = end_ms - days * 24 * 60 * 60 * 1000
     cursor_end = end_ms
     all_records: list[list[float | int]] = []
@@ -624,14 +636,20 @@ async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> 
     # Fetch the CURRENT forming bar from the live endpoint AFTER history
     # so the dedup (keep="last") below prefers live values. history-candles
     # does NOT include the still-forming bar, but /candles does.
-    try:
-        live_rows = await client.get_candles(
-            symbol.upper(), granularity, limit=3, history=False,
-        )
-        if live_rows:
-            all_records.extend(bitget_candles_to_records(live_rows))
-    except Exception as e:
-        print(f"[data_service] live candle fetch failed for {symbol}: {e}")
+    # Skip when backfilling historical (end_ms far in the past) — the
+    # caller only wants the closed historical slice.
+    _is_historical_backfill = (
+        end_ms is not None and int(time.time() * 1000) - end_ms > 3600 * 1000
+    )
+    if not _is_historical_backfill:
+        try:
+            live_rows = await client.get_candles(
+                symbol.upper(), granularity, limit=3, history=False,
+            )
+            if live_rows:
+                all_records.extend(bitget_candles_to_records(live_rows))
+        except Exception as e:
+            print(f"[data_service] live candle fetch failed for {symbol}: {e}")
 
     if not all_records:
         raise ValueError(f"No data returned for {symbol} {interval}")
@@ -643,7 +661,9 @@ async def _download_ohlcv_bitget(symbol: str, interval: str, days: int = 30) -> 
     pdf[numeric_cols] = pdf[numeric_cols].apply(pd.to_numeric, axis=0)
     pdf = pdf.sort_values("open_time").drop_duplicates(subset=["open_time"], keep="last")
 
-    if API_ONLY:
+    if API_ONLY or _is_historical_backfill:
+        # Historical backfill never touches the CSV — we return the slice
+        # in-memory only, so it can't overwrite the rolling-window file.
         result = pl.from_pandas(pdf).select(["open_time", "open", "high", "low", "close", "volume"])
         if result["open_time"].dtype == pl.Datetime("ns"):
             result = result.with_columns(pl.col("open_time").cast(pl.Datetime("us")))

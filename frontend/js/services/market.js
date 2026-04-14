@@ -66,6 +66,21 @@ export const getOhlcv = async (symbol, interval, days = 30, endTime = null, hist
   return data;
 };
 
+/**
+ * Lazy-load older bars for a chart.
+ * Used when the user scrolls to the left edge — we fetch another
+ * ~500 bars ending strictly before the earliest currently-loaded bar
+ * and prepend them to the series.
+ */
+export const getOhlcvBackfill = (symbol, interval, beforeTs, bars = 500) => {
+  const params = new URLSearchParams({
+    symbol, interval,
+    before_ts: String(beforeTs),
+    bars: String(bars),
+  });
+  return fetchJson(`/api/ohlcv/backfill?${params}`, { noCache: true });
+};
+
 export const getChart = (symbol, interval, days = 365, endTime = null, historyMode = 'fast_window') => {
   const params = new URLSearchParams({ symbol, interval, days: String(days), history_mode: historyMode });
   if (endTime) params.set('end_time', endTime);

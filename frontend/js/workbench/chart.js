@@ -24,6 +24,17 @@ let chartModePanel = null;
 let chartLoadSeq = 0;
 let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
 
+// Lazy backfill state. Kept at module level so the visible-range
+// subscriber can see the current candle buffer without a closure over
+// loadCurrent. Cleared on every loadCurrent() call so old buffers from
+// a previous symbol/TF don't leak into the new view.
+let _backfillCandles = [];   // current full candle array (ref we prepend to)
+let _backfillVolume = [];    // companion volume array
+let _backfillInFlight = false;
+let _backfillExhausted = false;  // stop after a backfill returns 0 rows
+let _backfillSymbol = null;
+let _backfillInterval = null;
+
 export function initChart(containerId = 'chart-container') {
   const el = $('#' + containerId);
   if (!el) {
@@ -94,6 +105,20 @@ export function initChart(containerId = 'chart-container') {
   ensureChartModePanel(el.parentElement || el);
   initManualTrendlineController(chart, el.parentElement || el);
   applyScaleMode();
+
+  // Lazy backfill: when the user scrolls so the visible range's leftmost
+  // logical index is within the first ~10 bars of loaded data, fetch
+  // another ~500 bars older and prepend them. TradingView-style.
+  try {
+    chart.timeScale().subscribeVisibleLogicalRangeChange?.((range) => {
+      if (!range || _backfillInFlight || _backfillExhausted) return;
+      if (_backfillCandles.length === 0) return;
+      // range.from is a logical index (can be fractional, negative when
+      // scrolled left of bar 0). Trigger when within 10 bars of the left.
+      if (range.from > 10) return;
+      void _doBackfill();
+    });
+  } catch {}
 
   subscribe('market.symbol.changed', () => {
     void loadCurrent(true).catch((err) => console.warn('[chart] symbol refresh failed:', err));
@@ -232,6 +257,14 @@ export async function loadCurrent(forcePatterns = false) {
 
     candleSeries.setData(candles);
     if (volumes.length > 0) volumeSeries.setData(volumes);
+
+    // Reset + prime the lazy backfill buffer for this symbol/TF.
+    _backfillCandles = candles.slice();
+    _backfillVolume = volumes.slice();
+    _backfillInFlight = false;
+    _backfillExhausted = false;
+    _backfillSymbol = currentSymbol;
+    _backfillInterval = currentInterval;
 
     // ── Verifiable load report ─────────────────────────────────
     const _firstT = candles[0]?.time;
@@ -546,3 +579,75 @@ function onTickerTick(tick) {
 
 export function getChart() { return chart; }
 export function getCandleSeries() { return candleSeries; }
+
+/**
+ * Lazy backfill: fetch ~500 older bars and prepend to the chart.
+ * Called when the user scrolls the visible range near the leftmost
+ * loaded bar. Guarded against concurrent calls and exhaustion.
+ */
+async function _doBackfill() {
+  if (_backfillInFlight || _backfillExhausted) return;
+  if (_backfillCandles.length === 0) return;
+  const sym = _backfillSymbol;
+  const ivl = _backfillInterval;
+  if (!sym || !ivl) return;
+  const earliest = _backfillCandles[0].time;
+  if (!earliest) return;
+
+  _backfillInFlight = true;
+  try {
+    const resp = await marketSvc.getOhlcvBackfill(sym, ivl, earliest, 300);
+    // Guard: ensure user hasn't switched symbol/TF mid-fetch
+    if (sym !== marketState.currentSymbol || ivl !== marketState.currentInterval) {
+      return;
+    }
+    const older = Array.isArray(resp?.candles) ? resp.candles : [];
+    if (older.length === 0) {
+      _backfillExhausted = true;
+      return;
+    }
+    // Normalize + dedupe — backfill may return a bar that's already in
+    // our buffer if Bitget returned inclusive-of-boundary.
+    const newCandles = older.map((c) => ({
+      time: typeof c.time === 'string' ? Math.floor(new Date(c.time).getTime() / 1000) : c.time,
+      open: Number(c.open),
+      high: Number(c.high),
+      low: Number(c.low),
+      close: Number(c.close),
+    }));
+    const newVolume = (resp.volume || []).map((v) => ({
+      time: typeof v.time === 'string' ? Math.floor(new Date(v.time).getTime() / 1000) : v.time,
+      value: Number(v.value || 0),
+      color: v.color || 'rgba(0,230,118,0.4)',
+    }));
+    const seen = new Set(_backfillCandles.map((c) => c.time));
+    const uniqCandles = newCandles.filter((c) => !seen.has(c.time));
+    const uniqVolume = newVolume.filter((v) => !seen.has(v.time));
+    if (uniqCandles.length === 0) {
+      _backfillExhausted = true;
+      return;
+    }
+    _backfillCandles = [...uniqCandles, ..._backfillCandles];
+    _backfillVolume = [...uniqVolume, ..._backfillVolume];
+    // Prepending via setData triggers a reflow; preserve visible range
+    // so the user's viewport doesn't jump.
+    const preserved = chart.timeScale().getVisibleRange?.();
+    candleSeries.setData(_backfillCandles);
+    if (_backfillVolume.length > 0) volumeSeries.setData(_backfillVolume);
+    if (preserved) {
+      try { chart.timeScale().setVisibleRange(preserved); } catch {}
+    }
+    // Re-compute overlays client-side so the MA lines extend over the new bars
+    try {
+      const overlays = computeOverlaysFromCandles(_backfillCandles);
+      if (Object.keys(overlays).length > 0) {
+        drawMAOverlays(chart, overlays, _backfillCandles.map((c) => c.time));
+      }
+    } catch {}
+    console.log(`[chart] backfilled ${uniqCandles.length} older bars (total now ${_backfillCandles.length})`);
+  } catch (err) {
+    console.warn('[chart] backfill failed', err);
+  } finally {
+    _backfillInFlight = false;
+  }
+}

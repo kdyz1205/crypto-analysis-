@@ -208,6 +208,59 @@ async def api_ohlcv(
         raise HTTPException(500, f"Error fetching data: {str(e)}")
 
 
+@router.get("/ohlcv/backfill")
+async def api_ohlcv_backfill(
+    symbol: str = Query(..., description="e.g. HYPEUSDT"),
+    interval: str = Query(..., description="e.g. 5m, 1h, 4h"),
+    before_ts: int = Query(..., description="Unix seconds — return bars CLOSING BEFORE this"),
+    bars: int = Query(500, ge=50, le=1500, description="How many bars to fetch"),
+):
+    """Lazy-load older bars for a chart.
+
+    Called when the user scrolls to the left edge of the chart. Returns
+    `bars` candles whose `close_time` is strictly less than `before_ts`.
+    Shape matches /api/ohlcv but without the overlays / metadata block —
+    the client only cares about the candles to prepend.
+    """
+    valid_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w"}
+    if interval not in valid_intervals:
+        raise HTTPException(400, f"Invalid interval. Must be one of: {valid_intervals}")
+    symbol = symbol.upper().replace("/", "")
+    if not symbol.endswith("USDT"):
+        symbol += "USDT"
+
+    # Map bars × interval → days window with a safety margin so Bitget's
+    # paginated history-candles yields enough rows even with weekend gaps.
+    from ..data_service import _download_ohlcv_bitget, INTERVAL_MS
+    interval_ms = INTERVAL_MS.get(interval, 60 * 60 * 1000)
+    days_window = max(1, int(bars * interval_ms / (86400 * 1000)) + 2)
+    end_ms = int(before_ts * 1000)
+
+    try:
+        df = await _download_ohlcv_bitget(symbol, interval, days=days_window, end_ms=end_ms)
+    except Exception as e:
+        raise HTTPException(500, f"backfill fetch failed: {e}")
+    if df is None or df.is_empty():
+        return {"candles": [], "volume": []}
+
+    # Only keep bars strictly older than before_ts, trim to `bars` count
+    import polars as pl
+    df = df.filter(pl.col("open_time").cast(pl.Int64) // 1_000_000 < end_ms)
+    df = df.tail(bars)
+
+    candles = []
+    volume = []
+    for row in df.iter_rows(named=True):
+        ts = int(row["open_time"].timestamp())
+        o = float(row["open"]); h = float(row["high"])
+        lo = float(row["low"]); c = float(row["close"])
+        v = float(row["volume"])
+        candles.append({"time": ts, "open": o, "high": h, "low": lo, "close": c})
+        color = "#26a69a80" if c >= o else "#ef535080"
+        volume.append({"time": ts, "value": v, "color": color})
+    return {"candles": candles, "volume": volume, "count": len(candles)}
+
+
 @router.get("/top-volume")
 async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     """Get top N symbols by 24h trading volume."""
