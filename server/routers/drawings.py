@@ -30,11 +30,20 @@ store = ManualTrendlineStore()
 async def api_list_drawings(
     symbol: str = Query(...),
     timeframe: str = Query("4h"),
+    enrich: bool = Query(False, description="Run comparison vs auto-detected lines (slow, opt-in)"),
 ):
+    """List manual drawings. By default we DO NOT enrich with auto-line
+    comparison — enrichment triggers a 730d OHLCV fetch from Bitget per
+    call, which deadlocks the event loop under normal frontend polling.
+    The UI doesn't use `comparison_status` / `nearest_auto_line_id`
+    fields anymore, so the extra work is pure waste.
+    Pass ?enrich=true only when you actually need those fields.
+    """
     normalized_symbol = _normalize_symbol(symbol)
     drawings = store.list(symbol=normalized_symbol, timeframe=timeframe)
-    enriched = await _enrich_drawings(drawings, normalized_symbol, timeframe)
-    return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in enriched]}
+    if enrich:
+        drawings = await _enrich_drawings(drawings, normalized_symbol, timeframe)
+    return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in drawings]}
 
 
 @router.post("", response_model=ManualTrendlineResponse)
@@ -98,7 +107,9 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
         updated_at=now_ts(),
     )
     updated = replace(updated, t_start=min(updated.t_start, updated.t_end), t_end=max(updated.t_start, updated.t_end))
-    drawing = await _enrich_drawing(updated)
+    # Skip enrichment on PATCH — same reason as GET list, it pulls 730d
+    # of Bitget data and blocks the event loop.
+    drawing = updated
     store.upsert(drawing)
     # If the anchors moved (drag), kick any triggered conditionals on
     # this line to replan immediately against the new geometry instead

@@ -117,3 +117,178 @@ playwright._impl._errors.Error: Page.evaluate: TypeError: Cannot read properties
   404 http://localhost:8000/api/drawings/manual/analyze
 === end (exit=0) ===
 
+=== run @ 2026-04-14T23:12:50Z  git=1d88f12  N_RUNS=1 (smoke) ===
+[run 1/1] FAIL (40.0s)  goto failed: Page.goto: Timeout 40000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "domcontentloaded"
+
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:13:56Z  git=1d88f12  N_RUNS=1 (smoke v2) ===
+[run 1/1] FAIL (40.0s)  goto failed: Page.goto: Timeout 40000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "domcontentloaded"
+
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:15:01Z  git=1d88f12  N_RUNS=1 (smoke v3) ===
+[run 1/1] FAIL (20.0s)  goto failed: Page.goto: Timeout 20000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "commit"
+
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:17:21Z  git=1d88f12  N_RUNS=1 (after enrich-off) ===
+[run 1/1] PASS (18.9s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1774263600-1775473200
+  bitget_order=1428088114882535424 status=triggered
+
+=== 1/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:18:30Z  git=1d88f12  N_RUNS=20 (FULL BATCH) ===
+[run 1/20] FAIL (30.7s)  no cond with exchange_order_id after 12s
+  line_id=manual-HYPEUSDT-4h-support-1774249200-1775458800
+[run 2/20] FAIL (5.8s)  no new line id found after draw
+[run 3/20] FAIL (5.1s)  no new line id found after draw
+[run 4/20] FAIL (9.4s)  no new line id found after draw
+[run 5/20] FAIL (9.6s)  no new line id found after draw
+[run 6/20] FAIL (9.7s)  no new line id found after draw
+[run 7/20] FAIL (9.0s)  no new line id found after draw
+[run 8/20] FAIL (9.0s)  no new line id found after draw
+[run 9/20] FAIL (6.0s)  no new line id found after draw
+[run 10/20] FAIL (10.4s)  no new line id found after draw
+[run 11/20] FAIL (9.4s)  no new line id found after draw
+[run 12/20] FAIL (9.9s)  no new line id found after draw
+[run 13/20] FAIL (11.6s)  no new line id found after draw
+[run 14/20] FAIL (10.9s)  no new line id found after draw
+[run 15/20] FAIL (9.3s)  no new line id found after draw
+[run 16/20] FAIL (9.7s)  no new line id found after draw
+[run 17/20] FAIL (9.6s)  no new line id found after draw
+[run 18/20] FAIL (9.3s)  no new line id found after draw
+[run 19/20] FAIL (9.7s)  no new line id found after draw
+[run 20/20] FAIL (9.3s)  no new line id found after draw
+
+=== 0/20 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:23:22Z  git=1d88f12  N_RUNS=1 (debug) ===
+[run 1/1] FAIL (7.1s)  no new line id found after draw
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:23:57Z  git=1d88f12  N_RUNS=1 (debug2) ===
+[run 1/1] FAIL (5.8s)  no new line id found after draw
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:25:05Z  git=1d88f12  N_RUNS=1 (verbose) ===
+[run 1/1] FAIL (6.6s)  no new line id found after draw
+  CD: [log] [chart_drawing] initialized
+  CD: [log] %c[chart] LOADED HYPEUSDT 4h — 503 bars · span 84.0d · 2026-01-21 → 2026-04-15 background:#0d4a2a;color:#00e676;padding:2px 6px;font-weight:bold
+  CD: [log] %c[chart] viewport set → from 2026-03-12 to 2026-04-15  (got: 2026-03-23 → 2026-04-15)  stuck=false background:#0a2540;color:#60a5fa;padding:2px 6px
+  CD: [log] %c[chart] viewport set → from 2026-03-12 to 2026-04-15  (got: 2026-03-12 → 2026-04-15)  stuck=true background:#0a2540;color:#60a5fa;padding:2px 6px
+  CD: [log] [chart_drawing] idle → drawing_first_point (tool_armed)
+  CD: [log] [chart_drawing] drawing_first_point → drawing_second_point (first_anchor)
+  CD: [log] [chart_drawing] drawing_second_point → idle (commit_done)
+  CD: [log] [chart_drawing] commit ok manual-HYPEUSDT-4h-support-1774249200-1775458800
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:26:18Z  git=1d88f12  N_RUNS=1 (log-id) ===
+[run 1/1] FAIL (22.3s)  no cond with exchange_order_id after 12s
+  line_id=manual-HYPEUSDT-4h-support-1774249200-1775458800
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:29:38Z  git=1d88f12  N_RUNS=1 (modal-poll) ===
+[run 1/1] FAIL (13.5s)  modal error: 创建失败: {"code":"43027","msg":"The minimum order value 5 USDT is not met","requestTime":1776209393973,"data":null}
+  line_id=manual-HYPEUSDT-4h-support-1774263600-1775473200
+  JS ERR: [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+
+=== 0/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:30:42Z  git=1d88f12  N_RUNS=1 (near-mark) ===
+[run 1/1] PASS (23.4s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091474047627266 status=triggered
+
+=== 1/1 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:31:19Z  git=1d88f12  N_RUNS=20 (FULL BATCH v2) ===
+[run 1/20] PASS (20.3s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091617564155904 status=triggered
+[run 2/20] PASS (22.9s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091714398052353 status=triggered
+[run 3/20] PASS (23.3s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091812203454464 status=triggered
+[run 4/20] PASS (18.7s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091891408691200 status=triggered
+[run 5/20] PASS (17.7s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428091964842565632 status=triggered
+[run 6/20] PASS (17.8s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092039798972416 status=triggered
+[run 7/20] PASS (17.3s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092112863748096 status=triggered
+[run 8/20] PASS (17.2s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092185032515584 status=triggered
+[run 9/20] PASS (25.1s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092290372431875 status=triggered
+[run 10/20] PASS (17.4s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092363076526080 status=triggered
+[run 11/20] PASS (18.0s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092438756974592 status=triggered
+[run 12/20] PASS (18.2s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092512708321280 status=triggered
+[run 13/20] PASS (17.7s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092588423868416 status=triggered
+[run 14/20] PASS (17.5s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092662384680960 status=triggered
+[run 15/20] PASS (17.5s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092735518138368 status=triggered
+[run 16/20] PASS (17.6s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092810187759616 status=triggered
+[run 17/20] PASS (17.9s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092884502437888 status=triggered
+[run 18/20] PASS (17.9s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428092959691075584 status=triggered
+[run 19/20] PASS (17.5s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428093033611489280 status=triggered
+[run 20/20] PASS (17.5s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428093106881785856 status=triggered
+
+=== 20/20 passed ===
+=== end ===
+

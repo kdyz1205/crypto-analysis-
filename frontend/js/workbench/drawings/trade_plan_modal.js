@@ -20,7 +20,7 @@
 // last values pre-filled (per user Q16).
 
 import { getLiveAccount } from '../../services/live_execution.js';
-import { createConditional } from '../../services/conditionals.js';
+import { createConditional, placeLineOrder } from '../../services/conditionals.js';
 import { esc } from '../../util/dom.js';
 
 const LS_KEY = 'v2.tradeplan.defaults.v1';
@@ -174,38 +174,44 @@ export function openTradePlanModal(line) {
         const v = readForm();
         saveDefaults(v);
 
+        // Compute size_usdt. If user set a leverage, we derive notional
+        // from (equity × leverage); otherwise use the raw notional_usd.
+        let size_usdt = v.notional_usd;
+        if (v.leverage > 0) {
+          try {
+            const equity = await fetchEquity(v.exchange_mode);
+            if (equity > 0) size_usdt = equity * v.leverage;
+          } catch {}
+        }
+        if (!size_usdt || size_usdt <= 0) {
+          throw new Error('size_usdt 计算失败 — 填一个 notional 或确保账户有余额');
+        }
+
+        // /api/drawings/manual/place-line-order — this IMMEDIATELY submits
+        // a Bitget plan order so the user sees it in 计划委托 tab. The old
+        // /api/conditionals path created a passive local watcher that never
+        // showed anything in Bitget, which is why the user saw empty.
+        // kind: "bounce" or "break" (backend expects "break", not "breakout")
         const payload = {
           manual_line_id: line.manual_line_id,
-          trigger: {
-            tolerance_atr: 0.2,
-            poll_seconds: 0,                // router auto-picks per TF
-            max_age_seconds: 0,             // never expire by time
-            max_distance_atr: 0,            // never expire by drift
-            break_threshold_atr: 0.5,
-          },
-          order: {
-            direction: v.direction,
-            order_kind: v.order_kind,
-            tolerance_pct_of_line: v.buffer_pct,
-            stop_offset_pct_of_line: v.stop_pct,
-            rr_target: v.rr_target,
-            leverage: v.leverage > 0 ? v.leverage : null,
-            notional_usd: v.leverage > 0 ? null : v.notional_usd,
-            submit_to_exchange: v.submit_to_exchange,
-            exchange_mode: v.exchange_mode,
-            reverse_enabled: v.reverse_enabled,
-            reverse_entry_offset_pct: v.reverse_buffer_pct,
-            reverse_stop_offset_pct: v.reverse_stop_pct,
-            reverse_rr_target: v.reverse_rr_target,
-            reverse_leverage: v.leverage > 0 ? v.leverage : null,
-          },
-          pattern_stats: {},
+          direction: v.direction,
+          kind: v.order_kind === 'breakout' ? 'break' : v.order_kind,
+          tolerance_pct: v.buffer_pct,
+          stop_offset_pct: v.stop_pct,
+          size_usdt: size_usdt,
+          leverage: Math.max(1, Math.min(100, Math.round(v.leverage || 5))),
+          mode: v.exchange_mode,
+          rr_target: v.rr_target,
+          notify_tg: true,
         };
 
-        const resp = await createConditional(payload);
-        if (!resp?.ok) throw new Error(resp?.error || 'create failed');
+        const resp = await placeLineOrder(payload);
+        if (!resp?.ok) {
+          const err = resp?.error || resp?.detail || resp?.reason || 'place failed';
+          throw new Error(err);
+        }
         closeExisting();
-        resolve(resp.conditional);
+        resolve(resp);
       } catch (err) {
         btn.disabled = false;
         btn.textContent = '确认挂单';
