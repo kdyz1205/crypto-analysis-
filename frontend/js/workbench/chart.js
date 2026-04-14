@@ -2,20 +2,18 @@
 
 import { $ } from '../util/dom.js';
 import { marketState, setCandles, setHistoryMeta, setHistoryMode, setPrecision, setScale } from '../state/market.js';
-import { strategyState, setStrategyConfig, setStrategyError, setStrategySnapshot, clearStrategySnapshot, clearStrategyReplay, getCurrentStrategySnapshot, setStrategyLayerVisible } from '../state/strategy.js';
-import { drawingsState } from '../state/drawings.js';
+import { strategyState, setStrategyLayerVisible } from '../state/strategy.js';
 import { publish, subscribe } from '../util/events.js';
 import * as marketSvc from '../services/market.js';
-import * as patternsSvc from '../services/patterns.js';
-import * as strategySvc from '../services/strategy.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
 import { markBoot } from '../ui/boot_status.js';
 import { drawMAOverlays, toggleMAOverlays as toggleMA } from './ma_overlay.js';
-import { drawPatterns, drawZones, drawHorizontalSRZones, clearHorizontalSRZones, clearPatternLines } from './patterns.js';
-import { clearTrendlineOverlay, drawTrendlineOverlay } from './overlays/trendline_overlay.js';
-import { clearSignalOverlay, drawSignalOverlay } from './overlays/signal_overlay.js';
-import { clearOrderOverlay, drawOrderOverlay } from './overlays/order_overlay.js';
-import { initManualTrendlineController, refreshManualDrawings, renderManualLines, getSuppressedAutoLineIds } from './drawings/manual_trendline_controller.js';
+import { startTickerWS, setTickerSymbol, stopTickerWS } from './ws_ticker.js';
+import { clearHorizontalSRZones } from './patterns.js';
+import { clearTrendlineOverlay } from './overlays/trendline_overlay.js';
+import { clearSignalOverlay } from './overlays/signal_overlay.js';
+import { clearOrderOverlay } from './overlays/order_overlay.js';
+import { initManualTrendlineController, refreshManualDrawings, renderManualLines } from './drawings/manual_trendline_controller.js';
 
 let chart = null;
 let candleSeries = null;
@@ -23,16 +21,8 @@ let volumeSeries = null;
 let liveTimer = null;
 let strategyLayerPanel = null;
 let chartModePanel = null;
-let strategyRequestSeq = 0;
-let patternRequestSeq = 0;
-let lastPatternKey = null;
-let lastStrategyConfigKey = null;
 let chartLoadSeq = 0;
-let overlayScheduleSeq = 0;
-let overlayTimer = null;
-let strategyAbortController = null;
-let patternAbortController = null;
-const OVERLAY_REQUEST_TIMEOUT_MS = 30000;
+let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
 
 export function initChart(containerId = 'chart-container') {
   const el = $('#' + containerId);
@@ -59,10 +49,16 @@ export function initChart(containerId = 'chart-container') {
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: {
       borderColor: '#2a3548',
-      autoScale: true,        // Y-axis auto-fits visible candles (like TradingView)
+      autoScale: true,
+      mode: LightweightCharts.PriceScaleMode.Logarithmic,  // log by default
       scaleMargins: { top: 0.05, bottom: 0.05 },
     },
-    timeScale: { borderColor: '#2a3548', timeVisible: true, secondsVisible: false },
+    timeScale: {
+      borderColor: '#2a3548',
+      timeVisible: true,
+      secondsVisible: false,
+      rightOffset: 80,   // generous future space so drawn lines can project weeks ahead
+    },
   });
 
   candleSeries = chart.addCandlestickSeries({
@@ -94,7 +90,7 @@ export function initChart(containerId = 'chart-container') {
     new ResizeObserver(resizeChart).observe(el);
   }
 
-  ensureStrategyLayerPanel(el.parentElement || el);
+  // strategy layer panel removed — all auto-strategy drawing is disabled
   ensureChartModePanel(el.parentElement || el);
   initManualTrendlineController(chart, el.parentElement || el);
   applyScaleMode();
@@ -162,12 +158,49 @@ export async function loadCurrent(forcePatterns = false) {
   }
 
   try {
-    cancelDeferredOverlayLoad();
-    abortOverlayRequests();
+    // History windows per TF — sized for SNAPPY TF switching, not for
+    // scrolling back 5 years on first load. Each TF gives you 1500-3000
+    // bars which is plenty for structure analysis but fast to fetch.
+    // If you need deeper history, the chart lets you scroll back and
+    // the backend will stream more. Bar counts targeted:
+    //   1m  × 7d   ≈ 10k
+    //   3m  × 14d  ≈ 6.7k
+    //   5m  × 30d  ≈ 8.6k
+    //   15m × 60d  ≈ 5.7k
+    //   30m × 120d ≈ 5.7k
+    //   1h  × 180d ≈ 4.3k
+    //   2h  × 365d ≈ 4.3k
+    //   4h  × 730d ≈ 4.3k  (2y context)
+    //   6h  × 1095d ≈ 4.3k
+    //   12h × 1825d ≈ 3.6k
+    //   1d  × 1825d = 1.8k (5y)
+    //   1w  × 3650d = 520  (10y)
+    const tfDays = {
+      '1m': 7, '3m': 14, '5m': 30, '15m': 60,
+      '30m': 120, '1h': 180, '2h': 365,
+      '4h': 730, '6h': 1095, '12h': 1825,
+      '1d': 1825, '1w': 3650,
+    };
+    const days = tfDays[currentInterval] || 180;
 
-    // Smart data loading: short timeframes load less data to stay fast
-    const tfDays = { '1m': 7, '3m': 14, '5m': 30, '15m': 60, '1h': 180, '4h': 730, '1d': 1095, '1w': 1095 };
-    const days = tfDays[currentInterval] || 90;
+    // OPTIMISTIC SWAP: if we have a recent cached result for this
+    // (symbol, interval, days), paint it IMMEDIATELY without waiting
+    // for the network. The subsequent awaited fetch either returns
+    // the same cached data (service cache hit) or refreshes with live
+    // bars. Either way the user sees an instant chart swap on TF
+    // button click, and the live tail catches up a tick later.
+    const cachedPeek = marketSvc.peekOhlcvCache(currentSymbol, currentInterval, days, marketState.historyMode);
+    if (cachedPeek && Array.isArray(cachedPeek.candles) && cachedPeek.candles.length > 0) {
+      const instantCandles = cachedPeek.candles.map((c) => ({
+        time: typeof c.time === 'string' ? Math.floor(new Date(c.time).getTime() / 1000) : c.time,
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+      }));
+      try { candleSeries.setData(instantCandles); } catch {}
+    }
+
     const data = await marketSvc.getOhlcv(currentSymbol, currentInterval, days, null, marketState.historyMode);
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
@@ -199,7 +232,66 @@ export async function loadCurrent(forcePatterns = false) {
 
     candleSeries.setData(candles);
     if (volumes.length > 0) volumeSeries.setData(volumes);
-    chart.timeScale().fitContent();
+
+    // ── Verifiable load report ─────────────────────────────────
+    const _firstT = candles[0]?.time;
+    const _lastT  = candles[candles.length - 1]?.time;
+    const _spanD  = candles.length ? ((_lastT - _firstT) / 86400).toFixed(1) : 0;
+    const _firstD = _firstT ? new Date(_firstT * 1000).toISOString().slice(0, 10) : '?';
+    const _lastDS = _lastT  ? new Date(_lastT  * 1000).toISOString().slice(0, 10) : '?';
+    console.log(
+      `%c[chart] LOADED ${currentSymbol} ${currentInterval} — ${candles.length} bars · span ${_spanD}d · ${_firstD} → ${_lastDS}`,
+      'background:#0d4a2a;color:#00e676;padding:2px 6px;font-weight:bold'
+    );
+
+    // ── Viewport (only on FIRST load per symbol/tf) ────────────
+    const fitKey = `${currentSymbol}:${currentInterval}`;
+    if (_lastFitKey !== fitKey) {
+      _lastFitKey = fitKey;
+      const VISIBLE_BARS = 200;
+      const ts = chart.timeScale();
+      const totalBars = candles.length;
+      const barDur = totalBars >= 2 ? candles[1].time - candles[0].time : 3600;
+
+      const applyViewport = () => {
+        try {
+          if (totalBars > VISIBLE_BARS) {
+            const fromTime = candles[totalBars - VISIBLE_BARS].time;
+            const toTime   = candles[totalBars - 1].time + barDur * 4;
+            ts.setVisibleRange({ from: fromTime, to: toTime });
+            // Verify it stuck
+            const got = ts.getVisibleRange();
+            const okFrom = got && Math.abs(got.from - fromTime) < barDur * 5;
+            console.log(
+              `%c[chart] viewport set → from ${new Date(fromTime*1000).toISOString().slice(0,10)} to ${new Date(toTime*1000).toISOString().slice(0,10)}  (got: ${got ? new Date(got.from*1000).toISOString().slice(0,10)+' → '+new Date(got.to*1000).toISOString().slice(0,10) : 'null'})  stuck=${okFrom}`,
+              'background:#0a2540;color:#60a5fa;padding:2px 6px'
+            );
+            return okFrom;
+          } else {
+            ts.fitContent();
+            return true;
+          }
+        } catch (e) {
+          console.warn('[chart] viewport set err', e);
+          return false;
+        }
+      };
+
+      // Try 4 times across animation frames in case lightweight-charts
+      // re-applies its own layout after setData. Each retry double-checks
+      // and re-sets if the previous set didn't stick.
+      let attempt = 0;
+      const tryViewport = () => {
+        attempt++;
+        const ok = applyViewport();
+        if (!ok && attempt < 4) {
+          requestAnimationFrame(tryViewport);
+        } else if (!ok) {
+          console.warn('[chart] viewport never stuck after 4 attempts, giving up');
+        }
+      };
+      requestAnimationFrame(tryViewport);
+    }
 
     setCandles(candles);
     setHistoryMeta({
@@ -228,172 +320,24 @@ export async function loadCurrent(forcePatterns = false) {
       loadSeq,
     });
 
-    const patternKey = `${currentSymbol}:${currentInterval}`;
-    const shouldLoadPatterns = forcePatterns || lastPatternKey !== patternKey;
-    if (shouldLoadPatterns) {
-      lastPatternKey = patternKey;
-    }
-    scheduleDeferredOverlayLoad({
-      loadSeq,
-      symbol: currentSymbol,
-      interval: currentInterval,
-      shouldLoadPatterns,
-    });
     void refreshManualDrawings(currentSymbol, currentInterval).catch((err) => console.warn('[drawings] refresh failed:', err));
+    markBoot('patterns', 'ok', 'manual-only mode');
 
     return {
       ok: true,
       stale: false,
       symbol: currentSymbol,
       interval: currentInterval,
-      shouldLoadPatterns,
     };
   } catch (err) {
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
     }
-    clearPatternLines(chart);
-    clearStrategySnapshot();
-    clearStrategyReplay();
-    setStrategyError(err?.message || String(err));
     setHistoryMeta(null);
     renderStrategyOverlays();
     console.error('[chart] load failed:', err);
     throw err;
   }
-}
-
-async function loadPatterns(symbol, interval, overlayContext = null) {
-  const requestId = ++patternRequestSeq;
-  // Don't abort in-flight — requestId check drops stale responses.
-  patternAbortController = new AbortController();
-  try {
-    const data = await patternsSvc.getPatterns(symbol, interval, 90, 'full', null, {
-      timeout: OVERLAY_REQUEST_TIMEOUT_MS,
-      signal: patternAbortController.signal,
-    });
-    if (requestId !== patternRequestSeq || !isOverlayContextCurrent(overlayContext)) {
-      return { ok: false, stale: true };
-    }
-    // Pattern lines disabled — strategy overlay already draws S/R from snapshot.
-    // Drawing both layers creates duplicate noise on the chart.
-    clearPatternLines(chart);
-    return { ok: true, stale: false };
-  } catch (err) {
-    if (requestId !== patternRequestSeq || err?.name === 'AbortError' || !isOverlayContextCurrent(overlayContext)) {
-      return { ok: false, stale: true };
-    }
-    console.warn('[patterns] load failed:', err);
-    throw err;
-  }
-}
-
-async function loadStrategy(symbol, interval, overlayContext = null) {
-  const requestId = ++strategyRequestSeq;
-  // Don't abort in-flight requests — stale responses are filtered by the
-  // requestId check below. Aborting causes ERR_ABORTED cascades when
-  // multiple overlay loads are scheduled in rapid succession at boot.
-  strategyAbortController = new AbortController();
-  try {
-    const configKey = `${symbol}:${interval}`;
-    const shouldFetchConfig = lastStrategyConfigKey !== configKey;
-    const [config, snapshotEnvelope] = await Promise.all([
-      shouldFetchConfig
-        ? strategySvc.getStrategyConfig(symbol, interval, {
-          timeout: OVERLAY_REQUEST_TIMEOUT_MS,
-          signal: strategyAbortController.signal,
-        })
-        : Promise.resolve(strategyState.config),
-      strategySvc.getStrategySnapshot(
-        symbol,
-        interval,
-        { analysisBars: 500 },
-        {
-          timeout: OVERLAY_REQUEST_TIMEOUT_MS,
-          signal: strategyAbortController.signal,
-        },
-      ),
-    ]);
-    if (requestId !== strategyRequestSeq || !isOverlayContextCurrent(overlayContext)) {
-      return { ok: false, stale: true };
-    }
-    if (shouldFetchConfig && config) {
-      lastStrategyConfigKey = configKey;
-      setStrategyConfig(config);
-    }
-    setStrategySnapshot(snapshotEnvelope);
-    clearStrategyReplay();
-    setStrategyError(null);
-    renderStrategyOverlays();
-    return { ok: true, stale: false };
-  } catch (err) {
-    if (requestId !== strategyRequestSeq || err?.name === 'AbortError' || !isOverlayContextCurrent(overlayContext)) {
-      return { ok: false, stale: true };
-    }
-    console.warn('[strategy] load failed:', err);
-    clearStrategySnapshot();
-    setStrategyError(err?.message || String(err));
-    renderStrategyOverlays();
-    throw err;
-  }
-}
-
-function scheduleDeferredOverlayLoad(overlayContext) {
-  overlayScheduleSeq += 1;
-  const scheduledContext = {
-    ...overlayContext,
-    overlaySeq: overlayScheduleSeq,
-  };
-  cancelDeferredOverlayLoad();
-  markBoot('patterns', 'pending', `loading ${overlayContext.symbol} ${overlayContext.interval}`);
-  overlayTimer = setTimeout(() => {
-    overlayTimer = null;
-    if (!isOverlayContextCurrent(scheduledContext)) return;
-    void loadDeferredOverlays(scheduledContext);
-  }, 100);
-}
-
-async function loadDeferredOverlays(overlayContext) {
-  try {
-    const results = await Promise.allSettled([
-      loadStrategy(overlayContext.symbol, overlayContext.interval, overlayContext),
-      overlayContext.shouldLoadPatterns
-        ? loadPatterns(overlayContext.symbol, overlayContext.interval, overlayContext)
-        : Promise.resolve({ ok: true, stale: false, skipped: true }),
-    ]);
-
-    if (!isOverlayContextCurrent(overlayContext)) return;
-
-    const blockingFailure = results.find((result) => result.status === 'rejected');
-    if (blockingFailure?.status === 'rejected') {
-      markBoot('patterns', 'error', blockingFailure.reason?.message || String(blockingFailure.reason));
-      return;
-    }
-
-    const settledValues = results
-      .filter((result) => result.status === 'fulfilled')
-      .map((result) => result.value);
-    const activeValues = settledValues.filter((value) => !value?.stale);
-    if (activeValues.some((value) => value?.ok)) {
-      markBoot('patterns', 'ok', `${overlayContext.symbol} ${overlayContext.interval} loaded`);
-    }
-  } catch (err) {
-    if (!isOverlayContextCurrent(overlayContext)) return;
-    markBoot('patterns', 'error', err?.message || String(err));
-  }
-}
-
-function cancelDeferredOverlayLoad() {
-  if (overlayTimer) {
-    clearTimeout(overlayTimer);
-    overlayTimer = null;
-  }
-}
-
-function abortOverlayRequests() {
-  // No-op: stale responses are dropped by the requestId check inside
-  // each loader. Explicit aborts cause ERR_ABORTED cascades at boot
-  // when loadCurrent fires multiple times from subscribed events.
 }
 
 function isChartLoadCurrent(loadSeq, symbol, interval) {
@@ -404,66 +348,14 @@ function isChartLoadCurrent(loadSeq, symbol, interval) {
   );
 }
 
-function isOverlayContextCurrent(overlayContext) {
-  if (!overlayContext) return true;
-  return (
-    overlayContext.loadSeq === chartLoadSeq
-    && overlayContext.overlaySeq === overlayScheduleSeq
-    && overlayContext.symbol === marketState.currentSymbol
-    && overlayContext.interval === marketState.currentInterval
-  );
-}
-
 function renderStrategyOverlays() {
-  const snapshot = getCurrentStrategySnapshot();
+  // Auto-detected trendlines / signals / orders / horizontal SR zones are
+  // disabled — user wants a clean chart with only lines he draws himself.
   if (!chart || !candleSeries) return;
-  const viewMode = drawingsState.viewMode || 'mixed';
-  if (!snapshot) {
-    clearTrendlineOverlay(chart);
-    clearSignalOverlay(candleSeries);
-    clearOrderOverlay(chart);
-    renderManualLines();
-    return;
-  }
-
-  const suppressedAutoLineIds = getSuppressedAutoLineIds();
-  const filteredSnapshot = {
-    ...snapshot,
-    candidate_lines: viewMode === 'manual_only'
-      ? []
-      : (snapshot.candidate_lines || []).filter((line) => !suppressedAutoLineIds.has(line.line_id)),
-    active_lines: viewMode === 'manual_only'
-      ? []
-      : (snapshot.active_lines || []).filter((line) => !suppressedAutoLineIds.has(line.line_id)),
-    touch_points: viewMode === 'manual_only'
-      ? []
-      : (snapshot.touch_points || []).filter((point) => !suppressedAutoLineIds.has(point.line_id)),
-    signals: viewMode === 'manual_only'
-      ? []
-      : (snapshot.signals || []).filter((signal) => !suppressedAutoLineIds.has(signal.line_id)),
-    invalidations: viewMode === 'manual_only'
-      ? []
-      : (snapshot.invalidations || []).filter((item) => !suppressedAutoLineIds.has(item.line_id)),
-  };
-
-  const candleTimes = (marketState.lastCandles || []).map((c) => c.time);
-  drawTrendlineOverlay(chart, filteredSnapshot, strategyState.layerVisibility, candleTimes);
-  drawSignalOverlay(candleSeries, filteredSnapshot, strategyState.layerVisibility);
-  drawOrderOverlay(chart, filteredSnapshot, strategyState.layerVisibility);
-
-  // Draw horizontal S/R zones — show top zones by strength, max 3 per side
-  const srZones = (snapshot.horizontal_zones || [])
-    .filter((z) => z.strength > 25)
-    .sort((a, b) => b.strength - a.strength);
-  const supportZones = srZones.filter((z) => z.side === 'support').slice(0, 3);
-  const resistanceZones = srZones.filter((z) => z.side === 'resistance').slice(0, 3);
-  const filteredZones = [...supportZones, ...resistanceZones];
-  if (filteredZones.length > 0) {
-    drawHorizontalSRZones(chart, candleSeries, filteredZones);
-  } else {
-    clearHorizontalSRZones(chart);
-  }
-
+  try { clearTrendlineOverlay(chart); } catch {}
+  try { clearSignalOverlay(candleSeries); } catch {}
+  try { clearOrderOverlay(chart); } catch {}
+  try { clearHorizontalSRZones(chart); } catch {}
   renderManualLines();
 }
 
@@ -605,14 +497,46 @@ function updateHeader(symbol, interval, price) {
 
 export function startLiveUpdates(intervalMs = 10000) {
   stopLiveUpdates();
+  // Full OHLCV reload on a slow cadence — this handles new bars rolling
+  // over and keeps historical data honest.
   liveTimer = setInterval(() => {
     void loadCurrent().catch((err) => console.warn('[chart] live update failed:', err));
   }, intervalMs);
+  // Direct Bitget WebSocket ticker — tick-level price updates, no polling.
+  startTickerWS(marketState.currentSymbol, onTickerTick);
+  // Re-subscribe when symbol changes
+  subscribe('market.symbol.changed', (sym) => setTickerSymbol(sym));
 }
 
 export function stopLiveUpdates() {
   if (liveTimer) clearInterval(liveTimer);
   liveTimer = null;
+  stopTickerWS();
+}
+
+function onTickerTick(tick) {
+  if (!tick || tick.symbol !== marketState.currentSymbol) return;
+  const price = tick.markPrice || tick.lastPrice;
+  if (!isFinite(price) || price <= 0) return;
+
+  // Header price
+  updateHeader(marketState.currentSymbol, marketState.currentInterval, price);
+
+  // Update the last candle's close in place — tradingview-style tick update.
+  if (candleSeries && marketState.lastCandles?.length) {
+    const last = marketState.lastCandles[marketState.lastCandles.length - 1];
+    const updated = {
+      time: last.time,
+      open: last.open,
+      high: Math.max(last.high, price),
+      low: Math.min(last.low, price),
+      close: price,
+    };
+    try { candleSeries.update(updated); } catch {}
+    last.close = updated.close;
+    last.high = updated.high;
+    last.low = updated.low;
+  }
 }
 
 export function getChart() { return chart; }
