@@ -42,8 +42,9 @@ export function drawMAOverlays(chart, overlays, _candleTimes) {
         lineStyle: cfg.lineStyle ?? 0,
         priceLineVisible: false,
         lastValueVisible: false,
+        crosshairMarkerVisible: false,  // no dot on hover
         title: cfg.title,
-        autoscaleInfoProvider: () => null,  // exclude from auto-scale calculation
+        autoscaleInfoProvider: () => null,
       });
     }
     try { seriesRefs[key].setData(data); }
@@ -66,4 +67,90 @@ export function clearMAOverlays(chart) {
     try { chart.removeSeries(s); } catch {}
   }
   Object.keys(seriesRefs).forEach((k) => delete seriesRefs[k]);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Client-side overlay computation.
+// The server used to ship MA/EMA/BB arrays with every /api/ohlcv
+// response. For a 500-bar chart that's 6 extra 500-element arrays
+// inflating the JSON payload. Computing on client is O(n) JS and
+// takes <5ms for 500 bars — cheaper than the bytes over the wire.
+// ─────────────────────────────────────────────────────────────
+
+function _sma(values, period) {
+  const n = values.length;
+  const out = new Array(n).fill(null);
+  if (n < period) return out;
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  out[period - 1] = sum / period;
+  for (let i = period; i < n; i++) {
+    sum += values[i] - values[i - period];
+    out[i] = sum / period;
+  }
+  return out;
+}
+
+function _ema(values, period) {
+  const n = values.length;
+  const out = new Array(n).fill(null);
+  if (n < period) return out;
+  const k = 2 / (period + 1);
+  let prev = 0;
+  for (let i = 0; i < period; i++) prev += values[i];
+  prev /= period;
+  out[period - 1] = prev;
+  for (let i = period; i < n; i++) {
+    prev = values[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+function _bb(values, period, stdMult) {
+  const n = values.length;
+  const upper = new Array(n).fill(null);
+  const lower = new Array(n).fill(null);
+  if (n < period) return { upper, lower };
+  for (let i = period - 1; i < n; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += values[j];
+    const mean = sum / period;
+    let vsq = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      vsq += (values[j] - mean) * (values[j] - mean);
+    }
+    const std = Math.sqrt(vsq / period);
+    upper[i] = mean + stdMult * std;
+    lower[i] = mean - stdMult * std;
+  }
+  return { upper, lower };
+}
+
+/**
+ * Compute MA/EMA/BB arrays client-side from candle data.
+ * Returns overlays object in the same format the server used to send:
+ * { ma5: [{time, value}...], ma8: [...], ema21: [...], ma55: [...],
+ *   bb_upper: [...], bb_lower: [...] }
+ */
+export function computeOverlaysFromCandles(candles) {
+  if (!Array.isArray(candles) || candles.length < 55) return {};
+  const closes = candles.map((c) => Number(c.close));
+  const times = candles.map((c) => c.time);
+  const ma5 = _sma(closes, 5);
+  const ma8 = _sma(closes, 8);
+  const ema21 = _ema(closes, 21);
+  const ma55 = _sma(closes, 55);
+  const { upper: bbUp, lower: bbLo } = _bb(closes, 21, 2.5);
+  const _pack = (arr) =>
+    arr.map((v, i) => (v == null ? null : { time: times[i], value: v }))
+       .filter((x) => x != null);
+  return {
+    ma5: _pack(ma5),
+    ma8: _pack(ma8),
+    ema21: _pack(ema21),
+    ma55: _pack(ma55),
+    bb_upper: _pack(bbUp),
+    bb_lower: _pack(bbLo),
+  };
 }

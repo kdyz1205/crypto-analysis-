@@ -47,7 +47,10 @@ export const getOhlcv = async (symbol, interval, days = 30, endTime = null, hist
       return hit.data;
     }
   }
-  const params = new URLSearchParams({ symbol, interval, days: String(days), history_mode: historyMode });
+  const params = new URLSearchParams({
+    symbol, interval, days: String(days), history_mode: historyMode,
+    include_overlays: 'false',   // compute MA/BB client-side — server skips loops + shrinks payload
+  });
   if (endTime) params.set('end_time', endTime);
   // noCache on fetch layer: we manage our own freshness via the cache
   // above; the fetch-layer 30s cache would hold stale bar counts.

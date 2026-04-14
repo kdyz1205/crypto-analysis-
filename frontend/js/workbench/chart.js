@@ -7,7 +7,7 @@ import { publish, subscribe } from '../util/events.js';
 import * as marketSvc from '../services/market.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
 import { markBoot } from '../ui/boot_status.js';
-import { drawMAOverlays, toggleMAOverlays as toggleMA } from './ma_overlay.js';
+import { drawMAOverlays, toggleMAOverlays as toggleMA, computeOverlaysFromCandles } from './ma_overlay.js';
 import { startTickerWS, setTickerSymbol, stopTickerWS } from './ws_ticker.js';
 import { clearHorizontalSRZones } from './patterns.js';
 import { clearTrendlineOverlay } from './overlays/trendline_overlay.js';
@@ -158,30 +158,30 @@ export async function loadCurrent(forcePatterns = false) {
   }
 
   try {
-    // History windows per TF — sized for SNAPPY TF switching, not for
-    // scrolling back 5 years on first load. Each TF gives you 1500-3000
-    // bars which is plenty for structure analysis but fast to fetch.
-    // If you need deeper history, the chart lets you scroll back and
-    // the backend will stream more. Bar counts targeted:
-    //   1m  × 7d   ≈ 10k
-    //   3m  × 14d  ≈ 6.7k
-    //   5m  × 30d  ≈ 8.6k
-    //   15m × 60d  ≈ 5.7k
-    //   30m × 120d ≈ 5.7k
-    //   1h  × 180d ≈ 4.3k
-    //   2h  × 365d ≈ 4.3k
-    //   4h  × 730d ≈ 4.3k  (2y context)
-    //   6h  × 1095d ≈ 4.3k
-    //   12h × 1825d ≈ 3.6k
-    //   1d  × 1825d = 1.8k (5y)
-    //   1w  × 3650d = 520  (10y)
+    // History windows per TF — targeting ~500-1000 initial bars per
+    // call, similar to TradingView's initial viewport. Scroll-back
+    // fetches additional history on demand (separate code path, TODO).
+    // Each TF capped so one fetch = one Bitget page (max 500 bars),
+    // so the backend finishes in ~1 request, not 9 paginated ones.
+    //   1m  × 0.35d ≈ 504
+    //   3m  × 1d    ≈ 480
+    //   5m  × 2d    ≈ 576
+    //   15m × 5d    ≈ 480
+    //   30m × 10d   ≈ 480
+    //   1h  × 21d   ≈ 504
+    //   2h  × 42d   ≈ 504
+    //   4h  × 84d   ≈ 504
+    //   6h  × 125d  ≈ 500
+    //   12h × 250d  ≈ 500
+    //   1d  × 500d  = 500
+    //   1w  × 3500d ≈ 500
     const tfDays = {
-      '1m': 7, '3m': 14, '5m': 30, '15m': 60,
-      '30m': 120, '1h': 180, '2h': 365,
-      '4h': 730, '6h': 1095, '12h': 1825,
-      '1d': 1825, '1w': 3650,
+      '1m': 1, '3m': 1, '5m': 2, '15m': 5,
+      '30m': 10, '1h': 21, '2h': 42,
+      '4h': 84, '6h': 125, '12h': 250,
+      '1d': 500, '1w': 3500,
     };
-    const days = tfDays[currentInterval] || 180;
+    const days = tfDays[currentInterval] || 21;
 
     // OPTIMISTIC SWAP: if we have a recent cached result for this
     // (symbol, interval, days), paint it IMMEDIATELY without waiting
@@ -307,9 +307,14 @@ export async function loadCurrent(forcePatterns = false) {
     const lastPrice = candles[candles.length - 1].close;
     setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
 
-    if (data.overlays) {
+    // Prefer client-computed overlays — saves a round of backend CPU
+    // and shrinks the /api/ohlcv payload by ~40%. Falls back to server
+    // overlays if candles are too short to compute MA55.
+    const overlays = computeOverlaysFromCandles(candles);
+    const useOverlays = Object.keys(overlays).length > 0 ? overlays : data.overlays;
+    if (useOverlays) {
       const candleTimes = candles.map((c) => c.time);
-      drawMAOverlays(chart, data.overlays, candleTimes);
+      drawMAOverlays(chart, useOverlays, candleTimes);
     }
 
     updateHeader(currentSymbol, currentInterval, lastPrice);

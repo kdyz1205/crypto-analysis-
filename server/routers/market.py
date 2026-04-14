@@ -11,7 +11,8 @@ from fastapi import APIRouter, Query, HTTPException
 
 from ..core.config import PROJECT_ROOT
 from ..data_service import (
-    load_symbols, load_swap_symbols, get_symbol_metadata, get_ohlcv, get_ohlcv_with_df, API_ONLY,
+    load_symbols, load_swap_symbols, load_bitget_swap_symbols,
+    get_symbol_metadata, get_ohlcv, get_ohlcv_with_df, API_ONLY,
 )
 from ..pattern_service import get_patterns_from_df
 
@@ -75,31 +76,40 @@ def _symbols_from_ticker_info_csv() -> list[str]:
 
 # ── Routes ───────────────────────────────────────────────────────────────
 
+# Bitget lists equity/commodity perpetuals under the same usdt-futures
+# product type. These bases are NOT crypto — filter them out so the symbol
+# picker only shows what the user actually trades.
+_NON_CRYPTO_BASES = frozenset({
+    # US equities
+    "AAPL", "TSLA", "NVDA", "GOOGL", "MSFT", "AMZN", "META", "COIN", "MSTR",
+    "PLTR", "HOOD", "AMD", "INTC", "NFLX", "DIS", "BABA", "PDD", "JD", "TSM",
+    # Precious metals / commodities (XAUT is a crypto gold token — keep it)
+    "XAU", "XAG", "XPT", "XPD", "CL", "BZ", "NG", "HG", "GC", "SI",
+    "BRENT", "WTI", "GOLD", "SILVER", "OIL", "COPPER",
+    # Equity indices / ETFs
+    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "UNG", "TLT", "IEF",
+    "SPX", "NDX", "DJI", "RUT", "VIX",
+})
+
+def _is_crypto_symbol(sym: str) -> bool:
+    if not sym.endswith("USDT"):
+        return False
+    base = sym[:-4]
+    return base not in _NON_CRYPTO_BASES
+
+
 @router.get("/symbols")
-async def get_symbols_route(include_extended: bool = Query(False, description="Include extended fallback universe from ticker info CSV")):
-    """Return all available ticker symbols: API + symbols from data/*.csv."""
-    from ..data_service import EXCHANGE
-
-    from_data = _symbols_from_data_folder()
-    from_info_csv = _symbols_from_ticker_info_csv() if include_extended else []
-
+async def get_symbols_route(include_extended: bool = Query(False, description="[Deprecated]")):
+    """Return Bitget USDT-M crypto perpetual symbols ranked by 24h volume."""
+    from ..data_service import get_top_volume_symbols
     try:
-        api_symbols = []
-        if EXCHANGE.lower() in {"okx", "bitget"}:
-            swap_symbols = await load_swap_symbols()
-            api_symbols = sorted(swap_symbols.keys()) if swap_symbols else []
-        else:
-            api_symbols = load_symbols() or []
-
-        combined = sorted(set(api_symbols) | set(s.upper() for s in from_data) | set(from_info_csv))
-        if not combined and not include_extended:
-            fallback = _symbols_from_ticker_info_csv()
-            if fallback:
-                return fallback
-        return combined if combined else (from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT'])
+        ranked = await get_top_volume_symbols(top_n=300)
+        crypto_only = [s for s in ranked if _is_crypto_symbol(s)]
+        if crypto_only:
+            return crypto_only[:200]
     except Exception as e:
-        print(f"Warning: Failed to load {EXCHANGE.upper()} symbols: {e}")
-        return from_data or from_info_csv or ['BTCUSDT', 'ETHUSDT', 'HYPEUSDT']
+        print(f"Warning: Failed to load Bitget symbols: {e}")
+    return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'HYPEUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT']
 
 
 @router.get("/symbol-info")
@@ -137,7 +147,7 @@ async def api_chart(
     history_mode: str = Query("fast_window", description="fast_window | full_history"),
 ):
     """Return OHLCV + support/resistance lines in one response."""
-    valid_intervals = {"5m", "15m", "1h", "4h", "1d"}
+    valid_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w"}
     if interval not in valid_intervals:
         raise HTTPException(400, f"Invalid interval. Must be one of: {valid_intervals}")
     if history_mode not in VALID_HISTORY_MODES:
@@ -167,9 +177,10 @@ async def api_ohlcv(
     end_time: str | None = Query(None, description="Replay end time, ISO format"),
     days: int = Query(30, description="Days of data to fetch"),
     history_mode: str = Query("fast_window", description="fast_window | full_history"),
+    include_overlays: bool = Query(True, description="Server-computed MA/BB overlays (costs CPU + payload)"),
 ):
     """Return OHLCV data as JSON."""
-    valid_intervals = {"5m", "15m", "1h", "4h", "1d"}
+    valid_intervals = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w"}
     if interval not in valid_intervals:
         raise HTTPException(400, f"Invalid interval. Must be one of: {valid_intervals}")
     if history_mode not in VALID_HISTORY_MODES:
@@ -181,6 +192,11 @@ async def api_ohlcv(
 
     try:
         result = await get_ohlcv(symbol, interval, end_time, days, history_mode=history_mode)
+        # Drop overlays block from the response if client computes its own.
+        # Saves 6 × n floats + field names off the wire. Cache key is the
+        # same regardless — we just omit the field at serialization time.
+        if not include_overlays and isinstance(result, dict):
+            result = {k: v for k, v in result.items() if k != "overlays"}
         return result
     except ValueError as e:
         print(f"ValueError in /api/ohlcv for {symbol} {interval}: {e}")
@@ -198,6 +214,45 @@ async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     from ..data_service import get_top_volume_symbols
     symbols = await get_top_volume_symbols(n)
     return {"symbols": symbols, "count": len(symbols)}
+
+
+# Live mark-price from Bitget public ticker. Bypasses all local caches so
+# the UI always sees the same number Bitget sees. Meant to be polled every
+# ~1 second from the frontend (no auth, so it's cheap).
+_MARK_CACHE: dict[str, tuple[float, float]] = {}  # symbol -> (price, ts)
+
+@router.get("/market/mark-price")
+async def api_mark_price(symbol: str = Query(...)):
+    import time as _time
+    import httpx
+    sym = symbol.upper().replace("/", "")
+    now = _time.time()
+    # Sub-second cache so burst polls don't hammer Bitget
+    cached = _MARK_CACHE.get(sym)
+    if cached and now - cached[1] < 0.8:
+        return {"ok": True, "symbol": sym, "mark_price": cached[0], "ts": cached[1], "cached": True}
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(
+                "https://api.bitget.com/api/v2/mix/market/ticker",
+                params={"symbol": sym, "productType": "USDT-FUTURES"},
+            )
+            j = r.json()
+            data = j.get("data") or []
+            row = data[0] if isinstance(data, list) and data else {}
+            mp = float(row.get("markPrice") or row.get("lastPr") or 0.0)
+            if mp <= 0:
+                raise ValueError("no price in ticker response")
+            _MARK_CACHE[sym] = (mp, now)
+            return {
+                "ok": True, "symbol": sym, "mark_price": mp, "ts": now,
+                "last": float(row.get("lastPr") or 0) or None,
+                "bid": float(row.get("bidPr") or 0) or None,
+                "ask": float(row.get("askPr") or 0) or None,
+                "cached": False,
+            }
+    except Exception as e:
+        return {"ok": False, "symbol": sym, "error": str(e)}
 
 
 @router.get("/market/snapshot")

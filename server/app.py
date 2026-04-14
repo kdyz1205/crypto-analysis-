@@ -10,6 +10,7 @@ Log capture is installed by importing server/core/log_buffer.py (side effect on 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 # Import log_buffer FIRST to install log capture handlers before any other module
 from .core import log_buffer  # noqa: F401 (side effect: installs handlers)
@@ -165,6 +166,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Gzip everything >= 1 KB. Major impact on /api/ohlcv (3 MB JSON → ~400 KB
+# over the wire). minimum_size keeps tiny endpoints (health, status) bare.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 # Serve frontend static files at /static/ (legacy path)
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "frontend")), name="static")
