@@ -53,12 +53,23 @@ OKX_INSTRUMENTS_URL = "https://www.okx.com/api/v5/public/instruments"
 _http_client: httpx.AsyncClient | None = None
 
 def _get_http_client() -> httpx.AsyncClient:
-    """Return (and lazily create) a shared httpx.AsyncClient."""
+    """Return (and lazily create) a shared httpx.AsyncClient.
+
+    Pool raised to 50 and timeouts split (connect=5s, read=15s) so one
+    slow Bitget call can't block the event loop. Previously: pool=10,
+    timeout=30. Under watcher+reconcile+user-polls the pool saturated
+    and every subsequent HTTP call queued behind a 30s wait, freezing
+    /v2 and /api/* across the whole app.
+    """
     global _http_client
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.AsyncClient(
-            timeout=30.0,
-            limits=httpx.Limits(max_connections=10),
+            timeout=httpx.Timeout(connect=5.0, read=15.0, write=10.0, pool=2.0),
+            limits=httpx.Limits(
+                max_connections=50,
+                max_keepalive_connections=20,
+                keepalive_expiry=30.0,
+            ),
         )
     return _http_client
 

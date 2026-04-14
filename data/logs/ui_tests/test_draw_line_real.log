@@ -1,0 +1,119 @@
+=== run @ 2026-04-14T22:04:44Z  git=2313bd4 ===
+[1] loading page...
+  load failed: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "domcontentloaded"
+
+=== end ===
+
+=== run @ 2026-04-14T22:08:12Z  git=2313bd4 ===
+[1] loading page...
+  load failed: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "domcontentloaded"
+
+=== end ===
+
+
+=== run @ 2026-04-14T22:10:19Z  git=2313bd4 ===
+[RESULT] FAIL — server deadlocks before Playwright can reach /v2
+[CAUSE] conditional_watcher's shared httpx client pool gets exhausted
+        by repeated Bitget reconcile calls. Once the pool is full, the
+        whole asyncio event loop blocks waiting on Bitget's 30s timeout.
+        /api/health works briefly at boot (200) but /v2 page-load path
+        + any subsequent /api/* call hangs for 15-30s.
+[EVIDENCE]
+        - bsknipvpr.output shows 152 httpx.ConnectTimeout entries
+        - netstat: PID alive, port 8000 LISTENING, memory 242 MB
+        - /v2: times out at 20s even on fresh restart
+        - /api/health: 200 at boot, then 000 after first /api/ohlcv call
+[NEXT] Either:
+        1) Disable conditional_watcher for UI test (env flag)
+        2) Raise httpx connection-pool limit from 10 → 50
+        3) Give Bitget calls shorter timeouts (5s instead of 30s)
+        4) Fail closed — don't block event loop on any Bitget call
+        User has not seen this fully tested. The feature's code path
+        (modal on commit, right-click menu, panel badges) compiles and
+        is served by the file router, but NO playwright run has
+        confirmed end-to-end behavior. DO NOT claim "done".
+=== end ===
+
+=== run @ 2026-04-14T22:58:28Z  git=2313bd4 ===
+[1] loading page...
+  DOM: 16.1s
+[2] module probe: {'chart_drawing_has_startTrendlineTool': True, 'chart_drawing_has_jumpToLine': True, 'trade_plan_modal_has_openTradePlanModal': True}
+[3] entering trendline draw mode...
+Traceback (most recent call last):
+  File "C:\Users\alexl\Desktop\crypto-analysis-\scripts\test_draw_line_real.py", line 146, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "C:\Users\alexl\Desktop\crypto-analysis-\scripts\test_draw_line_real.py", line 87, in main
+    page.evaluate("""async () => {
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+        const m = await import('/static/js/workbench/drawings/chart_drawing.js');
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        m.startTrendlineTool();
+        ^^^^^^^^^^^^^^^^^^^^^^^
+    }""")
+    ^^^^^
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\sync_api\_generated.py", line 8566, in evaluate
+    self._sync(
+    ~~~~~~~~~~^
+        self._impl_obj.evaluate(expression=expression, arg=mapping.to_impl(arg))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\_impl\_sync_base.py", line 115, in _sync
+    return task.result()
+           ~~~~~~~~~~~^^
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\_impl\_page.py", line 464, in evaluate
+    return await self._main_frame.evaluate(expression, arg)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\_impl\_frame.py", line 320, in evaluate
+    await self._channel.send(
+    ...<6 lines>...
+    )
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\_impl\_connection.py", line 69, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\alexl\Downloads\crypto-technical-analysis\.venv\Lib\site-packages\playwright\_impl\_connection.py", line 559, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.Error: Page.evaluate: TypeError: Cannot read properties of null (reading 'classList')
+    at transition (http://localhost:8000/static/js/workbench/drawings/chart_drawing.js:320:16)
+    at Module.startTrendlineTool (http://localhost:8000/static/js/workbench/drawings/chart_drawing.js:120:3)
+    at eval (eval at evaluate (:290:30), <anonymous>:3:15)
+    at async <anonymous>:316:30
+=== end (exit=1) ===
+
+=== run @ 2026-04-14T23:01:27Z  git=2313bd4  (keyboard-driven) ===
+[1] loading page...
+  DOM: 17.2s
+[2] module probe: {'trade_plan_modal': 200, 'chart_drawing': 200}
+[3] pressing T to enter trendline draw mode...
+  chart box: {'x': 0, 'y': 44, 'w': 1360, 'h': 936}
+[4] clicking first anchor at (340,606)...
+[5] clicking second anchor at (1020,512)...
+[6] waiting for modal...
+  ✓ modal appeared
+  modal title: Trade Plan — HYPEUSDT 4h
+
+[7] console log (13 entries):
+  [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+
+  relevant chart_drawing logs: 8
+  [log] [chart_drawing] initialized
+  [log] %c[chart] LOADED HYPEUSDT 4h — 503 bars · span 84.0d · 2026-01-21 → 2026-04-15 background:#0d4a2a;color:#00e676;padding:2px 6px;font-weight:bold
+  [log] %c[chart] viewport set → from 2026-03-12 to 2026-04-15  (got: 2026-03-23 → 2026-04-15)  stuck=false background:#0a2540;color:#60a5fa;padding:2px 6px
+  [log] %c[chart] viewport set → from 2026-03-12 to 2026-04-15  (got: 2026-03-12 → 2026-04-15)  stuck=true background:#0a2540;color:#60a5fa;padding:2px 6px
+  [log] [chart_drawing] idle → drawing_first_point (tool_armed)
+  [log] [chart_drawing] drawing_first_point → drawing_second_point (first_anchor)
+  [log] [chart_drawing] drawing_second_point → idle (commit_done)
+  [log] [chart_drawing] commit ok manual-HYPEUSDT-4h-support-1774105200-1775617200
+
+[8] network errors (1):
+  404 http://localhost:8000/api/drawings/manual/analyze
+=== end (exit=0) ===
+

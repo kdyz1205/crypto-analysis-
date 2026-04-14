@@ -21,6 +21,33 @@ BITGET_PRODUCT_TYPE = "USDT-FUTURES"
 BITGET_MARGIN_COIN = "USDT"
 BITGET_MARGIN_MODE = "crossed"
 
+# ─────────────────────────────────────────────────────────────
+# Shared HTTP client for Bitget private REST.
+# Was: every _bitget_request() built a NEW httpx.AsyncClient, doing a
+# fresh TCP/TLS handshake. Under Windows socket limits + high concurrency
+# (watcher reconcile + replan + user polls), this hit the socket-exhaust
+# wall and blocked the whole event loop for 15-30s per call. The fix is
+# a single lazily-created client with a big connection pool, short
+# connect timeout (Bitget is fast when it's fast; slow = failed),
+# moderate read timeout, no keep-alive starvation.
+# ─────────────────────────────────────────────────────────────
+_bitget_client: httpx.AsyncClient | None = None
+
+
+def _get_bitget_client() -> httpx.AsyncClient:
+    global _bitget_client
+    if _bitget_client is None or _bitget_client.is_closed:
+        _bitget_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=2.0),
+            limits=httpx.Limits(
+                max_connections=50,
+                max_keepalive_connections=20,
+                keepalive_expiry=30.0,
+            ),
+            http2=False,  # Bitget doesn't benefit from h2 here + simpler failure modes
+        )
+    return _bitget_client
+
 LiveMode = Literal["demo", "live"]
 
 
@@ -110,6 +137,20 @@ class LiveExecutionAdapter:
             if limit_price is None:
                 return self._error_result("price_precision_error", mode=mode, intent=intent)
             body["price"] = limit_price
+
+        # Attach preset SL/TP so when the entry fills, Bitget auto-creates
+        # plan orders to close the position. Without this, the user has to
+        # watch fills manually — which defeats the whole "set and forget"
+        # idea of the line-based order workflow.
+        if intent.stop_price and intent.stop_price > 0:
+            sl = self._normalize_price(float(intent.stop_price), contract)
+            if sl:
+                body["presetStopLossPrice"] = sl
+        if intent.tp_price and intent.tp_price > 0:
+            tp = self._normalize_price(float(intent.tp_price), contract)
+            if tp:
+                body["presetStopSurplusPrice"] = tp
+
         response = await self._bitget_request("POST", "/api/v2/mix/order/place-order", mode=mode, body=body)
         if response.get("code") == "00000":
             data = response.get("data") or {}
@@ -126,6 +167,92 @@ class LiveExecutionAdapter:
                     "orderId": data.get("orderId"),
                     "clientOid": data.get("clientOid"),
                 },
+            }
+        return self._error_result(
+            self._extract_error_reason(response),
+            mode=mode,
+            intent=intent,
+            response=response,
+        )
+
+    async def submit_live_plan_entry(
+        self,
+        intent: OrderIntent,
+        mode: LiveMode,
+        trigger_price: float,
+        trigger_type: str = "mark_price",  # 'mark_price' or 'fill_price'
+    ) -> dict[str, Any]:
+        """Submit a TRIGGER (plan) order to Bitget.
+
+        Unlike submit_live_entry which sends an immediate limit/market
+        order, this places a plan order that *waits* on the exchange until
+        the trigger price is hit, then fires market entry. SL and TP
+        presets are attached so when the entry fills, Bitget auto-arms
+        the close orders.
+        """
+        if not self.has_api_keys():
+            return self._error_result("api_keys_missing", mode=mode, intent=intent)
+
+        contract = await self._get_contract(intent.symbol)
+        if not contract:
+            return self._error_result("contract_not_found", mode=mode, intent=intent)
+
+        normalized_size = self._normalize_size(intent.quantity, contract)
+        if normalized_size is None:
+            return self._error_result("size_below_min_trade", mode=mode, intent=intent)
+
+        normalized_trigger = self._normalize_price(float(trigger_price), contract)
+        if normalized_trigger is None:
+            return self._error_result("trigger_price_precision_error", mode=mode, intent=intent)
+
+        side = "buy" if intent.side == "long" else "sell"
+        body: dict[str, Any] = {
+            "symbol": intent.symbol.upper(),
+            "productType": self.product_type,
+            "marginMode": self.margin_mode,
+            "marginCoin": self.margin_coin,
+            "planType": "normal_plan",
+            "size": normalized_size,
+            "side": side,
+            "tradeSide": "open",
+            "orderType": "market",
+            "triggerPrice": normalized_trigger,
+            "triggerType": trigger_type,
+            "clientOid": self._client_order_id(intent),
+        }
+        # Bitget v2 plan-order uses DIFFERENT field names than the regular
+        # place-order API. For plan orders we must use:
+        #   stopLossTriggerPrice / stopLossExecutePrice / stopLossTriggerType
+        #   stopSurplusTriggerPrice / stopSurplusExecutePrice / stopSurplusTriggerType
+        # Without these, the SL/TP show as "—/—" in the Bitget app.
+        if intent.stop_price and intent.stop_price > 0:
+            sl = self._normalize_price(float(intent.stop_price), contract)
+            if sl:
+                body["stopLossTriggerPrice"] = sl
+                body["stopLossExecutePrice"] = sl
+                body["stopLossTriggerType"] = "mark_price"
+        if intent.tp_price and intent.tp_price > 0:
+            tp = self._normalize_price(float(intent.tp_price), contract)
+            if tp:
+                body["stopSurplusTriggerPrice"] = tp
+                body["stopSurplusExecutePrice"] = tp
+                body["stopSurplusTriggerType"] = "mark_price"
+
+        response = await self._bitget_request(
+            "POST", "/api/v2/mix/order/place-plan-order", mode=mode, body=body,
+        )
+        if response.get("code") == "00000":
+            data = response.get("data") or {}
+            submitted_notional = float(Decimal(normalized_size) * Decimal(str(trigger_price)))
+            return {
+                "ok": True,
+                "mode": mode,
+                "symbol": intent.symbol.upper(),
+                "side": intent.side,
+                "exchange_order_id": str(data.get("orderId") or data.get("clientOid") or ""),
+                "submitted_price": float(trigger_price),
+                "submitted_notional": submitted_notional,
+                "exchange_response_excerpt": data,
             }
         return self._error_result(
             self._extract_error_reason(response),
@@ -223,8 +350,15 @@ class LiveExecutionAdapter:
                 "size": row.get("size"),
                 "orderType": row.get("orderType"),
                 "status": row.get("state") or row.get("status"),
+                # Bitget uses different field names depending on order type:
+                #   regular limit: "price"
+                #   plan / trigger: "triggerPrice" / "executePrice"
+                "price": row.get("price") or row.get("executePrice")
+                          or row.get("triggerPrice") or row.get("priceAvg"),
             }
             for row in pending_rows
+            # Filter Bitget's all-null ghost rows
+            if row.get("symbol") and row.get("orderId")
         ]
 
         return {
@@ -326,11 +460,19 @@ class LiveExecutionAdapter:
         if mode == "demo":
             headers["paptrading"] = "1"
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        client = _get_bitget_client()
+        try:
             if method.upper() == "GET":
                 response = await client.get(f"{self.base_url}{path}", headers=headers, params=params)
             else:
                 response = await client.post(f"{self.base_url}{path}", headers=headers, content=body_text)
+        except httpx.TimeoutException as exc:
+            # Fail fast — a Bitget hang must NEVER block the whole event loop.
+            # The caller (watcher reconcile / user endpoint) will see a clear
+            # error and move on instead of waiting 30s per attempt.
+            return {"code": "TIMEOUT", "msg": f"bitget timeout: {exc!s}"[:160]}
+        except httpx.HTTPError as exc:
+            return {"code": "HTTP_ERROR", "msg": f"bitget http err: {exc!s}"[:160]}
         if response.status_code >= 400:
             return {"code": f"HTTP_{response.status_code}", "msg": response.text[:200]}
         return response.json()
