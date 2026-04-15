@@ -319,23 +319,27 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
 
 def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, sl_pct: float = 0.004) -> float | None:
     """
-    Calculate where the SL should be NOW based on the trendline projection.
-    The line moves with its slope — SL follows it.
+    Calculate where the SL should be NOW based on the REAL trendline projection.
+    Uses the actual slope and intercept from the two anchor points that formed the line.
+    The projected line value = slope * (entry_bar + bars_since) + intercept.
+    SL sits sl_pct below (long) or above (short) the projected line.
     Returns new SL price, or None if no trendline params stored.
     """
     params = _trendline_params.get(symbol.upper())
     if not params:
         return None
+
+    # Real projection: the line extends forward from entry_bar
     current_bar = params["entry_bar"] + bars_since_entry
     projected_line = params["slope"] * current_bar + params["intercept"]
     if projected_line <= 0:
         return None
 
     if params["side"] == "long":
-        # SL sits below the projected line
+        # Support line: SL sits below the projected line
         return projected_line * (1 - sl_pct)
     else:
-        # SL sits above the projected line
+        # Resistance line: SL sits above the projected line
         return projected_line * (1 + sl_pct)
 
 
@@ -679,6 +683,12 @@ def _check_trendline_signal(
     notional = cfg.get("_notional_override") or float(cfg.get("notional_usd", 12.0))
     qty = notional / entry
 
+    # Extract real trendline slope/intercept for trailing SL
+    line_info = lines[i]  # dict with {type, i1, i2, p1, p2, slope, intercept} or None
+    line_slope = float(line_info["slope"]) if line_info and "slope" in line_info else 0.0
+    line_intercept = float(line_info["intercept"]) if line_info and "intercept" in line_info else 0.0
+    line_entry_bar = i  # the bar index where signal fired
+
     return {
         "strategy": "trendline",
         "symbol": symbol, "timeframe": tf,
@@ -690,6 +700,10 @@ def _check_trendline_signal(
         "notional": notional,
         "leverage": int(cfg["leverage"]),
         "mode": cfg.get("mode", "live"),
+        # Real trendline params for trailing SL
+        "line_slope": line_slope,
+        "line_intercept": line_intercept,
+        "line_entry_bar": line_entry_bar,
     }
 
 
@@ -944,22 +958,14 @@ async def _do_scan() -> None:
                         plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], scan_cfg)
                         plan["notional"] = plan_notional
                         plan["quantity"] = plan_notional / plan["entry_price"]
-                    # Store trendline params for trailing SL
+                    # Store real trendline slope/intercept for trailing SL
                     if plan and plan.get("strategy") == "trendline":
-                        # Approximate: store SL distance as "slope" proxy
-                        # Real slope would need line detection on live data
-                        sl_dist = abs(plan["entry_price"] - plan["stop_price"])
-                        # Use a flat slope approximation (SL moves toward entry over time)
-                        slope_per_bar = sl_dist / max(cfg.get("max_hold_bars", 100), 1)
-                        if plan["direction"] == "long":
-                            fake_intercept = plan["stop_price"]
-                            fake_slope = slope_per_bar  # SL rises over time
-                        else:
-                            fake_intercept = plan["stop_price"]
-                            fake_slope = -slope_per_bar  # SL drops over time
                         register_trendline_params(
-                            sym, slope=fake_slope, intercept=fake_intercept,
-                            entry_bar=0, entry_price=plan["entry_price"],
+                            sym,
+                            slope=plan.get("line_slope", 0),
+                            intercept=plan.get("line_intercept", 0),
+                            entry_bar=plan.get("line_entry_bar", 0),
+                            entry_price=plan["entry_price"],
                             side=plan["direction"], tf=tf,
                         )
                 except Exception as e:
