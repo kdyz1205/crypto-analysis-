@@ -288,6 +288,50 @@ class LiveExecutionAdapter:
             "exchange_response_excerpt": self._excerpt(response),
         }
 
+    async def update_position_sl_tp(
+        self, symbol: str, hold_side: str,
+        new_sl: float | None = None, new_tp: float | None = None,
+        mode: LiveMode = "live",
+    ) -> dict[str, Any]:
+        """Move SL and/or TP on an existing open position.
+
+        Uses Bitget /api/v2/mix/position/set-stop-profit-and-loss which
+        modifies the position-level SL/TP (not order-level).
+        hold_side: "long" or "short".
+        """
+        normalized_symbol = symbol.upper().replace("/", "")
+        if not self.has_api_keys():
+            return {"ok": False, "reason": "api_keys_missing"}
+
+        contract = self._resolve_contract(normalized_symbol)
+        body: dict[str, Any] = {
+            "symbol": normalized_symbol,
+            "productType": self.product_type,
+            "marginCoin": "USDT",
+            "holdSide": hold_side,
+        }
+        if new_sl is not None and new_sl > 0:
+            sl = self._normalize_price(float(new_sl), contract)
+            if sl:
+                body["stopLossTriggerPrice"] = sl
+                body["stopLossTriggerType"] = "mark_price"
+        if new_tp is not None and new_tp > 0:
+            tp = self._normalize_price(float(new_tp), contract)
+            if tp:
+                body["stopSurplusTriggerPrice"] = tp
+                body["stopSurplusTriggerType"] = "mark_price"
+
+        try:
+            resp = await self._bitget_request(
+                "POST", "/api/v2/mix/position/set-stop-profit-and-loss",
+                mode=mode, body=body,
+            )
+            if resp.get("code") == "00000":
+                return {"ok": True, "symbol": normalized_symbol}
+            return {"ok": False, "reason": self._extract_error_reason(resp)}
+        except Exception as e:
+            return {"ok": False, "reason": str(e)}
+
     async def get_live_account_status(self, mode: LiveMode) -> dict[str, Any]:
         if not self.has_api_keys():
             return {"ok": False, "mode": mode, "reason": "api_keys_missing"}

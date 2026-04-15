@@ -300,6 +300,118 @@ async def _check_and_fire_reversals(cfg: dict, equity: float) -> int:
 
 
 # ─────────────────────────────────────────────────────────────
+# Trailing SL: move SL toward entry (and past it) over time
+# ─────────────────────────────────────────────────────────────
+# Stores trendline params per open position for SL projection
+# Key: symbol (uppercase), Value: {slope, intercept, entry_bar, entry_price, side, tf}
+_trendline_params: dict[str, dict] = {}
+
+
+def register_trendline_params(symbol: str, slope: float, intercept: float,
+                               entry_bar: int, entry_price: float, side: str, tf: str):
+    """Called when opening a trendline trade — stores line params for SL trailing."""
+    _trendline_params[symbol.upper()] = {
+        "slope": slope, "intercept": intercept,
+        "entry_bar": entry_bar, "entry_price": entry_price,
+        "side": side, "tf": tf, "opened_ts": int(time.time()),
+    }
+
+
+def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, sl_pct: float = 0.004) -> float | None:
+    """
+    Calculate where the SL should be NOW based on the trendline projection.
+    The line moves with its slope — SL follows it.
+    Returns new SL price, or None if no trendline params stored.
+    """
+    params = _trendline_params.get(symbol.upper())
+    if not params:
+        return None
+    current_bar = params["entry_bar"] + bars_since_entry
+    projected_line = params["slope"] * current_bar + params["intercept"]
+    if projected_line <= 0:
+        return None
+
+    if params["side"] == "long":
+        # SL sits below the projected line
+        return projected_line * (1 - sl_pct)
+    else:
+        # SL sits above the projected line
+        return projected_line * (1 + sl_pct)
+
+
+async def _update_trailing_stops(cfg: dict) -> int:
+    """
+    Check all open positions and move SL if it should be tighter.
+    For trendline trades: follow the trendline projection.
+    For ribbon trades: follow ATR trailing (already built into Bitget preset).
+
+    Returns number of SL updates made.
+    """
+    if not _trendline_params:
+        return 0
+
+    bitget_positions, ok = await _get_bitget_positions()
+    if not ok or not bitget_positions:
+        return 0
+
+    updates = 0
+    now_ts = int(time.time())
+
+    for pos in bitget_positions:
+        symbol = (pos.get("symbol") or "").upper()
+        if symbol not in _trendline_params:
+            continue
+
+        params = _trendline_params[symbol]
+        side = (pos.get("holdSide") or pos.get("posSide") or "").lower()
+        entry_price = float(pos.get("openAvgPrice") or params["entry_price"] or 0)
+        current_sl = float(pos.get("stopLossTriggerPrice") or 0)
+
+        if entry_price <= 0:
+            continue
+
+        # Estimate bars since entry based on time + TF
+        tf = params.get("tf", "1h")
+        tf_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+        bar_dur = tf_seconds.get(tf, 3600)
+        elapsed = now_ts - params["opened_ts"]
+        bars_since = max(1, elapsed // bar_dur)
+
+        new_sl = _calc_trendline_trailing_sl(symbol, bars_since)
+        if new_sl is None or new_sl <= 0:
+            continue
+
+        # Only move SL in the profitable direction (never widen it)
+        if side == "long":
+            if current_sl > 0 and new_sl <= current_sl:
+                continue  # new SL is worse (lower), don't move
+        elif side == "short":
+            if current_sl > 0 and new_sl >= current_sl:
+                continue  # new SL is worse (higher), don't move
+
+        # Move it
+        try:
+            from server.execution.live_adapter import LiveExecutionAdapter
+            adapter = LiveExecutionAdapter()
+            resp = await adapter.update_position_sl_tp(
+                symbol, side, new_sl=new_sl, mode=cfg.get("mode", "live"),
+            )
+            if resp.get("ok"):
+                updates += 1
+                is_profit = (side == "long" and new_sl > entry_price) or \
+                            (side == "short" and new_sl < entry_price)
+                label = "PROFIT-LOCK" if is_profit else "TIGHTEN"
+                print(f"[trailing] {label} {symbol} {side}: SL {current_sl:.6f} -> {new_sl:.6f}"
+                      f" (entry={entry_price:.6f}, bars={bars_since})", flush=True)
+            else:
+                print(f"[trailing] {symbol} SL update failed: {resp.get('reason')}", flush=True)
+        except Exception as e:
+            print(f"[trailing] {symbol} err: {e}", flush=True)
+
+    return updates
+
+
+# ─────────────────────────────────────────────────────────────
 # Daily drawdown tracking
 # ─────────────────────────────────────────────────────────────
 _daily_equity_start: float = 0.0   # equity at start of current UTC day
@@ -832,6 +944,24 @@ async def _do_scan() -> None:
                         plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], scan_cfg)
                         plan["notional"] = plan_notional
                         plan["quantity"] = plan_notional / plan["entry_price"]
+                    # Store trendline params for trailing SL
+                    if plan and plan.get("strategy") == "trendline":
+                        # Approximate: store SL distance as "slope" proxy
+                        # Real slope would need line detection on live data
+                        sl_dist = abs(plan["entry_price"] - plan["stop_price"])
+                        # Use a flat slope approximation (SL moves toward entry over time)
+                        slope_per_bar = sl_dist / max(cfg.get("max_hold_bars", 100), 1)
+                        if plan["direction"] == "long":
+                            fake_intercept = plan["stop_price"]
+                            fake_slope = slope_per_bar  # SL rises over time
+                        else:
+                            fake_intercept = plan["stop_price"]
+                            fake_slope = -slope_per_bar  # SL drops over time
+                        register_trendline_params(
+                            sym, slope=fake_slope, intercept=fake_intercept,
+                            entry_bar=0, entry_price=plan["entry_price"],
+                            side=plan["direction"], tf=tf,
+                        )
                 except Exception as e:
                     print(f"[mar_bb] trendline {sym} {tf} err: {e}", flush=True)
 
@@ -882,6 +1012,18 @@ async def _do_scan() -> None:
                 _state.orders_rejected += 1
                 _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
                 print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
+
+    # ── Trailing SL: move SL tighter on open trendline positions ──
+    try:
+        sl_updates = await _update_trailing_stops(cfg)
+        if sl_updates > 0:
+            print(f"[mar_bb] updated {sl_updates} trailing SL(s)", flush=True)
+        # Clean up params for positions that are no longer open
+        for sym in list(_trendline_params.keys()):
+            if sym not in held_symbols:
+                del _trendline_params[sym]
+    except Exception as e:
+        print(f"[mar_bb] trailing SL err: {e}", flush=True)
 
     # ── Trendline reversal check ──
     # After main scan, check if any trendline positions were just SL'd
