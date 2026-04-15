@@ -50,11 +50,12 @@ DEFAULT_RUNNER_CFG = {
     "top_n": 100,
     "scan_interval_s": 60,
     # ── Multi-timeframe ──
-    "timeframes": ["15m", "1h", "4h"],      # scan all 3 TFs each cycle
+    "timeframes": ["5m", "15m", "1h", "4h"],  # scan all TFs each cycle
     "timeframe": "1h",                       # legacy single-TF fallback
     # ── Per-TF risk config ──
     # risk_pct = max loss per single trade as % of equity
     "tf_risk": {
+        "5m":  0.015,  # 1.5% risk per trade on 5m (more noise)
         "15m": 0.02,   # 2% risk per trade on 15m
         "1h":  0.03,   # 3% risk per trade on 1h
         "4h":  0.04,   # 4% risk per trade on 4h
@@ -91,9 +92,7 @@ DEFAULT_RUNNER_CFG = {
     "min_bars": 100,
     "dry_run": False,
     "auto_start": True,
-    # TRENDLINE DISABLED until slope direction fix is verified in production.
-    # Re-enable after confirming no more "ascending resistance" signals.
-    "strategies": ["mar_bb"],
+    "strategies": ["mar_bb", "trendline"],
 }
 
 

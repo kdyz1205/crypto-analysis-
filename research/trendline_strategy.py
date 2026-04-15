@@ -102,22 +102,34 @@ def build_trendlines(h, l, c, cfg):
     max_post_pen = cfg.get("max_post_penetrations", 0)  # default: 0 = any break invalidates
 
     # ────────────────────────────────────────────────────────
-    # SLOPE DIRECTION RULES (fundamental technical analysis):
+    # LINE VALIDATION RULES:
     #
-    # Support = ascending lows (higher lows → uptrend floor)
-    #   slope must be >= 0. Descending lows = downtrend, NOT support.
-    #   Trade: long bounce (buy the dip in uptrend)
+    # Any slope is allowed (ascending, descending, horizontal).
+    # Rising channel upper = valid resistance. Falling channel lower = valid support.
     #
-    # Resistance = descending highs (lower highs → downtrend ceiling)
-    #   slope must be <= 0. Ascending highs = uptrend, NOT resistance.
-    #   Trade: short rejection (sell the rally in downtrend)
-    #
-    # Horizontal (slope ≈ 0) = valid for both (classic S/R level)
-    #
-    # Tolerance: allow very slight counter-slope (< 0.01% per bar)
-    # to catch near-horizontal lines that are slightly tilted.
+    # What matters is:
+    # 1. REACTION at anchors: price must bounce away after touching
+    #    (not just pass through). Measured as: did price move at least
+    #    min_bounce_pct% away from the line within bounce_lookback bars?
+    # 2. NOT BROKEN after anchor2: price hasn't decisively crossed
+    #    the line since the second anchor point.
+    # 3. Not too many penetrations between anchors.
     # ────────────────────────────────────────────────────────
-    slope_tolerance = 0.0001  # 0.01% per bar — near-horizontal tolerance
+    min_bounce_pct = cfg.get("min_bounce_pct", 0.3)  # 0.3% min reaction at each anchor
+    bounce_lookback = cfg.get("bounce_lookback", 5)   # check reaction within 5 bars after anchor
+
+    def _has_bounce(prices_after, anchor_price, direction, pct):
+        """Check if price bounced at least pct% in the expected direction after anchor."""
+        if len(prices_after) == 0:
+            return True  # can't check, give benefit of doubt
+        if direction == "support":
+            # After touching support, price should go UP
+            max_after = np.max(prices_after)
+            return (max_after - anchor_price) / anchor_price * 100 >= pct
+        else:
+            # After touching resistance, price should go DOWN
+            min_after = np.min(prices_after)
+            return (anchor_price - min_after) / anchor_price * 100 >= pct
 
     # Support lines: connect pairs of swing lows
     for i in range(len(swing_lows)):
@@ -134,13 +146,18 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
-            # DIRECTION CHECK: support must have ascending or flat lows
-            # Descending lows = downtrend = NOT support to buy
-            slope_pct = slope / p1 if p1 > 0 else 0
-            if slope_pct < -slope_tolerance:
-                continue  # descending lows → skip
+            # BOUNCE CHECK: did price react at both anchor points?
+            # Anchor 1: check if price bounced up after the low
+            a1_end = min(i1 + bounce_lookback, n)
+            if not _has_bounce(h[i1+1:a1_end], p1, "support", min_bounce_pct):
+                continue
 
-            # Check between anchors: price shouldn't break below the line
+            # Anchor 2: check if price bounced up after the low
+            a2_end = min(i2 + bounce_lookback, n)
+            if not _has_bounce(h[i2+1:a2_end], p2, "support", min_bounce_pct):
+                continue
+
+            # Penetration check between anchors
             bars_between = np.arange(i1 + 1, i2)
             if len(bars_between) > 0:
                 line_vals = slope * bars_between + intercept
@@ -175,13 +192,18 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
-            # DIRECTION CHECK: resistance must have descending or flat highs
-            # Ascending highs = uptrend = NOT resistance to short
-            slope_pct = slope / p1 if p1 > 0 else 0
-            if slope_pct > slope_tolerance:
-                continue  # ascending highs → skip
+            # BOUNCE CHECK: did price react at both anchor points?
+            # Anchor 1: check if price bounced down after the high
+            a1_end = min(i1 + bounce_lookback, n)
+            if not _has_bounce(l[i1+1:a1_end], p1, "resistance", min_bounce_pct):
+                continue
 
-            # Check between anchors
+            # Anchor 2: check if price bounced down after the high
+            a2_end = min(i2 + bounce_lookback, n)
+            if not _has_bounce(l[i2+1:a2_end], p2, "resistance", min_bounce_pct):
+                continue
+
+            # Penetration check between anchors
             bars_between = np.arange(i1 + 1, i2)
             if len(bars_between) > 0:
                 line_vals = slope * bars_between + intercept
