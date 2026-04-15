@@ -380,6 +380,88 @@ def _check_trendline_signal(
     }
 
 
+async def _anchor_sl_tp_to_mark(plan: dict) -> dict:
+    """Rewrite plan.stop_price and plan.tp_price so they sit the SAME
+    PERCENTAGE away from the CURRENT mark price, not the strategy's
+    expected entry.
+
+    Why: trendline strategy picks entry_p = projected_line × (1 - buffer)
+    which can be 0.5-1% off the mark by the time a market order fills.
+    If we submit the strategy's absolute SL/TP prices, the distance from
+    actual fill ends up distorted (loss side stretches, profit side
+    shrinks), flipping a 3:1 RR into a 0.46:1 RR.
+
+    Fix: capture the relative SL/TP pct from the strategy's plan, fetch
+    current mark, and rebuild absolute SL/TP around the mark. The
+    resulting plan still risks ~$0.95 per trade regardless of fill price.
+    """
+    entry = float(plan.get("entry_price") or 0)
+    stop = float(plan.get("stop_price") or 0)
+    tp = float(plan.get("tp_price") or 0)
+    if entry <= 0 or stop <= 0 or tp <= 0:
+        return plan
+
+    # Compute relative distances from strategy's intended entry
+    if plan.get("direction") == "long":
+        sl_rel = (entry - stop) / entry       # positive, SL is below entry
+        tp_rel = (tp - entry) / entry         # positive, TP is above entry
+    else:
+        sl_rel = (stop - entry) / entry       # positive, SL is above entry
+        tp_rel = (entry - tp) / entry         # positive, TP is below entry
+
+    # Pull current mark from Bitget ticker (fast, no auth needed)
+    try:
+        from server.execution.live_adapter import _get_bitget_client
+        client = _get_bitget_client()
+        r = await client.get(
+            "https://api.bitget.com/api/v2/mix/market/ticker",
+            params={"symbol": plan["symbol"].upper(), "productType": "USDT-FUTURES"},
+        )
+        if r.status_code != 200:
+            return plan
+        data = (r.json() or {}).get("data") or []
+        row = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+        if not row:
+            return plan
+        mark = float(row.get("markPrice") or row.get("lastPr") or 0)
+    except Exception as e:
+        print(f"[mar_bb] anchor mark fetch err: {e}", flush=True)
+        return plan
+    if mark <= 0:
+        return plan
+
+    # Rebuild prices anchored to the live mark
+    if plan.get("direction") == "long":
+        new_entry = mark
+        new_stop = mark * (1 - sl_rel)
+        new_tp = mark * (1 + tp_rel)
+    else:
+        new_entry = mark
+        new_stop = mark * (1 + sl_rel)
+        new_tp = mark * (1 - tp_rel)
+
+    # Also recompute quantity so notional stays the same (sizing was
+    # based on the notional, not the entry).
+    notional = float(plan.get("notional") or 0)
+    new_qty = (notional / new_entry) if new_entry > 0 and notional > 0 else plan.get("quantity")
+
+    old_entry = entry
+    plan["entry_price"] = new_entry
+    plan["stop_price"] = new_stop
+    plan["tp_price"] = new_tp
+    if new_qty:
+        plan["quantity"] = new_qty
+
+    print(
+        f"[mar_bb] anchored {plan['symbol']} {plan['direction']}: "
+        f"strategy_entry={old_entry:.6f} -> mark={new_entry:.6f} "
+        f"sl_rel={sl_rel*100:.3f}% tp_rel={tp_rel*100:.3f}% "
+        f"new_sl={new_stop:.6f} new_tp={new_tp:.6f}",
+        flush=True,
+    )
+    return plan
+
+
 async def _submit_order(plan: dict) -> dict:
     """Build an OrderIntent + submit via LiveExecutionAdapter. Returns the
     adapter response dict.
@@ -566,6 +648,13 @@ async def _do_scan() -> None:
 
         print(f"[mar_bb] SIGNAL [{plan.get('strategy')}] {sym} {plan['direction']} @ {plan['entry_price']:.4f}  "
               f"sl={plan['stop_price']:.4f}  tp={plan['tp_price']:.4f}", flush=True)
+
+        # Re-anchor SL/TP to the current mark so slippage between signal
+        # generation and market fill doesn't distort the intended RR ratio.
+        try:
+            plan = await _anchor_sl_tp_to_mark(plan)
+        except Exception as e:
+            print(f"[mar_bb] anchor err {sym}: {e}", flush=True)
 
         try:
             resp = await _submit_order(plan)
