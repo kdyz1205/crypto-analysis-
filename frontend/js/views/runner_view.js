@@ -16,18 +16,23 @@ import { esc } from '../util/dom.js';
 import { fetchJson } from '../util/fetch.js';
 
 let _pollTimer = null;
+let _historyTimer = null;
 let _host = null;
 let _lastState = null;
 let _lastAccount = null;
+let _lastHistory = null;
+let _historyDays = 30;
 
 export async function loadRunner(el) {
   _host = el;
-  stopPolling();   // in case we're re-entering the view
+  stopPolling();
   el.innerHTML = renderShell();
   injectStyles();
   wire(el);
   await refresh();
+  await refreshHistory();
   _pollTimer = setInterval(refresh, 3000);
+  _historyTimer = setInterval(refreshHistory, 30000);   // history reloads every 30s
 }
 
 export function unloadRunner() {
@@ -36,9 +41,20 @@ export function unloadRunner() {
 }
 
 function stopPolling() {
-  if (_pollTimer) {
-    clearInterval(_pollTimer);
-    _pollTimer = null;
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  if (_historyTimer) { clearInterval(_historyTimer); _historyTimer = null; }
+}
+
+async function refreshHistory() {
+  if (!_host) return;
+  try {
+    const resp = await fetchJson(`/api/mar-bb/history?days=${_historyDays}`, {
+      noCache: true, timeout: 30000,
+    }).catch(() => null);
+    _lastHistory = resp?.stats || null;
+    renderHistory();
+  } catch (err) {
+    console.warn('[runner_view] history err', err);
   }
 }
 
@@ -205,16 +221,215 @@ function render() {
   }
 }
 
+function renderHistory() {
+  if (!_host) return;
+  const h = _lastHistory;
+  if (!h) return;
+  const o = h.overall || {};
+  const byStrat = h.by_strategy || {};
+  const daily = h.daily || [];
+  const weekly = h.weekly || [];
+  const bySym = h.by_symbol || [];
+
+  const hostEl = _host.querySelector('#rn-history');
+  if (!hostEl) return;
+
+  const netCls = (o.net_pnl || 0) >= 0 ? 'is-up' : 'is-dn';
+  const fmt = (n) => (n >= 0 ? '+' : '') + '$' + Number(n || 0).toFixed(2);
+
+  // ─── Overall header row ───
+  let html = `
+    <div class="rn-hist-head">
+      <div class="rn-hist-range">
+        <label>窗口:</label>
+        <select id="rn-hist-days">
+          ${[7, 14, 30, 60, 90].map(d =>
+            `<option value="${d}"${d === _historyDays ? ' selected' : ''}>${d} 天</option>`).join('')}
+        </select>
+      </div>
+      <div class="rn-hist-kpi-row">
+        <div class="rn-hist-kpi">
+          <div class="rn-hist-kpi-label">总交易</div>
+          <div class="rn-hist-kpi-value">${o.trades || 0}</div>
+          <div class="rn-hist-kpi-sub">${o.wins || 0}W / ${o.losses || 0}L</div>
+        </div>
+        <div class="rn-hist-kpi">
+          <div class="rn-hist-kpi-label">胜率</div>
+          <div class="rn-hist-kpi-value">${(o.winrate || 0).toFixed(1)}%</div>
+          <div class="rn-hist-kpi-sub">平均赢 ${fmt(o.avg_win)} · 亏 ${fmt(o.avg_loss)}</div>
+        </div>
+        <div class="rn-hist-kpi">
+          <div class="rn-hist-kpi-label">毛盈亏</div>
+          <div class="rn-hist-kpi-value">${fmt(o.total_pnl)}</div>
+          <div class="rn-hist-kpi-sub">手续费 $${Number(o.total_fees || 0).toFixed(3)}</div>
+        </div>
+        <div class="rn-hist-kpi">
+          <div class="rn-hist-kpi-label">净盈亏</div>
+          <div class="rn-hist-kpi-value ${netCls}">${fmt(o.net_pnl)}</div>
+          <div class="rn-hist-kpi-sub">${
+            o.best ? `最好 ${o.best.symbol} ${fmt(o.best.pnl)}` : ''
+          }</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // ─── PnL cumulative curve (SVG sparkline) ───
+  if (daily.length >= 2) {
+    html += renderSparkline(daily);
+  } else if (daily.length === 1) {
+    html += `<div class="rn-empty">只有 1 天数据,无法画曲线</div>`;
+  }
+
+  // ─── By strategy ───
+  if (Object.keys(byStrat).length > 0) {
+    html += `<div class="rn-hist-section-title">按策略</div>`;
+    html += `<table class="rn-table rn-hist-strat-table"><thead>
+      <tr>
+        <th>策略</th><th>交易数</th><th>胜率</th>
+        <th>毛盈亏</th><th>手续费</th><th>净盈亏</th>
+      </tr></thead><tbody>`;
+    for (const [name, v] of Object.entries(byStrat)) {
+      const strNetCls = (v.net_pnl || 0) >= 0 ? 'is-up' : 'is-dn';
+      html += `
+        <tr>
+          <td><span class="rn-sig-strat rn-strat-${esc(name)}">${esc(name)}</span></td>
+          <td>${v.trades}</td>
+          <td>${(v.winrate || 0).toFixed(1)}%</td>
+          <td>${fmt(v.total_pnl)}</td>
+          <td>$${Number(v.total_fees || 0).toFixed(3)}</td>
+          <td class="${strNetCls}">${fmt(v.net_pnl)}</td>
+        </tr>
+      `;
+    }
+    html += `</tbody></table>`;
+  }
+
+  // ─── Weekly rollup ───
+  if (weekly.length > 0) {
+    html += `<div class="rn-hist-section-title">周</div>`;
+    html += `<table class="rn-table"><thead>
+      <tr><th>Week</th><th>开始日</th><th>交易数</th><th>胜</th><th>毛</th><th>费</th><th>净</th></tr>
+    </thead><tbody>`;
+    for (const w of weekly.slice(-12)) {
+      const wCls = (w.net || 0) >= 0 ? 'is-up' : 'is-dn';
+      html += `
+        <tr>
+          <td>${esc(w.week)}</td>
+          <td>${esc(w.week_start)}</td>
+          <td>${w.trades}</td>
+          <td>${w.wins}</td>
+          <td>${fmt(w.pnl)}</td>
+          <td>$${Number(w.fee).toFixed(3)}</td>
+          <td class="${wCls}">${fmt(w.net)}</td>
+        </tr>
+      `;
+    }
+    html += `</tbody></table>`;
+  }
+
+  // ─── Per-symbol top 10 ───
+  if (bySym.length > 0) {
+    html += `<div class="rn-hist-section-title">按 symbol (Top 10)</div>`;
+    html += `<table class="rn-table"><thead>
+      <tr><th>Symbol</th><th>交易数</th><th>胜率</th><th>毛</th><th>费</th><th>净</th></tr>
+    </thead><tbody>`;
+    for (const s of bySym) {
+      const sCls = (s.net || 0) >= 0 ? 'is-up' : 'is-dn';
+      html += `
+        <tr>
+          <td class="rn-pos-sym">${esc(s.symbol)}</td>
+          <td>${s.trades}</td>
+          <td>${(s.winrate || 0).toFixed(1)}%</td>
+          <td>${fmt(s.pnl)}</td>
+          <td>$${Number(s.fee).toFixed(3)}</td>
+          <td class="${sCls}">${fmt(s.net)}</td>
+        </tr>
+      `;
+    }
+    html += `</tbody></table>`;
+  }
+
+  hostEl.innerHTML = html;
+
+  // Wire window-size selector
+  const daysSel = hostEl.querySelector('#rn-hist-days');
+  if (daysSel) {
+    daysSel.addEventListener('change', async () => {
+      _historyDays = Number(daysSel.value) || 30;
+      await refreshHistory();
+    });
+  }
+}
+
+function renderSparkline(daily) {
+  const W = 720, H = 120, PAD = 8;
+  const cumVals = daily.map(d => d.cumulative || 0);
+  const minY = Math.min(0, ...cumVals);
+  const maxY = Math.max(0, ...cumVals);
+  const rangeY = (maxY - minY) || 1;
+  const n = daily.length;
+  const stepX = (W - PAD * 2) / Math.max(1, n - 1);
+  const points = daily.map((d, i) => {
+    const x = PAD + i * stepX;
+    const y = PAD + (H - PAD * 2) * (1 - (d.cumulative - minY) / rangeY);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // zero line
+  const zeroY = PAD + (H - PAD * 2) * (1 - (0 - minY) / rangeY);
+  const finalCum = cumVals[cumVals.length - 1] || 0;
+  const lineColor = finalCum >= 0 ? '#00e676' : '#ff5252';
+  const fillColor = finalCum >= 0 ? 'rgba(0,230,118,0.12)' : 'rgba(255,82,82,0.12)';
+
+  // Build area path under the line, closed to zero line
+  const firstX = PAD;
+  const lastX = PAD + (n - 1) * stepX;
+  const areaPath = `M ${firstX},${zeroY} L ${points.split(' ').map((p, i) => {
+    const [x, y] = p.split(',');
+    return `${x},${y}`;
+  }).join(' L ')} L ${lastX},${zeroY} Z`;
+
+  return `
+    <div class="rn-spark">
+      <div class="rn-spark-title">累积净盈亏曲线 (${daily.length} 天)</div>
+      <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+        <line x1="${PAD}" y1="${zeroY}" x2="${W - PAD}" y2="${zeroY}"
+              stroke="#2a3548" stroke-width="1" stroke-dasharray="2,3"/>
+        <path d="${areaPath}" fill="${fillColor}" stroke="none"/>
+        <polyline points="${points}" fill="none" stroke="${lineColor}" stroke-width="2"/>
+      </svg>
+      <div class="rn-spark-axis">
+        <span>${daily[0].date}</span>
+        <span>最终: ${finalCum >= 0 ? '+' : ''}$${finalCum.toFixed(2)}</span>
+        <span>${daily[daily.length - 1].date}</span>
+      </div>
+    </div>
+  `;
+}
+
 function wire(el) {
-  // Start / Stop / Kick
+  // Start / Apply Config (hot-update if running)
   el.querySelector('#rn-btn-start').addEventListener('click', async () => {
     const cfg = readConfig(el);
     try {
-      await fetchJson('/api/mar-bb/start', { method: 'POST', body: cfg });
+      const running = _lastState?.status === 'running';
+      if (running) {
+        // Hot-update: config merges into the running loop, no restart
+        const resp = await fetchJson('/api/mar-bb/update-config', {
+          method: 'POST', body: cfg,
+        });
+        if (!resp?.ok) throw new Error(resp?.reason || 'update failed');
+        const keys = (resp.updated_keys || []).join(', ');
+        flashToast(el, `已实时更新: ${keys || '(无变化)'}`);
+      } else {
+        // Cold start: initialize the runner loop
+        await fetchJson('/api/mar-bb/start', { method: 'POST', body: cfg });
+        flashToast(el, '已启动 runner');
+      }
       el.querySelector('#rn-config').removeAttribute('data-dirty');
       await refresh();
     } catch (err) {
-      alert(`启动失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
+      alert(`配置失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
     }
   });
   el.querySelector('#rn-btn-stop').addEventListener('click', async () => {
@@ -364,6 +579,11 @@ function renderShell() {
         <div class="rn-section-head">最近信号 (最多 20 条)</div>
         <div id="rn-signals" class="rn-signals"></div>
       </div>
+
+      <div class="rn-section">
+        <div class="rn-section-head">历史成交统计</div>
+        <div id="rn-history"></div>
+      </div>
     </div>
   `;
 }
@@ -371,6 +591,19 @@ function renderShell() {
 function truncate(s, n) {
   s = String(s || '');
   return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+function flashToast(host, msg) {
+  let t = host.querySelector('.rn-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.className = 'rn-toast';
+    host.appendChild(t);
+  }
+  t.textContent = msg;
+  t.classList.add('rn-toast-visible');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('rn-toast-visible'), 2500);
 }
 
 function injectStyles() {
@@ -484,6 +717,60 @@ function injectStyles() {
     .rn-sig-sym  { color: #d8dde8; font-weight: 600; }
     .rn-sig-dir  { font-weight: 700; }
     .rn-sig-price, .rn-sig-sl, .rn-sig-tp { color: #8a95a6; }
+
+    /* History section */
+    .rn-hist-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 20px; margin-bottom: 14px;
+    }
+    .rn-hist-range { display: flex; align-items: center; gap: 6px; }
+    .rn-hist-range label { font-size: 11px; color: #8a95a6; }
+    .rn-hist-range select {
+      background: #141a26; border: 1px solid #2a3548; color: #d8dde8;
+      padding: 4px 8px; border-radius: 3px; font-size: 12px;
+    }
+    .rn-hist-kpi-row {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; flex: 1;
+    }
+    .rn-hist-kpi {
+      background: #141a26; border: 1px solid #1d2537; border-radius: 4px;
+      padding: 10px 12px;
+    }
+    .rn-hist-kpi-label { font-size: 10px; color: #8a95a6; text-transform: uppercase; }
+    .rn-hist-kpi-value { font-size: 18px; font-weight: 700; color: #e8edf5; margin: 3px 0; }
+    .rn-hist-kpi-sub { font-size: 10px; color: #6b7889; }
+
+    .rn-hist-section-title {
+      font-size: 10px; font-weight: 700; color: #8a95a6;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin: 18px 0 8px;
+    }
+    .rn-hist-strat-table td:first-child { padding: 6px 10px; }
+
+    .rn-spark {
+      background: #141a26; border: 1px solid #1d2537; border-radius: 4px;
+      padding: 14px; margin: 16px 0;
+    }
+    .rn-spark-title { font-size: 11px; color: #8a95a6; margin-bottom: 8px; }
+    .rn-spark svg { display: block; width: 100%; height: auto; max-width: 100%; }
+    .rn-spark-axis {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: #6b7889; margin-top: 6px;
+      font-family: ui-monospace, Menlo, monospace;
+    }
+
+    /* Toast */
+    .rn-toast {
+      position: fixed; bottom: 28px; right: 28px;
+      background: #0284c7; color: white;
+      padding: 10px 18px; border-radius: 4px;
+      font-size: 12px; font-weight: 600;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      opacity: 0; transform: translateY(10px);
+      transition: opacity 180ms, transform 180ms;
+      pointer-events: none; z-index: 2000;
+    }
+    .rn-toast-visible { opacity: 1; transform: translateY(0); }
   `;
   document.head.appendChild(style);
 }

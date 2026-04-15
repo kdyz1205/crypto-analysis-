@@ -126,6 +126,55 @@ def main() -> int:
         all_ok &= waypoint("kick button clickable + no thrown alert",
                            not any("alert" in e for e in console_errors))
 
+        # History section renders (wait extra for the 30s-interval history fetch)
+        page.wait_for_timeout(5000)
+        hist_el = page.query_selector("#rn-history")
+        hist_text = (hist_el.inner_text() or "") if hist_el else ""
+        all_ok &= waypoint("history section renders",
+                           "胜率" in hist_text or "总交易" in hist_text or "无数据" in hist_text,
+                           detail=hist_text[:40])
+
+        # History KPI cards present (4 of them)
+        kpi_count = page.eval_on_selector_all("#rn-history .rn-hist-kpi",
+                                               "els => els.length")
+        all_ok &= waypoint("history KPI cards (4)",
+                           kpi_count == 4, detail=f"count={kpi_count}")
+
+        # History window selector
+        sel = page.query_selector("#rn-hist-days")
+        all_ok &= waypoint("history days selector", sel is not None)
+
+        # Hot update: click 启动/应用配置 — button should NOT restart, should hot-update
+        start_btn = page.query_selector("#rn-btn-start")
+        if start_btn:
+            # Change top_n to 50 in form
+            page.eval_on_selector("[name=top_n]", "el => { el.value = 50; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+            page.wait_for_timeout(200)
+            start_btn.click()
+            page.wait_for_timeout(1500)
+        # Verify config changed via API
+        import urllib.request, json as _json
+        try:
+            with urllib.request.urlopen("http://localhost:8000/api/mar-bb/state", timeout=5) as r:
+                state = _json.loads(r.read().decode("utf-8")).get("state", {})
+                top_n_after = state.get("config", {}).get("top_n", 0)
+        except Exception:
+            top_n_after = 0
+        all_ok &= waypoint("hot-update applied (top_n = 50)",
+                           top_n_after == 50, detail=f"top_n={top_n_after}")
+        # Revert
+        try:
+            import urllib.request as _u
+            req = _u.Request(
+                "http://localhost:8000/api/mar-bb/update-config",
+                data=b'{"top_n": 100}',
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            _u.urlopen(req, timeout=5).read()
+        except Exception:
+            pass
+
         # Any runtime console errors?
         if console_errors:
             print(f"\n  console errors ({len(console_errors)}):", flush=True)

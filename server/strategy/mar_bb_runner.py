@@ -551,10 +551,41 @@ async def manual_kick() -> dict:
     return get_state()
 
 
+def update_config(partial: dict) -> dict:
+    """HOT-update the runner config without restarting the loop.
+
+    The running loop reads `_state.config` at the start of each scan, so
+    merging new values takes effect on the next scan (at most
+    scan_interval_s seconds later). Useful for tweaking leverage,
+    notional, max_concurrent, etc. mid-flight.
+
+    Does NOT restart the loop or cancel in-flight positions. If the loop
+    is not running, returns an error marker but still updates _state.config
+    so a subsequent start_runner() picks up the new values.
+    """
+    if not isinstance(partial, dict):
+        return {"ok": False, "reason": "partial must be a dict"}
+    # Sanitize: drop keys not in default config
+    allowed = set(DEFAULT_RUNNER_CFG.keys())
+    clean = {k: v for k, v in partial.items() if k in allowed and v is not None}
+    if not clean:
+        return {"ok": True, "note": "no-op", "config": _state.config}
+    _state.config = {**_state.config, **clean}
+    _save_state()
+    print(f"[mar_bb] config hot-updated: {clean}", flush=True)
+    return {
+        "ok": True,
+        "updated_keys": sorted(clean.keys()),
+        "config": _state.config,
+        "running": _state.status == "running",
+    }
+
+
 __all__ = [
     "start_runner",
     "stop_runner",
     "get_state",
     "manual_kick",
+    "update_config",
     "DEFAULT_RUNNER_CFG",
 ]

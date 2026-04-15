@@ -36,3 +36,30 @@ Call log:
 === result: PASS ===
 === end (exit=0) ===
 
+=== run @ 2026-04-15T02:45:47Z  git=0d29fb7 (history + hot-update) ===
+=== runner view test @ 2026-04-15T02:45:47Z git=0d29fb7 ===
+  [✓] nav button 策略 present
+  [✓] runner view active
+  [✓] .rn-root rendered
+  [✓] status pill text  (running)
+  [✓] config top_n populated  (100)
+  [✓] stats grid has 4 cards  (count=4)
+  [✓] positions section renders  (has content)
+  [✓] signals section renders  (has content)
+  [✓] kick button clickable + no thrown alert
+  [✓] history section renders  (窗口:
+7 天
+14 天
+30 天
+60 天
+90 天
+总交易
+9
+3W / 6)
+  [✓] history KPI cards (4)  (count=4)
+  [✓] history days selector
+  [✓] hot-update applied (top_n = 50)  (top_n=50)
+
+=== result: PASS ===
+=== end (exit=0) ===
+
