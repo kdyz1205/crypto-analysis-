@@ -95,7 +95,7 @@ DEFAULT_RUNNER_CFG = {
     "min_bars": 100,
     "dry_run": False,
     "auto_start": True,
-    "strategies": ["mar_bb", "trendline"],
+    "strategies": ["mar_bb", "mar_bb_v1", "trendline"],
 }
 
 
@@ -896,7 +896,25 @@ async def _do_scan() -> None:
     print(f"[mar_bb] slots: {slots_used}/{max_concurrent} used, {slots_free} free", flush=True)
 
     tf_days = {"1m":1,"3m":2,"5m":3,"15m":7,"30m":14,"1h":21,"2h":42,"4h":84,"1d":500}
-    strategy = Strategy(DEFAULT_CONFIG)
+
+    # Strategy library: multiple ribbon configs + trendline
+    RIBBON_CONFIGS = {
+        "mar_bb": {
+            # Champion config: R:3/8/21/55 + BB(55,0.6)
+            "ma5_n": 3, "ma8_n": 8, "ema21_n": 21, "ma55_n": 55,
+            "bb_period": 55, "bb_std": 0.6,
+            "adx_min": 25, "vol_mult": 1.2, "atr_mult": 3.0,
+            "slope_threshold": 0.1, "fanning_min_pct": 0.8,
+        },
+        "mar_bb_v1": {
+            # Original config: R:5/8/21/55 + BB(20,1.5)
+            "ma5_n": 5, "ma8_n": 8, "ema21_n": 21, "ma55_n": 55,
+            "bb_period": 20, "bb_std": 1.5,
+            "adx_min": 25, "vol_mult": 1.2, "atr_mult": 3.0,
+            "slope_threshold": 0.1, "fanning_min_pct": 0.8,
+        },
+    }
+    ribbon_strategies = {name: Strategy(rcfg) for name, rcfg in RIBBON_CONFIGS.items()}
     enabled_strats = cfg.get("strategies") or ["mar_bb", "trendline"]
     signals_this_scan = 0
     orders_this_scan = 0
@@ -939,20 +957,28 @@ async def _do_scan() -> None:
             # Run strategies — first signal wins
             plan = None
 
-            if "mar_bb" in enabled_strats:
+            # Try each ribbon config
+            for rstrat_name, rstrat in ribbon_strategies.items():
+                if rstrat_name not in enabled_strats:
+                    continue
+                if plan is not None:
+                    break
                 try:
-                    state = strategy.current_state(
+                    state = rstrat.current_state(
                         bars["o"], bars["h"], bars["l"], bars["c"], bars["v"],
                     )
                     if state.get("signal") in (1, -1) and equity > 0:
                         entry_p = state.get("close", 0)
                         atr_val = state.get("atr", 0)
-                        atr_mult = float(DEFAULT_CONFIG.get("atr_mult", 3.0))
+                        rcfg = RIBBON_CONFIGS[rstrat_name]
+                        atr_mult = float(rcfg.get("atr_mult", 3.0))
                         stop_p = entry_p - atr_mult * atr_val if state["signal"] == 1 else entry_p + atr_mult * atr_val
                         scan_cfg["_notional_override"] = _calc_position_size(equity, entry_p, stop_p, scan_cfg)
                     plan = _build_order_intent_mar_bb(sym, tf, state, scan_cfg)
+                    if plan:
+                        plan["strategy"] = rstrat_name  # tag which ribbon config
                 except Exception as e:
-                    print(f"[mar_bb] mar_bb {sym} {tf} err: {e}", flush=True)
+                    print(f"[mar_bb] {rstrat_name} {sym} {tf} err: {e}", flush=True)
 
             if plan is None and "trendline" in enabled_strats:
                 try:
