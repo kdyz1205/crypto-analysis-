@@ -1,0 +1,38 @@
+=== run @ 2026-04-15T02:14:35Z  git=e139bcc ===
+=== runner view test @ 2026-04-15T02:14:35Z git=e139bcc ===
+  goto failed: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "http://localhost:8000/v2", waiting until "commit"
+
+=== end (exit=1) ===
+
+=== run @ 2026-04-15T02:15:59Z  git=e139bcc (retry) ===
+=== runner view test @ 2026-04-15T02:15:59Z git=e139bcc ===
+  [✓] nav button 策略 present
+  [✓] runner view active
+  [✓] .rn-root rendered
+  [✗] status pill text  (RUNNING)
+  [✓] config top_n populated  (100)
+  [✓] stats grid has 4 cards  (count=4)
+  [✓] positions section renders  (has content)
+  [✓] signals section renders  (has content)
+  [✓] kick button clickable + no thrown alert
+
+=== result: FAIL ===
+=== end (exit=1) ===
+
+=== run @ 2026-04-15T02:16:47Z  git=e139bcc (lowercase fix) ===
+=== runner view test @ 2026-04-15T02:16:48Z git=e139bcc ===
+  [✓] nav button 策略 present
+  [✓] runner view active
+  [✓] .rn-root rendered
+  [✓] status pill text  (running)
+  [✓] config top_n populated  (100)
+  [✓] stats grid has 4 cards  (count=4)
+  [✓] positions section renders  (has content)
+  [✓] signals section renders  (has content)
+  [✓] kick button clickable + no thrown alert
+
+=== result: PASS ===
+=== end (exit=0) ===
+

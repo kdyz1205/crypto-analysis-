@@ -143,6 +143,13 @@ function wireHeaderButtons() {
       const btn = e.target.closest('.v2-nav-btn');
       if (!btn) return;
       const view = btn.dataset.view;
+      // Unload the previous view (stops polling timers etc)
+      if (_previousView && _previousView !== view) {
+        const unloader = _viewUnloaders?.[_previousView];
+        if (typeof unloader === 'function') {
+          try { unloader(); } catch {}
+        }
+      }
       _previousView = view;
       // Switch active nav button
       nav.querySelectorAll('.v2-nav-btn').forEach(b => b.classList.remove('active'));
@@ -205,10 +212,15 @@ function wireHeaderButtons() {
 // ── View Loaders ────────────────────────────────────────────────────────
 
 import { loadDashboard, loadFactory, loadLeaderboard, loadFactors, loadLive, loadMonitor } from './views.js';
+import { loadRunner, unloadRunner } from './views/runner_view.js';
 
 const _viewLoaders = {
   dashboard: loadDashboard, factory: loadFactory, leaderboard: loadLeaderboard,
   factors: loadFactors, live: loadLive, monitor: loadMonitor,
+  runner: loadRunner,
+};
+const _viewUnloaders = {
+  runner: unloadRunner,
 };
 const _viewLoaded = new Set(); // track which views have been loaded at least once
 

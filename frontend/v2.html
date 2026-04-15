@@ -14,16 +14,16 @@
   <header class="v2-header">
     <div class="v2-brand">Trading OS</div>
     <nav class="v2-nav" id="v2-nav">
-      <button class="v2-nav-btn" data-view="dashboard">仪表盘</button>
       <button class="v2-nav-btn active" data-view="market">市场</button>
-      <button class="v2-nav-btn" data-view="factory">策略工厂</button>
-      <button class="v2-nav-btn" data-view="leaderboard">排行榜</button>
-      <button class="v2-nav-btn" data-view="factors">因子</button>
-      <button class="v2-nav-btn" data-view="live">实盘库</button>
-      <button class="v2-nav-btn" data-view="monitor">监控</button>
+      <button class="v2-nav-btn" data-view="runner">策略</button>
+      <!-- Other panels hidden — focus on the line+order workflow.
+           Routes still exist if you need them back later. -->
     </nav>
     <div class="v2-header-actions">
-      <select id="v2-symbol-select" class="v2-select"></select>
+      <div id="v2-symbol-combo" class="v2-symbol-combo">
+        <input id="v2-symbol-input" class="v2-symbol-input" type="text" placeholder="搜索…" autocomplete="off" />
+        <div id="v2-symbol-dropdown" class="v2-symbol-dropdown" hidden></div>
+      </div>
       <div class="v2-tf-group" id="v2-tf-group">
         <button class="v2-tf-btn" data-tf="1m">1m</button>
         <button class="v2-tf-btn" data-tf="5m">5m</button>
@@ -46,9 +46,6 @@
       <div class="v2-chart-area">
         <div id="chart-container" class="v2-chart-container"></div>
       </div>
-      <aside class="v2-decision-rail" id="v2-decision-rail">
-        <div class="dr-card"><h3>加载中...</h3></div>
-      </aside>
       <aside class="v2-cond-rail" id="v2-cond-rail"></aside>
     </div>
   </main>
@@ -81,6 +78,11 @@
   <!-- View: Monitor -->
   <main class="v2-view" data-view="monitor">
     <div class="v2-view-content" id="view-monitor"></div>
+  </main>
+
+  <!-- View: Runner (MA Ribbon + Trendline dashboard) -->
+  <main class="v2-view" data-view="runner">
+    <div class="v2-view-content" id="view-runner"></div>
   </main>
 
   <!-- Legacy execution panel (kept for backward compat) -->
