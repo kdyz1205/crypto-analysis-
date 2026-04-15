@@ -8,6 +8,7 @@ import * as marketSvc from '../services/market.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
 import { markBoot } from '../ui/boot_status.js';
 import { drawMAOverlays, toggleMAOverlays as toggleMA, computeOverlaysFromCandles } from './ma_overlay.js';
+import { drawWyckoffOverlay, clearWyckoffOverlay, toggleWyckoff, getWyckoffMarkers } from './wyckoff_overlay.js';
 import { startTickerWS, setTickerSymbol, stopTickerWS } from './ws_ticker.js';
 import { clearHorizontalSRZones } from './patterns.js';
 import { clearTrendlineOverlay } from './overlays/trendline_overlay.js';
@@ -350,6 +351,17 @@ export async function loadCurrent(forcePatterns = false) {
       drawMAOverlays(chart, useOverlays, candleTimes);
     }
 
+    // Wyckoff accumulation/distribution overlay
+    try {
+      drawWyckoffOverlay(chart, candles);
+      // Attach Spring/UTAD markers to candlestick series
+      const wMarkers = getWyckoffMarkers();
+      if (wMarkers.length > 0 && candleSeries) {
+        const existing = candleSeries.markers ? candleSeries.markers() : [];
+        candleSeries.setMarkers([...existing, ...wMarkers].sort((a, b) => a.time - b.time));
+      }
+    } catch (e) { console.warn('[wyckoff]', e); }
+
     updateHeader(currentSymbol, currentInterval, lastPrice);
     // Loaded silently — no console spam
     publish('chart.load.succeeded', {
@@ -522,6 +534,10 @@ function applyScaleMode() {
 
 export function toggleMAOverlays() {
   return toggleMA();
+}
+
+export function toggleWyckoffOverlay() {
+  return toggleWyckoff();
 }
 
 function updateHeader(symbol, interval, price) {

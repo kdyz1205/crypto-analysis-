@@ -1,6 +1,6 @@
 // frontend/js/main.js — clean boot: UI shell first, data async
 
-import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, getChart, getCandleSeries } from './workbench/chart.js';
+import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, toggleWyckoffOverlay, getChart, getCandleSeries } from './workbench/chart.js';
 import { initManualTrendlineController } from './workbench/drawings/manual_trendline_controller.js';
 import { initChartDrawing, startTrendlineTool } from './workbench/drawings/chart_drawing.js';
 import { initDrawToolbar } from './workbench/drawings/draw_toolbar.js';
@@ -178,6 +178,11 @@ function wireHeaderButtons() {
   on('#v2-ma-toggle', 'click', () => {
     const visible = toggleMAOverlays();
     $('#v2-ma-toggle')?.classList.toggle('active', visible);
+  });
+
+  on('#v2-wyckoff-toggle', 'click', () => {
+    toggleWyckoffOverlay();
+    $('#v2-wyckoff-toggle')?.classList.toggle('active');
   });
 
   const scaleToggle = $('#v2-scale-toggle');
