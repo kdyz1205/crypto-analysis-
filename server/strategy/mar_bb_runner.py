@@ -50,9 +50,14 @@ DEFAULT_RUNNER_CFG = {
     "top_n": 100,
     "timeframe": "1h",
     "scan_interval_s": 60,
-    "notional_usd": 12.0,       # per position — just above Bitget $5 min + buffer
-    "leverage": 5,
-    "max_concurrent_positions": 5,   # up to 5 simultaneous positions
+    # ── Position sizing ──
+    "sizing_mode": "fixed_risk",    # "fixed_risk" or "fixed_notional"
+    "risk_pct": 0.03,               # 3% equity risk per trade
+    "notional_usd": 12.0,           # fallback for fixed_notional mode
+    "max_position_pct": 0.50,       # max 50% equity per single position
+    "leverage": 20,
+    "max_concurrent_positions": 10,
+    # ── General ──
     "mode": "live",              # or "demo" for paper trading
     "min_bars": 100,             # need at least this many for indicators
     "dry_run": False,            # if True, log signals but don't submit orders
@@ -133,6 +138,66 @@ def _load_state() -> None:
 
 def get_state() -> dict:
     return asdict(_state)
+
+
+# ─────────────────────────────────────────────────────────────
+# Position sizing
+# ─────────────────────────────────────────────────────────────
+async def _get_equity() -> float:
+    """Fetch current USDT equity from Bitget."""
+    try:
+        from server.execution.live_adapter import LiveExecutionAdapter
+        adapter = LiveExecutionAdapter()
+        if not adapter.has_api_keys():
+            return 0.0
+        acct = await adapter.get_live_account_status(mode=_state.config.get("mode", "live"))
+        if not acct.get("ok"):
+            return 0.0
+        return float(acct.get("equity") or acct.get("available") or 0)
+    except Exception as e:
+        print(f"[mar_bb] equity fetch err: {e}", flush=True)
+        return 0.0
+
+
+def _calc_position_size(equity: float, entry: float, stop: float, cfg: dict) -> float:
+    """
+    Calculate position notional based on sizing mode.
+
+    fixed_risk: notional = (equity × risk_pct) / |entry-stop|/entry
+                capped at equity × max_position_pct × leverage
+    fixed_notional: just use cfg["notional_usd"]
+    """
+    if cfg.get("sizing_mode") == "fixed_notional" or equity <= 0:
+        return float(cfg.get("notional_usd", 12.0))
+
+    risk_pct = float(cfg.get("risk_pct", 0.03))
+    max_pos_pct = float(cfg.get("max_position_pct", 0.50))
+    leverage = int(cfg.get("leverage", 20))
+
+    # Per-unit risk (SL distance as fraction of entry)
+    if entry <= 0 or stop <= 0:
+        return float(cfg.get("notional_usd", 12.0))
+    sl_distance_pct = abs(entry - stop) / entry
+    if sl_distance_pct < 1e-8:
+        return float(cfg.get("notional_usd", 12.0))
+
+    # Risk dollars = equity × risk_pct
+    # Notional = risk_dollars / sl_distance_pct
+    risk_dollars = equity * risk_pct
+    notional = risk_dollars / sl_distance_pct
+
+    # Cap: max margin = equity × max_position_pct → max notional = margin × leverage
+    max_notional = equity * max_pos_pct * leverage
+    notional = min(notional, max_notional)
+
+    # Floor: Bitget minimum is $5
+    notional = max(notional, 5.0)
+
+    print(f"[mar_bb] sizing: equity=${equity:.2f} risk={risk_pct*100:.1f}%"
+          f" SL_dist={sl_distance_pct*100:.2f}% -> notional=${notional:.2f}"
+          f" (margin=${notional/leverage:.2f}, {notional/leverage/equity*100:.1f}% of equity)", flush=True)
+
+    return notional
 
 
 # ─────────────────────────────────────────────────────────────
@@ -236,7 +301,7 @@ def _build_order_intent_mar_bb(
         tp = float(bb_lo) if bb_lo else entry * 0.98
         direction = "short"
 
-    notional = float(cfg["notional_usd"])
+    notional = cfg.get("_notional_override") or float(cfg.get("notional_usd", 12.0))
     qty = notional / entry
 
     return {
@@ -281,7 +346,7 @@ def _check_trendline_signal(
         return None
 
     direction = "long" if sig == 1 else "short"
-    notional = float(cfg["notional_usd"])
+    notional = cfg.get("_notional_override") or float(cfg.get("notional_usd", 12.0))
     qty = notional / entry
 
     return {
@@ -359,7 +424,14 @@ async def _do_scan() -> None:
     top_n = int(cfg["top_n"])
     max_concurrent = int(cfg.get("max_concurrent_positions", 5))
 
-    print(f"[mar_bb] scan start: top_n={top_n} tf={tf} max={max_concurrent}", flush=True)
+    print(f"[mar_bb] scan start: top_n={top_n} tf={tf} max={max_concurrent} "
+          f"leverage={cfg.get('leverage')}x risk={cfg.get('risk_pct',0)*100:.1f}%", flush=True)
+
+    # Fetch equity ONCE per scan for risk-based sizing
+    equity = await _get_equity() if cfg.get("sizing_mode") == "fixed_risk" else 0
+    if cfg.get("sizing_mode") == "fixed_risk":
+        print(f"[mar_bb] equity=${equity:.2f}", flush=True)
+
     symbols = await _get_top_symbols(top_n)
     print(f"[mar_bb] fetched {len(symbols)} symbols", flush=True)
     if not symbols:
@@ -429,13 +501,26 @@ async def _do_scan() -> None:
                 state = strategy.current_state(
                     bars["o"], bars["h"], bars["l"], bars["c"], bars["v"],
                 )
+                # Pre-calculate notional for this signal's SL distance
+                if state.get("signal") in (1, -1) and equity > 0:
+                    entry_p = state.get("close", 0)
+                    atr_val = state.get("atr", 0)
+                    atr_mult = float(DEFAULT_CONFIG.get("atr_mult", 3.0))
+                    stop_p = entry_p - atr_mult * atr_val if state["signal"] == 1 else entry_p + atr_mult * atr_val
+                    cfg["_notional_override"] = _calc_position_size(equity, entry_p, stop_p, cfg)
                 plan = _build_order_intent_mar_bb(sym, tf, state, cfg)
             except Exception as e:
                 print(f"[mar_bb] mar_bb {sym} err: {e}", flush=True)
 
         if plan is None and "trendline" in enabled_strats:
             try:
+                # For trendline, compute notional after getting signal's SL
+                cfg["_notional_override"] = None  # will be set inside if signal found
                 plan = _check_trendline_signal(sym, tf, bars, cfg)
+                if plan and equity > 0:
+                    plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], cfg)
+                    plan["notional"] = plan_notional
+                    plan["quantity"] = plan_notional / plan["entry_price"]
             except Exception as e:
                 print(f"[mar_bb] trendline {sym} err: {e}", flush=True)
 
