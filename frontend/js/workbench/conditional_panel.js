@@ -783,27 +783,24 @@ async function openOrderModal() {
   let analyzeStats = null;
   let acctErr = null;
   let markErr = null;
+
+  // Kick analyze in BACKGROUND — it takes 5-8s and is not required for
+  // order submission. Modal should render as soon as account+mark are
+  // done; analyze results land in a slot later.
+  const analyzePromise = condSvc.analyzeDrawing(line.manual_line_id)
+    .catch(() => null);
+
   try {
-    const [acct, mark, analyzeResp] = await Promise.all([
-      fetchJson('/api/live-execution/account?mode=live', { timeout: 15000, noCache: true })
+    const [acct, mark] = await Promise.all([
+      fetchJson('/api/live-execution/account?mode=live', { timeout: 8000, noCache: true })
         .catch((e) => { acctErr = e; return null; }),
       fetchMarkPriceOnce(line.symbol).catch((e) => { markErr = e; return null; }),
-      condSvc.analyzeDrawing(line.manual_line_id).catch(() => null),
     ]);
     if (cancelled) return;   // user pressed Esc / clicked outside
     balance = Number(acct?.usdt_available ?? acct?.total_equity ?? 0);
     liveMark = mark;
-    if (analyzeResp?.ok) {
-      recs = analyzeResp.recommendations || null;
-      analyzeStats = analyzeResp.stats || null;
-      analyzeStats = analyzeStats || {};
-      analyzeStats._volatility = analyzeResp.volatility || null;
-      analyzeStats._coherence = analyzeResp.coherence || null;
-      analyzeStats._lineQuality = analyzeResp.line_quality || null;
-      analyzeStats._distance = analyzeResp.distance || null;
-    }
   } catch (e) { console.error('[cond_panel] modal init fetch err', e); }
-  console.log('[cond_panel] modal data', { balance, liveMark, refPrice, acctErr, markErr });
+  console.log('[cond_panel] modal data (fast path)', { balance, liveMark, refPrice, acctErr, markErr });
 
   const defTolerance = recs?.tolerance_pct ?? 0.1;
   const defStop = recs?.stop_pct ?? 0.3;
@@ -849,30 +846,9 @@ async function openOrderModal() {
         </div>
       </div>
 
-      ${analyzeStats && analyzeStats.sample_size > 0 ? `
-      <div class="cond-modal-stats" style="margin:8px 0;padding:8px 10px;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.3);border-radius:4px;font-size:10px;line-height:1.6">
-        <b style="color:#fbbf24">📊 历史 ${analyzeStats.sample_size} 条相似形态</b><br>
-        反弹 <b style="color:#00e676">${Math.round((analyzeStats.p_bounce||0)*100)}%</b> ·
-        破位 <b style="color:#ff5252">${Math.round((analyzeStats.p_break||0)*100)}%</b> ·
-        EV <b style="color:${analyzeStats.expected_value>=0?'#00e676':'#ff5252'}">${(analyzeStats.expected_value||0).toFixed(2)}R</b><br>
-        平均反弹 ${(analyzeStats.avg_return_atr||0).toFixed(2)} ATR ·
-        平均回撤 ${(analyzeStats.avg_drawdown_atr||0).toFixed(2)} ATR<br>
-        可信度 <b style="color:${analyzeStats.trustworthiness==='high'?'#00e676':analyzeStats.trustworthiness==='medium'?'#fbbf24':'#888'}">${esc(analyzeStats.trustworthiness||'low')}</b> ·
-        ${esc(analyzeStats.overfit_flag||'')}
-        ${recs ? `<br><span style="color:#888">推荐: 容差 ${recs.tolerance_pct}% · 止损 ${recs.stop_pct}% · RR ${recs.rr_target}</span>` : ''}
+      <div class="cond-modal-stats-slot" id="cm-analyze-slot" style="margin:8px 0;padding:6px 10px;background:rgba(138,149,166,0.06);border:1px solid rgba(138,149,166,0.25);border-radius:4px;font-size:10px;color:#8a95a6">
+        ⏳ 历史分析中 (~6s)… 不必等,直接填参数可挂单
       </div>
-      ` : ''}
-
-      ${recs ? `
-      <div class="cond-modal-smart" style="margin:6px 0;padding:6px 10px;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.25);border-radius:4px;font-size:10px;line-height:1.5;color:#94a3b8">
-        <b style="color:#60a5fa">🧠 智能调参</b><br>
-        ${analyzeStats?._volatility ? `ATR <b style="color:${analyzeStats._volatility.regime==='wide'?'#ff5252':analyzeStats._volatility.regime==='tight'?'#60a5fa':'#fbbf24'}">${(analyzeStats._volatility.atr_pct||0).toFixed(2)}%</b> · ${esc(analyzeStats._volatility.regime||'')}` : ''}
-        ${analyzeStats?._volatility?.bb_state && analyzeStats._volatility.bb_state !== 'normal' ? ` · BB <b style="color:${analyzeStats._volatility.bb_state==='squeeze'?'#fbbf24':'#00e676'}">${analyzeStats._volatility.bb_state==='squeeze'?'挤压':'扩张'}</b>` : ''}
-        ${analyzeStats?._coherence?.score > 0 ? `<br>📐 高TF对齐 <b style="color:#00e676">${analyzeStats._coherence.score}</b>: ${(analyzeStats._coherence.matches||[]).map(m=>`${esc(m.tf)}@${(m.price||0).toFixed(3)}`).join(', ')}` : ''}
-        ${analyzeStats?._lineQuality?.touch_count > 2 ? `<br>👆 触点 <b style="color:#00e676">${analyzeStats._lineQuality.touch_count}</b> (强度 ${(analyzeStats._lineQuality.strength*100).toFixed(0)}%)` : ''}
-        ${analyzeStats?._distance?.zone && analyzeStats._distance.zone !== 'medium' ? `<br>📏 距线 <b style="color:${analyzeStats._distance.zone==='near'?'#fbbf24':'#888'}">${analyzeStats._distance.zone}</b> (${(analyzeStats._distance.gap_pct||0).toFixed(2)}%)` : ''}
-      </div>
-      ` : ''}
 
       <div class="cond-modal-row">
         <label>容差 (%)</label>
@@ -916,6 +892,37 @@ async function openOrderModal() {
   `;
   removeScrim();
   document.body.appendChild(modal);
+
+  // Analyze is still running in the background — when it resolves, fill
+  // the slot. Modal is already usable; this is non-blocking enrichment.
+  (async () => {
+    try {
+      const analyzeResp = await analyzePromise;
+      if (!analyzeResp?.ok) return;
+      const slot = modal.querySelector('#cm-analyze-slot');
+      if (!slot) return;
+      const stats = analyzeResp.stats || {};
+      const r = analyzeResp.recommendations || null;
+      if (!stats.sample_size || stats.sample_size <= 0) {
+        slot.innerHTML = '<span style="color:#8a95a6">无历史样本 — 直接按默认参数挂单</span>';
+        return;
+      }
+      const pct = (x) => Math.round((x||0)*100);
+      const num = (x, d=2) => (Number(x)||0).toFixed(d);
+      slot.style.background = 'rgba(251,191,36,0.06)';
+      slot.style.border = '1px solid rgba(251,191,36,0.3)';
+      slot.innerHTML = `
+        <b style="color:#fbbf24">📊 历史 ${stats.sample_size} 条相似形态</b><br>
+        反弹 <b style="color:#00e676">${pct(stats.p_bounce)}%</b> ·
+        破位 <b style="color:#ff5252">${pct(stats.p_break)}%</b> ·
+        EV <b style="color:${(stats.expected_value||0)>=0?'#00e676':'#ff5252'}">${num(stats.expected_value)}R</b><br>
+        可信度 <b style="color:${stats.trustworthiness==='high'?'#00e676':stats.trustworthiness==='medium'?'#fbbf24':'#888'}">${esc(stats.trustworthiness||'low')}</b>
+        ${r ? `· 推荐 容差 ${r.tolerance_pct}% · 止损 ${r.stop_pct}% · RR ${r.rr_target}` : ''}
+      `;
+    } catch (err) {
+      console.warn('[cond_panel] analyze background fill err', err);
+    }
+  })();
 
   const getField = (name) => modal.querySelector(`[name="${name}"]`);
   let _onKeyRef = null;
