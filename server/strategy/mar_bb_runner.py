@@ -50,15 +50,18 @@ DEFAULT_RUNNER_CFG = {
     "top_n": 100,
     "scan_interval_s": 60,
     # ── Multi-timeframe ──
-    "timeframes": ["5m", "15m", "1h", "4h"],  # scan all TFs each cycle
+    "timeframes": ["3m", "5m", "15m", "1h", "4h"],
     "timeframe": "1h",                       # legacy single-TF fallback
     # ── Per-TF risk config ──
     # risk_pct = max loss per single trade as % of equity
+    # Adaptive risk: shorter TF = tighter SL possible = lower risk needed
+    # Tighter SL + lower risk% = can use higher effective leverage safely
     "tf_risk": {
-        "5m":  0.015,  # 1.5% risk per trade on 5m (more noise)
-        "15m": 0.02,   # 2% risk per trade on 15m
-        "1h":  0.03,   # 3% risk per trade on 1h
-        "4h":  0.04,   # 4% risk per trade on 4h
+        "3m":  0.008,  # 0.8% risk — ultra-tight SL on 3m
+        "5m":  0.01,   # 1.0% risk
+        "15m": 0.015,  # 1.5% risk
+        "1h":  0.025,  # 2.5% risk
+        "4h":  0.04,   # 4% risk — widest SL, needs more room
     },
     # ── Position sizing ──
     "sizing_mode": "fixed_risk",
