@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/mar-bb", tags=["mar_bb_runner"])
 class StartReq(BaseModel):
     top_n: int | None = None
     timeframe: str | None = None
+    timeframes: list[str] | None = None   # multi-TF: ["5m","15m","1h","4h"]
     scan_interval_s: int | None = None
     notional_usd: float | None = None
     leverage: int | None = None
@@ -27,10 +28,11 @@ class StartReq(BaseModel):
     mode: str | None = None
     min_bars: int | None = None
     dry_run: bool | None = None
-    sizing_mode: str | None = None       # "fixed_risk" | "fixed_notional"
-    risk_pct: float | None = None         # e.g. 0.03 = 3% equity per trade
-    max_position_pct: float | None = None  # max margin fraction per position
+    sizing_mode: str | None = None
+    risk_pct: float | None = None
+    max_position_pct: float | None = None
     strategies: list[str] | None = None
+    tf_risk: dict[str, float] | None = None  # per-TF risk: {"5m":0.015,"1h":0.03}
 
 
 @router.post("/start")
@@ -59,6 +61,7 @@ async def api_kick():
 class UpdateReq(BaseModel):
     top_n: int | None = None
     timeframe: str | None = None
+    timeframes: list[str] | None = None
     scan_interval_s: int | None = None
     notional_usd: float | None = None
     leverage: int | None = None
@@ -66,9 +69,10 @@ class UpdateReq(BaseModel):
     strategies: list[str] | None = None
     dry_run: bool | None = None
     mode: str | None = None
-    sizing_mode: str | None = None        # "fixed_risk" | "fixed_notional"
-    risk_pct: float | None = None          # e.g. 0.03 = 3% equity per trade
-    max_position_pct: float | None = None  # max margin fraction per position
+    sizing_mode: str | None = None
+    risk_pct: float | None = None
+    max_position_pct: float | None = None
+    tf_risk: dict[str, float] | None = None
 
 
 @router.post("/update-config")
