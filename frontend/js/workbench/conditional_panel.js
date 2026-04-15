@@ -1039,18 +1039,35 @@ async function openOrderModal() {
     }
 
     try {
-      const resp = await condSvc.placeLineOrder({
+      // Route through /api/conditionals (watcher-based) instead of
+      // place-line-order (static Bitget plan order). Watcher re-projects
+      // the line every poll, so stale lines still trigger when price
+      // eventually touches their current projection. No "line too far
+      // from mark" rejection — price just has to come back.
+      const resp = await condSvc.createConditional({
         manual_line_id: line.manual_line_id,
-        direction,
-        kind: chosenKind,
-        tolerance_pct: tolerancePct,
-        stop_offset_pct: stopPct,
-        size_usdt: sizeUsdt,
-        leverage,
-        mode: 'live',
-        rr_target: rrTarget,
+        trigger: {
+          tolerance_atr: 0.2,
+          poll_seconds: 0,
+          max_age_seconds: 0,
+          max_distance_atr: 0,
+          break_threshold_atr: 0.5,
+        },
+        order: {
+          direction,
+          order_kind: chosenKind === 'break' ? 'breakout' : 'bounce',
+          tolerance_pct_of_line: tolerancePct,
+          stop_offset_pct_of_line: stopPct,
+          rr_target: rrTarget,
+          notional_usd: sizeUsdt,
+          leverage: null,      // sizeUsdt is already the absolute notional
+          submit_to_exchange: true,
+          exchange_mode: 'live',
+          reverse_enabled: false,
+        },
+        pattern_stats: {},
       });
-      console.log('[cond_panel] placeLineOrder response', resp);
+      console.log('[cond_panel] createConditional response', resp);
 
       if (!resp?.ok) {
         // Humanised rejection messages

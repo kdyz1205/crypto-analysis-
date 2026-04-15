@@ -187,27 +187,52 @@ export function openTradePlanModal(line) {
           throw new Error('size_usdt 计算失败 — 填一个 notional 或确保账户有余额');
         }
 
-        // /api/drawings/manual/place-line-order — this IMMEDIATELY submits
-        // a Bitget plan order so the user sees it in 计划委托 tab. The old
-        // /api/conditionals path created a passive local watcher that never
-        // showed anything in Bitget, which is why the user saw empty.
-        // kind: "bounce" or "break" (backend expects "break", not "breakout")
+        // /api/conditionals — creates a WATCHER-BASED trigger:
+        //   - The watcher polls current mark every poll_seconds
+        //   - Each poll it RE-PROJECTS the line to NOW (not using the
+        //     line's original price_end which may be stale)
+        //   - When current mark is within tolerance of the projected
+        //     line value, the watcher fires a MARKET order using the
+        //     mark at that moment as entry
+        //   - There is NO "line too far from mark" rejection — an old
+        //     line just sits and waits for price to come back to it
+        //   - Fully dynamic: price keeps moving, line's projected value
+        //     keeps updating, entry fires the moment they meet
+        // This is the correct model for "draw a line, set and forget".
+        // The old /api/drawings/manual/place-line-order path created a
+        // static Bitget plan order which was why old stale lines got
+        // rejected with "line_too_far_from_mark".
         const payload = {
           manual_line_id: line.manual_line_id,
-          direction: v.direction,
-          kind: v.order_kind === 'breakout' ? 'break' : v.order_kind,
-          tolerance_pct: v.buffer_pct,
-          stop_offset_pct: v.stop_pct,
-          size_usdt: size_usdt,
-          leverage: Math.max(1, Math.min(100, Math.round(v.leverage || 5))),
-          mode: v.exchange_mode,
-          rr_target: v.rr_target,
-          notify_tg: true,
+          trigger: {
+            tolerance_atr: 0.2,
+            poll_seconds: 0,           // router picks per TF
+            max_age_seconds: 0,        // never expire by time
+            max_distance_atr: 0,       // never expire by drift
+            break_threshold_atr: 0.5,
+          },
+          order: {
+            direction: v.direction,
+            order_kind: v.order_kind === 'breakout' ? 'breakout' : 'bounce',
+            tolerance_pct_of_line: v.buffer_pct,
+            stop_offset_pct_of_line: v.stop_pct,
+            rr_target: v.rr_target,
+            leverage: v.leverage > 0 ? v.leverage : null,
+            notional_usd: v.leverage > 0 ? null : size_usdt,
+            submit_to_exchange: true,
+            exchange_mode: v.exchange_mode,
+            reverse_enabled: v.reverse_enabled,
+            reverse_entry_offset_pct: v.reverse_buffer_pct,
+            reverse_stop_offset_pct: v.reverse_stop_pct,
+            reverse_rr_target: v.reverse_rr_target,
+            reverse_leverage: v.leverage > 0 ? v.leverage : null,
+          },
+          pattern_stats: {},
         };
 
-        const resp = await placeLineOrder(payload);
+        const resp = await createConditional(payload);
         if (!resp?.ok) {
-          const err = resp?.error || resp?.detail || resp?.reason || 'place failed';
+          const err = resp?.error || resp?.detail || resp?.reason || 'create failed';
           throw new Error(err);
         }
         closeExisting();
