@@ -27,6 +27,10 @@ class StartReq(BaseModel):
     mode: str | None = None
     min_bars: int | None = None
     dry_run: bool | None = None
+    sizing_mode: str | None = None       # "fixed_risk" | "fixed_notional"
+    risk_pct: float | None = None         # e.g. 0.03 = 3% equity per trade
+    max_position_pct: float | None = None  # max margin fraction per position
+    strategies: list[str] | None = None
 
 
 @router.post("/start")
@@ -62,6 +66,9 @@ class UpdateReq(BaseModel):
     strategies: list[str] | None = None
     dry_run: bool | None = None
     mode: str | None = None
+    sizing_mode: str | None = None        # "fixed_risk" | "fixed_notional"
+    risk_pct: float | None = None          # e.g. 0.03 = 3% equity per trade
+    max_position_pct: float | None = None  # max margin fraction per position
 
 
 @router.post("/update-config")

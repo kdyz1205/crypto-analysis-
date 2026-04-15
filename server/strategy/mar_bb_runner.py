@@ -144,7 +144,12 @@ def get_state() -> dict:
 # Position sizing
 # ─────────────────────────────────────────────────────────────
 async def _get_equity() -> float:
-    """Fetch current USDT equity from Bitget."""
+    """Fetch current USDT equity from Bitget.
+
+    The adapter's get_live_account_status returns keys like `total_equity`
+    and `usdt_available` (not `equity`). Pull from whichever comes back
+    first and non-zero so this works regardless of Bitget-side label drift.
+    """
     try:
         from server.execution.live_adapter import LiveExecutionAdapter
         adapter = LiveExecutionAdapter()
@@ -152,8 +157,20 @@ async def _get_equity() -> float:
             return 0.0
         acct = await adapter.get_live_account_status(mode=_state.config.get("mode", "live"))
         if not acct.get("ok"):
+            print(f"[mar_bb] equity acct ok=False reason={acct.get('reason')}", flush=True)
             return 0.0
-        return float(acct.get("equity") or acct.get("available") or 0)
+        # Try every likely key name, pick the first non-zero.
+        for key in ("total_equity", "equity", "totalEquity", "usdtEquity", "usdt_available", "available"):
+            v = acct.get(key)
+            if v is not None:
+                try:
+                    f = float(v)
+                    if f > 0:
+                        return f
+                except (TypeError, ValueError):
+                    continue
+        print(f"[mar_bb] equity fetch: no non-zero value in {list(acct.keys())}", flush=True)
+        return 0.0
     except Exception as e:
         print(f"[mar_bb] equity fetch err: {e}", flush=True)
         return 0.0
