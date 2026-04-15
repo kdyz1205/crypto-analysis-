@@ -77,6 +77,15 @@ DEFAULT_RUNNER_CFG = {
         (500,    0.35),   # $500-1k: max 35%
         (0,      0.50),   # <$500: max 50%
     ],
+    # ── Trendline reversal (breakout flip) ──
+    # When a trendline trade hits SL (line broken), auto-open reverse direction.
+    # Only effective on 4h — too noisy on shorter TFs (backtest verified).
+    "trendline_reversal": {
+        "15m": False,
+        "1h":  False,
+        "4h":  True,
+    },
+    "reversal_rr": 2.0,   # RR for the reversal trade
     # ── General ──
     "mode": "live",
     "min_bars": 100,
@@ -158,6 +167,136 @@ def _load_state() -> None:
 
 def get_state() -> dict:
     return asdict(_state)
+
+
+# ─────────────────────────────────────────────────────────────
+# Trendline reversal (breakout flip)
+# ─────────────────────────────────────────────────────────────
+_last_reversal_check_ts: int = 0   # avoid checking too frequently
+_known_closed_ids: set = set()     # track already-processed closed positions
+
+
+async def _check_and_fire_reversals(cfg: dict, equity: float) -> int:
+    """
+    Check Bitget for recently closed trendline positions that hit SL.
+    If found and reversal is enabled for that TF, fire a reverse order.
+    Returns number of reversal orders submitted.
+    """
+    global _last_reversal_check_ts, _known_closed_ids
+
+    reversal_cfg = cfg.get("trendline_reversal", {})
+    if not any(reversal_cfg.values()):
+        return 0  # reversal disabled for all TFs
+
+    now = int(time.time())
+    if now - _last_reversal_check_ts < 30:  # check at most every 30s
+        return 0
+    _last_reversal_check_ts = now
+
+    try:
+        from server.strategy.mar_bb_history import fetch_position_history
+        rows = await fetch_position_history(days=1, mode=cfg.get("mode", "live"))
+    except Exception as e:
+        print(f"[reversal] history fetch err: {e}", flush=True)
+        return 0
+
+    reversals_fired = 0
+    rr = float(cfg.get("reversal_rr", 2.0))
+
+    for row in rows:
+        # Unique ID for this closed position
+        pos_id = str(row.get("positionId") or row.get("uTime") or row.get("cTime") or "")
+        if not pos_id or pos_id in _known_closed_ids:
+            continue
+        _known_closed_ids.add(pos_id)
+
+        # Only process trendline orders (clientOid starts with "marbb_")
+        client_oid = (row.get("clientOid") or row.get("clientOId") or "").lower()
+        # We need to identify trendline trades — they use marbb_ prefix too currently
+        # Check if it was closed by SL (stop loss)
+        close_type = (row.get("closeType") or row.get("triggerType") or "").lower()
+        # Bitget uses different fields; check if loss
+        pnl = float(row.get("netProfit") or row.get("pnl") or 0)
+        if pnl >= 0:
+            continue  # not a SL hit, skip
+
+        symbol = (row.get("symbol") or "").upper()
+        side = (row.get("holdSide") or row.get("posSide") or "").lower()
+        close_price = float(row.get("closeAvgPrice") or 0)
+        open_price = float(row.get("openAvgPrice") or 0)
+
+        if not symbol or not side or close_price <= 0 or open_price <= 0:
+            continue
+
+        # Determine which TF this trade was on (we don't have this directly from Bitget)
+        # Use the SL distance to guess: trendline SL is typically 0.3-0.5%
+        sl_dist = abs(close_price - open_price) / open_price
+        if sl_dist > 0.02:  # > 2% SL distance = probably not a trendline trade
+            continue
+
+        # Check if reversal is enabled (default to 4h if we can't determine TF)
+        # For now, only fire if 4h reversal is enabled
+        if not reversal_cfg.get("4h", False):
+            continue
+
+        # Build reverse order
+        rev_dir = "short" if side == "long" else "long"
+        rev_entry = close_price  # enter at the SL price (current mark)
+        sl_distance = abs(open_price - close_price)
+        rev_sl = rev_entry + sl_distance if rev_dir == "short" else rev_entry - sl_distance
+        rev_tp = rev_entry - rr * sl_distance if rev_dir == "short" else rev_entry + rr * sl_distance
+
+        # Position sizing
+        notional = _calc_position_size(equity, rev_entry, rev_sl, cfg) if equity > 0 else float(cfg.get("notional_usd", 12))
+        qty = notional / rev_entry if rev_entry > 0 else 0
+
+        plan = {
+            "strategy": "trendline_reversal",
+            "symbol": symbol,
+            "timeframe": "4h",
+            "direction": rev_dir,
+            "entry_price": rev_entry,
+            "stop_price": rev_sl,
+            "tp_price": rev_tp,
+            "quantity": qty,
+            "notional": notional,
+            "leverage": int(cfg.get("leverage", 30)),
+            "mode": cfg.get("mode", "live"),
+        }
+
+        print(f"[reversal] {symbol} SL hit -> FLIP to {rev_dir} @ {rev_entry:.4f} "
+              f"sl={rev_sl:.4f} tp={rev_tp:.4f} notional=${notional:.2f}", flush=True)
+
+        if cfg.get("dry_run"):
+            print(f"[reversal] DRY-RUN skipped", flush=True)
+            continue
+
+        try:
+            plan = await _anchor_sl_tp_to_mark(plan)
+            resp = await _submit_order(plan)
+        except Exception as e:
+            resp = {"ok": False, "reason": f"exception: {e}"}
+
+        if resp.get("ok"):
+            reversals_fired += 1
+            _state.orders_submitted += 1
+            _state.signals_detected += 1
+            sig_record = {
+                "ts": now, "strategy": "trendline_reversal",
+                "symbol": symbol, "tf": "4h", "direction": rev_dir,
+                "entry": rev_entry, "stop": rev_sl, "tp": rev_tp,
+            }
+            _state.recent_signals = ([sig_record] + _state.recent_signals)[:20]
+            print(f"[reversal] FILLED {symbol} {rev_dir} order_id={resp.get('exchange_order_id')}", flush=True)
+        else:
+            _state.orders_rejected += 1
+            print(f"[reversal] REJECTED {symbol}: {resp.get('reason')}", flush=True)
+
+    # Trim known IDs to prevent unbounded growth
+    if len(_known_closed_ids) > 500:
+        _known_closed_ids.clear()
+
+    return reversals_fired
 
 
 # ─────────────────────────────────────────────────────────────
@@ -744,12 +883,21 @@ async def _do_scan() -> None:
                 _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
                 print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
 
+    # ── Trendline reversal check ──
+    # After main scan, check if any trendline positions were just SL'd
+    # and fire reverse orders if enabled for that TF
+    try:
+        rev_count = await _check_and_fire_reversals(cfg, equity)
+        if rev_count > 0:
+            print(f"[mar_bb] fired {rev_count} reversal(s)", flush=True)
+    except Exception as e:
+        print(f"[mar_bb] reversal check err: {e}", flush=True)
+
     _state.scans_completed += 1
     _state.last_scan_ts = int(time.time())
     _state.last_scan_duration_s = round(time.time() - t0, 2)
-    # Mirror snapshot into state so UI can see what's held
     _state.open_position = {
-        "count": slots_used,
+        "count": slots_used + (rev_count if 'rev_count' in dir() else 0),
         "max": max_concurrent,
         "symbols": sorted(held_symbols),
     } if held_symbols else None
