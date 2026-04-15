@@ -27,7 +27,7 @@ from .routers import (
     stream, memory, schedule,
     strategy, paper_execution, live_execution, drawings, runtime,
     tools_api, conditionals,
-    mar_bb_runner,
+    mar_bb_runner, orderbook,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
@@ -85,6 +85,16 @@ async def _startup():
                   f"notional=${DEFAULT_RUNNER_CFG['notional_usd']}")
         except Exception as _e:
             print(f"[mar_bb] auto-start failed: {_e}")
+
+    # Auto-start orderbook websocket service for real-time L2 features.
+    # Tracks top symbols for microstructure signals (imbalance, cancel pressure, etc.)
+    try:
+        from .hft.orderbook_service import start_service as _start_ob
+        await _start_ob(["BTCUSDT", "ETHUSDT", "SOLUSDT", "HYPEUSDT", "DOGEUSDT",
+                         "XRPUSDT", "BNBUSDT", "NEARUSDT", "SUIUSDT", "PEPEUSDT"])
+        print("[orderbook] L2 websocket service started")
+    except Exception as _e:
+        print(f"[orderbook] failed to start: {_e}")
 
     # Hermes-inspired: register default scheduler handlers + start loop
     from .core import memory as mem_core
@@ -215,4 +225,5 @@ app.include_router(schedule.router)     # /api/schedule/* (Hermes natural-langua
 app.include_router(tools_api.router)    # /api/tools/* (research leaderboard, audit, failures, factors)
 app.include_router(conditionals.router) # /api/conditionals/* + /api/drawings/manual/analyze
 app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB exit scanner
+app.include_router(orderbook.router)    # /api/orderbook/* — real-time L2 features
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
