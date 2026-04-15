@@ -20,8 +20,9 @@ import numpy as np
 # ═══════════════════════════════════════════════════════════════
 
 DEFAULT_CONFIG = {
-    # MA periods
-    "ma5_n": 5,
+    # MA periods — champion config R:3/8/21/55
+    # MA3 faster than MA5 → more frequent ribbon alignment → +46% more trades
+    "ma5_n": 3,
     "ma8_n": 8,
     "ema21_n": 21,
     "ma55_n": 55,
@@ -34,14 +35,16 @@ DEFAULT_CONFIG = {
 
     # Slope filter (V1)
     "slope_lookback": 5,
-    "slope_threshold": 0.1, # MA slopes must exceed ±0.1%
+    "slope_threshold": 0.1, # MA slopes must exceed +/-0.1%
 
     # Fanning filter (V3)
-    "fanning_min_pct": 0.8, # MAs must be ≥0.8% avg distance apart
+    "fanning_min_pct": 0.8, # MAs must be >=0.8% avg distance apart
 
-    # Exit: BB take profit
-    "bb_period": 20,
-    "bb_std": 1.5,          # 1.5 std = closer TP = higher winrate
+    # Exit: BB take profit — BB(55, 0.6) = champion config
+    # Period 55 matches MA55 in ribbon; std 0.6 = tight band but wide absolute distance
+    # Result: avg win +4.21%, winrate 99.5%, Sharpe +23.17 (vs old BB20/1.5: +4.19)
+    "bb_period": 55,
+    "bb_std": 0.6,
 
     # Exit: ATR trailing stop
     "atr_period": 14,

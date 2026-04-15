@@ -33,15 +33,17 @@ DEFAULT_CONFIG = {
     "min_bars_between": 20,     # minimum bars between two anchor points
     "max_bars_between": 500,    # maximum bars between two anchor points
     "max_penetrations": 2,      # max times price can cross the line between anchors
+    "max_post_penetrations": 0, # ANY break after anchor2 invalidates the line
     "min_bounces": 2,           # the two anchor points count as 2 bounces
 
     # Entry
-    "buffer_pct": 0.15,         # enter 0.15% before the line (on the "safe" side)
+    "buffer_pct": 0.05,         # enter 0.05% before the line (tighter = closer to line)
     "approach_pct": 1.0,        # signal when price is within 1.0% of projected line
 
-    # Exit
-    "sl_pct": 0.3,              # SL 0.3% beyond the line (on the "danger" side)
-    "rr": 3.0,                  # risk-reward ratio (TP distance = RR × SL distance)
+    # Exit — ultra-tight SL, high RR
+    # Logic: line breaks = thesis dead, get out immediately
+    "sl_pct": 0.08,             # SL 0.08% beyond the line (just past the line)
+    "rr": 10.0,                 # high RR: risk 0.08%, target 0.8%
 
     # Execution
     "fee": 0.0005,              # 0.05% per side
@@ -95,6 +97,10 @@ def build_trendlines(h, l, c, cfg):
 
     lines = []
 
+    n = len(c)
+    # Max allowed penetrations AFTER anchor2 before line is considered broken
+    max_post_pen = cfg.get("max_post_penetrations", 0)  # default: 0 = any break invalidates
+
     # Support lines: connect pairs of swing lows
     for i in range(len(swing_lows)):
         count = 0
@@ -110,12 +116,22 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
-            # Vectorized penetration check
+            # Check between anchors
             bars = np.arange(i1 + 1, i2)
             if len(bars) > 0:
                 line_vals = slope * bars + intercept
                 penetrations = np.sum(l[i1+1:i2] < line_vals * 0.999)
                 if penetrations > max_pen: continue
+
+            # CHECK AFTER ANCHOR 2: has the line been broken since?
+            # For support: if close ever went BELOW the line, support is broken
+            if i2 + 1 < n:
+                post_bars = np.arange(i2 + 1, n)
+                post_line = slope * post_bars + intercept
+                # Use low (not close) for stricter check: any wick below = broken
+                post_breaks = np.sum(l[i2+1:n] < post_line)
+                if post_breaks > max_post_pen:
+                    continue
 
             lines.append({
                 "type": "support", "i1": i1, "i2": i2,
@@ -137,11 +153,22 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
+            # Check between anchors
             bars = np.arange(i1 + 1, i2)
             if len(bars) > 0:
                 line_vals = slope * bars + intercept
                 penetrations = np.sum(h[i1+1:i2] > line_vals * 1.001)
                 if penetrations > max_pen: continue
+
+            # CHECK AFTER ANCHOR 2: has the line been broken since?
+            # For resistance: if high ever went ABOVE the line, resistance is broken
+            if i2 + 1 < n:
+                post_bars = np.arange(i2 + 1, n)
+                post_line = slope * post_bars + intercept
+                # Use high (not close) for stricter check: any wick above = broken
+                post_breaks = np.sum(h[i2+1:n] > post_line)
+                if post_breaks > max_post_pen:
+                    continue
 
             lines.append({
                 "type": "resistance", "i1": i1, "i2": i2,
