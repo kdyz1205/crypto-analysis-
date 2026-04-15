@@ -1,6 +1,8 @@
 """
 Portfolio-Level Backtest: Position Sizing + Risk Management
-Tests different allocation strategies across both strategies × all symbols × TFs
+============================================================
+Proper time-aligned simulation across multiple symbols × strategies.
+Each trade carries real timestamps, equity is tracked on a unified timeline.
 
 Run: python -m research.portfolio_backtest
 """
@@ -34,215 +36,64 @@ def load_ohlcv(symbol, tf):
         "ts": [r["open_time"] for r in rows],
     }
 
+
 # ═══════════════════════════════════════════════════════════════
-# POSITION SIZING METHODS
+# POSITION SIZING
 # ═══════════════════════════════════════════════════════════════
 
-class PositionSizer:
-    """
-    Methods:
-    1. fixed_pct:      Fixed % of equity per trade (e.g., 2%)
-    2. fixed_risk:     Risk fixed % of equity per trade, size adjusted by SL distance
-    3. kelly:          Kelly criterion based on historical winrate + avg win/loss
-    4. vol_adjusted:   Size inversely proportional to ATR (volatile = smaller)
-    5. equal_weight:   Equal weight across all open positions (rebalance)
-    """
+def size_fixed_risk(equity, risk_pct, entry, sl, max_position_pct=0.15):
+    """Risk exactly risk_pct of equity. Size = risk$ / per-unit-risk."""
+    if entry <= 0 or sl == 0:
+        return equity * 0.02
+    risk_per_unit = abs(entry - sl) / entry
+    if risk_per_unit < 1e-8:
+        return equity * 0.02
+    position = (equity * risk_pct) / risk_per_unit
+    return min(position, equity * max_position_pct)
 
-    @staticmethod
-    def fixed_pct(equity, pct=0.02, **kwargs):
-        """Allocate fixed % of equity to each trade."""
-        return equity * pct
 
-    @staticmethod
-    def fixed_risk(equity, risk_pct=0.01, entry=0, sl=0, **kwargs):
-        """Risk exactly risk_pct of equity. Position size = risk$ / (entry-SL distance)."""
-        if entry == 0 or sl == 0: return equity * 0.02
-        risk_per_unit = abs(entry - sl) / entry  # % risk per unit
-        if risk_per_unit == 0: return equity * 0.02
-        risk_dollars = equity * risk_pct
-        position_size = risk_dollars / risk_per_unit
-        # Cap at max_pct of equity
-        return min(position_size, equity * 0.15)
-
-    @staticmethod
-    def kelly(equity, winrate=0.5, avg_win=0.01, avg_loss=0.01, fraction=0.25, **kwargs):
-        """Kelly criterion: f* = (p*b - q) / b, use fraction of full Kelly."""
-        if avg_loss == 0: return equity * 0.02
-        b = abs(avg_win / avg_loss)  # win/loss ratio
-        p = winrate; q = 1 - p
-        kelly_f = (p * b - q) / b
-        kelly_f = max(0, min(kelly_f, 0.5))  # cap
-        return equity * kelly_f * fraction
-
-    @staticmethod
-    def vol_adjusted(equity, base_pct=0.03, atr_pct=0.02, target_atr_pct=0.01, **kwargs):
-        """Size inversely proportional to volatility. Low vol = bigger position."""
-        if atr_pct == 0: return equity * base_pct
-        scale = target_atr_pct / atr_pct
-        scale = max(0.3, min(scale, 3.0))  # bounds
-        return equity * base_pct * scale
+def size_fixed_pct(equity, pct):
+    """Fixed percentage of equity per trade."""
+    return equity * pct
 
 
 # ═══════════════════════════════════════════════════════════════
-# PORTFOLIO SIMULATOR
-# ═══════════════════════════════════════════════════════════════
-
-def simulate_portfolio(trade_streams, sizing_method, sizing_params, initial_equity=10000,
-                       max_concurrent=10, max_per_symbol=1, max_drawdown_halt=0.25,
-                       correlation_limit=0.5):
-    """
-    Simulate portfolio across multiple trade streams.
-
-    trade_streams: list of dicts, each with:
-        - trades: list of {bar, side, entry, sl, tp, exit, pnl_pct, exit_type, symbol, tf, strategy}
-        - sorted by bar
-
-    Returns portfolio equity curve and stats.
-    """
-    # Merge all trades into one timeline sorted by entry bar
-    all_trades = []
-    for stream in trade_streams:
-        for t in stream:
-            all_trades.append(t)
-    all_trades.sort(key=lambda t: t["bar_entry"])
-
-    equity = initial_equity
-    peak = equity
-    max_dd = 0
-    open_positions = []  # list of active trades
-    equity_curve = [equity]
-    realized_returns = []
-    trade_results = []
-    halted = False
-
-    for trade in all_trades:
-        if halted:
-            break
-
-        # Close any positions that should be closed by now
-        still_open = []
-        for pos in open_positions:
-            if trade["bar_entry"] >= pos["bar_exit"]:
-                # Position closed
-                pnl_dollars = pos["size"] * pos["pnl_pct"] / 100
-                equity += pnl_dollars
-                realized_returns.append(pos["pnl_pct"] / 100)
-                trade_results.append({**pos, "pnl_dollars": pnl_dollars, "equity_after": equity})
-            else:
-                still_open.append(pos)
-        open_positions = still_open
-
-        # Check drawdown halt
-        peak = max(peak, equity)
-        dd = (peak - equity) / peak
-        max_dd = max(max_dd, dd)
-        if dd >= max_drawdown_halt:
-            halted = True
-            continue
-
-        # Check concurrent position limit
-        if len(open_positions) >= max_concurrent:
-            continue
-
-        # Check per-symbol limit
-        sym_count = sum(1 for p in open_positions if p["symbol"] == trade["symbol"])
-        if sym_count >= max_per_symbol:
-            continue
-
-        # Calculate position size
-        atr_pct = abs(trade["entry"] - trade["sl"]) / trade["entry"] if trade["entry"] > 0 else 0.02
-
-        if sizing_method == "fixed_pct":
-            size = PositionSizer.fixed_pct(equity, **sizing_params)
-        elif sizing_method == "fixed_risk":
-            size = PositionSizer.fixed_risk(equity, entry=trade["entry"], sl=trade["sl"], **sizing_params)
-        elif sizing_method == "kelly":
-            # Use running stats
-            if len(realized_returns) >= 10:
-                wins = [r for r in realized_returns if r > 0]
-                losses = [r for r in realized_returns if r <= 0]
-                wr = len(wins) / len(realized_returns) if realized_returns else 0.5
-                aw = np.mean(wins) if wins else 0.01
-                al = abs(np.mean(losses)) if losses else 0.01
-                size = PositionSizer.kelly(equity, winrate=wr, avg_win=aw, avg_loss=al, **sizing_params)
-            else:
-                size = PositionSizer.fixed_pct(equity, pct=0.02)
-        elif sizing_method == "vol_adjusted":
-            size = PositionSizer.vol_adjusted(equity, atr_pct=atr_pct, **sizing_params)
-        else:
-            size = equity * 0.02
-
-        # Don't risk more than we have
-        size = min(size, equity * 0.95)
-        if size <= 0:
-            continue
-
-        # Open position
-        open_positions.append({
-            **trade,
-            "size": size,
-        })
-        equity_curve.append(equity)
-
-    # Close remaining positions
-    for pos in open_positions:
-        pnl_dollars = pos["size"] * pos["pnl_pct"] / 100
-        equity += pnl_dollars
-        realized_returns.append(pos["pnl_pct"] / 100)
-        trade_results.append({**pos, "pnl_dollars": pnl_dollars, "equity_after": equity})
-
-    peak = max(peak, equity)
-    max_dd = max(max_dd, (peak - equity) / peak)
-
-    if len(realized_returns) < 2:
-        return {"net_pct": 0, "sharpe": 0, "trades": 0, "max_dd": 0, "halted": halted,
-                "final_equity": equity}
-
-    r = np.array(realized_returns)
-    sharpe = np.mean(r) / (np.std(r) + 1e-12) * np.sqrt(len(r))
-
-    return {
-        "net_pct": (equity / initial_equity - 1) * 100,
-        "sharpe": sharpe,
-        "winrate": np.mean(r > 0) * 100,
-        "trades": len(realized_returns),
-        "max_dd": max_dd * 100,
-        "final_equity": equity,
-        "halted": halted,
-        "avg_concurrent": np.mean([len([p for p in open_positions]) for _ in range(1)]),  # simplified
-        "avg_win_pct": np.mean(r[r > 0]) * 100 if np.any(r > 0) else 0,
-        "avg_loss_pct": np.mean(r[r <= 0]) * 100 if np.any(r <= 0) else 0,
-    }
-
-
-# ═══════════════════════════════════════════════════════════════
-# COLLECT TRADE STREAMS
+# TRADE COLLECTION (with real timestamps)
 # ═══════════════════════════════════════════════════════════════
 
 def collect_ribbon_trades(symbols, tfs):
-    """Run ribbon strategy on all symbols/TFs and collect trade logs."""
+    """Run ribbon strategy, return trades with real timestamps."""
     s = RibbonStrategy()
     trades = []
     for sym in symbols:
         for tf in tfs:
             d = load_ohlcv(sym, tf)
-            if d is None: continue
+            if d is None:
+                continue
             bt = s.backtest(d["o"], d["h"], d["l"], d["c"], d["v"])
+            ts_arr = d["ts"]
             for t in bt["trade_log"]:
+                bar_i = t["bar"]
+                if bar_i < 0 or bar_i >= len(ts_arr):
+                    continue
                 trades.append({
-                    "bar_entry": t["bar"], "bar_exit": t["bar"] + 1,  # simplified: 1-bar hold for timeline
-                    "side": 1 if t["side"] == 1 else -1,
-                    "entry": t["entry"], "exit": t["exit"],
-                    "sl": t["entry"] * 0.97 if t["side"] == 1 else t["entry"] * 1.03,  # approx
-                    "tp": t["exit"] if t["type"] == "TP" else t["entry"],
-                    "pnl_pct": t["pnl_pct"], "exit_type": t["type"],
-                    "symbol": sym, "tf": tf, "strategy": "ribbon",
+                    "ts_entry": ts_arr[bar_i],
+                    "ts_exit": ts_arr[min(bar_i + 1, len(ts_arr) - 1)],
+                    "entry": float(t["entry"]),
+                    "exit": float(t["exit"]),
+                    "sl": float(t["entry"] * (0.97 if t["side"] == 1 else 1.03)),
+                    "pnl_pct": float(t["pnl_pct"]),
+                    "exit_type": t["type"],
+                    "symbol": sym.upper(),
+                    "tf": tf,
+                    "strategy": "ribbon",
+                    "side": "LONG" if t["side"] == 1 else "SHORT",
                 })
     return trades
 
 
 def collect_trendline_trades(symbols, tfs):
-    """Run trendline strategy on all symbols/TFs and collect trade logs."""
+    """Run trendline strategy, return trades with real timestamps."""
     cfg = {**TL_DEFAULT,
            "swing_lookback": 20, "buffer_pct": 0.25, "sl_pct": 0.4, "rr": 2.0,
            "max_hold_bars": 100, "approach_pct": 2.0, "min_bars_between": 40,
@@ -251,18 +102,211 @@ def collect_trendline_trades(symbols, tfs):
     for sym in symbols:
         for tf in tfs:
             d = load_ohlcv(sym, tf)
-            if d is None: continue
+            if d is None:
+                continue
             bt = trendline_bt(d["o"], d["h"], d["l"], d["c"], d["v"], cfg)
+            ts_arr = d["ts"]
             for t in bt["trade_log"]:
+                be, bx = t["bar_entry"], t["bar_exit"]
+                if be < 0 or be >= len(ts_arr) or bx < 0 or bx >= len(ts_arr):
+                    continue
                 trades.append({
-                    "bar_entry": t["bar_entry"], "bar_exit": t["bar_exit"],
-                    "side": 1 if t["side"] == "LONG" else -1,
-                    "entry": t["entry"], "exit": t["exit"],
-                    "sl": t["sl"], "tp": t["tp"],
-                    "pnl_pct": t["pnl_pct"], "exit_type": t["exit_type"],
-                    "symbol": sym, "tf": tf, "strategy": "trendline",
+                    "ts_entry": ts_arr[be],
+                    "ts_exit": ts_arr[bx],
+                    "entry": float(t["entry"]),
+                    "exit": float(t["exit"]),
+                    "sl": float(t["sl"]),
+                    "pnl_pct": float(t["pnl_pct"]),
+                    "exit_type": t["exit_type"],
+                    "symbol": sym.upper(),
+                    "tf": tf,
+                    "strategy": "trendline",
+                    "side": t["side"],
                 })
     return trades
+
+
+# ═══════════════════════════════════════════════════════════════
+# PORTFOLIO SIMULATOR (time-aligned)
+# ═══════════════════════════════════════════════════════════════
+
+def simulate_portfolio(trades, sizing="fixed_risk", sizing_params=None,
+                       initial_equity=10000, max_concurrent=5,
+                       max_per_symbol=1, dd_halt_pct=0.25):
+    """
+    Time-aligned portfolio simulation.
+    - Sorts all trades by real timestamp (ts_entry)
+    - Tracks open positions by exit timestamp
+    - Enforces concurrent limits, per-symbol limits, DD halt
+    - Returns detailed results
+    """
+    if sizing_params is None:
+        sizing_params = {"risk_pct": 0.01}
+
+    # Sort by entry timestamp
+    trades = sorted(trades, key=lambda t: t["ts_entry"])
+
+    equity = float(initial_equity)
+    peak = equity
+    max_dd = 0.0
+    open_positions = []  # each: {ts_exit, symbol, size, pnl_pct, ...}
+    closed_trades = []
+    halted = False
+    equity_snapshots = []  # (timestamp, equity)
+
+    for trade in trades:
+        if halted:
+            break
+
+        ts_now = trade["ts_entry"]
+
+        # Close positions that have exited by now
+        still_open = []
+        for pos in open_positions:
+            if pos["ts_exit"] <= ts_now:
+                pnl_dollars = pos["size"] * pos["pnl_pct"] / 100
+                equity += pnl_dollars
+                closed_trades.append({
+                    **pos,
+                    "pnl_dollars": pnl_dollars,
+                    "equity_after": equity,
+                })
+                equity_snapshots.append((pos["ts_exit"], equity))
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        # Update drawdown
+        peak = max(peak, equity)
+        dd = (peak - equity) / peak if peak > 0 else 0
+        max_dd = max(max_dd, dd)
+
+        # DD halt
+        if dd >= dd_halt_pct:
+            halted = True
+            continue
+
+        # Concurrent limit
+        if len(open_positions) >= max_concurrent:
+            continue
+
+        # Per-symbol limit
+        sym_open = sum(1 for p in open_positions if p["symbol"] == trade["symbol"])
+        if sym_open >= max_per_symbol:
+            continue
+
+        # Don't open same symbol+tf+strategy if already open
+        dup = any(p["symbol"] == trade["symbol"] and p["tf"] == trade["tf"]
+                  and p["strategy"] == trade["strategy"] for p in open_positions)
+        if dup:
+            continue
+
+        # Position sizing
+        if sizing == "fixed_risk":
+            size = size_fixed_risk(
+                equity, sizing_params.get("risk_pct", 0.01),
+                trade["entry"], trade["sl"],
+                sizing_params.get("max_pos_pct", 0.15),
+            )
+        elif sizing == "fixed_pct":
+            size = size_fixed_pct(equity, sizing_params.get("pct", 0.02))
+        else:
+            size = equity * 0.02
+
+        if size <= 0 or equity <= 0:
+            continue
+
+        open_positions.append({
+            "ts_entry": trade["ts_entry"],
+            "ts_exit": trade["ts_exit"],
+            "symbol": trade["symbol"],
+            "tf": trade["tf"],
+            "strategy": trade["strategy"],
+            "side": trade["side"],
+            "entry": trade["entry"],
+            "exit": trade["exit"],
+            "sl": trade["sl"],
+            "pnl_pct": trade["pnl_pct"],
+            "exit_type": trade["exit_type"],
+            "size": size,
+        })
+
+    # Close remaining open positions
+    for pos in open_positions:
+        pnl_dollars = pos["size"] * pos["pnl_pct"] / 100
+        equity += pnl_dollars
+        closed_trades.append({
+            **pos,
+            "pnl_dollars": pnl_dollars,
+            "equity_after": equity,
+        })
+
+    peak = max(peak, equity)
+    max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else 0)
+
+    # Compute stats
+    n = len(closed_trades)
+    if n < 2:
+        return {"net_pct": 0, "sharpe": 0, "winrate": 0, "trades": n,
+                "max_dd": 0, "final_equity": equity, "halted": halted,
+                "closed_trades": closed_trades}
+
+    pnls = np.array([t["pnl_pct"] / 100 for t in closed_trades])
+    wins = np.sum(pnls > 0)
+    sharpe = np.mean(pnls) / (np.std(pnls) + 1e-12) * np.sqrt(n)
+
+    # Per-strategy breakdown
+    strat_stats = {}
+    for sname in set(t["strategy"] for t in closed_trades):
+        st = [t for t in closed_trades if t["strategy"] == sname]
+        st_pnls = np.array([t["pnl_pct"] / 100 for t in st])
+        st_wins = np.sum(st_pnls > 0)
+        st_dollars = sum(t["pnl_dollars"] for t in st)
+        strat_stats[sname] = {
+            "trades": len(st),
+            "winrate": st_wins / len(st) * 100 if st else 0,
+            "net_dollars": st_dollars,
+            "avg_pnl_pct": np.mean(st_pnls) * 100,
+        }
+
+    # Per-symbol breakdown
+    sym_stats = {}
+    for sym in set(t["symbol"] for t in closed_trades):
+        st = [t for t in closed_trades if t["symbol"] == sym]
+        st_dollars = sum(t["pnl_dollars"] for t in st)
+        sym_stats[sym] = {
+            "trades": len(st),
+            "net_dollars": st_dollars,
+            "winrate": sum(1 for t in st if t["pnl_pct"] > 0) / len(st) * 100,
+        }
+
+    # Max concurrent (scan closed trades timeline)
+    events = []
+    for t in closed_trades:
+        events.append((t["ts_entry"], +1))
+        events.append((t["ts_exit"], -1))
+    events.sort()
+    concurrent = 0; max_conc = 0
+    for _, delta in events:
+        concurrent += delta
+        max_conc = max(max_conc, concurrent)
+
+    return {
+        "net_pct": (equity / initial_equity - 1) * 100,
+        "sharpe": sharpe,
+        "winrate": wins / n * 100,
+        "trades": n,
+        "max_dd": max_dd * 100,
+        "final_equity": equity,
+        "halted": halted,
+        "avg_pnl_pct": np.mean(pnls) * 100,
+        "avg_win_pct": np.mean(pnls[pnls > 0]) * 100 if wins > 0 else 0,
+        "avg_loss_pct": np.mean(pnls[pnls <= 0]) * 100 if n > wins else 0,
+        "max_concurrent": max_conc,
+        "strategy_breakdown": strat_stats,
+        "symbol_breakdown": sym_stats,
+        "closed_trades": closed_trades,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -273,205 +317,127 @@ SYMBOLS = ["btcusdt", "ethusdt", "solusdt", "dogeusdt", "nearusdt",
            "adausdt", "bnbusdt", "linkusdt", "pepeusdt", "suiusdt", "xrpusdt"]
 TFS = ["1h", "4h"]
 
-SIZING_CONFIGS = [
-    ("fixed_2pct",    "fixed_pct",   {"pct": 0.02}),
-    ("fixed_5pct",    "fixed_pct",   {"pct": 0.05}),
-    ("fixed_10pct",   "fixed_pct",   {"pct": 0.10}),
-    ("risk_1pct",     "fixed_risk",  {"risk_pct": 0.01}),
-    ("risk_2pct",     "fixed_risk",  {"risk_pct": 0.02}),
-    ("kelly_quarter", "kelly",       {"fraction": 0.25}),
-    ("kelly_tenth",   "kelly",       {"fraction": 0.10}),
-    ("vol_adj",       "vol_adjusted",{"base_pct": 0.03, "target_atr_pct": 0.01}),
-]
 
-CONCURRENT_LIMITS = [3, 5, 10, 20]
-DD_HALTS = [0.15, 0.25, 0.50]
+def fmt(r):
+    """Format a result dict into a summary line."""
+    h = "HALT" if r["halted"] else ""
+    return (f"trades={r['trades']:5d}  win={r['winrate']:5.1f}%  sharpe={r['sharpe']:+7.2f}  "
+            f"net={r['net_pct']:+10.1f}%  DD={r['max_dd']:5.1f}%  "
+            f"final=${r['final_equity']:12,.0f}  maxConc={r.get('max_concurrent',0):2d} {h}")
 
 
 def main():
-    print("=" * 100)
-    print("PORTFOLIO-LEVEL BACKTEST: POSITION SIZING + RISK MANAGEMENT")
-    print(f"  {len(SYMBOLS)} symbols x {len(TFS)} TFs x 2 strategies")
-    print("=" * 100)
+    print("=" * 105, flush=True)
+    print("PORTFOLIO-LEVEL BACKTEST (time-aligned)", flush=True)
+    print(f"  {len(SYMBOLS)} symbols x {len(TFS)} TFs x 2 strategies", flush=True)
+    print("=" * 105, flush=True)
 
-    # Collect trades
-    print("\n[1/3] Collecting MA Ribbon trades...")
-    ribbon_trades = collect_ribbon_trades(SYMBOLS, TFS)
-    print(f"  {len(ribbon_trades)} ribbon trades")
+    # ── Collect trades ──
+    print("\n[1] Collecting MA Ribbon trades...", flush=True)
+    rib = collect_ribbon_trades(SYMBOLS, TFS)
+    print(f"  {len(rib)} trades | ts range: {rib[0]['ts_entry'][:10]} to {rib[-1]['ts_entry'][:10]}" if rib else "  0 trades", flush=True)
 
-    print("[2/3] Collecting Trendline trades...")
-    tl_trades = collect_trendline_trades(SYMBOLS, TFS)
-    print(f"  {len(tl_trades)} trendline trades")
+    print("[2] Collecting Trendline trades (4h only)...", flush=True)
+    tl = collect_trendline_trades(SYMBOLS, ["4h"])
+    print(f"  {len(tl)} trades | ts range: {tl[0]['ts_entry'][:10]} to {tl[-1]['ts_entry'][:10]}" if tl else "  0 trades", flush=True)
 
-    all_trades = ribbon_trades + tl_trades
-    ribbon_only = ribbon_trades
-    tl_only = tl_trades
+    both = rib + tl
+    print(f"  Combined: {len(both)} trades\n", flush=True)
 
-    # ═══════════════════════════════════════════════════════════
-    # Test 1: Sizing method comparison (fixed concurrent=5, dd_halt=25%)
-    # ═══════════════════════════════════════════════════════════
-    print("\n" + "=" * 100)
-    print("TEST 1: SIZING METHOD COMPARISON (concurrent=5, dd_halt=25%)")
-    print("=" * 100)
-    print(f"{'sizing':<16} {'strategy':<12} {'trades':>6} {'win%':>6} {'sharpe':>7} {'net%':>10} {'DD%':>6} {'final$':>10} {'halted':>7}")
-    print("-" * 85)
+    # ── Test 1: Sizing methods ──
+    print("=" * 105, flush=True)
+    print("TEST 1: SIZING METHOD (concurrent=5, dd_halt=25%)", flush=True)
+    print("=" * 105, flush=True)
 
-    for label, method, params in SIZING_CONFIGS:
-        for strat_name, strat_trades in [("both", all_trades), ("ribbon", ribbon_only), ("trendline", tl_only)]:
-            r = simulate_portfolio(
-                [strat_trades], method, params,
-                initial_equity=10000, max_concurrent=5, max_drawdown_halt=0.25,
-            )
-            halt_str = "YES" if r["halted"] else ""
-            print(f"{label:<16} {strat_name:<12} {r['trades']:6d} {r['winrate']:5.1f}% "
-                  f"{r['sharpe']:+6.2f} {r['net_pct']:+9.1f}% {r['max_dd']:5.1f}% "
-                  f"{r['final_equity']:10.0f} {halt_str:>7}")
-
-    # ═══════════════════════════════════════════════════════════
-    # Test 2: Concurrent position limit sweep
-    # ═══════════════════════════════════════════════════════════
-    print("\n" + "=" * 100)
-    print("TEST 2: CONCURRENT POSITION LIMIT (risk_1pct sizing, dd_halt=25%)")
-    print("=" * 100)
-    print(f"{'max_concurrent':>14} {'strategy':<12} {'trades':>6} {'win%':>6} {'sharpe':>7} {'net%':>10} {'DD%':>6} {'final$':>10}")
-    print("-" * 75)
-
-    for mc in CONCURRENT_LIMITS:
-        for sn, st in [("both", all_trades), ("ribbon", ribbon_only), ("trendline", tl_only)]:
-            r = simulate_portfolio(
-                [st], "fixed_risk", {"risk_pct": 0.01},
-                initial_equity=10000, max_concurrent=mc, max_drawdown_halt=0.25,
-            )
-            print(f"{mc:14d} {sn:<12} {r['trades']:6d} {r['winrate']:5.1f}% "
-                  f"{r['sharpe']:+6.2f} {r['net_pct']:+9.1f}% {r['max_dd']:5.1f}% {r['final_equity']:10.0f}")
-
-    # ═══════════════════════════════════════════════════════════
-    # Test 3: Drawdown halt threshold
-    # ═══════════════════════════════════════════════════════════
-    print("\n" + "=" * 100)
-    print("TEST 3: DRAWDOWN HALT THRESHOLD (risk_1pct, concurrent=5)")
-    print("=" * 100)
-    print(f"{'dd_halt':>8} {'strategy':<12} {'trades':>6} {'win%':>6} {'sharpe':>7} {'net%':>10} {'DD%':>6} {'halted':>7}")
-    print("-" * 65)
-
-    for dd in DD_HALTS:
-        for sn, st in [("both", all_trades), ("ribbon", ribbon_only)]:
-            r = simulate_portfolio(
-                [st], "fixed_risk", {"risk_pct": 0.01},
-                initial_equity=10000, max_concurrent=5, max_drawdown_halt=dd,
-            )
-            halt_str = "YES" if r["halted"] else ""
-            print(f"{dd*100:7.0f}% {sn:<12} {r['trades']:6d} {r['winrate']:5.1f}% "
-                  f"{r['sharpe']:+6.2f} {r['net_pct']:+9.1f}% {r['max_dd']:5.1f}% {halt_str:>7}")
-
-    # ═══════════════════════════════════════════════════════════
-    # Test 4: Strategy allocation split
-    # ═══════════════════════════════════════════════════════════
-    print("\n" + "=" * 100)
-    print("TEST 4: STRATEGY ALLOCATION (risk_1pct, concurrent=5, dd_halt=25%)")
-    print("=" * 100)
-    print(f"{'allocation':<20} {'trades':>6} {'win%':>6} {'sharpe':>7} {'net%':>10} {'DD%':>6} {'final$':>10}")
-    print("-" * 70)
-
-    configs = [
-        ("100% ribbon",    1.0, 0.0),
-        ("100% trendline", 0.0, 1.0),
-        ("70/30 rib/tl",   0.7, 0.3),
-        ("50/50",          0.5, 0.5),
-        ("30/70 rib/tl",   0.3, 0.7),
+    sizing_tests = [
+        ("fixed_2%",    "fixed_pct",  {"pct": 0.02}),
+        ("fixed_5%",    "fixed_pct",  {"pct": 0.05}),
+        ("fixed_10%",   "fixed_pct",  {"pct": 0.10}),
+        ("risk_0.5%",   "fixed_risk", {"risk_pct": 0.005}),
+        ("risk_1%",     "fixed_risk", {"risk_pct": 0.01}),
+        ("risk_2%",     "fixed_risk", {"risk_pct": 0.02}),
+        ("risk_3%",     "fixed_risk", {"risk_pct": 0.03}),
     ]
 
-    for label, rib_w, tl_w in configs:
-        # Simulate by adjusting position sizes
-        mixed = []
-        for t in ribbon_trades:
-            mixed.append({**t, "_weight": rib_w})
-        for t in tl_trades:
-            mixed.append({**t, "_weight": tl_w})
-        mixed.sort(key=lambda x: x["bar_entry"])
+    for label, method, params in sizing_tests:
+        print(f"\n  --- {label} ---", flush=True)
+        for sname, strads in [("ribbon", rib), ("trendline", tl), ("BOTH", both)]:
+            r = simulate_portfolio(strads, method, params,
+                                   initial_equity=10000, max_concurrent=5, dd_halt_pct=0.25)
+            print(f"    {sname:<12} {fmt(r)}", flush=True)
 
-        # Custom simulate with weights
-        equity = 10000.0; peak = 10000.0; max_dd = 0; returns = []; halted = False
-        open_pos = []; wins = 0; trades_done = 0
+    # ── Test 2: Concurrent limits ──
+    print("\n" + "=" * 105, flush=True)
+    print("TEST 2: CONCURRENT LIMIT (risk_1%, dd_halt=25%)", flush=True)
+    print("=" * 105, flush=True)
 
-        for trade in mixed:
-            if halted: break
-            # Close expired
-            still = []
-            for p in open_pos:
-                if trade["bar_entry"] >= p["bar_exit"]:
-                    pnl = p["size"] * p["pnl_pct"] / 100
-                    equity += pnl; returns.append(p["pnl_pct"] / 100)
-                    if p["pnl_pct"] > 0: wins += 1
-                    trades_done += 1
-                else:
-                    still.append(p)
-            open_pos = still
+    for mc in [1, 2, 3, 5, 8, 10]:
+        r = simulate_portfolio(both, "fixed_risk", {"risk_pct": 0.01},
+                               initial_equity=10000, max_concurrent=mc, dd_halt_pct=0.25)
+        print(f"  max_concurrent={mc:2d}  {fmt(r)}", flush=True)
 
-            peak = max(peak, equity)
-            dd = (peak - equity) / peak
-            max_dd = max(max_dd, dd)
-            if dd >= 0.25: halted = True; continue
-            if len(open_pos) >= 5: continue
+    # ── Test 3: DD halt threshold ──
+    print("\n" + "=" * 105, flush=True)
+    print("TEST 3: DD HALT THRESHOLD (risk_1%, concurrent=5)", flush=True)
+    print("=" * 105, flush=True)
 
-            w = trade.get("_weight", 1.0)
-            risk_pct = 0.01 * w
-            if trade["entry"] > 0 and trade["sl"] > 0:
-                risk_per_unit = abs(trade["entry"] - trade["sl"]) / trade["entry"]
-                if risk_per_unit > 0:
-                    size = min(equity * risk_pct / risk_per_unit, equity * 0.15)
-                else:
-                    size = equity * 0.02 * w
-            else:
-                size = equity * 0.02 * w
-            if size <= 0: continue
+    for dd in [0.10, 0.15, 0.20, 0.25, 0.50, 1.0]:
+        r = simulate_portfolio(both, "fixed_risk", {"risk_pct": 0.01},
+                               initial_equity=10000, max_concurrent=5, dd_halt_pct=dd)
+        label = f"{dd*100:.0f}%" if dd < 1.0 else "OFF"
+        print(f"  dd_halt={label:>4}  {fmt(r)}", flush=True)
 
-            open_pos.append({**trade, "size": size})
+    # ── Test 4: Strategy mix ──
+    print("\n" + "=" * 105, flush=True)
+    print("TEST 4: STRATEGY ALLOCATION (risk_1%, concurrent=5, dd_halt=25%)", flush=True)
+    print("=" * 105, flush=True)
 
-        for p in open_pos:
-            pnl = p["size"] * p["pnl_pct"] / 100
-            equity += pnl; returns.append(p["pnl_pct"] / 100)
-            if p["pnl_pct"] > 0: wins += 1
-            trades_done += 1
+    for label, trades in [("ribbon only", rib), ("trendline only", tl), ("both", both)]:
+        r = simulate_portfolio(trades, "fixed_risk", {"risk_pct": 0.01},
+                               initial_equity=10000, max_concurrent=5, dd_halt_pct=0.25)
+        print(f"\n  {label}:", flush=True)
+        print(f"    {fmt(r)}", flush=True)
+        if r.get("strategy_breakdown"):
+            for sn, ss in r["strategy_breakdown"].items():
+                print(f"      {sn:<12} trades={ss['trades']:5d}  win={ss['winrate']:5.1f}%  "
+                      f"pnl=${ss['net_dollars']:+12,.0f}  avg={ss['avg_pnl_pct']:+5.2f}%", flush=True)
 
-        peak = max(peak, equity)
-        max_dd = max(max_dd, (peak - equity) / peak)
+    # ── Detailed: Best config symbol breakdown ──
+    print("\n" + "=" * 105, flush=True)
+    print("BEST CONFIG DETAIL: risk_1% + concurrent=5 + both strategies", flush=True)
+    print("=" * 105, flush=True)
 
-        if trades_done >= 2:
-            r = np.array(returns)
-            sharpe = np.mean(r) / (np.std(r) + 1e-12) * np.sqrt(len(r))
-            wr = wins / trades_done * 100
-        else:
-            sharpe = 0; wr = 0
+    r = simulate_portfolio(both, "fixed_risk", {"risk_pct": 0.01},
+                           initial_equity=10000, max_concurrent=5, dd_halt_pct=0.25)
 
-        print(f"{label:<20} {trades_done:6d} {wr:5.1f}% {sharpe:+6.2f} "
-              f"{(equity/10000-1)*100:+9.1f}% {max_dd*100:5.1f}% {equity:10.0f}")
+    print(f"\n  OVERALL: {fmt(r)}\n", flush=True)
 
-    # ═══════════════════════════════════════════════════════════
-    # RECOMMENDATION
-    # ═══════════════════════════════════════════════════════════
-    print("\n" + "=" * 100)
-    print("RECOMMENDED PRODUCTION CONFIG")
-    print("=" * 100)
-    print("""
-  Position Sizing:  fixed_risk (1% equity risk per trade)
-                    Size = (equity × 0.01) / (entry - SL distance as %)
-                    Cap: max 15% equity per single position
+    print(f"  {'SYMBOL':<10} {'trades':>6} {'win%':>6} {'net$':>12} {'strategy_mix'}", flush=True)
+    print("  " + "-" * 60, flush=True)
+    for sym in sorted(r.get("symbol_breakdown", {}), key=lambda s: r["symbol_breakdown"][s]["net_dollars"], reverse=True):
+        ss = r["symbol_breakdown"][sym]
+        # Count per strategy
+        rib_n = sum(1 for t in r["closed_trades"] if t["symbol"] == sym and t["strategy"] == "ribbon")
+        tl_n = sum(1 for t in r["closed_trades"] if t["symbol"] == sym and t["strategy"] == "trendline")
+        print(f"  {sym:<10} {ss['trades']:6d} {ss['winrate']:5.1f}% ${ss['net_dollars']:+11,.0f}  "
+              f"rib={rib_n} tl={tl_n}", flush=True)
 
-  Risk Limits:      max 5 concurrent positions
-                    max 1 position per symbol
-                    drawdown halt at 25% (stop all new trades)
+    # ── Sample trades (first 15 + last 15) ──
+    ct = r["closed_trades"]
+    print(f"\n  SAMPLE TRADES (first 10):", flush=True)
+    print(f"  {'ts_entry':<20} {'sym':<8} {'strat':<10} {'side':<6} {'entry':>10} {'exit':>10} {'pnl%':>7} {'pnl$':>10} {'type':<5}", flush=True)
+    print("  " + "-" * 95, flush=True)
+    for t in ct[:10]:
+        print(f"  {t['ts_entry'][:19]:<20} {t['symbol']:<8} {t['strategy']:<10} {t['side']:<6} "
+              f"{t['entry']:10.4f} {t['exit']:10.4f} {t['pnl_pct']:+6.2f}% ${t['pnl_dollars']:+9.1f} {t['exit_type']:<5}", flush=True)
 
-  Strategy Mix:     Start with 100% MA Ribbon (higher winrate, more predictable)
-                    Add trendline after 50+ live ribbon trades confirm edge
+    print(f"\n  SAMPLE TRADES (last 10):", flush=True)
+    for t in ct[-10:]:
+        print(f"  {t['ts_entry'][:19]:<20} {t['symbol']:<8} {t['strategy']:<10} {t['side']:<6} "
+              f"{t['entry']:10.4f} {t['exit']:10.4f} {t['pnl_pct']:+6.2f}% ${t['pnl_dollars']:+9.1f} {t['exit_type']:<5}", flush=True)
 
-  Per-Trade Rules:  Never risk > 1% equity per trade
-                    SL is mandatory and pre-calculated
-                    No manual override of SL
-    """)
-
-    print(f"Completed: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
-    print("=" * 100)
+    print(f"\nCompleted: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", flush=True)
+    print("=" * 105, flush=True)
 
 
 if __name__ == "__main__":
