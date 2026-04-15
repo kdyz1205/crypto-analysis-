@@ -27,6 +27,7 @@ from .routers import (
     stream, memory, schedule,
     strategy, paper_execution, live_execution, drawings, runtime,
     tools_api, conditionals,
+    mar_bb_runner,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
@@ -66,6 +67,24 @@ async def _startup():
         _start_cond_watcher()
     except Exception as _e:
         print(f"[ConditionalWatcher] failed to start: {_e}")
+
+    # Auto-start the MA Ribbon + BB Exit live runner.
+    # Runs in background 24/7 scanning top-100 Bitget USDT perps and
+    # firing real orders when V1+V3 crossover signals appear. Safe to
+    # enable because: multi-position gate (max 5 concurrent), skips
+    # already-held symbols, $12 notional per position.
+    # Disable by setting MAR_BB_AUTOSTART=0 in .env.
+    import os as _os
+    if _os.environ.get("MAR_BB_AUTOSTART", "1") != "0":
+        try:
+            from .strategy.mar_bb_runner import start_runner as _start_mar_bb, DEFAULT_RUNNER_CFG
+            _start_mar_bb({**DEFAULT_RUNNER_CFG})
+            print(f"[mar_bb] auto-started: top_n={DEFAULT_RUNNER_CFG['top_n']} "
+                  f"tf={DEFAULT_RUNNER_CFG['timeframe']} "
+                  f"max_pos={DEFAULT_RUNNER_CFG['max_concurrent_positions']} "
+                  f"notional=${DEFAULT_RUNNER_CFG['notional_usd']}")
+        except Exception as _e:
+            print(f"[mar_bb] auto-start failed: {_e}")
 
     # Hermes-inspired: register default scheduler handlers + start loop
     from .core import memory as mem_core
@@ -195,4 +214,5 @@ app.include_router(memory.router)       # /api/memory/*  (Hermes persistent memo
 app.include_router(schedule.router)     # /api/schedule/* (Hermes natural-language scheduler)
 app.include_router(tools_api.router)    # /api/tools/* (research leaderboard, audit, failures, factors)
 app.include_router(conditionals.router) # /api/conditionals/* + /api/drawings/manual/analyze
+app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB exit scanner
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer

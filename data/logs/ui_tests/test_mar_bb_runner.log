@@ -1,0 +1,16 @@
+=== run @ 2026-04-15T01:50:21Z  git=295703f ===
+=== mar_bb runner test @ 2026-04-15T01:50:22Z git=295703f ===
+  [✓] state endpoint reachable
+  initial status: running  scans=5
+  [✓] start returned ok
+  [✓] status == running after start  (running)
+  [✓] kick returned ok  (2.6s)
+  [✓] scans_completed incremented  (scans=6)
+  [✓] no runner error
+  [✓] scan duration reasonable (<30s)  (0.5s)
+  [✓] stop returned ok
+  [✓] status == stopped after stop  (stopped)
+
+=== result: PASS ===
+=== end (exit=0) ===
+
