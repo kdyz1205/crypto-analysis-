@@ -48,21 +48,41 @@ _state_lock = asyncio.Lock()
 # Runner config (defaults; can be overridden via start_runner())
 DEFAULT_RUNNER_CFG = {
     "top_n": 100,
-    "timeframe": "1h",
     "scan_interval_s": 60,
+    # ── Multi-timeframe ──
+    "timeframes": ["15m", "1h", "4h"],      # scan all 3 TFs each cycle
+    "timeframe": "1h",                       # legacy single-TF fallback
+    # ── Per-TF risk config ──
+    # risk_pct = max loss per single trade as % of equity
+    "tf_risk": {
+        "15m": 0.02,   # 2% risk per trade on 15m
+        "1h":  0.03,   # 3% risk per trade on 1h
+        "4h":  0.04,   # 4% risk per trade on 4h
+    },
     # ── Position sizing ──
-    "sizing_mode": "fixed_risk",    # "fixed_risk" or "fixed_notional"
-    "risk_pct": 0.03,               # 3% equity risk per trade
+    "sizing_mode": "fixed_risk",
+    "risk_pct": 0.03,               # fallback if TF not in tf_risk
     "notional_usd": 12.0,           # fallback for fixed_notional mode
     "max_position_pct": 0.50,       # max 50% equity per single position
-    "leverage": 20,
+    "leverage": 30,
     "max_concurrent_positions": 10,
+    # ── Daily drawdown halt (adaptive by equity tier) ──
+    # Format: [(equity_threshold, max_daily_dd_pct), ...] — checked top-down
+    "daily_dd_tiers": [
+        (100000, 0.03),   # $100k+: max 3% daily loss
+        (25000,  0.06),   # $25k-100k: max 6%
+        (5000,   0.10),   # $5k-25k: max 10%
+        (2000,   0.15),   # $2k-5k: max 15%
+        (1000,   0.25),   # $1k-2k: max 25%
+        (500,    0.35),   # $500-1k: max 35%
+        (0,      0.50),   # <$500: max 50%
+    ],
     # ── General ──
-    "mode": "live",              # or "demo" for paper trading
-    "min_bars": 100,             # need at least this many for indicators
-    "dry_run": False,            # if True, log signals but don't submit orders
-    "auto_start": True,          # auto-boot runner on server startup
-    "strategies": ["mar_bb", "trendline"],   # which strategies to scan with
+    "mode": "live",
+    "min_bars": 100,
+    "dry_run": False,
+    "auto_start": True,
+    "strategies": ["mar_bb", "trendline"],
 }
 
 
@@ -138,6 +158,48 @@ def _load_state() -> None:
 
 def get_state() -> dict:
     return asdict(_state)
+
+
+# ─────────────────────────────────────────────────────────────
+# Daily drawdown tracking
+# ─────────────────────────────────────────────────────────────
+_daily_equity_start: float = 0.0   # equity at start of current UTC day
+_daily_date: str = ""              # "YYYY-MM-DD" of current tracking day
+
+
+def _get_daily_dd_limit(equity: float, cfg: dict) -> float:
+    """Return max daily drawdown % for current equity tier."""
+    tiers = cfg.get("daily_dd_tiers", [(0, 0.50)])
+    for threshold, dd_pct in tiers:
+        if equity >= threshold:
+            return dd_pct
+    return 0.50  # fallback
+
+
+def _check_daily_dd(equity: float, cfg: dict) -> tuple[bool, float, float]:
+    """
+    Check if we've exceeded daily drawdown limit.
+    Returns (halted, current_dd_pct, limit_pct).
+    Resets at UTC midnight.
+    """
+    global _daily_equity_start, _daily_date
+    import datetime as _dt
+
+    today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    if today != _daily_date or _daily_equity_start <= 0:
+        _daily_equity_start = equity
+        _daily_date = today
+        return False, 0.0, _get_daily_dd_limit(equity, cfg)
+
+    if _daily_equity_start <= 0:
+        return False, 0.0, 0.50
+
+    dd_pct = (_daily_equity_start - equity) / _daily_equity_start
+    limit = _get_daily_dd_limit(_daily_equity_start, cfg)
+
+    if dd_pct >= limit:
+        return True, dd_pct, limit
+    return False, dd_pct, limit
 
 
 # ─────────────────────────────────────────────────────────────
@@ -516,20 +578,36 @@ async def _submit_order(plan: dict) -> dict:
 # Main scan loop
 # ─────────────────────────────────────────────────────────────
 async def _do_scan() -> None:
-    """One pass through top-N symbols. Updates _state."""
+    """One pass through top-N symbols × all configured TFs. Updates _state."""
     t0 = time.time()
     cfg = _state.config
-    tf = cfg["timeframe"]
+    timeframes = cfg.get("timeframes") or [cfg.get("timeframe", "1h")]
     top_n = int(cfg["top_n"])
-    max_concurrent = int(cfg.get("max_concurrent_positions", 5))
+    max_concurrent = int(cfg.get("max_concurrent_positions", 10))
+    tf_risk = cfg.get("tf_risk", {})
 
-    print(f"[mar_bb] scan start: top_n={top_n} tf={tf} max={max_concurrent} "
-          f"leverage={cfg.get('leverage')}x risk={cfg.get('risk_pct',0)*100:.1f}%", flush=True)
+    print(f"[mar_bb] scan start: top_n={top_n} TFs={timeframes} max={max_concurrent} "
+          f"leverage={cfg.get('leverage')}x", flush=True)
 
-    # Fetch equity ONCE per scan for risk-based sizing
+    # Fetch equity ONCE per scan
     equity = await _get_equity() if cfg.get("sizing_mode") == "fixed_risk" else 0
     if cfg.get("sizing_mode") == "fixed_risk":
         print(f"[mar_bb] equity=${equity:.2f}", flush=True)
+
+    # Daily drawdown check
+    dd_halted, dd_current, dd_limit = _check_daily_dd(equity, cfg)
+    if dd_halted:
+        _state.last_error = (
+            f"DAILY DD HALT: lost {dd_current*100:.1f}% today (limit {dd_limit*100:.0f}% "
+            f"for ${_daily_equity_start:.0f} tier). No new trades until UTC midnight."
+        )
+        print(f"[mar_bb] {_state.last_error}", flush=True)
+        _state.last_scan_ts = int(time.time())
+        _state.last_scan_duration_s = round(time.time() - t0, 2)
+        _state.scans_completed += 1
+        _save_state()
+        return
+    print(f"[mar_bb] daily DD: {dd_current*100:.1f}% / {dd_limit*100:.0f}% limit", flush=True)
 
     symbols = await _get_top_symbols(top_n)
     print(f"[mar_bb] fetched {len(symbols)} symbols", flush=True)
@@ -537,11 +615,8 @@ async def _do_scan() -> None:
         _state.last_error = "no symbols fetched"
         return
 
-    # Snapshot live Bitget positions ONCE at scan start. Use this set to:
-    #   - count slots used (gate vs max_concurrent)
-    #   - skip symbols we already hold (don't stack into same asset)
+    # Snapshot Bitget positions ONCE
     bitget_positions, ok = await _get_bitget_positions()
-    print(f"[mar_bb] bitget positions: ok={ok} count={len(bitget_positions)}", flush=True)
     held_symbols: set[str] = set()
     for p in bitget_positions:
         sym = (p.get("symbol") or "").upper()
@@ -549,15 +624,9 @@ async def _do_scan() -> None:
             held_symbols.add(sym)
     slots_used = len(held_symbols)
     slots_free = max(0, max_concurrent - slots_used)
-    print(f"[mar_bb] slots: used={slots_used} free={slots_free} held={sorted(held_symbols)}", flush=True)
+    print(f"[mar_bb] slots: {slots_used}/{max_concurrent} used, {slots_free} free", flush=True)
 
-    # Map tf → bar-window days (enough to compute MA55 + ADX + BB)
-    tf_days = {
-        "1m": 1, "3m": 2, "5m": 3, "15m": 7, "30m": 14,
-        "1h": 21, "2h": 42, "4h": 84, "1d": 500,
-    }
-    days = tf_days.get(tf, 21)
-
+    tf_days = {"1m":1,"3m":2,"5m":3,"15m":7,"30m":14,"1h":21,"2h":42,"4h":84,"1d":500}
     strategy = Strategy(DEFAULT_CONFIG)
     enabled_strats = cfg.get("strategies") or ["mar_bb", "trendline"]
     signals_this_scan = 0
@@ -569,108 +638,111 @@ async def _do_scan() -> None:
             f"({','.join(sorted(held_symbols))[:200]})"
         )
 
-    scanned = 0
-    for sym in symbols:
-        if not _running:
+    # Scan each TF
+    for tf in timeframes:
+        if not _running or orders_this_scan >= slots_free:
             break
-        if orders_this_scan >= slots_free:
-            break
-        if sym.upper() in held_symbols:
-            continue
 
-        scanned += 1
-        if scanned <= 3 or scanned % 20 == 0:
-            print(f"[mar_bb]   scanning {sym} ({scanned}/{len(symbols)})", flush=True)
+        days = tf_days.get(tf, 21)
+        # Per-TF risk: use tf_risk[tf] if available, else fallback
+        scan_risk_pct = tf_risk.get(tf, cfg.get("risk_pct", 0.03))
+        scan_cfg = {**cfg, "risk_pct": scan_risk_pct, "_notional_override": None}
 
-        try:
-            bars = await _fetch_bars(sym, tf, days)
-        except Exception as e:
-            print(f"[mar_bb] fetch {sym} EXCEPTION: {e}", flush=True)
-            continue
-        if bars is None:
-            continue
-        if len(bars["c"]) < cfg["min_bars"]:
-            continue
+        scanned = 0
+        for sym in symbols:
+            if not _running or orders_this_scan >= slots_free:
+                break
+            if sym.upper() in held_symbols:
+                continue
 
-        # Run BOTH strategies on the same bars. First to produce a plan wins.
-        plan = None
+            scanned += 1
+            if scanned <= 2 or scanned % 30 == 0:
+                print(f"[mar_bb]   {tf} scanning {sym} ({scanned}/{len(symbols)})", flush=True)
 
-        if "mar_bb" in enabled_strats:
             try:
-                state = strategy.current_state(
-                    bars["o"], bars["h"], bars["l"], bars["c"], bars["v"],
-                )
-                # Pre-calculate notional for this signal's SL distance
-                if state.get("signal") in (1, -1) and equity > 0:
-                    entry_p = state.get("close", 0)
-                    atr_val = state.get("atr", 0)
-                    atr_mult = float(DEFAULT_CONFIG.get("atr_mult", 3.0))
-                    stop_p = entry_p - atr_mult * atr_val if state["signal"] == 1 else entry_p + atr_mult * atr_val
-                    cfg["_notional_override"] = _calc_position_size(equity, entry_p, stop_p, cfg)
-                plan = _build_order_intent_mar_bb(sym, tf, state, cfg)
+                bars = await _fetch_bars(sym, tf, days)
             except Exception as e:
-                print(f"[mar_bb] mar_bb {sym} err: {e}", flush=True)
+                print(f"[mar_bb] fetch {sym} {tf} EXCEPTION: {e}", flush=True)
+                continue
+            if bars is None or len(bars["c"]) < cfg["min_bars"]:
+                continue
 
-        if plan is None and "trendline" in enabled_strats:
+            # Run strategies — first signal wins
+            plan = None
+
+            if "mar_bb" in enabled_strats:
+                try:
+                    state = strategy.current_state(
+                        bars["o"], bars["h"], bars["l"], bars["c"], bars["v"],
+                    )
+                    if state.get("signal") in (1, -1) and equity > 0:
+                        entry_p = state.get("close", 0)
+                        atr_val = state.get("atr", 0)
+                        atr_mult = float(DEFAULT_CONFIG.get("atr_mult", 3.0))
+                        stop_p = entry_p - atr_mult * atr_val if state["signal"] == 1 else entry_p + atr_mult * atr_val
+                        scan_cfg["_notional_override"] = _calc_position_size(equity, entry_p, stop_p, scan_cfg)
+                    plan = _build_order_intent_mar_bb(sym, tf, state, scan_cfg)
+                except Exception as e:
+                    print(f"[mar_bb] mar_bb {sym} {tf} err: {e}", flush=True)
+
+            if plan is None and "trendline" in enabled_strats:
+                try:
+                    scan_cfg["_notional_override"] = None
+                    plan = _check_trendline_signal(sym, tf, bars, scan_cfg)
+                    if plan and equity > 0:
+                        plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], scan_cfg)
+                        plan["notional"] = plan_notional
+                        plan["quantity"] = plan_notional / plan["entry_price"]
+                except Exception as e:
+                    print(f"[mar_bb] trendline {sym} {tf} err: {e}", flush=True)
+
+            if plan is None:
+                continue
+
+            signals_this_scan += 1
+            _state.signals_detected += 1
+
+            sig_record = {
+                "ts": int(time.time()),
+                "strategy": plan.get("strategy"),
+                "symbol": sym,
+                "tf": tf,
+                "direction": plan["direction"],
+                "entry": plan["entry_price"],
+                "stop": plan["stop_price"],
+                "tp": plan["tp_price"],
+            }
+            _state.recent_signals = ([sig_record] + _state.recent_signals)[:20]
+
+            if cfg.get("dry_run"):
+                print(f"[mar_bb] DRY-RUN [{plan.get('strategy')}] {sym} {plan['direction']} @ {plan['entry_price']:.4f}", flush=True)
+                orders_this_scan += 1
+                continue
+
+            print(f"[mar_bb] SIGNAL [{plan.get('strategy')}] {sym} {tf} {plan['direction']} @ {plan['entry_price']:.4f}  "
+                  f"sl={plan['stop_price']:.4f}  tp={plan['tp_price']:.4f}  risk={scan_risk_pct*100:.1f}%", flush=True)
+
+            # Re-anchor SL/TP to current mark to preserve RR after slippage
             try:
-                # For trendline, compute notional after getting signal's SL
-                cfg["_notional_override"] = None  # will be set inside if signal found
-                plan = _check_trendline_signal(sym, tf, bars, cfg)
-                if plan and equity > 0:
-                    plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], cfg)
-                    plan["notional"] = plan_notional
-                    plan["quantity"] = plan_notional / plan["entry_price"]
+                plan = await _anchor_sl_tp_to_mark(plan)
             except Exception as e:
-                print(f"[mar_bb] trendline {sym} err: {e}", flush=True)
+                print(f"[mar_bb] anchor err {sym}: {e}", flush=True)
 
-        if plan is None:
-            continue
+            try:
+                resp = await _submit_order(plan)
+            except Exception as e:
+                resp = {"ok": False, "reason": f"exception: {e}"}
+                traceback.print_exc()
 
-        signals_this_scan += 1
-        _state.signals_detected += 1
-
-        sig_record = {
-            "ts": int(time.time()),
-            "strategy": plan.get("strategy"),
-            "symbol": sym,
-            "tf": tf,
-            "direction": plan["direction"],
-            "entry": plan["entry_price"],
-            "stop": plan["stop_price"],
-            "tp": plan["tp_price"],
-        }
-        _state.recent_signals = ([sig_record] + _state.recent_signals)[:20]
-
-        if cfg.get("dry_run"):
-            print(f"[mar_bb] DRY-RUN [{plan.get('strategy')}] {sym} {plan['direction']} @ {plan['entry_price']:.4f}", flush=True)
-            orders_this_scan += 1   # count against the slot quota even in dry-run
-            continue
-
-        print(f"[mar_bb] SIGNAL [{plan.get('strategy')}] {sym} {plan['direction']} @ {plan['entry_price']:.4f}  "
-              f"sl={plan['stop_price']:.4f}  tp={plan['tp_price']:.4f}", flush=True)
-
-        # Re-anchor SL/TP to the current mark so slippage between signal
-        # generation and market fill doesn't distort the intended RR ratio.
-        try:
-            plan = await _anchor_sl_tp_to_mark(plan)
-        except Exception as e:
-            print(f"[mar_bb] anchor err {sym}: {e}", flush=True)
-
-        try:
-            resp = await _submit_order(plan)
-        except Exception as e:
-            resp = {"ok": False, "reason": f"exception: {e}"}
-            traceback.print_exc()
-
-        if resp.get("ok"):
-            _state.orders_submitted += 1
-            orders_this_scan += 1
-            held_symbols.add(sym.upper())   # don't pick same sym again this scan
-            print(f"[mar_bb] FILLED {sym} order_id={resp.get('exchange_order_id')}", flush=True)
-        else:
-            _state.orders_rejected += 1
-            _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
-            print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
+            if resp.get("ok"):
+                _state.orders_submitted += 1
+                orders_this_scan += 1
+                held_symbols.add(sym.upper())
+                print(f"[mar_bb] FILLED {sym} {tf} order_id={resp.get('exchange_order_id')}", flush=True)
+            else:
+                _state.orders_rejected += 1
+                _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
+                print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
 
     _state.scans_completed += 1
     _state.last_scan_ts = int(time.time())
