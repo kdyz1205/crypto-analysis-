@@ -101,6 +101,24 @@ def build_trendlines(h, l, c, cfg):
     # Max allowed penetrations AFTER anchor2 before line is considered broken
     max_post_pen = cfg.get("max_post_penetrations", 0)  # default: 0 = any break invalidates
 
+    # ────────────────────────────────────────────────────────
+    # SLOPE DIRECTION RULES (fundamental technical analysis):
+    #
+    # Support = ascending lows (higher lows → uptrend floor)
+    #   slope must be >= 0. Descending lows = downtrend, NOT support.
+    #   Trade: long bounce (buy the dip in uptrend)
+    #
+    # Resistance = descending highs (lower highs → downtrend ceiling)
+    #   slope must be <= 0. Ascending highs = uptrend, NOT resistance.
+    #   Trade: short rejection (sell the rally in downtrend)
+    #
+    # Horizontal (slope ≈ 0) = valid for both (classic S/R level)
+    #
+    # Tolerance: allow very slight counter-slope (< 0.01% per bar)
+    # to catch near-horizontal lines that are slightly tilted.
+    # ────────────────────────────────────────────────────────
+    slope_tolerance = 0.0001  # 0.01% per bar — near-horizontal tolerance
+
     # Support lines: connect pairs of swing lows
     for i in range(len(swing_lows)):
         count = 0
@@ -116,19 +134,23 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
-            # Check between anchors
-            bars = np.arange(i1 + 1, i2)
-            if len(bars) > 0:
-                line_vals = slope * bars + intercept
+            # DIRECTION CHECK: support must have ascending or flat lows
+            # Descending lows = downtrend = NOT support to buy
+            slope_pct = slope / p1 if p1 > 0 else 0
+            if slope_pct < -slope_tolerance:
+                continue  # descending lows → skip
+
+            # Check between anchors: price shouldn't break below the line
+            bars_between = np.arange(i1 + 1, i2)
+            if len(bars_between) > 0:
+                line_vals = slope * bars_between + intercept
                 penetrations = np.sum(l[i1+1:i2] < line_vals * 0.999)
                 if penetrations > max_pen: continue
 
-            # CHECK AFTER ANCHOR 2: has the line been broken since?
-            # For support: if close ever went BELOW the line, support is broken
+            # Post-anchor check: line not broken since anchor2
             if i2 + 1 < n:
                 post_bars = np.arange(i2 + 1, n)
                 post_line = slope * post_bars + intercept
-                # Use low (not close) for stricter check: any wick below = broken
                 post_breaks = np.sum(l[i2+1:n] < post_line)
                 if post_breaks > max_post_pen:
                     continue
@@ -153,19 +175,23 @@ def build_trendlines(h, l, c, cfg):
             slope = (p2 - p1) / gap
             intercept = p1 - slope * i1
 
+            # DIRECTION CHECK: resistance must have descending or flat highs
+            # Ascending highs = uptrend = NOT resistance to short
+            slope_pct = slope / p1 if p1 > 0 else 0
+            if slope_pct > slope_tolerance:
+                continue  # ascending highs → skip
+
             # Check between anchors
-            bars = np.arange(i1 + 1, i2)
-            if len(bars) > 0:
-                line_vals = slope * bars + intercept
+            bars_between = np.arange(i1 + 1, i2)
+            if len(bars_between) > 0:
+                line_vals = slope * bars_between + intercept
                 penetrations = np.sum(h[i1+1:i2] > line_vals * 1.001)
                 if penetrations > max_pen: continue
 
-            # CHECK AFTER ANCHOR 2: has the line been broken since?
-            # For resistance: if high ever went ABOVE the line, resistance is broken
+            # Post-anchor check: line not broken since anchor2
             if i2 + 1 < n:
                 post_bars = np.arange(i2 + 1, n)
                 post_line = slope * post_bars + intercept
-                # Use high (not close) for stricter check: any wick above = broken
                 post_breaks = np.sum(h[i2+1:n] > post_line)
                 if post_breaks > max_post_pen:
                     continue

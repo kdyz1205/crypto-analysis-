@@ -91,7 +91,9 @@ DEFAULT_RUNNER_CFG = {
     "min_bars": 100,
     "dry_run": False,
     "auto_start": True,
-    "strategies": ["mar_bb", "trendline"],
+    # TRENDLINE DISABLED until slope direction fix is verified in production.
+    # Re-enable after confirming no more "ascending resistance" signals.
+    "strategies": ["mar_bb"],
 }
 
 
