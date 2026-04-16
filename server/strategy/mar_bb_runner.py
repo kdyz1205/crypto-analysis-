@@ -918,6 +918,7 @@ async def _do_scan() -> None:
     enabled_strats = cfg.get("strategies") or ["mar_bb", "trendline"]
     signals_this_scan = 0
     orders_this_scan = 0
+    _trendline_limit_signals = []  # collected per scan, batch-placed as limit orders
 
     if slots_free == 0:
         _state.last_error = (
@@ -985,24 +986,26 @@ async def _do_scan() -> None:
                 except Exception as e:
                     print(f"[mar_bb] {rstrat_name} {sym} {tf} err: {e}", flush=True)
 
-            if plan is None and "trendline" in enabled_strats:
+            # Trendline: collect signals for LIMIT ORDER placement (not market order)
+            if "trendline" in enabled_strats:
                 try:
                     scan_cfg["_notional_override"] = None
-                    plan = _check_trendline_signal(sym, tf, bars, scan_cfg)
-                    if plan and equity > 0:
-                        plan_notional = _calc_position_size(equity, plan["entry_price"], plan["stop_price"], scan_cfg)
-                        plan["notional"] = plan_notional
-                        plan["quantity"] = plan_notional / plan["entry_price"]
-                    # Store real trendline slope/intercept for trailing SL
-                    if plan and plan.get("strategy") == "trendline":
-                        register_trendline_params(
-                            sym,
-                            slope=plan.get("line_slope", 0),
-                            intercept=plan.get("line_intercept", 0),
-                            entry_bar=plan.get("line_entry_bar", 0),
-                            entry_price=plan["entry_price"],
-                            side=plan["direction"], tf=tf,
-                        )
+                    tl_plan = _check_trendline_signal(sym, tf, bars, scan_cfg)
+                    if tl_plan and tl_plan.get("strategy") == "trendline":
+                        # Don't set `plan` — trendline goes through limit order path
+                        _trendline_limit_signals.append({
+                            "symbol": sym,
+                            "timeframe": tf,
+                            "kind": "support" if tl_plan["direction"] == "long" else "resistance",
+                            "slope": tl_plan.get("line_slope", 0),
+                            "intercept": tl_plan.get("line_intercept", 0),
+                            "anchor1_bar": 0,
+                            "anchor2_bar": tl_plan.get("line_entry_bar", 0),
+                            "direction": tl_plan["direction"],
+                            "entry_price": tl_plan["entry_price"],
+                            "stop_price": tl_plan["stop_price"],
+                            "tp_price": tl_plan["tp_price"],
+                        })
                 except Exception as e:
                     print(f"[mar_bb] trendline {sym} {tf} err: {e}", flush=True)
 
@@ -1049,23 +1052,61 @@ async def _do_scan() -> None:
                 orders_this_scan += 1
                 held_symbols.add(sym.upper())
                 print(f"[mar_bb] FILLED {sym} {tf} order_id={resp.get('exchange_order_id')}", flush=True)
-                # Emit event for Telegram notification
+                # Emit event for Telegram notification + log trade
                 try:
                     from server.core.events import bus, Event
-                    bus.emit(Event("position.opened", {
+                    payload = {
                         "symbol": sym, "side": plan.get("direction", "long"),
                         "size_usd": plan.get("notional", 0),
                         "entry_price": plan.get("entry", 0),
                         "sl": plan.get("stop", 0), "tp": plan.get("tp", 0),
                         "strategy": plan.get("strategy", ""),
                         "timeframe": tf,
-                    }))
+                    }
+                    bus.emit(Event("position.opened", payload))
+                except Exception:
+                    pass
+                try:
+                    from server.strategy.trade_log import log_trade
+                    log_trade(
+                        symbol=sym, timeframe=tf,
+                        strategy=plan.get("strategy", ""),
+                        direction=plan.get("direction", ""),
+                        entry_price=plan.get("entry", 0),
+                        stop_price=plan.get("stop", 0),
+                        tp_price=plan.get("tp", 0),
+                        size_usd=plan.get("notional", 0),
+                        leverage=int(cfg.get("leverage", 20)),
+                        order_id=resp.get("exchange_order_id", ""),
+                    )
                 except Exception:
                     pass
             else:
                 _state.orders_rejected += 1
                 _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
                 print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
+
+    # ── Trendline LIMIT orders: place/update/cancel passive limit orders ──
+    if _trendline_limit_signals:
+        try:
+            from server.strategy.trendline_order_manager import update_trendline_orders
+            tl_cfg = {
+                "buffer_pct": cfg.get("buffer_pct", 0.05),
+                "rr": cfg.get("rr", 8.0),
+                "leverage": int(cfg.get("leverage", 20)),
+                "equity": equity,
+                "risk_pct": tf_risk.get(timeframes[0], 0.01) if timeframes else 0.01,
+            }
+            tl_result = await update_trendline_orders(
+                _trendline_limit_signals,
+                current_bar_index=int(time.time()),  # use timestamp as bar proxy
+                cfg=tl_cfg,
+            )
+            if tl_result.get("placed", 0) > 0 or tl_result.get("cancelled", 0) > 0:
+                print(f"[mar_bb] trendline limits: {tl_result}", flush=True)
+        except Exception as e:
+            print(f"[mar_bb] trendline limit orders err: {e}", flush=True)
+            traceback.print_exc()
 
     # ── Trailing SL: move SL tighter on open trendline positions ──
     try:
