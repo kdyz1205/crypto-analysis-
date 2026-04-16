@@ -130,15 +130,7 @@ async def update_trendline_orders(
         old = existing.pop(key, None)
 
         if old and old.status == "placed" and old.exchange_order_id:
-            # Check if price moved enough to warrant updating
-            price_shift = abs(limit_px - old.limit_price) / old.limit_price
-            if price_shift < 0.0001:  # less than 0.01% change, skip
-                old.current_projected_price = proj
-                old.last_updated_ts = now
-                new_active.append(old)
-                continue
-
-            # Cancel old order, place new one
+            # Always cancel + re-place on every new bar — line moved = order must move
             try:
                 await adapter._bitget_request(
                     "POST", "/api/v2/mix/order/cancel-plan-order",
@@ -150,10 +142,23 @@ async def update_trendline_orders(
                     },
                 )
                 cancelled += 1
+                # Also cancel any orphaned SL/TP orders for this symbol
+                try:
+                    await adapter._bitget_request(
+                        "POST", "/api/v2/mix/order/cancel-all-orders",
+                        mode="crossed",
+                        body={
+                            "symbol": sym.upper(),
+                            "productType": "USDT-FUTURES",
+                            "marginCoin": "USDT",
+                        },
+                    )
+                except Exception:
+                    pass
             except Exception as e:
                 print(f"[trendline_orders] cancel {sym} err: {e}", flush=True)
 
-        # Place new limit order
+        # Place new plan order
         try:
             # Set leverage
             try:
@@ -263,10 +268,21 @@ async def update_trendline_orders(
             try:
                 await adapter._bitget_request(
                     "POST", "/api/v2/mix/order/cancel-plan-order",
+                    mode="crossed",
                     body={
                         "symbol": old.symbol.upper(),
                         "productType": "USDT-FUTURES",
                         "orderId": old.exchange_order_id,
+                    },
+                )
+                # Clean orphaned SL/TP
+                await adapter._bitget_request(
+                    "POST", "/api/v2/mix/order/cancel-all-orders",
+                    mode="crossed",
+                    body={
+                        "symbol": old.symbol.upper(),
+                        "productType": "USDT-FUTURES",
+                        "marginCoin": "USDT",
                     },
                 )
                 cancelled += 1

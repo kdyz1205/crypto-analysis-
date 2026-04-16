@@ -318,30 +318,25 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
     }
 
 
-def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, sl_pct: float = 0.004) -> float | None:
+def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int) -> float | None:
     """
     Calculate where the SL should be NOW based on the REAL trendline projection.
-    Uses the actual slope and intercept from the two anchor points that formed the line.
-    The projected line value = slope * (entry_bar + bars_since) + intercept.
-    SL sits sl_pct below (long) or above (short) the projected line.
-    Returns new SL price, or None if no trendline params stored.
+    V3 model: SL = line itself (穿线即止损). No buffer below/above.
+
+    projected_line = slope × (entry_bar + bars_since) + intercept
+    SL = projected_line (the line IS the stop)
     """
     params = _trendline_params.get(symbol.upper())
     if not params:
         return None
 
-    # Real projection: the line extends forward from entry_bar
     current_bar = params["entry_bar"] + bars_since_entry
     projected_line = params["slope"] * current_bar + params["intercept"]
     if projected_line <= 0:
         return None
 
-    if params["side"] == "long":
-        # Support line: SL sits below the projected line
-        return projected_line * (1 - sl_pct)
-    else:
-        # Resistance line: SL sits above the projected line
-        return projected_line * (1 + sl_pct)
+    # V3: stop = line itself. No sl_pct offset.
+    return projected_line
 
 
 async def _update_trailing_stops(cfg: dict) -> int:
@@ -1114,6 +1109,30 @@ async def _do_scan() -> None:
         except Exception as e:
             print(f"[mar_bb] trendline limit orders err: {e}", flush=True)
             traceback.print_exc()
+
+    # ── Sync plan order fills: if Bitget opened a position from our plan order,
+    #    register it in _trendline_params so trailing stop can track it ──
+    try:
+        from server.strategy.trendline_order_manager import _load_active
+        active_orders = _load_active()
+        bitget_pos, pos_ok = await _get_bitget_positions()
+        if pos_ok and bitget_pos:
+            held_syms_upper = {(p.get("symbol") or "").upper() for p in bitget_pos if float(p.get("available") or 0) > 0}
+            for ao in active_orders:
+                sym_upper = ao.symbol.upper()
+                if sym_upper in held_syms_upper and sym_upper not in _trendline_params:
+                    # Plan order was triggered! Register for trailing stop.
+                    register_trendline_params(
+                        sym_upper,
+                        slope=ao.slope, intercept=ao.intercept,
+                        entry_bar=ao.anchor2_bar,
+                        entry_price=ao.limit_price,
+                        side="long" if ao.kind == "support" else "short",
+                        tf="5m",  # default; will use actual TF when available
+                    )
+                    print(f"[trailing] registered {sym_upper} from plan order fill (slope={ao.slope:.8f})", flush=True)
+    except Exception as e:
+        print(f"[trailing] sync err: {e}", flush=True)
 
     # ── Trailing SL: move SL tighter on open trendline positions ──
     try:
