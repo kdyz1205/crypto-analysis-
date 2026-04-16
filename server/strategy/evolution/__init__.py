@@ -231,3 +231,7 @@ __all__ = [
     "FEATURE_COUNT",
     "extract_features",
 ]
+
+# Backward compat: re-export EvolutionEngine from the old single-file module
+from ._compat_engine import EvolutionEngine  # noqa: F401
+
