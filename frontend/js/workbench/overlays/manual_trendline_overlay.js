@@ -1,14 +1,24 @@
 const manualLineSeriesRefs = [];
+// Map line_id → its LineSeries object (for highlight-on-hover)
+const lineSeriesById = new Map();
+let _highlightedId = null;
+let _highlightTimer = null;
+// Persistently-selected line_id. Stays lit until explicitly changed.
+let _selectedId = null;
 
 function clearSeries(chart, refs) {
   for (const series of refs) {
     try { chart.removeSeries(series); } catch {}
   }
   refs.length = 0;
+  lineSeriesById.clear();
+  _highlightedId = null;
 }
 
 function manualColor(line, selectedLineId) {
   if (line.manual_line_id === selectedLineId) return 'rgba(56, 189, 248, 1)';
+  // Broken lines (price crossed through after they were drawn) — dim grey.
+  if (line._broken) return 'rgba(148, 163, 184, 0.55)';
   if (line.override_mode === 'promote_to_active' || line.override_mode === 'strategy_input_enabled') {
     return line.side === 'resistance' ? 'rgba(251, 146, 60, 0.95)' : 'rgba(45, 212, 191, 0.95)';
   }
@@ -50,18 +60,74 @@ export function drawManualTrendlineOverlay(chart, lines, options = {}) {
 
   for (const line of visibleLines) {
     try {
+      const isSelected = line.manual_line_id === options.selectedLineId;
       const series = chart.addLineSeries({
         color: manualColor(line, options.selectedLineId || null),
-        lineWidth: line.manual_line_id === options.selectedLineId ? 3 : 2,
-        lineStyle: line.locked ? 0 : 2,
+        lineWidth: isSelected ? 3 : 2,
+        lineStyle: 0,  // solid — dashed is hard to see
         priceLineVisible: false,
         lastValueVisible: false,
         autoscaleInfoProvider: () => null,
       });
       series.setData(resolveManualTrendlinePoints(line, options));
       manualLineSeriesRefs.push(series);
+      lineSeriesById.set(line.manual_line_id, { series, line });
     } catch (err) {
       console.warn('[manual overlay] failed to draw line', line.manual_line_id, err);
     }
   }
+}
+
+/**
+ * Temporarily highlight a line by flashing its color + width.
+ * Called by the conditional panel when user hovers over a line in the list.
+ */
+function _restore(id) {
+  if (!id) return;
+  const entry = lineSeriesById.get(id);
+  if (!entry) return;
+  try {
+    entry.series.applyOptions({
+      color: manualColor(entry.line, _selectedId),
+      lineWidth: entry.line.manual_line_id === _selectedId ? 3 : 2,
+    });
+  } catch {}
+}
+
+export function highlightManualLine(manualLineId) {
+  if (_highlightedId === manualLineId) return;
+  if (_highlightedId && _highlightedId !== _selectedId) _restore(_highlightedId);
+  _highlightedId = manualLineId;
+  if (_highlightTimer) { clearTimeout(_highlightTimer); _highlightTimer = null; }
+  if (!manualLineId) return;
+  const entry = lineSeriesById.get(manualLineId);
+  if (!entry) return;
+  try {
+    entry.series.applyOptions({
+      color: 'rgba(251, 191, 36, 1)',
+      lineWidth: 4,
+    });
+  } catch {}
+  _highlightTimer = setTimeout(() => {
+    if (_highlightedId === manualLineId) {
+      _highlightedId = null;
+      if (manualLineId !== _selectedId) _restore(manualLineId);
+    }
+  }, 3000);
+}
+
+/** Persistently mark a line as selected — stays lit until changed. */
+export function selectManualLineOnChart(manualLineId) {
+  const prev = _selectedId;
+  _selectedId = manualLineId || null;
+  if (prev && prev !== _selectedId) _restore(prev);
+  if (!_selectedId) return;
+  const entry = lineSeriesById.get(_selectedId);
+  if (!entry) return;
+  try {
+    entry.series.applyOptions({
+      color: 'rgba(56, 189, 248, 1)',  // cyan, distinct from hover gold
+      lineWidth: 4,
+    });
+  } catch {}
 }

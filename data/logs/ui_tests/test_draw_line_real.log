@@ -292,3 +292,41 @@ Call log:
 === 20/20 passed ===
 === end ===
 
+=== run @ 2026-04-14T23:40:59Z  git=df602ed  N_RUNS=5 SKIP_CANCEL=1 (leave-on-bitget) ===
+[run 1/5] FAIL (21.4s)  modal stayed open with no error after 15s
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  JS ERR: [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+[run 2/5] PASS (19.6s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094157013901315 status=triggered
+[run 3/5] PASS (20.2s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094242735513600 status=triggered
+[run 4/5] PASS (9.2s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094281672810496 status=triggered
+[run 5/5] PASS (8.8s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094318446895104 status=triggered
+
+=== 4/5 passed ===
+=== end ===
+
+=== run @ 2026-04-14T23:42:32Z  git=df602ed  N_RUNS=2 SKIP_CANCEL=1 (top up to 5) ===
+[run 1/2] PASS (15.5s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094441184813056 status=triggered
+[run 2/2] PASS (19.4s)  order confirmed on Bitget (NOT cancelled)
+  line_id=manual-HYPEUSDT-4h-support-1775012400-1775919600
+  bitget_order=1428094523356966912 status=triggered
+
+=== 2/2 passed ===
+=== end ===
+
+=== run @ 2026-04-15T05:08:49Z  git=11b3f42  (verify draw->modal->order still works) ===
+[run 1/1] PASS (17.0s)  order confirmed on Bitget
+  line_id=manual-HYPEUSDT-4h-support-1775041200-1775934000
+  bitget_order=1428176540773900288 status=triggered
+
+=== 1/1 passed ===
+=== end ===

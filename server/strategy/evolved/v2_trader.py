@@ -390,10 +390,14 @@ def genuine_touches(
         return False
 
     def _persisted_break(bar: int, break_thresh_unit: float) -> bool:
-        """After a close-through at `bar`, do at least 2 of the next 3
-        bars also close on the broken side by > breakaway_atr × ATR?
+        """After a strong close-through at `bar`, does at least 1 of the
+        next 3 bars also close on the broken side by > breakaway_atr × ATR?
+
+        Round 11 follow-up: the original 2/3 requirement was too lax for
+        the "poke through and bounce 1 bar" fakeout pattern. If a bar
+        already closed 0.5 ATR past the line, a single follow-through
+        bar is enough to confirm the line is broken.
         """
-        persisted = 0
         for k in range(1, 4):
             j = bar + k
             if j >= n:
@@ -403,31 +407,52 @@ def genuine_touches(
             thresh_j = break_thresh_unit * a_j
             if side == "support":
                 if closes[j] < line_p_j - thresh_j:
-                    persisted += 1
+                    return True
             else:
                 if closes[j] > line_p_j + thresh_j:
-                    persisted += 1
-        return persisted >= 2
+                    return True
+        return False
+
+    # Round 11 follow-up: accumulate weak breaks so the algorithm can't
+    # claim a line is alive when it's been poked below the body 5-10
+    # times. Each strong break (> breakaway_atr) counts as 2 weak; each
+    # weak break (> 0.3 × ATR) counts as 1. If the total exceeds
+    # max(3, span // 6) the line is dead.
+    weak_break_count = 0
+    span_bars_at_line = max(1, n - p1.idx - 1)
+    weak_break_cap = max(3, span_bars_at_line // 6)
 
     for bar in range(p1.idx + 1, n):
         line_p = _line_price_at(p1, p2, bar)
         a = atr_arr[bar]
         wick_tol = params.wick_tol_atr * a
         break_thresh = params.breakaway_atr * a
+        weak_break_thresh = 0.3 * a
 
         # (b) Decisive close-through check (canon rule 3)
         if side == "support":
-            close_through = closes[bar] < line_p - break_thresh
+            strong_break = closes[bar] < line_p - break_thresh
+            weak_break = closes[bar] < line_p - weak_break_thresh
         else:
-            close_through = closes[bar] > line_p + break_thresh
+            strong_break = closes[bar] > line_p + break_thresh
+            weak_break = closes[bar] > line_p + weak_break_thresh
 
-        if close_through:
-            # Persisted check: 2/3 next bars must also break
+        if strong_break:
+            # Canon rule 3 hard kill: persisted strong break = line dead
             if _persisted_break(bar, params.breakaway_atr):
-                # Line is dead — return immediately, caller drops it
                 return (0, [], 1)
-            # Not persisted: ignore this bar (don't count as touch either)
-            continue
+            # Even a non-persisted strong break counts as 2 weak
+            weak_break_count += 2
+            if weak_break_count > weak_break_cap:
+                return (0, touches, weak_break_count)
+            continue  # don't count this bar as a touch
+
+        if weak_break:
+            # Close went past the line but < 0.5 ATR. Still a wound.
+            weak_break_count += 1
+            if weak_break_count > weak_break_cap:
+                return (0, touches, weak_break_count)
+            continue  # and don't count as a touch either
 
         # Skip anchors and bars too close to previous touch
         if bar == p1.idx or bar == p2.idx:

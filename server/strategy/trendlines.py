@@ -95,10 +95,6 @@ def _build_side_candidates(
         right_pivot = side_pivots[right_position]
         left_candidates = side_pivots[max(0, right_position - config.max_anchor_combinations_per_pivot) : right_position]
         for left_pivot in left_candidates:
-            if side == "resistance" and not right_pivot.price < left_pivot.price:
-                continue
-            if side == "support" and not right_pivot.price > left_pivot.price:
-                continue
             candidate = _evaluate_candidate_line(
                 df,
                 atr,
@@ -225,12 +221,14 @@ def _evaluate_candidate_line(
             return None
 
     latest_touch_price = next(item[2].price for item in reversed(confirming_refs) if item[0] == latest_touch_index)
+    # Promote to "confirmed" if 3+ confirming touches (the 3-touch rule)
+    is_confirmed = len(confirming_refs) >= 3 and not invalidation_reason
     return Trendline(
         line_id=stable_id("line", side, left_pivot.pivot_id, right_pivot.pivot_id),
         side=side,
         symbol=symbol,
         timeframe=timeframe,
-        state="invalidated" if invalidation_reason else "candidate",
+        state="invalidated" if invalidation_reason else ("confirmed" if is_confirmed else "candidate"),
         anchor_pivot_ids=(left_pivot.pivot_id, right_pivot.pivot_id),
         confirming_touch_pivot_ids=tuple(item[2].pivot_id for item in confirming_refs),
         anchor_indices=(left_pivot.index, right_pivot.index),

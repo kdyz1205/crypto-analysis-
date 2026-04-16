@@ -9,7 +9,7 @@ export const marketState = {
   pricePrecision: null,
   historyMode: 'fast_window',
   historyMeta: null,
-  currentScale: 'linear',  // 'linear' | 'log' — default linear; log distorts short-TF analysis
+  currentScale: 'log',     // user prefers log scale by default
   magnetMode: 'weak',      // 'weak' | 'strong'
   replayEndTime: null,
   liveUpdateInterval: null,

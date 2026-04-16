@@ -69,7 +69,7 @@ DEFAULT_RUNNER_CFG = {
     "notional_usd": 12.0,           # fallback for fixed_notional mode
     "max_position_pct": 0.50,       # max 50% equity per single position
     "leverage": 30,
-    "max_concurrent_positions": 10,
+    "max_concurrent_positions": 100,
     # ── Daily drawdown halt (adaptive by equity tier) ──
     # Format: [(equity_threshold, max_daily_dd_pct), ...] — checked top-down
     "daily_dd_tiers": [

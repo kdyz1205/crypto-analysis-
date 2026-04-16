@@ -2,7 +2,8 @@ import { fetchJson } from '../util/fetch.js';
 
 export function getManualDrawings(symbol, timeframe) {
   const params = new URLSearchParams({ symbol, timeframe });
-  return fetchJson(`/api/drawings?${params}`);
+  // noCache: stale 30s cache showed deleted lines after switching symbols
+  return fetchJson(`/api/drawings?${params}`, { noCache: true });
 }
 
 export function createManualDrawing(payload) {

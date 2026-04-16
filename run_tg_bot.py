@@ -223,6 +223,53 @@ async def main():
                     await handle_stop_command(text)
                     continue
 
+                # ── Pattern Engine Commands ─────────────────────────
+                if text.strip() in ("/health", "/digest", "/日报"):
+                    await show_health_digest()
+                    continue
+
+                if text.strip() in ("/rules", "/规则"):
+                    await show_rule_effectiveness()
+                    continue
+
+                if text.strip() in ("/live", "/实盘"):
+                    await show_live_instances()
+                    continue
+
+                if text.strip() in ("/outcomes", "/结果"):
+                    await show_live_outcomes()
+                    continue
+
+                if text.strip() in ("/dbs", "/db", "/数据库"):
+                    await show_pattern_databases()
+                    continue
+
+                if text.strip().startswith("/batch"):
+                    await trigger_batch_build(text)
+                    continue
+
+                if text.strip() in ("/help", "/帮助"):
+                    await tg_send(
+                        "<b>🎯 Trading OS Commands</b>\n\n"
+                        "<b>研究与闭环</b>\n"
+                        "/health - 闭环健康日报（24h 摘要）\n"
+                        "/rules - 规则实盘表现\n"
+                        "/live - 运行中的实盘实例\n"
+                        "/outcomes - 最近平仓结果\n"
+                        "/dbs - Pattern 数据库列表\n"
+                        "/batch - 触发批量建库（全币种最长历史）\n\n"
+                        "<b>策略操作</b>\n"
+                        "/create [策略] [币] [周期] [资金]\n"
+                        "/策略库 - 查看模板\n"
+                        "/运行中 - 查看活跃\n"
+                        "/stop [币|all] - 停止\n"
+                        "/leaderboard - 排行榜\n\n"
+                        "<b>系统</b>\n"
+                        "/status - 系统状态\n\n"
+                        "💬 也可以直接用自然语言问问题 → Claude 会回答"
+                    )
+                    continue
+
                 # Natural language → Claude processes with full codebase context
                 response = await handle_message(text)
                 if len(response) > 4000:
@@ -243,7 +290,7 @@ async def main():
 
 # ── Strategy Commands ────────────────────────────────────────────────────
 
-API_BASE = "http://127.0.0.1:8001"
+API_BASE = "http://127.0.0.1:8000"
 
 
 async def api_call(method, path, body=None):
@@ -400,6 +447,202 @@ async def handle_stop_command(text: str):
         stopped += 1
 
     await tg_send(f"⏹ 已停止 {stopped} 个策略")
+
+
+# ── Pattern Engine / Closed Loop Commands ────────────────────────────────
+
+async def show_health_digest():
+    """Show the closed-loop health digest."""
+    result = await api_call("GET", "/api/tools/health-digest?hours=24")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    d = result.get("data", {})
+    p = d.get("research_volume", {})
+    t = d.get("trade_volume", {})
+    rp = d.get("rule_performance", {})
+    st = d.get("agent_state", {})
+
+    lines = [
+        "<b>🩺 闭环健康日报</b>",
+        "",
+        f"<i>{d.get('summary_line','-')}</i>",
+        "",
+        f"<b>📊 研究量</b>",
+        f"  总 patterns: {p.get('total_patterns',0):,}",
+        f"  数据库: {p.get('pattern_dbs',0)}",
+        f"  24h 新增 live: {p.get('new_live_scans_24h',0)}",
+        "",
+        f"<b>💰 24h 实盘</b>",
+        f"  平仓: {t.get('closed_last_24h',0)}",
+        f"  胜率: {int(t.get('win_rate',0)*100)}%",
+        f"  平均 EV: {t.get('avg_return_atr',0):+.2f} ATR",
+        "",
+        f"<b>🔧 引擎</b>",
+        f"  状态: {st.get('worker_status','?')}",
+        f"  Gen: {st.get('current_generation',0)}",
+        f"  累计策略: {st.get('total_strategies_generated',0)}",
+    ]
+
+    top = rp.get('top_performers', [])
+    if top:
+        lines += ["", "<b>⭐ 最佳规则</b>"]
+        for r in top[:3]:
+            lines.append(f"  {r['rule_id']}: {r['lifetime_ev']:+.2f} ATR ({r['lifetime_count']} 次)")
+
+    drift = rp.get('degrading', [])
+    if drift:
+        lines += ["", "<b>⚠ 漂移规则</b>"]
+        for r in drift[:3]:
+            lines.append(f"  {r['rule_id']}: 漂移 {r['drift']:+.2f} ATR")
+
+    alerts = d.get('alerts', [])
+    if alerts:
+        lines += ["", "<b>🚨 需关注</b>"]
+        for a in alerts:
+            icon = "⚠" if a.get('severity') == 'warning' else "ℹ"
+            lines.append(f"  {icon} {a.get('message','')}")
+
+    await tg_send("\n".join(lines))
+
+
+async def show_rule_effectiveness():
+    """Show live effectiveness of all decision rules."""
+    result = await api_call("GET", "/api/tools/patterns/rule-effectiveness")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    rules = result.get("data", [])
+    if not rules:
+        await tg_send("暂无规则统计 — 需要实盘实例停止后才有数据")
+        return
+
+    lines = ["<b>📋 规则实盘表现</b>", ""]
+    for r in rules:
+        status = r.get('status', 'active')
+        icon = {'active':'✅','warning':'⚠','suppressed':'🔇','retired':'🔴','needs_recalibration':'🔧'}.get(status, '•')
+        ev = r.get('live_expected_value', 0)
+        ev_color = '🟢' if ev > 0.5 else '🔴' if ev < 0 else '🟡'
+        lines.append(f"{icon} <b>{r['rule_id']}</b>")
+        lines.append(f"   {status} | {r['live_count']} 次 | WR {int(r['live_win_rate']*100)}% | {ev_color} EV {ev:+.2f}")
+        if r.get('status_reason'):
+            lines.append(f"   <i>{r['status_reason']}</i>")
+
+    await tg_send("\n".join(lines))
+
+
+async def show_live_instances():
+    """Show currently running live strategy instances."""
+    result = await api_call("GET", "/api/tools/live-instances")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    instances = result.get("data", [])
+    if not instances:
+        await tg_send("暂无实盘实例")
+        return
+
+    lines = [f"<b>🚀 实盘实例 ({len(instances)})</b>", ""]
+    for i in instances[:10]:
+        status = i.get('running_status', '?')
+        icon = {'running':'▶️','paused':'⏸','stopped':'⏹','retired':'📦','error':'❌'}.get(status, '•')
+        pnl = i.get('current_pnl', 0)
+        pnl_icon = '🟢' if pnl > 0 else '🔴' if pnl < 0 else '⚪'
+        lines.append(f"{icon} <b>{i.get('symbol','?')} {i.get('timeframe','')}</b>")
+        lines.append(f"   策略: {i.get('pattern_decision','-')} | 规则: {i.get('decision_rule','-')}")
+        lines.append(f"   资金: ${i.get('allocated_capital',0):.0f} | {pnl_icon} {pnl:+.2f}")
+        if i.get('pattern_ev_expected'):
+            lines.append(f"   预期 EV: {i['pattern_ev_expected']:+.2f} ATR")
+        if i.get('outcome_written_back'):
+            lines.append(f"   ✓ 已回写 ({i.get('outcome_class','?')})")
+
+    await tg_send("\n".join(lines))
+
+
+async def show_live_outcomes():
+    """Show most recent live outcomes (from writeback pipeline)."""
+    result = await api_call("GET", "/api/tools/patterns/live-outcomes?limit=10")
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+
+    outcomes = result.get("data", [])
+    if not outcomes:
+        await tg_send("暂无实盘结果记录")
+        return
+
+    lines = [f"<b>📈 最近 {len(outcomes)} 笔平仓</b>", ""]
+    for o in outcomes:
+        ret = o.get('realized_return_atr', 0)
+        icon = '🟢' if ret > 0 else '🔴'
+        confirmed = '✓' if o.get('pattern_prediction_confirmed') else '✗'
+        lines.append(f"{icon} <b>{o.get('symbol','?')} {o.get('timeframe','')}</b> {ret:+.2f} ATR")
+        lines.append(f"   {o.get('outcome_class','-')} | 预测: {confirmed} | 规则: {o.get('origin_decision_rule','-')}")
+        lines.append(f"   {o.get('bars_held',0)} bars")
+
+    await tg_send("\n".join(lines))
+
+
+async def show_pattern_databases():
+    """List pattern databases and their size."""
+    result = await api_call("GET", "/api/tools/patterns/database")
+    progress_result = await api_call("GET", "/api/tools/patterns/batch-progress")
+
+    dbs = result.get("data", [])
+    prog = progress_result.get("data", {})
+
+    lines = [f"<b>🗄 Pattern 数据库 ({len(dbs)})</b>", ""]
+
+    total = sum(d.get('pattern_count', 0) for d in dbs)
+    lines.append(f"总样本: <b>{total:,}</b>")
+    lines.append("")
+
+    if prog and prog.get('status') == 'running':
+        lines.append(f"🔄 建库中: {prog.get('completed_jobs',0)}/{prog.get('total_jobs',0)}")
+        lines.append(f"当前: {prog.get('current_job','?')}")
+        lines.append("")
+
+    # Group by symbol
+    by_sym = {}
+    for d in dbs:
+        sym_tf = d.get('symbol_timeframe', '')
+        parts = sym_tf.split('_', 1)
+        sym = parts[0] if parts else '?'
+        tf = parts[1] if len(parts) > 1 else '?'
+        by_sym.setdefault(sym, []).append((tf, d.get('pattern_count', 0)))
+
+    for sym in sorted(by_sym.keys())[:15]:
+        tfs = sorted(by_sym[sym])
+        tf_str = ' · '.join(f"{tf}:{n:,}" for tf, n in tfs)
+        lines.append(f"<b>{sym}</b> — {tf_str}")
+
+    if len(by_sym) > 15:
+        lines.append(f"...还有 {len(by_sym) - 15} 个币种")
+
+    await tg_send("\n".join(lines))
+
+
+async def trigger_batch_build(text: str):
+    """Trigger a batch build with max history per symbol."""
+    await tg_send("🔄 启动批量建库...")
+    result = await api_call("POST", "/api/tools/patterns/batch-build", body={
+        "symbols": ["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT","HYPEUSDT","DOGEUSDT","PEPEUSDT","ADAUSDT","TAOUSDT","SUIUSDT","LINKUSDT","AVAXUSDT","BNBUSDT","DOTUSDT","ATOMUSDT","NEARUSDT","UNIUSDT","AAVEUSDT","OPUSDT","ARBUSDT"],
+        "timeframes": ["15m","1h","4h","1d"],
+        "days": 2190,
+    })
+    if result.get("error"):
+        await tg_send(f"❌ {result['error']}")
+        return
+    d = result.get("data", {})
+    prog = d.get("progress", {})
+    await tg_send(
+        f"✅ 批量建库已启动\n"
+        f"总 jobs: {prog.get('total_jobs', 0)}\n"
+        f"查看进度: /dbs"
+    )
 
 
 if __name__ == "__main__":

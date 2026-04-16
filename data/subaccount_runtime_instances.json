@@ -88,6 +88,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -716,6 +718,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9999.73054,
+            "realized_pnl_sim": -0.2694599999999987,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -0.2694599999999987,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": -30.08946,
@@ -1122,6 +1126,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10041.698281981555,
+            "realized_pnl_sim": 41.698281981554814,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 41.698281981554814,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -1978,6 +1984,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.002687871856,
+            "realized_pnl_sim": -89.99731212814459,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.99731212814459,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": -59.728660508144586,
@@ -2720,6 +2728,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10029.54973647028,
+            "realized_pnl_sim": 29.549736470279996,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 29.549736470279996,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -3424,6 +3434,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9969.73134838,
+            "realized_pnl_sim": -30.268651620000004,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -30.268651620000004,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -4090,6 +4102,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9999.46108726087,
+            "realized_pnl_sim": -0.5389127391308435,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -0.5389127391308435,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": -60.267835979130844,
@@ -4832,6 +4846,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -5460,6 +5476,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -6088,6 +6106,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9939.82215433486,
+            "realized_pnl_sim": -60.17784566514,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -60.17784566514,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": -59.90838566514,
@@ -6792,6 +6812,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9939.822154334859,
+            "realized_pnl_sim": -60.17784566514001,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -60.17784566514001,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -7496,6 +7518,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9969.306981494614,
+            "realized_pnl_sim": -30.69301850538697,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -30.69301850538697,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -8276,6 +8300,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.284174945837,
+            "realized_pnl_sim": -89.71582505416279,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.71582505416279,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -8904,6 +8930,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9919.010652369332,
+            "realized_pnl_sim": -80.98934763066775,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -80.98934763066775,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -9532,6 +9560,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10029.54973647028,
+            "realized_pnl_sim": 29.54973647028,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 29.54973647028,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": -30.17918676972,
@@ -10236,6 +10266,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -10864,6 +10896,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73027,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73027,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -11492,6 +11526,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10059.457853784434,
+            "realized_pnl_sim": 59.45785378443437,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 59.45785378443437,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -12272,6 +12308,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.688991448542,
+            "realized_pnl_sim": -89.311008551458,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.311008551458,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -12925,6 +12963,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10119.81460090714,
+            "realized_pnl_sim": 119.81460090714096,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 119.81460090714096,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -13743,6 +13783,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10140.745870006987,
+            "realized_pnl_sim": 140.74587000698665,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 140.74587000698665,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -14624,6 +14666,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9969.462703999086,
+            "realized_pnl_sim": -30.537296000913454,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -30.537296000913454,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -15404,6 +15448,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -16032,6 +16078,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9959.76161703162,
+            "realized_pnl_sim": -40.238382968379995,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -40.238382968379995,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -16736,6 +16784,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9983.909827639261,
+            "realized_pnl_sim": -16.090172360738485,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -16.090172360738485,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -17402,6 +17452,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9939.210264112988,
+            "realized_pnl_sim": -60.789735887012725,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -60.789735887012725,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -18106,6 +18158,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -18733,6 +18787,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9917.619614626585,
+            "realized_pnl_sim": -82.38038537341437,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -82.38038537341437,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -19475,6 +19531,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.002687871856,
+            "realized_pnl_sim": -89.99731212814459,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.99731212814459,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -20217,6 +20275,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.232942231813,
+            "realized_pnl_sim": -89.76705776818667,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.76705776818667,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -20845,6 +20905,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9910.26973,
+            "realized_pnl_sim": -89.73026999999999,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -89.73026999999999,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -21473,6 +21535,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9939.82215433486,
+            "realized_pnl_sim": -60.17784566514,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -60.17784566514,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -22177,6 +22241,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9969.662621924921,
+            "realized_pnl_sim": -30.33737807507919,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -30.33737807507919,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -22843,6 +22909,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 9939.82215433486,
+            "realized_pnl_sim": -60.17784566514,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": -60.17784566514,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -23548,6 +23616,8 @@
           "account": {
             "starting_equity": 100.0,
             "equity": 100.0,
+            "realized_pnl_sim": 0.0,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 0.0,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -23740,6 +23810,8 @@
           "account": {
             "starting_equity": 10000.0,
             "equity": 10000.0,
+            "realized_pnl_sim": 0.0,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 0.0,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -23873,6 +23945,8 @@
           "account": {
             "starting_equity": 1000.0,
             "equity": 1000.0,
+            "realized_pnl_sim": 0.0,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 0.0,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,
@@ -23989,6 +24063,8 @@
           "account": {
             "starting_equity": 1000.0,
             "equity": 1000.0,
+            "realized_pnl_sim": 0.0,
+            "realized_pnl_usd": 0.0,
             "realized_pnl": 0.0,
             "unrealized_pnl": 0.0,
             "daily_realized_pnl": 0.0,

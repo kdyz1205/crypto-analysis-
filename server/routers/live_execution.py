@@ -89,6 +89,142 @@ async def api_live_execution_close(req: LiveCloseRequest):
     return {"result": result}
 
 
+def _mark_local_cond_cancelled(order_id: str, reason: str = "cancelled via api") -> bool:
+    """Find any local ConditionalOrder pointing to this Bitget order_id and
+    mark it cancelled, so the watcher's _maybe_replan won't resurrect it.
+    Returns True if a cond was updated."""
+    try:
+        from ..conditionals.store import ConditionalOrderStore
+        from ..conditionals.types import ConditionalEvent
+        import time as _t
+        store = ConditionalOrderStore()
+        all_conds = store.list_all() if hasattr(store, "list_all") else store.list()
+        target = str(order_id).strip()
+        updated = False
+        for c in all_conds:
+            cond_oid = str(getattr(c, "exchange_order_id", "") or "").strip()
+            if cond_oid == target and c.status != "cancelled":
+                store.set_status(c.conditional_id, "cancelled", reason=reason)
+                try:
+                    store.append_event(c.conditional_id, ConditionalEvent(
+                        ts=int(_t.time()), kind="cancelled",
+                        message=f"cancelled via api: bitget_order_id={order_id}",
+                    ))
+                except Exception as e:
+                    print(f"[cancel-order] append_event err: {e}", flush=True)
+                updated = True
+                print(f"[cancel-order] marked local cond {c.conditional_id} cancelled (oid={target})", flush=True)
+        if not updated:
+            print(f"[cancel-order] no local cond found with oid={target}", flush=True)
+        return updated
+    except Exception as e:
+        import traceback
+        print(f"[cancel-order] local cond mark failed: {e}\n{traceback.format_exc()}", flush=True)
+    return False
+
+
+@router.post("/cancel-order")
+async def api_live_cancel_order(
+    symbol: str = Query(...),
+    order_id: str = Query(...),
+    mode: str = Query("live"),
+):
+    """Cancel a Bitget order. Tries the regular order endpoint first;
+    falls back to the plan-order endpoint when the order id belongs to
+    a trigger / plan order (different namespace on Bitget).
+
+    CRITICAL: Always marks the matching local ConditionalOrder as
+    cancelled — otherwise the watcher's replan loop will see a
+    `triggered` cond with a dead exchange_order_id, "replan" it, and
+    place a new ghost order on Bitget."""
+    adapter = _adapter_provider()
+    if not adapter.has_api_keys():
+        return {"ok": False, "reason": "api_keys_missing"}
+    sym = symbol.upper()
+    norm_mode = _normalize_mode(mode)
+
+    # Try regular order cancel first
+    body = {
+        "symbol": sym,
+        "productType": "USDT-FUTURES",
+        "marginCoin": "USDT",
+        "orderId": order_id,
+    }
+    resp = await adapter._bitget_request(
+        "POST", "/api/v2/mix/order/cancel-order", mode=norm_mode, body=body,
+    )
+    if resp.get("code") == "00000":
+        local_updated = _mark_local_cond_cancelled(order_id, reason="user cancel via api")
+        return {"ok": True, "order_id": order_id, "kind": "order",
+                "bitget": resp.get("data"), "local_cond_updated": local_updated}
+
+    # Fall through to plan / trigger order cancel
+    plan_body = {
+        "symbol": sym,
+        "productType": "USDT-FUTURES",
+        "marginCoin": "USDT",
+        "orderIdList": [{"orderId": order_id}],
+    }
+    plan_resp = await adapter._bitget_request(
+        "POST", "/api/v2/mix/order/cancel-plan-order", mode=norm_mode, body=plan_body,
+    )
+    if plan_resp.get("code") == "00000":
+        local_updated = _mark_local_cond_cancelled(order_id, reason="user cancel via api (plan)")
+        return {"ok": True, "order_id": order_id, "kind": "plan",
+                "bitget": plan_resp.get("data"), "local_cond_updated": local_updated}
+
+    # Even on Bitget failure, mark local cancelled if the order was
+    # already gone server-side — prevents zombie cond from re-spawning.
+    local_updated = _mark_local_cond_cancelled(order_id, reason="bitget cancel failed but cleanup")
+    return {
+        "ok": False,
+        "order_id": order_id,
+        "reason": plan_resp.get("msg") or resp.get("msg") or "both cancel paths failed",
+        "raw_order": resp,
+        "raw_plan": plan_resp,
+        "local_cond_updated": local_updated,
+    }
+
+
+@router.get("/plan-orders")
+async def api_live_plan_orders(mode: str = Query("live")):
+    """Fetch all pending Bitget plan / trigger orders for USDT futures."""
+    adapter = _adapter_provider()
+    if not adapter.has_api_keys():
+        return {"ok": False, "reason": "api_keys_missing"}
+    resp = await adapter._bitget_request(
+        "GET", "/api/v2/mix/order/orders-plan-pending",
+        mode=_normalize_mode(mode),
+        params={"productType": "USDT-FUTURES", "planType": "normal_plan"},
+    )
+    if resp.get("code") != "00000":
+        return {"ok": False, "reason": resp.get("msg") or str(resp)[:300], "raw": resp}
+    data = resp.get("data") or {}
+    rows = data.get("entrustedList") or data.get("orderList") or []
+    return {
+        "ok": True,
+        "count": len(rows),
+        "plan_orders": rows,
+    }
+
+
+@router.post("/cancel-all")
+async def api_live_cancel_all(symbol: str = Query(...), mode: str = Query("live")):
+    """Cancel ALL pending orders on a symbol. Use to clean up stale tests."""
+    adapter = _adapter_provider()
+    if not adapter.has_api_keys():
+        return {"ok": False, "reason": "api_keys_missing"}
+    body = {
+        "symbol": symbol.upper(),
+        "productType": "USDT-FUTURES",
+        "marginCoin": "USDT",
+    }
+    resp = await adapter._bitget_request("POST", "/api/v2/mix/order/cancel-symbol-orders", mode=_normalize_mode(mode), body=body)
+    if resp.get("code") == "00000":
+        return {"ok": True, "bitget": resp.get("data")}
+    return {"ok": False, "reason": resp.get("msg") or str(resp)[:300], "raw": resp}
+
+
 def _resolve_intent(order_intent_id: str | None, signal_id: str | None) -> OrderIntent:
     if signal_id:
         intent = paper_engine.order_manager.get_intent(signal_id)

@@ -41,22 +41,22 @@ def _http_get_json(url: str, timeout: float = 10.0) -> dict | None:
         return None
 
 
-def _find_our_order_on_bitget(manual_line_id: str) -> dict | None:
-    """Query our backend's passthrough to Bitget's pending plan orders
-    and look for one whose clientOid or plan orderId matches our line.
+def _find_our_order_on_bitget(manual_line_id: str, min_created_at: int = 0) -> dict | None:
+    """Find the newest ConditionalOrder for this line id that has a
+    non-empty exchange_order_id AND was created at/after `min_created_at`.
 
-    We don't hit Bitget directly — we hit the server endpoint the watcher
-    already uses so the auth + product-type are handled for us.
+    The min_created_at filter ensures we see the order from THIS test
+    run, not a stale one from earlier (important when running multiple
+    iterations without cleanup).
     """
-    # Use /api/conditionals?status=all as a proxy — the place-line-order
-    # endpoint stores a ConditionalOrder record whose exchange_order_id
-    # is the Bitget plan-order id. If we can find a cond for our line
-    # with a non-empty exchange_order_id, the order IS on Bitget.
     data = _http_get_json("http://localhost:8000/api/conditionals?status=all", timeout=6)
     if not data:
         return None
+    # List is sorted newest-first by store.list_all
     for c in data.get("conditionals", []):
         if c.get("manual_line_id") != manual_line_id:
+            continue
+        if int(c.get("created_at") or 0) < min_created_at:
             continue
         oid = (c.get("exchange_order_id") or "").strip()
         if oid:
@@ -69,6 +69,8 @@ def run_once(page, console_errors: list[str], console_all: list[str]) -> tuple[b
     info: dict = {}
     console_errors.clear()
     console_all.clear()
+    run_start_ts = int(time.time())
+    info["run_start_ts"] = run_start_ts
 
     try:
         # Full teardown between runs — stops stale chart_drawing state
@@ -236,7 +238,7 @@ def run_once(page, console_errors: list[str], console_all: list[str]) -> tuple[b
     deadline = time.time() + 12.0
     cond_with_order = None
     while time.time() < deadline:
-        cond_with_order = _find_our_order_on_bitget(manual_line_id)
+        cond_with_order = _find_our_order_on_bitget(manual_line_id, min_created_at=run_start_ts - 2)
         if cond_with_order:
             break
         time.sleep(0.5)
@@ -251,10 +253,12 @@ def run_once(page, console_errors: list[str], console_all: list[str]) -> tuple[b
     info["exchange_order_id"] = cond_with_order.get("exchange_order_id")
     info["cond_status"] = cond_with_order.get("status")
 
-    # LAST-MILE cleanup: cancel the plan order we just placed so the test
-    # doesn't leave 20 open orders on Bitget after a 20-run batch. We
-    # cancel via our own /api/conditionals/{id}/cancel, which cascades
-    # the Bitget cancel-plan-order call.
+    # Cleanup is OPTIONAL — set SKIP_CANCEL=1 to leave orders on Bitget
+    # so the user can inspect them in the Bitget app.
+    if os.environ.get("SKIP_CANCEL"):
+        info["cancelled"] = False
+        return True, "order confirmed on Bitget (NOT cancelled)", info
+
     cond_id = cond_with_order.get("conditional_id")
     if cond_id:
         try:
