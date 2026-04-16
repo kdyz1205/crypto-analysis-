@@ -52,21 +52,53 @@ def _save_active(orders: list[ActiveLineOrder]):
         json.dump([asdict(o) for o in orders], f, indent=2)
 
 
+def _is_bar_boundary(tf: str) -> bool:
+    """Check if we're at (or just past) a bar boundary for this timeframe.
+
+    Returns True if current UTC time is within 90 seconds of a bar close.
+    This ensures we update orders exactly when a new bar starts.
+
+    5m:  boundaries at :00, :05, :10, :15, :20, :25, :30, :35, :40, :45, :50, :55
+    15m: boundaries at :00, :15, :30, :45
+    1h:  boundaries at :00
+    4h:  boundaries at 00:00, 04:00, 08:00, 12:00, 16:00, 20:00
+    """
+    import datetime
+    now = datetime.datetime.utcnow()
+    minute = now.minute
+    second = now.second
+    hour = now.hour
+    total_seconds_in_minute = second
+
+    if tf == "5m":
+        # Check if minute is 0,5,10,15,...55 and within first 90 seconds
+        return (minute % 5 == 0) and total_seconds_in_minute < 90
+    elif tf == "15m":
+        return (minute % 15 == 0) and total_seconds_in_minute < 90
+    elif tf == "1h":
+        return minute == 0 and total_seconds_in_minute < 90
+    elif tf == "4h":
+        return (hour % 4 == 0) and minute == 0 and total_seconds_in_minute < 90
+    elif tf == "1d":
+        return hour == 0 and minute == 0 and total_seconds_in_minute < 90
+    else:
+        return True  # unknown TF → always update
+
+
 async def update_trendline_orders(
     trendline_signals: list[dict],
     current_bar_index: int,
     cfg: dict,
 ):
-    """Called each scan cycle. Manages limit orders for trendline setups.
+    """Called each scan cycle. Manages plan orders for trendline setups.
 
-    trendline_signals: list of dicts with keys:
-      symbol, timeframe, kind, slope, intercept, anchor1_bar, anchor2_bar,
-      entry_price, stop_price, tp_price, direction
+    Orders are only updated at their TF's bar boundary:
+      5m orders → update every 5 min
+      15m → every 15 min
+      1h → every hour
+      4h → every 4 hours
 
-    For each signal:
-      - If no existing order for this line → place new limit order
-      - If existing order but price moved → cancel old + place new
-      - If line broken → cancel order
+    New signals (no existing order) are placed immediately.
     """
     from server.execution.live_adapter import LiveExecutionAdapter
     from server.execution.types import OrderIntent
@@ -87,7 +119,7 @@ async def update_trendline_orders(
     # Build lookup of existing orders by (symbol, tf, kind, anchor key)
     existing = {}
     for o in active:
-        key = (o.symbol, o.timeframe, o.kind, o.anchor1_bar, o.anchor2_bar)
+        key = (o.symbol, o.timeframe, o.kind)  # one order per (symbol, tf, direction)
         existing[key] = o
 
     new_active = []
@@ -126,11 +158,15 @@ async def update_trendline_orders(
             tp_px = limit_px * (1 - buffer_pct * rr)
             direction = "short"
 
-        key = (sym, tf, kind, a1, a2)
+        key = (sym, tf, kind)  # match by (symbol, tf, direction) only
         old = existing.pop(key, None)
 
         if old and old.status == "placed" and old.exchange_order_id:
-            # Always cancel + re-place on every new bar — line moved = order must move
+            # Only update at this TF's bar boundary — not every 60s scan
+            if not _is_bar_boundary(tf):
+                old.current_projected_price = proj
+                new_active.append(old)
+                continue
             try:
                 await adapter._bitget_request(
                     "POST", "/api/v2/mix/order/cancel-plan-order",
@@ -142,17 +178,32 @@ async def update_trendline_orders(
                     },
                 )
                 cancelled += 1
-                # Also cancel any orphaned SL/TP orders for this symbol
+                # Cancel orphaned SL/TP (profit_loss plan orders) for this symbol
                 try:
-                    await adapter._bitget_request(
-                        "POST", "/api/v2/mix/order/cancel-all-orders",
-                        mode="crossed",
-                        body={
-                            "symbol": sym.upper(),
-                            "productType": "USDT-FUTURES",
-                            "marginCoin": "USDT",
-                        },
-                    )
+                    for pl_type in ["profit_plan", "loss_plan"]:
+                        pending = await adapter._bitget_request(
+                            "GET", "/api/v2/mix/order/orders-plan-pending",
+                            mode="crossed",
+                            body=None,
+                            params={
+                                "symbol": sym.upper(),
+                                "productType": "USDT-FUTURES",
+                                "planType": "profit_loss",
+                            },
+                        )
+                        for orphan in ((pending.get("data") or {}).get("entrustedList") or []):
+                            oid = orphan.get("orderId")
+                            if oid:
+                                await adapter._bitget_request(
+                                    "POST", "/api/v2/mix/order/cancel-plan-order",
+                                    mode="crossed",
+                                    body={
+                                        "symbol": sym.upper(),
+                                        "productType": "USDT-FUTURES",
+                                        "orderId": oid,
+                                    },
+                                )
+                        break  # one query covers both types
                 except Exception:
                     pass
             except Exception as e:
