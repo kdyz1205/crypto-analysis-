@@ -78,7 +78,9 @@ async def update_trendline_orders(
     active = _load_active()
     placed = updated = cancelled = 0
     now = time.time()
-    buffer_pct = cfg.get("buffer_pct", 0.05) / 100  # default 0.05%
+    # Dynamic buffer: 0.3 × ATR/price, clamped to [0.10%, 0.15%]
+    # Higher-vol coins get slightly wider buffer, low-vol coins get tighter
+    raw_buffer_pct = cfg.get("buffer_pct", 0.12) / 100  # fallback 0.12%
     rr = cfg.get("rr", 8.0)
     leverage = int(cfg.get("leverage", 20))
 
@@ -103,6 +105,14 @@ async def update_trendline_orders(
         proj = slope * current_bar_index + intercept
         if proj <= 0:
             continue
+
+        # Dynamic buffer per coin: use ATR if available, else fixed
+        # ATR-based: buffer = 0.3 × ATR/price, clamped [0.10%, 0.15%]
+        atr_ratio = sig.get("atr_pct", 0)
+        if atr_ratio > 0:
+            buffer_pct = max(0.0010, min(0.0015, 0.3 * atr_ratio))
+        else:
+            buffer_pct = raw_buffer_pct
 
         # Calculate order prices
         if kind == "support":
@@ -131,7 +141,7 @@ async def update_trendline_orders(
             # Cancel old order, place new one
             try:
                 await adapter._bitget_request(
-                    "POST", "/api/v2/mix/order/cancel-order",
+                    "POST", "/api/v2/mix/order/cancel-plan-order",
                     body={
                         "symbol": sym.upper(),
                         "productType": "USDT-FUTURES",
@@ -168,6 +178,8 @@ async def update_trendline_orders(
                 continue
             qty = risk_usd / stop_distance
 
+            print(f"[trendline_orders] {sym} {direction}: qty={qty:.4f} trigger={limit_px:.6f} SL={stop_px:.6f} TP={tp_px:.6f} buf={buffer_pct*100:.3f}%", flush=True)
+
             now_ts = int(time.time())
             intent = OrderIntent(
                 order_intent_id=f"tl_{sym}_{now_ts}",
@@ -177,19 +189,22 @@ async def update_trendline_orders(
                 symbol=sym.upper(),
                 timeframe=tf,
                 side=direction,
-                order_type="limit",           # LIMIT, not market!
-                trigger_mode="limit",
+                order_type="market",          # executes as market WHEN triggered
+                trigger_mode="plan",
                 entry_price=limit_px,
                 stop_price=stop_px,
                 tp_price=tp_px,
                 quantity=qty,
                 status="approved",
-                reason="trendline_passive_limit",
+                reason="trendline_plan_order",
                 created_at_bar=current_bar_index,
                 created_at_ts=now_ts,
             )
 
-            resp = await adapter.submit_live_entry(intent, mode="crossed")
+            # Use PLAN ORDER — doesn't occupy margin until triggered!
+            resp = await adapter.submit_live_plan_entry(
+                intent, mode="crossed", trigger_price=limit_px,
+            )
             order_id = resp.get("exchange_order_id", "")
 
             if resp.get("ok"):
@@ -244,7 +259,7 @@ async def update_trendline_orders(
         if old.status == "placed" and old.exchange_order_id:
             try:
                 await adapter._bitget_request(
-                    "POST", "/api/v2/mix/order/cancel-order",
+                    "POST", "/api/v2/mix/order/cancel-plan-order",
                     body={
                         "symbol": old.symbol.upper(),
                         "productType": "USDT-FUTURES",

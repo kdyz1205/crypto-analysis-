@@ -52,25 +52,20 @@ DEFAULT_RUNNER_CFG = {
     # ── Multi-timeframe ──
     "timeframes": ["5m", "15m", "1h", "4h"],
     "timeframe": "1h",                       # legacy single-TF fallback
-    # ── Per-TF risk config (from Axel's spec, per TRENDLINE_TRADING_RULES.md) ──
-    # 3m: 0.3% per trade (亏300笔扣完)
-    # 5m: 0.3%
-    # 15m: 0.5%
-    # 1h: 1.0%
-    # 4h: 2.0%
+    # ── Per-TF risk config (Axel's interim values, pending Kelly backtest) ──
     "tf_risk": {
-        "3m":  0.003,
-        "5m":  0.003,
-        "15m": 0.005,
-        "1h":  0.010,
-        "4h":  0.020,
+        "3m":  0.003,   # 0.3%
+        "5m":  0.003,   # 0.3%
+        "15m": 0.007,   # 0.7%
+        "1h":  0.015,   # 1.5%
+        "4h":  0.030,   # 3.0%
     },
     # ── Position sizing ──
     "sizing_mode": "fixed_risk",
     "risk_pct": 0.01,               # fallback if TF not in tf_risk
     "notional_usd": 12.0,           # fallback for fixed_notional mode
     "max_position_pct": 0.50,       # max 50% equity per single position
-    "leverage": 20,
+    "leverage": 30,
     "max_concurrent_positions": 100,
     # ── Daily drawdown halt (adaptive by equity tier) ──
     # Format: [(equity_threshold, max_daily_dd_pct), ...] — checked top-down
@@ -97,7 +92,7 @@ DEFAULT_RUNNER_CFG = {
     "min_bars": 100,
     "dry_run": False,
     "auto_start": True,
-    "strategies": ["mar_bb", "mar_bb_v1", "trendline"],
+    "strategies": ["trendline"],  # MA Ribbon disabled pending SL/TP indicator research
 }
 
 
@@ -923,7 +918,7 @@ async def _do_scan() -> None:
         },
     }
     ribbon_strategies = {name: Strategy(rcfg) for name, rcfg in RIBBON_CONFIGS.items()}
-    enabled_strats = cfg.get("strategies") or ["mar_bb", "trendline"]
+    enabled_strats = cfg.get("strategies") or ["trendline"]
     signals_this_scan = 0
     orders_this_scan = 0
     _trendline_limit_signals = []  # collected per scan, batch-placed as limit orders
@@ -1098,7 +1093,7 @@ async def _do_scan() -> None:
         try:
             from server.strategy.trendline_order_manager import update_trendline_orders
             tl_cfg = {
-                "buffer_pct": cfg.get("buffer_pct", 0.05),
+                "buffer_pct": cfg.get("buffer_pct", 0.20),
                 "rr": 15.0,  # V3 limit order optimal
                 "leverage": int(cfg.get("leverage", 20)),
                 "equity": equity,

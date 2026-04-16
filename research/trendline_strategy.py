@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
     "min_bounces": 2,           # the two anchor points count as 2 bounces
 
     # Entry
-    "buffer_pct": 0.05,         # enter 0.05% before the line (tighter = closer to line)
+    "buffer_pct": 0.12,         # 0.12% default; order manager uses dynamic 0.10-0.15%
     "approach_pct": 1.0,        # signal when price is within 1.0% of projected line
 
     # Exit — V3 model: stop = line itself (穿线即止损)
