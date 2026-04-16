@@ -1007,6 +1007,7 @@ async def _do_scan() -> None:
                             "entry_price": tl_plan["entry_price"],
                             "stop_price": tl_plan["stop_price"],
                             "tp_price": tl_plan["tp_price"],
+                            "bar_count": len(bars["c"]),  # actual bar count for projection
                         })
                 except Exception as e:
                     print(f"[mar_bb] trendline {sym} {tf} err: {e}", flush=True)
@@ -1092,24 +1093,20 @@ async def _do_scan() -> None:
     if _trendline_limit_signals:
         try:
             from server.strategy.trendline_order_manager import update_trendline_orders
-            # Dynamic RR: keep target ~0.75% regardless of buffer
-            # buffer 0.10% → RR=8, buffer 0.15% → RR=5, buffer 0.20% → RR=4
-            default_buffer = cfg.get("buffer_pct", 0.12) / 100
-            target_abs = 0.0075  # 0.75% target (constant)
-            dynamic_rr = target_abs / default_buffer if default_buffer > 0 else 8.0
-            dynamic_rr = max(3.0, min(15.0, dynamic_rr))  # clamp [3, 15]
-
             tl_cfg = {
                 "buffer_pct": cfg.get("buffer_pct", 0.12),
-                "rr": dynamic_rr,
+                "rr": 12.0,  # fixed RR=12; walking stop makes effective RR grow over time
                 "leverage": int(cfg.get("leverage", 30)),
                 "equity": equity,
                 "risk_pct": 0.03,
             }
             print(f"[trendline_orders] equity=${equity:.2f} signals={len(_trendline_limit_signals)} risk_pct={tl_cfg['risk_pct']}", flush=True)
+            # current_bar_index = length of the OHLCV data (bar count, NOT timestamp)
+            # The trendline slope/intercept are relative to bar indices 0..N
+            last_bars_len = max(sig.get("bar_count", 500) for sig in _trendline_limit_signals) if _trendline_limit_signals else 500
             tl_result = await update_trendline_orders(
                 _trendline_limit_signals,
-                current_bar_index=int(time.time()),  # use timestamp as bar proxy
+                current_bar_index=last_bars_len - 1,
                 cfg=tl_cfg,
             )
             if tl_result.get("placed", 0) > 0 or tl_result.get("cancelled", 0) > 0:
