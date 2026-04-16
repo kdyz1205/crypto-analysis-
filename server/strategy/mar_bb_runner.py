@@ -626,17 +626,23 @@ def _build_order_intent_mar_bb(
 
     bb_up = state.get("bb_upper")
     bb_lo = state.get("bb_lower")
-    atr_mult = float(DEFAULT_CONFIG.get("atr_mult", 3.0))
+    # V3 fix: small SL (0.3% from entry), big TP (BB or RR=8 whichever is further)
+    sl_pct = 0.003  # 0.3% stop — tight, like trendline
+    rr = 8.0
 
     if signal == 1:
         entry = close
-        stop = entry - atr_mult * atr_val
-        tp = float(bb_up) if bb_up else entry * 1.02
+        stop = entry * (1 - sl_pct)
+        pct_tp = entry * (1 + sl_pct * rr)  # RR=8 target
+        bb_tp = float(bb_up) if bb_up else pct_tp
+        tp = max(pct_tp, bb_tp)  # take the FURTHER target
         direction = "long"
     else:
         entry = close
-        stop = entry + atr_mult * atr_val
-        tp = float(bb_lo) if bb_lo else entry * 0.98
+        stop = entry * (1 + sl_pct)
+        pct_tp = entry * (1 - sl_pct * rr)
+        bb_tp = float(bb_lo) if bb_lo else pct_tp
+        tp = min(pct_tp, bb_tp)  # take the FURTHER target (lower for short)
         direction = "short"
 
     notional = cfg.get("_notional_override") or float(cfg.get("notional_usd", 12.0))
