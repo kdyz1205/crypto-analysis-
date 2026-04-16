@@ -981,10 +981,9 @@ async def _do_scan() -> None:
                     )
                     if state.get("signal") in (1, -1) and equity > 0:
                         entry_p = state.get("close", 0)
-                        atr_val = state.get("atr", 0)
-                        rcfg = RIBBON_CONFIGS[rstrat_name]
-                        atr_mult = float(rcfg.get("atr_mult", 3.0))
-                        stop_p = entry_p - atr_mult * atr_val if state["signal"] == 1 else entry_p + atr_mult * atr_val
+                        # V3: use 0.3% SL for sizing (matches _build_order_intent_mar_bb)
+                        sl_pct = 0.003
+                        stop_p = entry_p * (1 - sl_pct) if state["signal"] == 1 else entry_p * (1 + sl_pct)
                         scan_cfg["_notional_override"] = _calc_position_size(equity, entry_p, stop_p, scan_cfg)
                     plan = _build_order_intent_mar_bb(sym, tf, state, scan_cfg)
                     if plan:
