@@ -87,7 +87,7 @@ DEFAULT_RUNNER_CFG = {
     "trendline_reversal": {
         "15m": False,
         "1h":  False,
-        "4h":  True,
+        "4h":  False,   # disabled — no reversal trades
     },
     "reversal_rr": 2.0,   # RR for the reversal trade
     # ── General ──
