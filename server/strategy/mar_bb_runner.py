@@ -50,25 +50,27 @@ DEFAULT_RUNNER_CFG = {
     "top_n": 100,
     "scan_interval_s": 60,
     # ── Multi-timeframe ──
-    "timeframes": ["3m", "5m", "15m", "1h", "4h"],
+    "timeframes": ["5m", "15m", "1h", "4h"],
     "timeframe": "1h",                       # legacy single-TF fallback
-    # ── Per-TF risk config ──
-    # risk_pct = max loss per single trade as % of equity
-    # Adaptive risk: shorter TF = tighter SL possible = lower risk needed
-    # Tighter SL + lower risk% = can use higher effective leverage safely
+    # ── Per-TF risk config (from Axel's spec, per TRENDLINE_TRADING_RULES.md) ──
+    # 3m: 0.3% per trade (亏300笔扣完)
+    # 5m: 0.3%
+    # 15m: 0.5%
+    # 1h: 1.0%
+    # 4h: 2.0%
     "tf_risk": {
-        "3m":  0.008,  # 0.8% risk — ultra-tight SL on 3m
-        "5m":  0.01,   # 1.0% risk
-        "15m": 0.015,  # 1.5% risk
-        "1h":  0.025,  # 2.5% risk
-        "4h":  0.04,   # 4% risk — widest SL, needs more room
+        "3m":  0.003,
+        "5m":  0.003,
+        "15m": 0.005,
+        "1h":  0.010,
+        "4h":  0.020,
     },
     # ── Position sizing ──
     "sizing_mode": "fixed_risk",
-    "risk_pct": 0.03,               # fallback if TF not in tf_risk
+    "risk_pct": 0.01,               # fallback if TF not in tf_risk
     "notional_usd": 12.0,           # fallback for fixed_notional mode
     "max_position_pct": 0.50,       # max 50% equity per single position
-    "leverage": 30,
+    "leverage": 20,
     "max_concurrent_positions": 100,
     # ── Daily drawdown halt (adaptive by equity tier) ──
     # Format: [(equity_threshold, max_daily_dd_pct), ...] — checked top-down
