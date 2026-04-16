@@ -142,6 +142,7 @@ async def update_trendline_orders(
             try:
                 await adapter._bitget_request(
                     "POST", "/api/v2/mix/order/cancel-plan-order",
+                    mode="crossed",
                     body={
                         "symbol": sym.upper(),
                         "productType": "USDT-FUTURES",
@@ -207,6 +208,8 @@ async def update_trendline_orders(
             )
             order_id = resp.get("exchange_order_id", "")
 
+            if not resp.get("ok"):
+                print(f"[trendline_orders] PLAN FAILED {sym}: {resp.get('reason', resp)}", flush=True)
             if resp.get("ok"):
                 new_active.append(ActiveLineOrder(
                     symbol=sym, timeframe=tf, kind=kind,
