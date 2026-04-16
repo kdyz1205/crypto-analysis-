@@ -40,10 +40,10 @@ DEFAULT_CONFIG = {
     "buffer_pct": 0.05,         # enter 0.05% before the line (tighter = closer to line)
     "approach_pct": 1.0,        # signal when price is within 1.0% of projected line
 
-    # Exit — ultra-tight SL, high RR
-    # Logic: line breaks = thesis dead, get out immediately
-    "sl_pct": 0.08,             # SL 0.08% beyond the line (just past the line)
-    "rr": 10.0,                 # high RR: risk 0.08%, target 0.8%
+    # Exit — V3 model: stop = line itself (穿线即止损)
+    # total risk = buffer_pct only (no separate sl_pct)
+    "sl_pct": 0.0,              # 0% = stop AT the line (V3: 穿线即止损)
+    "rr": 8.0,                  # RR=8: optimal from V3 OOS (account EV +1.99%/trade)
 
     # Execution
     "fee": 0.0005,              # 0.05% per side
