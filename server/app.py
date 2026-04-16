@@ -27,7 +27,7 @@ from .routers import (
     stream, memory, schedule,
     strategy, paper_execution, live_execution, drawings, runtime,
     tools_api, conditionals,
-    mar_bb_runner, orderbook,
+    mar_bb_runner, orderbook, line_alerts,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
@@ -226,4 +226,5 @@ app.include_router(tools_api.router)    # /api/tools/* (research leaderboard, au
 app.include_router(conditionals.router) # /api/conditionals/* + /api/drawings/manual/analyze
 app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB exit scanner
 app.include_router(orderbook.router)    # /api/orderbook/* — real-time L2 features
+app.include_router(line_alerts.router)  # /api/alerts/* — trendline price alerts → Telegram
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
