@@ -5374,12 +5374,12 @@
     },
     "status": "triggered",
     "created_at": 1776229604,
-    "updated_at": 1776244005,
+    "updated_at": 1776309797,
     "triggered_at": 1776229604,
     "cancelled_at": null,
     "cancel_reason": "",
-    "exchange_order_id": "1428175967018278912",
-    "fill_price": 41.5821484343895,
+    "exchange_order_id": "1428512334877257728",
+    "fill_price": 42.122982942209376,
     "fill_qty": 0.14429268871153003,
     "events": [
       {
@@ -5399,9 +5399,18 @@
         "distance_atr": null,
         "message": "Bitget plan order placed: long trigger@41.582 sl@41.437 tp@41.873 qty=0.144293 orderId=1428175967018278912",
         "extra": {}
+      },
+      {
+        "ts": 1776309795,
+        "kind": "exchange_submitted",
+        "price": null,
+        "line_price": 42.122982942209376,
+        "distance_atr": null,
+        "message": "replanned: new trigger 42.1230 (was 41.5821, drift 1.301%) new orderId=1428512334877257728",
+        "extra": {}
       }
     ],
-    "last_poll_ts": 1776244004,
+    "last_poll_ts": 1776309795,
     "last_market_price": null,
     "last_line_price": null,
     "last_distance_atr": null

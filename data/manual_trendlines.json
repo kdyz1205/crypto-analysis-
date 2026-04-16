@@ -485,10 +485,10 @@
     "timeframe": "4h",
     "side": "support",
     "source": "manual",
-    "t_start": 1775473200,
-    "t_end": 1775631600,
-    "price_start": 40.535997625365404,
-    "price_end": 43.32507451635664,
+    "t_start": 1774839600,
+    "t_end": 1774998000,
+    "price_start": 40.38920239786508,
+    "price_end": 43.17827928885632,
     "extend_left": false,
     "extend_right": true,
     "locked": false,
@@ -501,7 +501,7 @@
     "projected_price_diff": 11.467645,
     "overlap_ratio": 0.0833,
     "created_at": 1776194220,
-    "updated_at": 1776237598
+    "updated_at": 1776310096
   },
   {
     "manual_line_id": "manual-HYPEUSDT-4h-support-1774105200-1775617200",
