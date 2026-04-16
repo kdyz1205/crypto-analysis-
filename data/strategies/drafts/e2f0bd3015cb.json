@@ -1,0 +1,39 @@
+{
+  "id": "e2f0bd3015cb",
+  "name": "AI-12811e",
+  "source": "ai",
+  "template_id": "",
+  "logic_tags": [
+    "reversal"
+  ],
+  "factor_ids": [
+    "rsi_oversold",
+    "trend_up",
+    "kc_squeeze"
+  ],
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout",
+    "retest"
+  ],
+  "entry_mode": "",
+  "exit_rules": {},
+  "risk_rules": {},
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h"
+  ],
+  "params": {
+    "rr_target": 1.5,
+    "lookback_bars": 80
+  },
+  "status": "simulated",
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "parent_strategy_id": "",
+  "created_at": 1775944838.8073308,
+  "updated_at": 1775944838.8073308
+}

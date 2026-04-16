@@ -1,0 +1,44 @@
+{
+  "id": "33813e9c6595",
+  "name": "test_rsi_divergence",
+  "description": "",
+  "category": "momentum",
+  "indicator": "rsi",
+  "params": {
+    "period": 14,
+    "divergence": true
+  },
+  "condition": "lt",
+  "threshold": 35.0,
+  "source": "manual",
+  "stage": "validated",
+  "confidence": 0.0,
+  "created_at": 1775946841.9955585,
+  "test_history": [
+    {
+      "score": 0.45,
+      "trades": 3,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775946842.0103478
+    },
+    {
+      "score": 0.52,
+      "trades": 5,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775946842.0270712
+    },
+    {
+      "score": 0.38,
+      "trades": 4,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775946842.0412352
+    }
+  ],
+  "test_count": 3,
+  "avg_score": 0.45,
+  "total_trades": 12,
+  "promoted_at": 1775946842.0560918
+}

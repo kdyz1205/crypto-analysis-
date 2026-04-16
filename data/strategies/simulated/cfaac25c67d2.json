@@ -1,0 +1,18 @@
+{
+  "id": "cfaac25c67d2",
+  "job_id": "2c407ba16b90",
+  "strategy_id": "e2f0bd3015cb",
+  "symbol": "BTCUSDT",
+  "timeframe": "4h",
+  "return_pct": 2.17,
+  "win_rate": 75.0,
+  "profit_factor": 8.05,
+  "sharpe_ratio": 2.0,
+  "max_drawdown_pct": 0.3,
+  "trade_count": 4,
+  "avg_rr": 2.73,
+  "score": 0.8795,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "tested_at": 1775945223.2519007
+}

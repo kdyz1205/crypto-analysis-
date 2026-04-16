@@ -1,0 +1,6212 @@
+[
+  {
+    "conditional_id": "cond_7e0848cc025009",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776118884,
+    "updated_at": 1776118884,
+    "triggered_at": 1776118884,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427711569704939521",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776118884,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776118884,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427711569704939521",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f31f80fb91dc28",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119756,
+    "updated_at": 1776119756,
+    "triggered_at": 1776119756,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715226810871809",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119756,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119756,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427715226810871809",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_d9fccd2d56c9d8",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119767,
+    "updated_at": 1776119767,
+    "triggered_at": 1776119767,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715273355063297",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119767,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119767,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427715273355063297",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ba948558b14931",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119774,
+    "updated_at": 1776119774,
+    "triggered_at": 1776119774,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715305189830657",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119774,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119774,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427715305189830657",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_cd9371c6923d51",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119782,
+    "updated_at": 1776119782,
+    "triggered_at": 1776119782,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715338593267713",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119782,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119782,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427715338593267713",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_49fd4178405b56",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119791,
+    "updated_at": 1776119791,
+    "triggered_at": 1776119791,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715373636677633",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119791,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119791,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427715373636677633",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f8b92318dc28cb",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119800,
+    "updated_at": 1776119800,
+    "triggered_at": 1776119800,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715410529775617",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119800,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119800,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427715410529775617",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_2dc87186b46277",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119915,
+    "updated_at": 1776119916,
+    "triggered_at": 1776119915,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715896754466817",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119915,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119915,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427715896754466817",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_4ce5afa48c61cf",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119920,
+    "updated_at": 1776119920,
+    "triggered_at": 1776119920,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715916576747520",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119920,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119920,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427715916576747520",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_fbb4b78c40459d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119925,
+    "updated_at": 1776119925,
+    "triggered_at": 1776119925,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715937783148545",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119925,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119925,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427715937783148545",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_c5899f9d572b36",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119930,
+    "updated_at": 1776119930,
+    "triggered_at": 1776119930,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715957756424193",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119930,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119930,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427715957756424193",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_7ea4327c2705db",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119935,
+    "updated_at": 1776119935,
+    "triggered_at": 1776119935,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715978186878979",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119935,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119935,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427715978186878979",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3f572381b4934a",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119940,
+    "updated_at": 1776119940,
+    "triggered_at": 1776119940,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427715997631672321",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119940,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119940,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427715997631672321",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_6716f576a4c879",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119952,
+    "updated_at": 1776119952,
+    "triggered_at": 1776119952,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716050731560961",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119952,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119952,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716050731560961",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_73d6b434d6cdc2",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119962,
+    "updated_at": 1776119962,
+    "triggered_at": 1776119962,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716091705716737",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119962,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119962,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716091705716737",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_68418ca1999c36",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119967,
+    "updated_at": 1776119967,
+    "triggered_at": 1776119967,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716112127782913",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119967,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119967,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716112127782913",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_d3d165c8d946cc",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119972,
+    "updated_at": 1776119972,
+    "triggered_at": 1776119972,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716133791363073",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119972,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119972,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716133791363073",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_b7c1353a9349d0",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119977,
+    "updated_at": 1776119977,
+    "triggered_at": 1776119977,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716155031318529",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119977,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119977,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716155031318529",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_271995d6bce706",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119982,
+    "updated_at": 1776119982,
+    "triggered_at": 1776119982,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716175088480257",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119982,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119982,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716175088480257",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_d4e2b908962df0",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119987,
+    "updated_at": 1776119987,
+    "triggered_at": 1776119987,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716197402177537",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776119987,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119987,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716197402177537",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3310e4f19766a2",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119993,
+    "updated_at": 1776119993,
+    "triggered_at": 1776119993,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716221414567937",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776119993,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119993,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716221414567937",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_dcdec8dd38a965",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776119998,
+    "updated_at": 1776119998,
+    "triggered_at": 1776119998,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716241899548673",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776119998,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776119998,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716241899548673",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_073efa52217fbd",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120003,
+    "updated_at": 1776120003,
+    "triggered_at": 1776120003,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716263647014913",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120003,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120003,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716263647014913",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_1e7bb5361520f6",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120009,
+    "updated_at": 1776120009,
+    "triggered_at": 1776120009,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716288515043330",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120009,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120009,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716288515043330",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ae0d7fca83fda5",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120019,
+    "updated_at": 1776120019,
+    "triggered_at": 1776120019,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716330088984578",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120019,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120019,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716330088984578",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_999d7a5c70b9c4",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120031,
+    "updated_at": 1776120031,
+    "triggered_at": 1776120031,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716382706528257",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120031,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120031,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716382706528257",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ea4c00a670e056",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120044,
+    "updated_at": 1776120044,
+    "triggered_at": 1776120044,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716434342604801",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120044,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120044,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716434342604801",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_48dc25f28ebaa4",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120056,
+    "updated_at": 1776120056,
+    "triggered_at": 1776120056,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716485341147137",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120056,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120056,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716485341147137",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_d53385a30b1a0c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120061,
+    "updated_at": 1776120061,
+    "triggered_at": 1776120061,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716505649967106",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120061,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120061,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716505649967106",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_c083031973e1fe",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120065,
+    "updated_at": 1776120065,
+    "triggered_at": 1776120065,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716525832957954",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120065,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120065,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716525832957954",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_463a760298f33c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120070,
+    "updated_at": 1776120070,
+    "triggered_at": 1776120070,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716545508438017",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120070,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120070,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716545508438017",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ef624888582670",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120075,
+    "updated_at": 1776120075,
+    "triggered_at": 1776120075,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716566085693442",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120075,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120075,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716566085693442",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_93636093de184d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120080,
+    "updated_at": 1776120080,
+    "triggered_at": 1776120080,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716586956550145",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120080,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120080,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716586956550145",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_fe4b69f98f3ad0",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120085,
+    "updated_at": 1776120085,
+    "triggered_at": 1776120085,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716607768686593",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120085,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120085,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716607768686593",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3dd7a1a6d14b5d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120090,
+    "updated_at": 1776120090,
+    "triggered_at": 1776120090,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716630472454145",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120090,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120090,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716630472454145",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_292bc0ea38f400",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120095,
+    "updated_at": 1776120095,
+    "triggered_at": 1776120095,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716651389448193",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120095,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120095,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716651389448193",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_9b307736e53c21",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120111,
+    "updated_at": 1776120111,
+    "triggered_at": 1776120111,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716716992557057",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120111,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120111,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716716992557057",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_30552b49a751ea",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120123,
+    "updated_at": 1776120123,
+    "triggered_at": 1776120123,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716766321766401",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120123,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120123,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716766321766401",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_673735563acd16",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120133,
+    "updated_at": 1776120133,
+    "triggered_at": 1776120133,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716808768122882",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120133,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120133,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716808768122882",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_991e221987fb08",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120145,
+    "updated_at": 1776120145,
+    "triggered_at": 1776120145,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716858894249985",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120145,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120145,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427716858894249985",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_aaf7952733c313",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120157,
+    "updated_at": 1776120157,
+    "triggered_at": 1776120157,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716911385964545",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120157,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120157,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427716911385964545",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_0c39dd632f91d9",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120168,
+    "updated_at": 1776120168,
+    "triggered_at": 1776120168,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427716954079784961",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120168,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120168,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427716954079784961",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_9351455006d4e8",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120179,
+    "updated_at": 1776120179,
+    "triggered_at": 1776120179,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717002284920833",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120179,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120179,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717002284920833",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3eafc1f22e77b5",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120190,
+    "updated_at": 1776120190,
+    "triggered_at": 1776120190,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717048229326849",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120190,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120190,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717048229326849",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_70fa45951e44e1",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120201,
+    "updated_at": 1776120201,
+    "triggered_at": 1776120201,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717093322289695",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120201,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120201,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717093322289695",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3672e5c33cdab4",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120213,
+    "updated_at": 1776120213,
+    "triggered_at": 1776120213,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717145457487873",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120213,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120213,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717145457487873",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ecc3aba4a0d555",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120225,
+    "updated_at": 1776120225,
+    "triggered_at": 1776120225,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717193331273729",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120225,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120225,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717193331273729",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_cf8c850f29ac3d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120235,
+    "updated_at": 1776120236,
+    "triggered_at": 1776120235,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717238873026561",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120235,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120235,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717238873026561",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_19f45b026a8c71",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120246,
+    "updated_at": 1776120246,
+    "triggered_at": 1776120246,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717283122933764",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120246,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120246,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717283122933764",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_b2035533c8b25b",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120257,
+    "updated_at": 1776120257,
+    "triggered_at": 1776120257,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717327255400449",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120257,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120257,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717327255400449",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_765c5b91d9c41e",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120267,
+    "updated_at": 1776120268,
+    "triggered_at": 1776120267,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717373032034304",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120267,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120267,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717373032034304",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_df0103bbd0ef05",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120279,
+    "updated_at": 1776120279,
+    "triggered_at": 1776120279,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717421279113218",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120279,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120279,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717421279113218",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_2c9ebd3376bf4c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120290,
+    "updated_at": 1776120290,
+    "triggered_at": 1776120290,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717468607639553",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120290,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120290,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717468607639553",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ac21382312539c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120302,
+    "updated_at": 1776120302,
+    "triggered_at": 1776120302,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717517924265985",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120302,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120302,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717517924265985",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_8aa217bad873ce",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120312,
+    "updated_at": 1776120312,
+    "triggered_at": 1776120312,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717558638374913",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120312,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120312,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717558638374913",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ac9f448832bc46",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120323,
+    "updated_at": 1776120323,
+    "triggered_at": 1776120323,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717606088536065",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120323,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120323,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717606088536065",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_9a64db66809cb8",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120334,
+    "updated_at": 1776120335,
+    "triggered_at": 1776120334,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717654025236481",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120334,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120334,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717654025236481",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_4f4944b40f4d79",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120346,
+    "updated_at": 1776120346,
+    "triggered_at": 1776120346,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717703375417345",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120346,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120346,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717703375417345",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_bafda15f22d4bf",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120358,
+    "updated_at": 1776120358,
+    "triggered_at": 1776120358,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717751941263361",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120358,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120358,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717751941263361",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_754a687613a041",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120368,
+    "updated_at": 1776120368,
+    "triggered_at": 1776120368,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717795281006596",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120368,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120368,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717795281006596",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_b0c17bf143959d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120380,
+    "updated_at": 1776120380,
+    "triggered_at": 1776120380,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717843175763969",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120380,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120380,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717843175763969",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_61eb411dd46d7b",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120392,
+    "updated_at": 1776120392,
+    "triggered_at": 1776120392,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717894769897473",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120392,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120392,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427717894769897473",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_e844bf5ca9e2b5",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120404,
+    "updated_at": 1776120404,
+    "triggered_at": 1776120404,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717945072185345",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120404,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120404,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427717945072185345",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f5c6aade577a49",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120417,
+    "updated_at": 1776120417,
+    "triggered_at": 1776120417,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427717998264348673",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120417,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120417,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427717998264348673",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_267c59e3d49d68",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120428,
+    "updated_at": 1776120428,
+    "triggered_at": 1776120428,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718046817611777",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120428,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120428,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718046817611777",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_b2ca04ee1c029d",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120439,
+    "updated_at": 1776120439,
+    "triggered_at": 1776120439,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718093902868481",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120439,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120439,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718093902868481",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_05482b3d8a9c11",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120445,
+    "updated_at": 1776120445,
+    "triggered_at": 1776120445,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718116405309442",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120445,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120445,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718116405309442",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_4df4afa2d02357",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120449,
+    "updated_at": 1776120449,
+    "triggered_at": 1776120449,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718136089178113",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120449,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120449,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718136089178113",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_23ab0eb3be8738",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120460,
+    "updated_at": 1776120460,
+    "triggered_at": 1776120460,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718178661363714",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120460,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120460,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718178661363714",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_2a9ce9adbec81c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120464,
+    "updated_at": 1776120464,
+    "triggered_at": 1776120464,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718199045681153",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120464,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120464,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718199045681153",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_4baf075ef867b0",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120469,
+    "updated_at": 1776120469,
+    "triggered_at": 1776120469,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718219220283393",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120469,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120469,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718219220283393",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_6723f23ad6981c",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120475,
+    "updated_at": 1776120475,
+    "triggered_at": 1776120475,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718242335092737",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120475,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120475,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718242335092737",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_8ac2bc1791ad45",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120480,
+    "updated_at": 1776120480,
+    "triggered_at": 1776120480,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718262564220929",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120480,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120480,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718262564220929",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_a6a3d457a3d5bb",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120486,
+    "updated_at": 1776120486,
+    "triggered_at": 1776120486,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718287734239235",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120486,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120486,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718287734239235",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_fc38150bd7cc22",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120491,
+    "updated_at": 1776120491,
+    "triggered_at": 1776120491,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718310463172609",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120491,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120491,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718310463172609",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_3bd7d4cc492533",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120497,
+    "updated_at": 1776120497,
+    "triggered_at": 1776120497,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718335771602945",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120497,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120497,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718335771602945",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_152b8bc72343e7",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120502,
+    "updated_at": 1776120502,
+    "triggered_at": 1776120502,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718356604710917",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120502,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120502,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718356604710917",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f209619e76f336",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120507,
+    "updated_at": 1776120507,
+    "triggered_at": 1776120507,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718378121490433",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120507,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120507,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718378121490433",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f27cee366d8fe4",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120512,
+    "updated_at": 1776120512,
+    "triggered_at": 1776120512,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718398556139536",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120512,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120512,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718398556139536",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_5d31c49bd4ce61",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120517,
+    "updated_at": 1776120517,
+    "triggered_at": 1776120517,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718419657682945",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120517,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120517,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718419657682945",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_215b125fb75a62",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120522,
+    "updated_at": 1776120522,
+    "triggered_at": 1776120522,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718439815507969",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120522,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120522,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718439815507969",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_7f1cd2bb5fea6e",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120526,
+    "updated_at": 1776120526,
+    "triggered_at": 1776120526,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718458912174081",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120526,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120526,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718458912174081",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_0bbfd28f53960e",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120531,
+    "updated_at": 1776120531,
+    "triggered_at": 1776120531,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718479707533316",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120531,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120531,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718479707533316",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_7c08aa02fda1af",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120536,
+    "updated_at": 1776120536,
+    "triggered_at": 1776120536,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718498703536129",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120536,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120536,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718498703536129",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f031d93d1b089a",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120541,
+    "updated_at": 1776120541,
+    "triggered_at": 1776120541,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718520249675777",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120541,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120541,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718520249675777",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_5d732e73c4b233",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120546,
+    "updated_at": 1776120546,
+    "triggered_at": 1776120546,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718541028257793",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120546,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120546,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718541028257793",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_dfd68f3555f6b7",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1775113200-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1775113200,
+    "t_end": 1776121200,
+    "price_start": 34.29894272334294,
+    "price_end": 37.01395425072046,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1850697712536023,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120554,
+    "updated_at": 1776120554,
+    "triggered_at": 1776120554,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718575312498690",
+    "fill_price": 37.01395425072046,
+    "fill_qty": 0.270168378451631,
+    "events": [
+      {
+        "ts": 1776120554,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1775113200-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120554,
+        "kind": "exchange_submitted",
+        "price": 37.01395425072046,
+        "line_price": 37.01395425072046,
+        "distance_atr": null,
+        "message": "limit @ 37.0140 size=0.2702 orderId=1427718575312498690",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_f75fccc3fa699e",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120565,
+    "updated_at": 1776120565,
+    "triggered_at": 1776120565,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718619214278657",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120565,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120565,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427718619214278657",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_01884536f93657",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776092400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776092400,
+    "t_end": 1776121200,
+    "price_start": 41.10802017291066,
+    "price_end": 41.65545533141211,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.20827727665706053,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120575,
+    "updated_at": 1776120575,
+    "triggered_at": 1776120575,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427718664919609347",
+    "fill_price": 41.65545533141211,
+    "fill_qty": 0.24006459467168675,
+    "events": [
+      {
+        "ts": 1776120575,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776092400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120575,
+        "kind": "exchange_submitted",
+        "price": 41.65545533141211,
+        "line_price": 41.65545533141211,
+        "distance_atr": null,
+        "message": "limit @ 41.6555 size=0.2401 orderId=1427718664919609347",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_be46cee0f4d1c3",
+    "manual_line_id": "manual-HYPEUSDT-4h-support-1776020400-1776121200",
+    "symbol": "HYPEUSDT",
+    "timeframe": "4h",
+    "side": "support",
+    "t_start": 1776020400,
+    "t_end": 1776121200,
+    "price_start": 40.16764787463977,
+    "price_end": 40.85036581412104,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.2042518290706052,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776120868,
+    "updated_at": 1776120868,
+    "triggered_at": 1776120868,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427719893158621185",
+    "fill_price": 40.85036581412104,
+    "fill_qty": 0.24479584945462662,
+    "events": [
+      {
+        "ts": 1776120868,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-4h-support-1776020400-1776121200, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776120868,
+        "kind": "exchange_submitted",
+        "price": 40.85036581412104,
+        "line_price": 40.85036581412104,
+        "distance_atr": null,
+        "message": "limit @ 40.8504 size=0.2448 orderId=1427719893158621185",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  }
+]

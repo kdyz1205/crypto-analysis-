@@ -1,0 +1,61 @@
+{
+  "id": "volume_surge",
+  "name": "\u6210\u4ea4\u91cf\u6fc0\u589e",
+  "description": "\u91cf>1.5\u500d\u5747\u503c",
+  "category": "volume",
+  "indicator": "volume_ratio",
+  "params": {},
+  "condition": "gt",
+  "threshold": 1.5,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.545585,
+  "test_history": [
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.5456157
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.6162531
+    },
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.644027
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.686657
+    },
+    {
+      "score": 0.6411600000000001,
+      "trades": 6,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.8701286
+    },
+    {
+      "score": 0.37377,
+      "trades": 10,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.9416382
+    }
+  ],
+  "test_count": 6,
+  "avg_score": 0.545055,
+  "total_trades": 40
+}

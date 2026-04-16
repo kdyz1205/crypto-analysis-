@@ -1,0 +1,31 @@
+{
+  "id": "9eca664fd19f",
+  "strategy_id": "e2f0bd3015cb",
+  "strategy_name": "AI-12811e",
+  "source": "ai",
+  "symbol": "ETHUSDT",
+  "timeframe": "4h",
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout",
+    "retest"
+  ],
+  "factor_ids": [
+    "rsi_oversold",
+    "trend_up",
+    "kc_squeeze"
+  ],
+  "return_pct": -0.29,
+  "win_rate": 16.7,
+  "profit_factor": 0.81,
+  "sharpe_ratio": -0.21,
+  "max_drawdown_pct": 0.9,
+  "trade_count": 6,
+  "score": 0.3403,
+  "deployment_eligible": false,
+  "deployed": false,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "simulation_job_id": "2c407ba16b90",
+  "ranked_at": 1775945309.3950531
+}

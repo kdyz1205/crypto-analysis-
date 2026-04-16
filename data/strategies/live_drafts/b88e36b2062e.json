@@ -1,0 +1,21 @@
+{
+  "id": "b88e36b2062e",
+  "strategy_id": "e2f0bd3015cb",
+  "leaderboard_entry_id": "bd34f50ac08d",
+  "capital_allocation": 15.0,
+  "risk_per_trade": 0.01,
+  "max_concurrent_positions": 3,
+  "exchange": "bitget",
+  "symbols": [
+    "BTCUSDT"
+  ],
+  "timeframes": [
+    "4h"
+  ],
+  "auto_submit": false,
+  "runtime_days": 30,
+  "status": "stopped",
+  "created_at": 1775950962.688622,
+  "approved_at": 1775950963.0672767,
+  "notes": ""
+}

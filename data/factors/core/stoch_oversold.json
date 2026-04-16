@@ -1,0 +1,49 @@
+{
+  "id": "stoch_oversold",
+  "name": "Stoch \u8d85\u5356",
+  "description": "",
+  "category": "momentum",
+  "indicator": "stoch_k",
+  "params": {
+    "period": 14
+  },
+  "condition": "lt",
+  "threshold": 20,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.5382957,
+  "test_history": [
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.538322
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.5733376
+    },
+    {
+      "score": 0.6411600000000001,
+      "trades": 6,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.8228242
+    },
+    {
+      "score": 0.37377,
+      "trades": 10,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.8925521
+    }
+  ],
+  "test_count": 4,
+  "avg_score": 0.5356575,
+  "total_trades": 28
+}

@@ -1,0 +1,28 @@
+{
+  "id": "2399f0848bd0",
+  "strategy_id": "a7ea8c87219c",
+  "strategy_name": "ETHUSDT-reversal-G999",
+  "source": "pattern_engine",
+  "symbol": "ETHUSDT",
+  "timeframe": "4h",
+  "trigger_modes": [
+    "rejection"
+  ],
+  "factor_ids": [
+    "zone_distance",
+    "rsi"
+  ],
+  "return_pct": 5.0,
+  "win_rate": 60.0,
+  "profit_factor": 1.8,
+  "sharpe_ratio": 1.5,
+  "max_drawdown_pct": 3.0,
+  "trade_count": 10,
+  "score": 0.75,
+  "deployment_eligible": true,
+  "deployed": false,
+  "generation": 999,
+  "batch_id": "writeback-test",
+  "simulation_job_id": "test-job",
+  "ranked_at": 1776050720.159856
+}

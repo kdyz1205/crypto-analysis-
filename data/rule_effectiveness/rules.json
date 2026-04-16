@@ -1,0 +1,40 @@
+{
+  "reversal_strict": {
+    "rule_id": "reversal_strict",
+    "decision_type": "reversal",
+    "live_count": 3,
+    "live_successes": 3,
+    "live_failures": 0,
+    "total_realized_return_atr": 4.5,
+    "total_realized_drawdown_atr": 1.5,
+    "best_return_atr": 1.5,
+    "worst_drawdown_atr": 0.5,
+    "last_updated": 1776051485.2449257,
+    "recent_outcomes": [
+      {
+        "instance_id": "0387b7e2e685",
+        "outcome_class": "bounce_success",
+        "return_atr": 1.5,
+        "drawdown_atr": 0.5,
+        "success": true,
+        "at": 1776050720.4513648
+      },
+      {
+        "instance_id": "18deb6221409",
+        "outcome_class": "bounce_success",
+        "return_atr": 1.5,
+        "drawdown_atr": 0.5,
+        "success": true,
+        "at": 1776050763.5804133
+      },
+      {
+        "instance_id": "562a94ace287",
+        "outcome_class": "bounce_success",
+        "return_atr": 1.5,
+        "drawdown_atr": 0.5,
+        "success": true,
+        "at": 1776051485.232182
+      }
+    ]
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "id": "zone_strong",
+  "name": "Zone \u9ad8\u5206",
+  "description": "",
+  "category": "structure",
+  "indicator": "zone_score",
+  "params": {},
+  "condition": "gt",
+  "threshold": 0.6,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.647761,
+  "test_history": [
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.647797
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.7033532
+    }
+  ],
+  "test_count": 2,
+  "avg_score": 0.56385,
+  "total_trades": 12
+}

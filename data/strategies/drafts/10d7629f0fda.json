@@ -1,0 +1,38 @@
+{
+  "id": "10d7629f0fda",
+  "name": "AI-888974",
+  "source": "ai",
+  "template_id": "",
+  "logic_tags": [
+    "reversal"
+  ],
+  "factor_ids": [
+    "stoch_oversold",
+    "kc_squeeze",
+    "volume_surge"
+  ],
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout"
+  ],
+  "entry_mode": "",
+  "exit_rules": {},
+  "risk_rules": {},
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h"
+  ],
+  "params": {
+    "rr_target": 3.0,
+    "lookback_bars": 80
+  },
+  "status": "simulated",
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "parent_strategy_id": "",
+  "created_at": 1775944838.7927573,
+  "updated_at": 1775944838.7927575
+}

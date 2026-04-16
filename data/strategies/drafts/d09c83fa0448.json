@@ -1,0 +1,109 @@
+{
+  "id": "d09c83fa0448",
+  "name": "BTC-ETH Reversal Multi-TF",
+  "source": "manual",
+  "template_id": "",
+  "config": {
+    "market": {
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT"
+      ],
+      "main_tf": "4h",
+      "confirm_tf": "1d",
+      "entry_tf": "15m"
+    },
+    "logic_tags": [
+      "reversal",
+      "retest"
+    ],
+    "logic_combine": "OR",
+    "conditions": [
+      {
+        "indicator": "rsi",
+        "condition": "lt",
+        "threshold": 30,
+        "threshold_upper": 0.0,
+        "params": {
+          "period": 14
+        },
+        "enabled": true
+      },
+      {
+        "indicator": "adx",
+        "condition": "gt",
+        "threshold": 25,
+        "threshold_upper": 0.0,
+        "params": {
+          "period": 14
+        },
+        "enabled": true
+      }
+    ],
+    "entry": {
+      "modes": [
+        "rejection",
+        "failed_breakout"
+      ],
+      "logic_combine": "OR",
+      "offset_pct": 0.1
+    },
+    "exit": {
+      "stop_type": "structure",
+      "stop_pct": 1.0,
+      "stop_atr_mult": 1.5,
+      "tp_type": "rr",
+      "rr_target": 2.5,
+      "tp_pct": 3.0,
+      "trailing_pct": 1.0
+    },
+    "risk": {
+      "risk_per_trade": 0.01,
+      "max_concurrent": 3,
+      "max_daily_loss_pct": 5,
+      "max_drawdown_pct": 10,
+      "max_consecutive_losses": 5,
+      "auto_pause_on_dd": true
+    }
+  },
+  "logic_tags": [
+    "reversal",
+    "retest"
+  ],
+  "factor_ids": [
+    "rsi",
+    "adx"
+  ],
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout"
+  ],
+  "entry_mode": "rejection",
+  "exit_rules": {
+    "stop_type": "structure",
+    "tp_type": "rr",
+    "rr_target": 2.5
+  },
+  "risk_rules": {
+    "risk_per_trade": 0.01,
+    "max_dd": 10
+  },
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h",
+    "1d"
+  ],
+  "params": {
+    "rr_target": 2.5,
+    "risk_per_trade": 0.01
+  },
+  "status": "draft",
+  "generation": 0,
+  "batch_id": "",
+  "parent_strategy_id": "",
+  "created_at": 1775951542.1311514,
+  "updated_at": 1775951542.1311522
+}

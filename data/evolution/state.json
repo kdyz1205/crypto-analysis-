@@ -1,0 +1,10 @@
+{
+  "current_baseline": "v0_baseline",
+  "current_fitness_train": 16.162484961447284,
+  "current_fitness_test": 23.388808343513855,
+  "completed_rounds": [],
+  "no_improvement_streak": 0,
+  "max_rounds": 15,
+  "stop_streak_threshold": 3,
+  "min_improvement_pct": 10.0
+}

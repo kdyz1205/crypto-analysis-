@@ -1,0 +1,82 @@
+[
+  {
+    "id": "bd34f50ac08d",
+    "score": 0.8795,
+    "strategy_id": "e2f0bd3015cb",
+    "symbol": "BTCUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  },
+  {
+    "id": "2399f0848bd0",
+    "score": 0.75,
+    "strategy_id": "a7ea8c87219c",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 999
+  },
+  {
+    "id": "9ccb2170f71d",
+    "score": 0.75,
+    "strategy_id": "c32513861395",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 999
+  },
+  {
+    "id": "7d00c7ed889d",
+    "score": 0.75,
+    "strategy_id": "41f86189887c",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 999
+  },
+  {
+    "id": "d753166365d0",
+    "score": 0.75,
+    "strategy_id": "56be5e85edef",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 999
+  },
+  {
+    "id": "dfdd0f9b23a7",
+    "score": 0.7124,
+    "strategy_id": "10d7629f0fda",
+    "symbol": "BTCUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  },
+  {
+    "id": "e356fd223990",
+    "score": 0.7124,
+    "strategy_id": "4b91ed7d2c08",
+    "symbol": "BTCUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  },
+  {
+    "id": "159e7852f631",
+    "score": 0.4153,
+    "strategy_id": "10d7629f0fda",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  },
+  {
+    "id": "e7dd191c3dd5",
+    "score": 0.4153,
+    "strategy_id": "4b91ed7d2c08",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  },
+  {
+    "id": "9eca664fd19f",
+    "score": 0.3403,
+    "strategy_id": "e2f0bd3015cb",
+    "symbol": "ETHUSDT",
+    "timeframe": "4h",
+    "generation": 1
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "id": "f48a20ab694d",
+  "name": "AI-e5f596",
+  "source": "ai",
+  "template_id": "",
+  "config": {
+    "market": {
+      "symbols": [
+        "BTCUSDT"
+      ],
+      "main_tf": "4h",
+      "confirm_tf": "",
+      "entry_tf": ""
+    },
+    "logic_tags": [
+      "reversal"
+    ],
+    "logic_combine": "OR",
+    "conditions": [],
+    "entry": {
+      "modes": [
+        "rejection"
+      ],
+      "logic_combine": "OR",
+      "offset_pct": 0.0
+    },
+    "exit": {
+      "stop_type": "structure",
+      "stop_pct": 1.0,
+      "stop_atr_mult": 1.5,
+      "tp_type": "rr",
+      "rr_target": 2.0,
+      "tp_pct": 3.0,
+      "trailing_pct": 1.0
+    },
+    "risk": {
+      "risk_per_trade": 0.01,
+      "max_concurrent": 3,
+      "max_daily_loss_pct": 5.0,
+      "max_drawdown_pct": 10.0,
+      "max_consecutive_losses": 5,
+      "auto_pause_on_dd": true
+    }
+  },
+  "logic_tags": [
+    "reversal"
+  ],
+  "factor_ids": [
+    "near_resistance",
+    "adx_weak",
+    "mfi_overbought"
+  ],
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout",
+    "retest"
+  ],
+  "entry_mode": "",
+  "exit_rules": {},
+  "risk_rules": {},
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "HYPEUSDT",
+    "XRPUSDT",
+    "ADAUSDT",
+    "DOGEUSDT",
+    "SUIUSDT",
+    "PEPEUSDT"
+  ],
+  "timeframes": [
+    "1h",
+    "4h"
+  ],
+  "params": {
+    "rr_target": 3.0,
+    "lookback_bars": 100
+  },
+  "status": "draft",
+  "generation": 2,
+  "batch_id": "gen-2-1775952555",
+  "parent_strategy_id": "",
+  "created_at": 1775952555.8586087,
+  "updated_at": 1775952555.858609
+}

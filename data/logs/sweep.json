@@ -1,0 +1,127 @@
+{
+  "summary": {
+    "total_findings": 13,
+    "per_scan": {
+      "current_pnl": 0,
+      "xss_error_interp": 0,
+      "match_pattern_time_leak": 0,
+      "find_similar_self_match": 0,
+      "inline_onclick": 7,
+      "realized_pnl_undifferentiated": 6
+    }
+  },
+  "findings": {
+    "current_pnl": [],
+    "xss_error_interp": [],
+    "match_pattern_time_leak": [],
+    "find_similar_self_match": [],
+    "inline_onclick": [
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 70,
+        "matched_text": ".onclick = (",
+        "full_line": "    btn.onclick = () => {",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 432,
+        "matched_text": ".onclick = (",
+        "full_line": "    h.onclick = () => h.parentElement.classList.toggle('open');",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 437,
+        "matched_text": ".onclick = (",
+        "full_line": "    btn.onclick = () => {",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 606,
+        "matched_text": ".onclick = async function",
+        "full_line": "          b.onclick = async function() {",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 758,
+        "matched_text": ".onclick = (",
+        "full_line": "    btn.onclick = () => {",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 921,
+        "matched_text": ".onclick = (",
+        "full_line": "    btn.onclick = () => {",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 1339,
+        "matched_text": ".onclick = (",
+        "full_line": "    btn.onclick = () => {",
+        "context_after": []
+      }
+    ],
+    "realized_pnl_undifferentiated": [
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/views.js",
+        "line": 1397,
+        "matched_text": "realized_pnl",
+        "full_line": "  const simP = acct.realized_pnl_sim ?? acct.realized_pnl ?? 0;",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/execution/panel.js",
+        "line": 236,
+        "matched_text": "realized_pnl",
+        "full_line": "    if (pos.closed_at_ts) markers.push({ time: toUnix(pos.closed_at_ts), position: pos.direction==='short'?'belowBar':'aboveBar', color: (pos.realized_pnl??0)>=0?'#00e676':'#ff1744', shape:'square', text:(pos.realized_pnl??0)>=0?'盈':'损' });",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/execution/panel.js",
+        "line": 273,
+        "matched_text": "realized_pnl",
+        "full_line": "  const simPnl = a.realized_pnl_sim ?? a.realized_pnl ?? 0;",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/execution/panel.js",
+        "line": 383,
+        "matched_text": "realized_pnl",
+        "full_line": "  const simPnl = acct.realized_pnl_sim ?? acct.realized_pnl ?? 0;",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/execution/panel.js",
+        "line": 417,
+        "matched_text": "realized_pnl",
+        "full_line": "    const dSim = a.realized_pnl_sim ?? a.realized_pnl ?? 0;",
+        "context_after": []
+      },
+      {
+        "severity": "HIGH",
+        "file": "frontend/js/execution/panel.js",
+        "line": 426,
+        "matched_text": "realized_pnl",
+        "full_line": "        h+=`<div class=\"exec-trade-mini\"><span class=\"exec-dir-${pos.direction}\">${pos.direction==='long'?'多':'空'}</span> ${formatUsd(pos.entry_price)}→${formatUsd(pos.exit_price??0)} <span class=\"${pnlColorClass(pos.realized_pnl??0)}\">${fmtPnl(pos.realized_pnl??0)}</span> ${r}</div>`;}}",
+        "context_after": []
+      }
+    ]
+  }
+}

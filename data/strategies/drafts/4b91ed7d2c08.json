@@ -1,0 +1,38 @@
+{
+  "id": "4b91ed7d2c08",
+  "name": "AI-fe31fd",
+  "source": "ai",
+  "template_id": "",
+  "logic_tags": [
+    "reversal"
+  ],
+  "factor_ids": [
+    "cci_overbought",
+    "volume_surge",
+    "zone_strong"
+  ],
+  "trigger_modes": [
+    "pre_limit",
+    "rejection"
+  ],
+  "entry_mode": "",
+  "exit_rules": {},
+  "risk_rules": {},
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h"
+  ],
+  "params": {
+    "rr_target": 3.0,
+    "lookback_bars": 80
+  },
+  "status": "simulated",
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "parent_strategy_id": "",
+  "created_at": 1775944838.806143,
+  "updated_at": 1775944838.8061435
+}

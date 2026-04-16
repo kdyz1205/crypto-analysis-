@@ -1,0 +1,18 @@
+{
+  "id": "ffef5aab7e0f",
+  "job_id": "2c407ba16b90",
+  "strategy_id": "4b91ed7d2c08",
+  "symbol": "ETHUSDT",
+  "timeframe": "4h",
+  "return_pct": 0.31,
+  "win_rate": 25.0,
+  "profit_factor": 1.17,
+  "sharpe_ratio": 0.18,
+  "max_drawdown_pct": 1.49,
+  "trade_count": 8,
+  "avg_rr": 3.54,
+  "score": 0.4153,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "tested_at": 1775945142.9193747
+}

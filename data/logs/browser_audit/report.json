@@ -1,0 +1,246 @@
+{
+  "timestamp": 1776057779.9718144,
+  "errors_by_page": {
+    "boot": [
+      {
+        "type": "log",
+        "text": "[main] Trading OS booting...",
+        "location": "{'url': 'http://localhost:8000/js/main.js', 'lineNumber': 14, 'columnNumber': 10}"
+      },
+      {
+        "type": "log",
+        "text": "[main] Trading OS ready",
+        "location": "{'url': 'http://localhost:8000/js/main.js', 'lineNumber': 51, 'columnNumber': 10}"
+      },
+      {
+        "type": "log",
+        "text": "[stream] connected",
+        "location": "{'url': 'http://localhost:8000/js/services/stream.js', 'lineNumber': 38, 'columnNumber': 32}"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/patterns?symbol=HYPEUSDT&interval=4h&days=90&mode=full — net::ERR_ABORTED"
+      }
+    ],
+    "dashboard": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/tools/patterns/match?symbol=HYPEUSDT&timeframe=4h&anchor1_idx=166&anchor1_price=35.74&anchor2_idx=196&anchor2_price=40.166&side=support&k=30 — net::ERR_ABORTED"
+      }
+    ],
+    "factory": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/tools/patterns/match?symbol=HYPEUSDT&timeframe=4h&anchor1_idx=166&anchor1_price=35.74&anchor2_idx=196&anchor2_price=40.166&side=support&k=30 — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/strategy/snapshot?symbol=HYPEUSDT&interval=4h&analysis_bars=500 — net::ERR_ABORTED"
+      }
+    ],
+    "factors": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/market/structure-summary?symbol=HYPEUSDT&interval=4h — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/agent/risk-state — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/strategy/snapshot?symbol=HYPEUSDT&interval=4h&analysis_bars=500 — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/strategy/snapshot?symbol=HYPEUSDT&interval=4h&analysis_bars=200 — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/tools/health-digest?hours=24 — net::ERR_ABORTED"
+      }
+    ],
+    "live": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/live-execution/account?mode=live — net::ERR_ABORTED"
+      }
+    ],
+    "monitor": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/market/structure-summary?symbol=HYPEUSDT&interval=4h — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/agent/risk-state — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/strategy/snapshot?symbol=HYPEUSDT&interval=4h&analysis_bars=200 — net::ERR_ABORTED"
+      }
+    ],
+    "monitor_tabs": [
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/market/structure-summary?symbol=HYPEUSDT&interval=4h — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/agent/risk-state — net::ERR_ABORTED"
+      },
+      {
+        "type": "requestfailed",
+        "text": "GET http://localhost:8000/api/strategy/snapshot?symbol=HYPEUSDT&interval=4h&analysis_bars=200 — net::ERR_ABORTED"
+      }
+    ]
+  },
+  "dom_checks": {
+    "market_initial": {
+      "title": "Trading OS",
+      "body_text_len": 5212,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "has_error_text": false,
+      "kpi_count": 0,
+      "kpi_bad_values": 0
+    },
+    "dashboard": {
+      "title": "Trading OS",
+      "body_text_len": 4849,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "view_html_len": 535,
+      "view_has_skeleton": true,
+      "view_has_card_content": false,
+      "view_has_error_text": false,
+      "view_first_200": "\n    <div style=\"padding:20px\">\n      <div class=\"skel-line\" style=\"width:60%\"></div><div style=\"height:12px\"></div>\n      <div class=\"dash-cards\"><div class=\"skel-card\"></div><div class=\"skel-card\"><",
+      "has_error_text": false,
+      "kpi_count": 0,
+      "kpi_bad_values": 0
+    },
+    "market": {
+      "title": "Trading OS",
+      "body_text_len": 5263,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "has_error_text": false,
+      "kpi_count": 0,
+      "kpi_bad_values": 0
+    },
+    "factory": {
+      "title": "Trading OS",
+      "body_text_len": 4849,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "view_html_len": 222,
+      "view_has_skeleton": true,
+      "view_has_card_content": false,
+      "view_has_error_text": false,
+      "view_first_200": "<div style=\"padding:20px\"><div class=\"skel-line\" style=\"width:60%\"></div><div style=\"height:12px\"></div><div class=\"skel-row\"></div><div class=\"skel-row\"></div><div class=\"skel-row\"></div><div class=\"",
+      "has_error_text": false,
+      "kpi_count": 0,
+      "kpi_bad_values": 0
+    },
+    "leaderboard": {
+      "title": "Trading OS",
+      "body_text_len": 4849,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "view_html_len": 455,
+      "view_has_skeleton": true,
+      "view_has_card_content": false,
+      "view_has_error_text": false,
+      "view_first_200": "\n    <div style=\"padding:20px\">\n      <div class=\"skel-line\" style=\"width:60%\"></div><div style=\"height:12px\"></div>\n      <div class=\"view-stats\"><div class=\"skel-card\"></div><div class=\"skel-card\"><",
+      "has_error_text": false,
+      "kpi_count": 0,
+      "kpi_bad_values": 0
+    },
+    "factors": {
+      "title": "Trading OS",
+      "body_text_len": 5248,
+      "has_loading_indicator": false,
+      "visible_cards": 0,
+      "error_banners": 0,
+      "view_html_len": 6200,
+      "view_has_skeleton": false,
+      "view_has_card_content": true,
+      "view_has_error_text": false,
+      "view_first_200": "\n    <div class=\"page-title\">因子面板</div>\n\n    <div class=\"kpi-row\">\n      <div class=\"kpi\"><div class=\"kpi-val \">34</div><div class=\"kpi-label\">核心</div></div>\n      <div class=\"kpi\"><div class=\"kpi-val",
+      "has_error_text": false,
+      "kpi_count": 12,
+      "kpi_bad_values": 0
+    },
+    "live": {
+      "title": "Trading OS",
+      "body_text_len": 5829,
+      "has_loading_indicator": false,
+      "visible_cards": 2,
+      "error_banners": 0,
+      "view_html_len": 9691,
+      "view_has_skeleton": false,
+      "view_has_card_content": true,
+      "view_has_error_text": false,
+      "view_first_200": "\n    <div class=\"page-title\">实盘管理</div>\n\n    <div class=\"kpi-row\">\n      <div class=\"kpi\"><div class=\"kpi-val c-muted\">连接中...</div><div class=\"kpi-label\">账户权益</div></div>\n      <div class=\"kpi\"><div c",
+      "has_error_text": false,
+      "kpi_count": 16,
+      "kpi_bad_values": 0
+    },
+    "monitor": {
+      "title": "Trading OS",
+      "body_text_len": 5113,
+      "has_loading_indicator": false,
+      "visible_cards": 3,
+      "error_banners": 0,
+      "view_html_len": 10917,
+      "view_has_skeleton": false,
+      "view_has_card_content": true,
+      "view_has_error_text": true,
+      "view_first_200": "\n    <div class=\"page-title\">系统监控 <span class=\"badge badge-green\">一切正常</span></div>\n\n    <div class=\"kpi-row\">\n      <div class=\"kpi\"><div class=\"kpi-val c-green\">正常运行</div><div class=\"kpi-label\">研究引擎",
+      "has_error_text": true,
+      "kpi_count": 20,
+      "kpi_bad_values": 0
+    },
+    "chart_click_test": {
+      "chart_found": true,
+      "popover_exists": false,
+      "popover_visible": false
+    },
+    "factory_pg_test": {
+      "pg_button_exists": true,
+      "result_html_len": 40
+    },
+    "monitor_tabs": {
+      "rules": {
+        "exists": true,
+        "html_len": 647
+      },
+      "outcomes": {
+        "exists": true,
+        "html_len": 643
+      },
+      "writebacks": {
+        "exists": true,
+        "html_len": 2671
+      },
+      "dbbuild": {
+        "exists": true,
+        "html_len": 1719
+      },
+      "activity": {
+        "exists": true,
+        "html_len": 2395
+      },
+      "errors": {
+        "exists": true,
+        "html_len": 205
+      }
+    }
+  },
+  "total_errors": 19
+}

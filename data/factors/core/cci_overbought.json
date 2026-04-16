@@ -1,0 +1,35 @@
+{
+  "id": "cci_overbought",
+  "name": "CCI \u8d85\u4e70",
+  "description": "",
+  "category": "trend",
+  "indicator": "cci",
+  "params": {
+    "period": 20
+  },
+  "condition": "gt",
+  "threshold": 100,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.619654,
+  "test_history": [
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.6198082
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.6645544
+    }
+  ],
+  "test_count": 2,
+  "avg_score": 0.56385,
+  "total_trades": 12
+}

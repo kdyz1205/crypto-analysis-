@@ -1,0 +1,30 @@
+{
+  "id": "e7dd191c3dd5",
+  "strategy_id": "4b91ed7d2c08",
+  "strategy_name": "AI-fe31fd",
+  "source": "ai",
+  "symbol": "ETHUSDT",
+  "timeframe": "4h",
+  "trigger_modes": [
+    "pre_limit",
+    "rejection"
+  ],
+  "factor_ids": [
+    "cci_overbought",
+    "volume_surge",
+    "zone_strong"
+  ],
+  "return_pct": 0.31,
+  "win_rate": 25.0,
+  "profit_factor": 1.17,
+  "sharpe_ratio": 0.18,
+  "max_drawdown_pct": 1.49,
+  "trade_count": 8,
+  "score": 0.4153,
+  "deployment_eligible": true,
+  "deployed": false,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "simulation_job_id": "2c407ba16b90",
+  "ranked_at": 1775945309.3903215
+}

@@ -1,0 +1,11 @@
+{
+  "strategy_id": "FAKE_MISSING_STRATEGY_ID",
+  "symbol": "-",
+  "timeframe": "-",
+  "stage": "draft_load",
+  "error": "file not found",
+  "job_id": "2c407ba16b90",
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "failed_at": 1775945309.2603536
+}

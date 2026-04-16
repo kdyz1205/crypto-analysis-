@@ -1,0 +1,16 @@
+{
+  "id": "f911dd5e0314",
+  "name": "RSI_oversold_test",
+  "description": "",
+  "category": "momentum",
+  "indicator": "rsi",
+  "params": {
+    "period": 14
+  },
+  "condition": "lt",
+  "threshold": 30.0,
+  "source": "test",
+  "stage": "candidate",
+  "confidence": 0.0,
+  "created_at": 1775944838.7878156
+}

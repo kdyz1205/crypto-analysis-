@@ -1,0 +1,6612 @@
+{
+  "variant": "v0_baseline",
+  "train": {
+    "n_setups": 929,
+    "n_setups_triggered": 466,
+    "trigger_rate": 0.5016,
+    "fade_win_rate": 0.8841,
+    "avg_total_R": 1.1802,
+    "avg_fade_R": 1.2659,
+    "total_R": 549.9727,
+    "n_flip": 40,
+    "flip_win_rate": 0.25,
+    "by_setup_touch": {
+      "0": {
+        "n_setups": 463,
+        "n_setups_triggered": 0,
+        "trigger_rate": 0.0,
+        "fade_win_rate": 0.0,
+        "avg_total_R": 0.0,
+        "total_R": 0.0,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "avg_fade_R": 0.0
+      },
+      "3": {
+        "n_setups": 353,
+        "n_setups_triggered": 353,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9178,
+        "avg_total_R": 1.3599,
+        "avg_fade_R": 1.407,
+        "total_R": 480.0402,
+        "n_flip": 16,
+        "flip_win_rate": 0.1875
+      },
+      "4": {
+        "n_setups": 85,
+        "n_setups_triggered": 85,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.7882,
+        "avg_total_R": 0.5697,
+        "avg_fade_R": 0.8233,
+        "total_R": 48.4242,
+        "n_flip": 18,
+        "flip_win_rate": 0.2778
+      },
+      "5": {
+        "n_setups": 28,
+        "n_setups_triggered": 28,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.75,
+        "avg_total_R": 0.7682,
+        "avg_fade_R": 0.8308,
+        "total_R": 21.5083,
+        "n_flip": 6,
+        "flip_win_rate": 0.3333
+      }
+    },
+    "by_vol_regime": {
+      "low": {
+        "n_setups": 208,
+        "n_setups_triggered": 96,
+        "trigger_rate": 0.4615,
+        "fade_win_rate": 0.7812,
+        "avg_total_R": 0.267,
+        "avg_fade_R": 0.4497,
+        "total_R": 25.6365,
+        "n_flip": 17,
+        "flip_win_rate": 0.4706
+      },
+      "normal": {
+        "n_setups": 329,
+        "n_setups_triggered": 143,
+        "trigger_rate": 0.4347,
+        "fade_win_rate": 0.9441,
+        "avg_total_R": 1.803,
+        "avg_fade_R": 1.8721,
+        "total_R": 257.829,
+        "n_flip": 7,
+        "flip_win_rate": 0.0
+      },
+      "high": {
+        "n_setups": 392,
+        "n_setups_triggered": 227,
+        "trigger_rate": 0.5791,
+        "fade_win_rate": 0.8899,
+        "avg_total_R": 1.174,
+        "avg_fade_R": 1.2292,
+        "total_R": 266.5072,
+        "n_flip": 16,
+        "flip_win_rate": 0.125
+      }
+    },
+    "by_side": {
+      "support": {
+        "n_setups": 454,
+        "n_setups_triggered": 230,
+        "trigger_rate": 0.5066,
+        "fade_win_rate": 0.8391,
+        "avg_total_R": 1.0738,
+        "avg_fade_R": 1.1545,
+        "total_R": 246.9732,
+        "n_flip": 25,
+        "flip_win_rate": 0.32
+      },
+      "resistance": {
+        "n_setups": 475,
+        "n_setups_triggered": 236,
+        "trigger_rate": 0.4968,
+        "fade_win_rate": 0.928,
+        "avg_total_R": 1.2839,
+        "avg_fade_R": 1.3745,
+        "total_R": 302.9995,
+        "n_flip": 15,
+        "flip_win_rate": 0.1333
+      }
+    }
+  },
+  "test": {
+    "n_setups": 836,
+    "n_setups_triggered": 379,
+    "trigger_rate": 0.4533,
+    "fade_win_rate": 0.9024,
+    "avg_total_R": 0.9985,
+    "avg_fade_R": 1.1076,
+    "total_R": 378.4211,
+    "n_flip": 29,
+    "flip_win_rate": 0.1034,
+    "by_setup_touch": {
+      "0": {
+        "n_setups": 457,
+        "n_setups_triggered": 0,
+        "trigger_rate": 0.0,
+        "fade_win_rate": 0.0,
+        "avg_total_R": 0.0,
+        "total_R": 0.0,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "avg_fade_R": 0.0
+      },
+      "3": {
+        "n_setups": 292,
+        "n_setups_triggered": 292,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9144,
+        "avg_total_R": 1.0569,
+        "avg_fade_R": 1.1441,
+        "total_R": 308.622,
+        "n_flip": 19,
+        "flip_win_rate": 0.1053
+      },
+      "4": {
+        "n_setups": 70,
+        "n_setups_triggered": 70,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.8857,
+        "avg_total_R": 0.9746,
+        "avg_fade_R": 1.0936,
+        "total_R": 68.2198,
+        "n_flip": 6,
+        "flip_win_rate": 0.1667
+      },
+      "5": {
+        "n_setups": 17,
+        "n_setups_triggered": 17,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.7647,
+        "avg_total_R": 0.0929,
+        "avg_fade_R": 0.5365,
+        "total_R": 1.5793,
+        "n_flip": 4,
+        "flip_win_rate": 0.0
+      }
+    },
+    "by_vol_regime": {
+      "low": {
+        "n_setups": 215,
+        "n_setups_triggered": 96,
+        "trigger_rate": 0.4465,
+        "fade_win_rate": 0.8125,
+        "avg_total_R": 0.4871,
+        "avg_fade_R": 0.7696,
+        "total_R": 46.7646,
+        "n_flip": 17,
+        "flip_win_rate": 0.1765
+      },
+      "normal": {
+        "n_setups": 350,
+        "n_setups_triggered": 110,
+        "trigger_rate": 0.3143,
+        "fade_win_rate": 0.9455,
+        "avg_total_R": 1.8266,
+        "avg_fade_R": 1.8819,
+        "total_R": 200.9213,
+        "n_flip": 5,
+        "flip_win_rate": 0.0
+      },
+      "high": {
+        "n_setups": 271,
+        "n_setups_triggered": 173,
+        "trigger_rate": 0.6384,
+        "fade_win_rate": 0.9249,
+        "avg_total_R": 0.7557,
+        "avg_fade_R": 0.8028,
+        "total_R": 130.7352,
+        "n_flip": 7,
+        "flip_win_rate": 0.0
+      }
+    },
+    "by_side": {
+      "resistance": {
+        "n_setups": 399,
+        "n_setups_triggered": 142,
+        "trigger_rate": 0.3559,
+        "fade_win_rate": 0.9366,
+        "avg_total_R": 1.1681,
+        "avg_fade_R": 1.2526,
+        "total_R": 165.8698,
+        "n_flip": 9,
+        "flip_win_rate": 0.0
+      },
+      "support": {
+        "n_setups": 437,
+        "n_setups_triggered": 237,
+        "trigger_rate": 0.5423,
+        "fade_win_rate": 0.8819,
+        "avg_total_R": 0.8968,
+        "avg_fade_R": 1.0206,
+        "total_R": 212.5513,
+        "n_flip": 20,
+        "flip_win_rate": 0.15
+      }
+    }
+  },
+  "fitness_train": 22.524230303243762,
+  "fitness_test": 17.541501334468833,
+  "per_slice": [
+    {
+      "symbol": "BTCUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 23,
+        "n_setups_triggered": 12,
+        "trigger_rate": 0.5217,
+        "fade_win_rate": 0.5,
+        "avg_total_R": -0.6025,
+        "avg_fade_R": -0.8241,
+        "total_R": -7.23,
+        "n_flip": 6,
+        "flip_win_rate": 1.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 0.562,
+            "avg_fade_R": 0.4538,
+            "total_R": 3.934,
+            "n_flip": 1,
+            "flip_win_rate": 1.0
+          },
+          "4": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.2328,
+            "avg_fade_R": -2.6132,
+            "total_R": -11.164,
+            "n_flip": 5,
+            "flip_win_rate": 1.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 23,
+            "n_setups_triggered": 12,
+            "trigger_rate": 0.5217,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.6025,
+            "avg_fade_R": -0.8241,
+            "total_R": -7.23,
+            "n_flip": 6,
+            "flip_win_rate": 1.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 17,
+            "n_setups_triggered": 12,
+            "trigger_rate": 0.7059,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.6025,
+            "avg_fade_R": -0.8241,
+            "total_R": -7.23,
+            "n_flip": 6,
+            "flip_win_rate": 1.0
+          },
+          "resistance": {
+            "n_setups": 6,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 23,
+        "n_setups_triggered": 5,
+        "trigger_rate": 0.2174,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 0.9702,
+        "avg_fade_R": 0.9702,
+        "total_R": 4.8511,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.9702,
+            "avg_fade_R": 0.9702,
+            "total_R": 4.8511,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 23,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.2174,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.9702,
+            "avg_fade_R": 0.9702,
+            "total_R": 4.8511,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 15,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.8814,
+            "avg_fade_R": 0.8814,
+            "total_R": 1.7628,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.0294,
+            "avg_fade_R": 1.0294,
+            "total_R": 3.0883,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "tf": "1h",
+      "error": "no data"
+    },
+    {
+      "symbol": "BTCUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 32,
+        "n_setups_triggered": 16,
+        "trigger_rate": 0.5,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.2406,
+        "avg_fade_R": 2.2406,
+        "total_R": 35.8492,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 16,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2441,
+            "avg_fade_R": 2.2441,
+            "total_R": 33.6619,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1873,
+            "avg_fade_R": 2.1873,
+            "total_R": 2.1873,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 32,
+            "n_setups_triggered": 16,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2406,
+            "avg_fade_R": 2.2406,
+            "total_R": 35.8492,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 21,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.619,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2384,
+            "avg_fade_R": 2.2384,
+            "total_R": 29.099,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 11,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2727,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2501,
+            "avg_fade_R": 2.2501,
+            "total_R": 6.7502,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 32,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.1875,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.1331,
+        "avg_fade_R": 2.1331,
+        "total_R": 12.7985,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 26,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1331,
+            "avg_fade_R": 2.1331,
+            "total_R": 12.7985,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 32,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.1875,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1331,
+            "avg_fade_R": 2.1331,
+            "total_R": 12.7985,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 24,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.1667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1855,
+            "avg_fade_R": 2.1855,
+            "total_R": 8.7419,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0283,
+            "avg_fade_R": 2.0283,
+            "total_R": 4.0566,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 37,
+        "n_setups_triggered": 22,
+        "trigger_rate": 0.5946,
+        "fade_win_rate": 0.7727,
+        "avg_total_R": 0.1965,
+        "avg_fade_R": 0.3953,
+        "total_R": 4.3239,
+        "n_flip": 5,
+        "flip_win_rate": 0.4,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 17,
+            "n_setups_triggered": 17,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.7647,
+            "avg_total_R": 0.2457,
+            "avg_fade_R": 0.3726,
+            "total_R": 4.1761,
+            "n_flip": 4,
+            "flip_win_rate": 0.5
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.75,
+            "avg_total_R": -0.2663,
+            "avg_fade_R": 0.2872,
+            "total_R": -1.0653,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.2131,
+            "avg_fade_R": 1.2131,
+            "total_R": 1.2131,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 33,
+            "n_setups_triggered": 22,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 0.7727,
+            "avg_total_R": 0.1965,
+            "avg_fade_R": 0.3953,
+            "total_R": 4.3239,
+            "n_flip": 5,
+            "flip_win_rate": 0.4
+          },
+          "normal": {
+            "n_setups": 4,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 16,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.6875,
+            "fade_win_rate": 0.7273,
+            "avg_total_R": -0.3114,
+            "avg_fade_R": 0.2925,
+            "total_R": -3.4255,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 21,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.5238,
+            "fade_win_rate": 0.8182,
+            "avg_total_R": 0.7045,
+            "avg_fade_R": 0.4981,
+            "total_R": 7.7494,
+            "n_flip": 2,
+            "flip_win_rate": 1.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 41,
+        "n_setups_triggered": 28,
+        "trigger_rate": 0.6829,
+        "fade_win_rate": 0.8214,
+        "avg_total_R": 0.756,
+        "avg_fade_R": 0.8469,
+        "total_R": 21.1691,
+        "n_flip": 4,
+        "flip_win_rate": 0.5,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 13,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 20,
+            "n_setups_triggered": 20,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.95,
+            "avg_total_R": 1.2876,
+            "avg_fade_R": 1.2433,
+            "total_R": 25.7512,
+            "n_flip": 1,
+            "flip_win_rate": 1.0
+          },
+          "4": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5714,
+            "avg_total_R": -0.0304,
+            "avg_fade_R": 0.1514,
+            "total_R": -0.2125,
+            "n_flip": 2,
+            "flip_win_rate": 0.5
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -4.3696,
+            "avg_fade_R": -2.2118,
+            "total_R": -4.3696,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 39,
+            "n_setups_triggered": 26,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 0.8077,
+            "avg_total_R": 0.6795,
+            "avg_fade_R": 0.7774,
+            "total_R": 17.6677,
+            "n_flip": 4,
+            "flip_win_rate": 0.5
+          },
+          "normal": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7507,
+            "avg_fade_R": 1.7507,
+            "total_R": 3.5014,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.625,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4543,
+            "avg_fade_R": 1.4543,
+            "total_R": 7.2717,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 33,
+            "n_setups_triggered": 23,
+            "trigger_rate": 0.697,
+            "fade_win_rate": 0.7826,
+            "avg_total_R": 0.6042,
+            "avg_fade_R": 0.7149,
+            "total_R": 13.8974,
+            "n_flip": 4,
+            "flip_win_rate": 0.5
+          }
+        }
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 27,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.2963,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.8836,
+        "avg_fade_R": 1.8836,
+        "total_R": 15.069,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 19,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8955,
+            "avg_fade_R": 1.8955,
+            "total_R": 11.3732,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8479,
+            "avg_fade_R": 1.8479,
+            "total_R": 3.6958,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 27,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.2963,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8836,
+            "avg_fade_R": 1.8836,
+            "total_R": 15.069,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2248,
+            "avg_fade_R": 2.2248,
+            "total_R": 2.2248,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 17,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.4118,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8349,
+            "avg_fade_R": 1.8349,
+            "total_R": 12.8442,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 20,
+        "n_setups_triggered": 3,
+        "trigger_rate": 0.15,
+        "fade_win_rate": 0.6667,
+        "avg_total_R": 1.2266,
+        "avg_fade_R": 1.2266,
+        "total_R": 3.6799,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": 0.8676,
+            "avg_fade_R": 0.8676,
+            "total_R": 1.7353,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9446,
+            "avg_fade_R": 1.9446,
+            "total_R": 1.9446,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 20,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.15,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 1.2266,
+            "avg_fade_R": 1.2266,
+            "total_R": 3.6799,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 11,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2727,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 1.2266,
+            "avg_fade_R": 1.2266,
+            "total_R": 3.6799,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 9,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "ETHUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 29,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.2759,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.318,
+        "avg_fade_R": 2.318,
+        "total_R": 18.5444,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 21,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.318,
+            "avg_fade_R": 2.318,
+            "total_R": 18.5444,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 25,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.32,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.318,
+            "avg_fade_R": 2.318,
+            "total_R": 18.5444,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 4,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 18,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.1667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3277,
+            "avg_fade_R": 2.3277,
+            "total_R": 6.9832,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 11,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.4545,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3122,
+            "avg_fade_R": 2.3122,
+            "total_R": 11.5612,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 26,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.1538,
+        "fade_win_rate": 0.75,
+        "avg_total_R": 1.0656,
+        "avg_fade_R": 1.3604,
+        "total_R": 4.2626,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 22,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.0656,
+            "avg_fade_R": 1.3604,
+            "total_R": 4.2626,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 17,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.1765,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2028,
+            "avg_fade_R": 2.2028,
+            "total_R": 6.6084,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 9,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1111,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.3458,
+            "avg_fade_R": -1.1667,
+            "total_R": -2.3458,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 10,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.178,
+            "avg_fade_R": 2.178,
+            "total_R": 4.3559,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 16,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.125,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0467,
+            "avg_fade_R": 0.5429,
+            "total_R": -0.0933,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 24,
+        "n_setups_triggered": 9,
+        "trigger_rate": 0.375,
+        "fade_win_rate": 0.8889,
+        "avg_total_R": 0.6279,
+        "avg_fade_R": 0.8705,
+        "total_R": 5.6508,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.875,
+            "avg_total_R": 0.544,
+            "avg_fade_R": 0.8169,
+            "total_R": 4.3517,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.2991,
+            "avg_fade_R": 1.2991,
+            "total_R": 1.2991,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 24,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 0.8889,
+            "avg_total_R": 0.6279,
+            "avg_fade_R": 0.8705,
+            "total_R": 5.6508,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": -0.6545,
+            "avg_fade_R": 0.0734,
+            "total_R": -1.9634,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 12,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.269,
+            "avg_fade_R": 1.269,
+            "total_R": 7.6142,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 23,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.2609,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.4207,
+        "avg_fade_R": 1.4207,
+        "total_R": 8.5242,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4116,
+            "avg_fade_R": 1.4116,
+            "total_R": 7.0579,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4663,
+            "avg_fade_R": 1.4663,
+            "total_R": 1.4663,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 21,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.2857,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4207,
+            "avg_fade_R": 1.4207,
+            "total_R": 8.5242,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 2,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.426,
+            "avg_fade_R": 1.426,
+            "total_R": 5.7041,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 15,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.41,
+            "avg_fade_R": 1.41,
+            "total_R": 2.8201,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 21,
+        "n_setups_triggered": 7,
+        "trigger_rate": 0.3333,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.3018,
+        "avg_fade_R": 2.3018,
+        "total_R": 16.1123,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3018,
+            "avg_fade_R": 2.3018,
+            "total_R": 16.1123,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 15,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3261,
+            "avg_fade_R": 2.3261,
+            "total_R": 11.6307,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 6,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2408,
+            "avg_fade_R": 2.2408,
+            "total_R": 4.4816,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 9,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3145,
+            "avg_fade_R": 2.3145,
+            "total_R": 13.8869,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.0833,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2254,
+            "avg_fade_R": 2.2254,
+            "total_R": 2.2254,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 30,
+        "n_setups_triggered": 12,
+        "trigger_rate": 0.4,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.9543,
+        "avg_fade_R": 1.9543,
+        "total_R": 23.4513,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 9,
+            "n_setups_triggered": 9,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.935,
+            "avg_fade_R": 1.935,
+            "total_R": 17.4146,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0122,
+            "avg_fade_R": 2.0122,
+            "total_R": 6.0367,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 30,
+            "n_setups_triggered": 12,
+            "trigger_rate": 0.4,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9543,
+            "avg_fade_R": 1.9543,
+            "total_R": 23.4513,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 16,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.3125,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9636,
+            "avg_fade_R": 1.9636,
+            "total_R": 9.8179,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9476,
+            "avg_fade_R": 1.9476,
+            "total_R": 13.6334,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SOLUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 34,
+        "n_setups_triggered": 19,
+        "trigger_rate": 0.5588,
+        "fade_win_rate": 0.8421,
+        "avg_total_R": 1.9129,
+        "avg_fade_R": 1.7814,
+        "total_R": 36.3458,
+        "n_flip": 3,
+        "flip_win_rate": 0.6667,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 12,
+            "n_setups_triggered": 12,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9167,
+            "avg_total_R": 1.939,
+            "avg_fade_R": 2.0377,
+            "total_R": 23.2677,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3417,
+            "avg_fade_R": 2.3417,
+            "total_R": 9.3667,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.3333,
+            "avg_total_R": 1.2371,
+            "avg_fade_R": 0.0091,
+            "total_R": 3.7114,
+            "n_flip": 2,
+            "flip_win_rate": 1.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 30,
+            "n_setups_triggered": 18,
+            "trigger_rate": 0.6,
+            "fade_win_rate": 0.8889,
+            "avg_total_R": 2.1557,
+            "avg_fade_R": 1.951,
+            "total_R": 38.8018,
+            "n_flip": 2,
+            "flip_win_rate": 1.0
+          },
+          "normal": {
+            "n_setups": 4,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.456,
+            "avg_fade_R": -1.2716,
+            "total_R": -2.456,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 20,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.65,
+            "fade_win_rate": 0.8462,
+            "avg_total_R": 2.0873,
+            "avg_fade_R": 1.8039,
+            "total_R": 27.1352,
+            "n_flip": 2,
+            "flip_win_rate": 1.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4286,
+            "fade_win_rate": 0.8333,
+            "avg_total_R": 1.5351,
+            "avg_fade_R": 1.7325,
+            "total_R": 9.2106,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 28,
+        "n_setups_triggered": 10,
+        "trigger_rate": 0.3571,
+        "fade_win_rate": 0.9,
+        "avg_total_R": 1.7958,
+        "avg_fade_R": 1.9147,
+        "total_R": 17.958,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 9,
+            "n_setups_triggered": 9,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8889,
+            "avg_total_R": 1.7332,
+            "avg_fade_R": 1.8654,
+            "total_R": 15.5992,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3588,
+            "avg_fade_R": 2.3588,
+            "total_R": 2.3588,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 13,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.6923,
+            "fade_win_rate": 0.8889,
+            "avg_total_R": 1.7332,
+            "avg_fade_R": 1.8654,
+            "total_R": 15.5992,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 15,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.0667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3588,
+            "avg_fade_R": 2.3588,
+            "total_R": 2.3588,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 15,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2408,
+            "avg_fade_R": 2.2408,
+            "total_R": 13.445,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.3077,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.1282,
+            "avg_fade_R": 1.4255,
+            "total_R": 4.513,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 40,
+        "n_setups_triggered": 22,
+        "trigger_rate": 0.55,
+        "fade_win_rate": 0.6364,
+        "avg_total_R": -0.5717,
+        "avg_fade_R": -0.0431,
+        "total_R": -12.578,
+        "n_flip": 4,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 14,
+            "n_setups_triggered": 14,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6429,
+            "avg_total_R": 0.0969,
+            "avg_fade_R": 0.2584,
+            "total_R": 1.3562,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -2.6426,
+            "avg_fade_R": -1.0809,
+            "total_R": -15.8553,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.9606,
+            "avg_fade_R": 0.9606,
+            "total_R": 1.9211,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 40,
+            "n_setups_triggered": 22,
+            "trigger_rate": 0.55,
+            "fade_win_rate": 0.6364,
+            "avg_total_R": -0.5717,
+            "avg_fade_R": -0.0431,
+            "total_R": -12.578,
+            "n_flip": 4,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 20,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.65,
+            "fade_win_rate": 0.6923,
+            "avg_total_R": -0.5708,
+            "avg_fade_R": 0.0475,
+            "total_R": -7.4201,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 20,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.45,
+            "fade_win_rate": 0.5556,
+            "avg_total_R": -0.5731,
+            "avg_fade_R": -0.1738,
+            "total_R": -5.1579,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 22,
+        "n_setups_triggered": 10,
+        "trigger_rate": 0.4545,
+        "fade_win_rate": 0.8,
+        "avg_total_R": 0.4999,
+        "avg_fade_R": 0.8868,
+        "total_R": 4.9995,
+        "n_flip": 2,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 12,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 0.2635,
+            "avg_fade_R": 0.7471,
+            "total_R": 2.108,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4457,
+            "avg_fade_R": 1.4457,
+            "total_R": 2.8915,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 7,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.4286,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8157,
+            "avg_fade_R": 1.8157,
+            "total_R": 5.447,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "low": {
+            "n_setups": 15,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.4667,
+            "fade_win_rate": 0.7143,
+            "avg_total_R": -0.0639,
+            "avg_fade_R": 0.4887,
+            "total_R": -0.4475,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8157,
+            "avg_fade_R": 1.8157,
+            "total_R": 5.447,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.7143,
+            "avg_total_R": -0.0639,
+            "avg_fade_R": 0.4887,
+            "total_R": -0.4475,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 30,
+        "n_setups_triggered": 13,
+        "trigger_rate": 0.4333,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.4569,
+        "avg_fade_R": 1.4569,
+        "total_R": 18.9394,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 12,
+            "n_setups_triggered": 12,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4363,
+            "avg_fade_R": 1.4363,
+            "total_R": 17.2359,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7035,
+            "avg_fade_R": 1.7035,
+            "total_R": 1.7035,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 24,
+            "n_setups_triggered": 10,
+            "trigger_rate": 0.4167,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3829,
+            "avg_fade_R": 1.3829,
+            "total_R": 13.8289,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 6,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7035,
+            "avg_fade_R": 1.7035,
+            "total_R": 5.1105,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4384,
+            "avg_fade_R": 1.4384,
+            "total_R": 2.8769,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 20,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.55,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4602,
+            "avg_fade_R": 1.4602,
+            "total_R": 16.0625,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 26,
+        "n_setups_triggered": 5,
+        "trigger_rate": 0.1923,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.6823,
+        "avg_fade_R": 1.6823,
+        "total_R": 8.4115,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 21,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6837,
+            "avg_fade_R": 1.6837,
+            "total_R": 6.7348,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6767,
+            "avg_fade_R": 1.6767,
+            "total_R": 1.6767,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 13,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2308,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6505,
+            "avg_fade_R": 1.6505,
+            "total_R": 4.9514,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 13,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1538,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.73,
+            "avg_fade_R": 1.73,
+            "total_R": 3.4601,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 13,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1538,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6349,
+            "avg_fade_R": 1.6349,
+            "total_R": 3.2699,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2308,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7139,
+            "avg_fade_R": 1.7139,
+            "total_R": 5.1416,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "BNBUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 26,
+        "n_setups_triggered": 5,
+        "trigger_rate": 0.1923,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.2126,
+        "avg_fade_R": 2.2126,
+        "total_R": 11.063,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 21,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2079,
+            "avg_fade_R": 2.2079,
+            "total_R": 8.8317,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2313,
+            "avg_fade_R": 2.2313,
+            "total_R": 2.2313,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 18,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.2778,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2126,
+            "avg_fade_R": 2.2126,
+            "total_R": 11.063,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 8,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.215,
+            "avg_fade_R": 2.215,
+            "total_R": 6.6451,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.209,
+            "avg_fade_R": 2.209,
+            "total_R": 4.4179,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 15,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.2667,
+        "fade_win_rate": 0.75,
+        "avg_total_R": 1.0096,
+        "avg_fade_R": 1.33,
+        "total_R": 4.0386,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.0096,
+            "avg_fade_R": 1.33,
+            "total_R": 4.0386,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 15,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2667,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.0096,
+            "avg_fade_R": 1.33,
+            "total_R": 4.0386,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 5,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.8,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.0096,
+            "avg_fade_R": 1.33,
+            "total_R": 4.0386,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 20,
+        "n_setups_triggered": 13,
+        "trigger_rate": 0.65,
+        "fade_win_rate": 0.9231,
+        "avg_total_R": 1.4034,
+        "avg_fade_R": 1.5325,
+        "total_R": 18.2439,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 7,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7859,
+            "avg_fade_R": 1.7859,
+            "total_R": 14.2869,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.834,
+            "avg_fade_R": 1.834,
+            "total_R": 5.5019,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.7724,
+            "avg_fade_R": 0.0666,
+            "total_R": -1.5449,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 17,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.6471,
+            "fade_win_rate": 0.9091,
+            "avg_total_R": 1.3848,
+            "avg_fade_R": 1.5374,
+            "total_R": 15.2333,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "low": {
+            "n_setups": 3,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5053,
+            "avg_fade_R": 1.5053,
+            "total_R": 3.0106,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 16,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.6875,
+            "fade_win_rate": 0.9091,
+            "avg_total_R": 1.3361,
+            "avg_fade_R": 1.4886,
+            "total_R": 14.697,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 4,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7734,
+            "avg_fade_R": 1.7734,
+            "total_R": 3.5469,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 17,
+        "n_setups_triggered": 5,
+        "trigger_rate": 0.2941,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.8338,
+        "avg_fade_R": 1.8338,
+        "total_R": 9.169,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 12,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8338,
+            "avg_fade_R": 1.8338,
+            "total_R": 9.169,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 12,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8987,
+            "avg_fade_R": 1.8987,
+            "total_R": 7.5947,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "low": {
+            "n_setups": 5,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5743,
+            "avg_fade_R": 1.5743,
+            "total_R": 1.5743,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8987,
+            "avg_fade_R": 1.8987,
+            "total_R": 7.5947,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 9,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1111,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5743,
+            "avg_fade_R": 1.5743,
+            "total_R": 1.5743,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 36,
+        "n_setups_triggered": 13,
+        "trigger_rate": 0.3611,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.2557,
+        "avg_fade_R": 2.2557,
+        "total_R": 29.3238,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 23,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2578,
+            "avg_fade_R": 2.2578,
+            "total_R": 22.5781,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2486,
+            "avg_fade_R": 2.2486,
+            "total_R": 6.7457,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 29,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.3793,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2443,
+            "avg_fade_R": 2.2443,
+            "total_R": 24.6877,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 7,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2857,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.318,
+            "avg_fade_R": 2.318,
+            "total_R": 4.6361,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 17,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.5294,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.241,
+            "avg_fade_R": 2.241,
+            "total_R": 20.1692,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 19,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2105,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2886,
+            "avg_fade_R": 2.2886,
+            "total_R": 9.1546,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 18,
+        "n_setups_triggered": 3,
+        "trigger_rate": 0.1667,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.1167,
+        "avg_fade_R": 2.1167,
+        "total_R": 6.3502,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1167,
+            "avg_fade_R": 2.1167,
+            "total_R": 6.3502,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 18,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.1667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1167,
+            "avg_fade_R": 2.1167,
+            "total_R": 6.3502,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1097,
+            "avg_fade_R": 2.1097,
+            "total_R": 4.2193,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1309,
+            "avg_fade_R": 2.1309,
+            "total_R": 2.1309,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "HYPEUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 16,
+        "n_setups_triggered": 2,
+        "trigger_rate": 0.125,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.319,
+        "avg_fade_R": 2.319,
+        "total_R": 4.6379,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.319,
+            "avg_fade_R": 2.319,
+            "total_R": 4.6379,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 4,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2822,
+            "avg_fade_R": 2.2822,
+            "total_R": 2.2822,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 12,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.0833,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3557,
+            "avg_fade_R": 2.3557,
+            "total_R": 2.3557,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 7,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2822,
+            "avg_fade_R": 2.2822,
+            "total_R": 2.2822,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 9,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1111,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3557,
+            "avg_fade_R": 2.3557,
+            "total_R": 2.3557,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 24,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.25,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.3252,
+        "avg_fade_R": 2.3252,
+        "total_R": 13.9511,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3292,
+            "avg_fade_R": 2.3292,
+            "total_R": 9.3168,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3205,
+            "avg_fade_R": 2.3205,
+            "total_R": 2.3205,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3138,
+            "avg_fade_R": 2.3138,
+            "total_R": 2.3138,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 23,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.2609,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3252,
+            "avg_fade_R": 2.3252,
+            "total_R": 13.9511,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 1,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 10,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3245,
+            "avg_fade_R": 2.3245,
+            "total_R": 6.9734,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 14,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2143,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3259,
+            "avg_fade_R": 2.3259,
+            "total_R": 6.9777,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 18,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.2222,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.5516,
+        "avg_fade_R": 1.5516,
+        "total_R": 6.2065,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6908,
+            "avg_fade_R": 1.6908,
+            "total_R": 3.3816,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3154,
+            "avg_fade_R": 1.3154,
+            "total_R": 1.3154,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5095,
+            "avg_fade_R": 1.5095,
+            "total_R": 1.5095,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 18,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2222,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5516,
+            "avg_fade_R": 1.5516,
+            "total_R": 6.2065,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5068,
+            "avg_fade_R": 1.5068,
+            "total_R": 4.5204,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.125,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6861,
+            "avg_fade_R": 1.6861,
+            "total_R": 1.6861,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 24,
+        "n_setups_triggered": 9,
+        "trigger_rate": 0.375,
+        "fade_win_rate": 0.6667,
+        "avg_total_R": -0.4682,
+        "avg_fade_R": 0.2779,
+        "total_R": -4.2136,
+        "n_flip": 3,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6,
+            "avg_total_R": -0.8295,
+            "avg_fade_R": 0.0658,
+            "total_R": -4.1473,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": -0.5686,
+            "avg_fade_R": 0.1775,
+            "total_R": -1.7057,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6394,
+            "avg_fade_R": 1.6394,
+            "total_R": 1.6394,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 23,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.3478,
+            "fade_win_rate": 0.625,
+            "avg_total_R": -0.7719,
+            "avg_fade_R": 0.0674,
+            "total_R": -6.1753,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9617,
+            "avg_fade_R": 1.9617,
+            "total_R": 1.9617,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5581,
+            "avg_fade_R": 1.5581,
+            "total_R": 4.6744,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4286,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -1.4813,
+            "avg_fade_R": -0.3622,
+            "total_R": -8.888,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 24,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.1667,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.0861,
+        "avg_fade_R": 2.0861,
+        "total_R": 8.3445,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 20,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0861,
+            "avg_fade_R": 2.0861,
+            "total_R": 8.3445,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 24,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.1667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0861,
+            "avg_fade_R": 2.0861,
+            "total_R": 8.3445,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 20,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0861,
+            "avg_fade_R": 2.0861,
+            "total_R": 8.3445,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 4,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 22,
+        "n_setups_triggered": 2,
+        "trigger_rate": 0.0909,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.0488,
+        "avg_fade_R": 2.0488,
+        "total_R": 4.0975,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 20,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0488,
+            "avg_fade_R": 2.0488,
+            "total_R": 4.0975,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 22,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.0909,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0488,
+            "avg_fade_R": 2.0488,
+            "total_R": 4.0975,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 14,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0488,
+            "avg_fade_R": 2.0488,
+            "total_R": 4.0975,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 24,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.3333,
+        "fade_win_rate": 0.5,
+        "avg_total_R": -0.0058,
+        "avg_fade_R": 0.5746,
+        "total_R": -0.0465,
+        "n_flip": 4,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 16,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5714,
+            "avg_total_R": 0.3261,
+            "avg_fade_R": 0.8235,
+            "total_R": 2.2824,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.3289,
+            "avg_fade_R": -1.1681,
+            "total_R": -2.3289,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 22,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.3182,
+            "fade_win_rate": 0.4286,
+            "avg_total_R": -0.3329,
+            "avg_fade_R": 0.3305,
+            "total_R": -2.33,
+            "n_flip": 4,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 2,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2835,
+            "avg_fade_R": 2.2835,
+            "total_R": 2.2835,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.5714,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0058,
+            "avg_fade_R": 0.5746,
+            "total_R": -0.0465,
+            "n_flip": 4,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 30,
+        "n_setups_triggered": 11,
+        "trigger_rate": 0.3667,
+        "fade_win_rate": 0.9091,
+        "avg_total_R": 1.9062,
+        "avg_fade_R": 2.0125,
+        "total_R": 20.9684,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 19,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3315,
+            "avg_fade_R": 2.3315,
+            "total_R": 16.3208,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.7888,
+            "avg_fade_R": 1.1784,
+            "total_R": 2.3665,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2811,
+            "avg_fade_R": 2.2811,
+            "total_R": 2.2811,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 26,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.3077,
+            "fade_win_rate": 0.875,
+            "avg_total_R": 1.7609,
+            "avg_fade_R": 1.907,
+            "total_R": 14.0874,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 4,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.75,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2937,
+            "avg_fade_R": 2.2937,
+            "total_R": 6.881,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 18,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2222,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.1646,
+            "avg_fade_R": 1.4568,
+            "total_R": 4.6585,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 12,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.5833,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.33,
+            "avg_fade_R": 2.33,
+            "total_R": 16.3099,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 28,
+        "n_setups_triggered": 10,
+        "trigger_rate": 0.3571,
+        "fade_win_rate": 0.9,
+        "avg_total_R": 0.9671,
+        "avg_fade_R": 1.0924,
+        "total_R": 9.6707,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3112,
+            "avg_fade_R": 1.3112,
+            "total_R": 9.1785,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4974,
+            "avg_fade_R": 1.4974,
+            "total_R": 2.9947,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.5025,
+            "avg_fade_R": -1.2489,
+            "total_R": -2.5025,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 17,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.4118,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.1932,
+            "avg_fade_R": 1.1932,
+            "total_R": 8.3527,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 11,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.2727,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.4393,
+            "avg_fade_R": 0.8572,
+            "total_R": 1.318,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 13,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4615,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.179,
+            "avg_fade_R": 1.179,
+            "total_R": 7.0741,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 15,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2667,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 0.6492,
+            "avg_fade_R": 0.9626,
+            "total_R": 2.5966,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 27,
+        "n_setups_triggered": 15,
+        "trigger_rate": 0.5556,
+        "fade_win_rate": 0.9333,
+        "avg_total_R": 1.0496,
+        "avg_fade_R": 1.2048,
+        "total_R": 15.7442,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 12,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5252,
+            "avg_fade_R": 1.5252,
+            "total_R": 15.2515,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.2745,
+            "avg_fade_R": 1.2745,
+            "total_R": 5.0981,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -4.6054,
+            "avg_fade_R": -2.2773,
+            "total_R": -4.6054,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 25,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.52,
+            "fade_win_rate": 0.9231,
+            "avg_total_R": 0.9284,
+            "avg_fade_R": 1.1074,
+            "total_R": 12.0687,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8378,
+            "avg_fade_R": 1.8378,
+            "total_R": 3.6755,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4546,
+            "avg_fade_R": 1.4546,
+            "total_R": 2.9093,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 19,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.6842,
+            "fade_win_rate": 0.9231,
+            "avg_total_R": 0.9873,
+            "avg_fade_R": 1.1664,
+            "total_R": 12.8349,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 19,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.2105,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.095,
+        "avg_fade_R": 2.095,
+        "total_R": 8.3799,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 15,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.095,
+            "avg_fade_R": 2.095,
+            "total_R": 8.3799,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 19,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.2105,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.095,
+            "avg_fade_R": 2.095,
+            "total_R": 8.3799,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.25,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0592,
+            "avg_fade_R": 2.0592,
+            "total_R": 6.1776,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 7,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2023,
+            "avg_fade_R": 2.2023,
+            "total_R": 2.2023,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 21,
+        "n_setups_triggered": 4,
+        "trigger_rate": 0.1905,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.461,
+        "avg_fade_R": 1.461,
+        "total_R": 5.8439,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9315,
+            "avg_fade_R": 1.9315,
+            "total_R": 5.7944,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.0495,
+            "avg_fade_R": 0.0495,
+            "total_R": 0.0495,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 21,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.1905,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.461,
+            "avg_fade_R": 1.461,
+            "total_R": 5.8439,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 10,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.4,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.461,
+            "avg_fade_R": 1.461,
+            "total_R": 5.8439,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "LINKUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 31,
+        "n_setups_triggered": 13,
+        "trigger_rate": 0.4194,
+        "fade_win_rate": 0.9231,
+        "avg_total_R": 1.8671,
+        "avg_fade_R": 1.9556,
+        "total_R": 24.2722,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3323,
+            "avg_fade_R": 2.3323,
+            "total_R": 13.9937,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8,
+            "avg_total_R": 1.4085,
+            "avg_fade_R": 1.6388,
+            "total_R": 7.0426,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.618,
+            "avg_fade_R": 1.618,
+            "total_R": 3.2359,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 26,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.9231,
+            "avg_total_R": 1.8671,
+            "avg_fade_R": 1.9556,
+            "total_R": 24.2722,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 5,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 19,
+            "n_setups_triggered": 13,
+            "trigger_rate": 0.6842,
+            "fade_win_rate": 0.9231,
+            "avg_total_R": 1.8671,
+            "avg_fade_R": 1.9556,
+            "total_R": 24.2722,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 25,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.32,
+        "fade_win_rate": 0.875,
+        "avg_total_R": 1.6895,
+        "avg_fade_R": 1.8354,
+        "total_R": 13.5157,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 1.6067,
+            "avg_fade_R": 1.7735,
+            "total_R": 11.2472,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2685,
+            "avg_fade_R": 2.2685,
+            "total_R": 2.2685,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 14,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2635,
+            "avg_fade_R": 2.2635,
+            "total_R": 15.8447,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 11,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.0909,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.329,
+            "avg_fade_R": -1.1617,
+            "total_R": -2.329,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4615,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2636,
+            "avg_fade_R": 2.2636,
+            "total_R": 13.5814,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1667,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0329,
+            "avg_fade_R": 0.5508,
+            "total_R": -0.0657,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOTUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 30,
+        "n_setups_triggered": 12,
+        "trigger_rate": 0.4,
+        "fade_win_rate": 0.9167,
+        "avg_total_R": 1.2487,
+        "avg_fade_R": 1.4161,
+        "total_R": 14.9845,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 18,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7187,
+            "avg_fade_R": 1.7187,
+            "total_R": 17.1866,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -1.101,
+            "avg_fade_R": -0.0969,
+            "total_R": -2.2021,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 15,
+            "n_setups_triggered": 10,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7414,
+            "avg_fade_R": 1.7414,
+            "total_R": 17.4141,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "low": {
+            "n_setups": 7,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2857,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -1.2148,
+            "avg_fade_R": -0.2106,
+            "total_R": -2.4296,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 8,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.3846,
+            "fade_win_rate": 0.8,
+            "avg_total_R": 0.6301,
+            "avg_fade_R": 1.0318,
+            "total_R": 3.1505,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 17,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.4118,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6906,
+            "avg_fade_R": 1.6906,
+            "total_R": 11.834,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 15,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.4,
+        "fade_win_rate": 0.8333,
+        "avg_total_R": 0.8852,
+        "avg_fade_R": 1.1929,
+        "total_R": 5.3113,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 9,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9002,
+            "avg_fade_R": 1.9002,
+            "total_R": 7.601,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.4534,
+            "avg_fade_R": 1.4534,
+            "total_R": 1.4534,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -3.7431,
+            "avg_fade_R": -1.897,
+            "total_R": -3.7431,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 8,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 0.2104,
+            "avg_fade_R": 0.6719,
+            "total_R": 0.8414,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 7,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2857,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.235,
+            "avg_fade_R": 2.235,
+            "total_R": 4.4699,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 0.2104,
+            "avg_fade_R": 0.6719,
+            "total_R": 0.8414,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 7,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2857,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.235,
+            "avg_fade_R": 2.235,
+            "total_R": 4.4699,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOTUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 21,
+        "n_setups_triggered": 11,
+        "trigger_rate": 0.5238,
+        "fade_win_rate": 0.9091,
+        "avg_total_R": 1.5486,
+        "avg_fade_R": 1.6907,
+        "total_R": 17.0346,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0115,
+            "avg_fade_R": 2.0115,
+            "total_R": 16.0921,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.3142,
+            "avg_fade_R": 0.8354,
+            "total_R": 0.9425,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 21,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.5238,
+            "fade_win_rate": 0.9091,
+            "avg_total_R": 1.5486,
+            "avg_fade_R": 1.6907,
+            "total_R": 17.0346,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 4,
+            "trigger_rate": 0.4,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9868,
+            "avg_fade_R": 1.9868,
+            "total_R": 7.9474,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 11,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.6364,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 1.2982,
+            "avg_fade_R": 1.5215,
+            "total_R": 9.0872,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 19,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.4211,
+        "fade_win_rate": 0.75,
+        "avg_total_R": 1.0192,
+        "avg_fade_R": 1.3198,
+        "total_R": 8.1538,
+        "n_flip": 2,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.6174,
+            "avg_fade_R": 1.0182,
+            "total_R": 3.7042,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2248,
+            "avg_fade_R": 2.2248,
+            "total_R": 4.4496,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 19,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.4211,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 1.0192,
+            "avg_fade_R": 1.3198,
+            "total_R": 8.1538,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 17,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.3529,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1778,
+            "avg_fade_R": 2.1778,
+            "total_R": 13.0669,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": -2.4566,
+            "avg_fade_R": -1.2542,
+            "total_R": -4.9131,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOTUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 35,
+        "n_setups_triggered": 21,
+        "trigger_rate": 0.6,
+        "fade_win_rate": 0.7619,
+        "avg_total_R": 1.1989,
+        "avg_fade_R": 1.4763,
+        "total_R": 25.176,
+        "n_flip": 5,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8667,
+            "avg_total_R": 1.6804,
+            "avg_fade_R": 1.8357,
+            "total_R": 25.2054,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0044,
+            "avg_fade_R": 0.5782,
+            "total_R": -0.0177,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0058,
+            "avg_fade_R": 0.5768,
+            "total_R": -0.0117,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 10,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.7,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2547,
+            "avg_fade_R": 2.2547,
+            "total_R": 15.7831,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 25,
+            "n_setups_triggered": 14,
+            "trigger_rate": 0.56,
+            "fade_win_rate": 0.6429,
+            "avg_total_R": 0.6709,
+            "avg_fade_R": 1.0871,
+            "total_R": 9.3929,
+            "n_flip": 5,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 15,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.4667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3058,
+            "avg_fade_R": 2.3058,
+            "total_R": 16.1403,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 20,
+            "n_setups_triggered": 14,
+            "trigger_rate": 0.7,
+            "fade_win_rate": 0.6429,
+            "avg_total_R": 0.6454,
+            "avg_fade_R": 1.0616,
+            "total_R": 9.0357,
+            "n_flip": 5,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 39,
+        "n_setups_triggered": 20,
+        "trigger_rate": 0.5128,
+        "fade_win_rate": 0.8,
+        "avg_total_R": 1.3881,
+        "avg_fade_R": 1.622,
+        "total_R": 27.7625,
+        "n_flip": 4,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 19,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 13,
+            "n_setups_triggered": 13,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.7692,
+            "avg_total_R": 1.2538,
+            "avg_fade_R": 1.5206,
+            "total_R": 16.2996,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3167,
+            "avg_fade_R": 2.3167,
+            "total_R": 11.5837,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0604,
+            "avg_fade_R": 0.544,
+            "total_R": -0.1208,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 28,
+            "n_setups_triggered": 18,
+            "trigger_rate": 0.6429,
+            "fade_win_rate": 0.8333,
+            "avg_total_R": 1.5514,
+            "avg_fade_R": 1.7441,
+            "total_R": 27.9256,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 11,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1818,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.0816,
+            "avg_fade_R": 0.5229,
+            "total_R": -0.1631,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 15,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4,
+            "fade_win_rate": 0.5,
+            "avg_total_R": 0.0097,
+            "avg_fade_R": 0.5876,
+            "total_R": 0.0581,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 24,
+            "n_setups_triggered": 14,
+            "trigger_rate": 0.5833,
+            "fade_win_rate": 0.9286,
+            "avg_total_R": 1.9789,
+            "avg_fade_R": 2.0652,
+            "total_R": 27.7044,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 19,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.3158,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.0834,
+        "avg_fade_R": 1.0834,
+        "total_R": 6.5007,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 13,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.0328,
+            "avg_fade_R": 1.0328,
+            "total_R": 4.1313,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.1847,
+            "avg_fade_R": 1.1847,
+            "total_R": 2.3694,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 19,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.3158,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.0834,
+            "avg_fade_R": 1.0834,
+            "total_R": 6.5007,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 5,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.9015,
+            "avg_fade_R": 0.9015,
+            "total_R": 0.9015,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.3571,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.1198,
+            "avg_fade_R": 1.1198,
+            "total_R": 5.5992,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 16,
+        "n_setups_triggered": 6,
+        "trigger_rate": 0.375,
+        "fade_win_rate": 0.6667,
+        "avg_total_R": -0.2476,
+        "avg_fade_R": 0.0701,
+        "total_R": -1.4853,
+        "n_flip": 2,
+        "flip_win_rate": 0.5,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.2559,
+            "avg_fade_R": 0.0591,
+            "total_R": 0.7678,
+            "n_flip": 1,
+            "flip_win_rate": 1.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -1.8165,
+            "avg_fade_R": -0.5683,
+            "total_R": -3.633,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3799,
+            "avg_fade_R": 1.3799,
+            "total_R": 1.3799,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 16,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": -0.2476,
+            "avg_fade_R": 0.0701,
+            "total_R": -1.4853,
+            "n_flip": 2,
+            "flip_win_rate": 0.5
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3307,
+            "avg_fade_R": 1.3307,
+            "total_R": 3.9922,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 8,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.375,
+            "fade_win_rate": 0.3333,
+            "avg_total_R": -1.8258,
+            "avg_fade_R": -1.1905,
+            "total_R": -5.4775,
+            "n_flip": 2,
+            "flip_win_rate": 0.5
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 32,
+        "n_setups_triggered": 21,
+        "trigger_rate": 0.6562,
+        "fade_win_rate": 0.8571,
+        "avg_total_R": 1.4727,
+        "avg_fade_R": 1.6004,
+        "total_R": 30.9264,
+        "n_flip": 2,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1228,
+            "avg_fade_R": 2.1228,
+            "total_R": 21.2279,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 1.4387,
+            "avg_fade_R": 1.6303,
+            "total_R": 10.0707,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": -0.093,
+            "avg_fade_R": 0.2423,
+            "total_R": -0.3722,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 32,
+            "n_setups_triggered": 21,
+            "trigger_rate": 0.6562,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 1.4727,
+            "avg_fade_R": 1.6004,
+            "total_R": 30.9264,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 25,
+            "n_setups_triggered": 20,
+            "trigger_rate": 0.8,
+            "fade_win_rate": 0.85,
+            "avg_total_R": 1.4381,
+            "avg_fade_R": 1.5722,
+            "total_R": 28.762,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 7,
+            "n_setups_triggered": 1,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1644,
+            "avg_fade_R": 2.1644,
+            "total_R": 2.1644,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 20,
+        "n_setups_triggered": 9,
+        "trigger_rate": 0.45,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.9648,
+        "avg_fade_R": 1.9648,
+        "total_R": 17.6829,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9887,
+            "avg_fade_R": 1.9887,
+            "total_R": 13.921,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.881,
+            "avg_fade_R": 1.881,
+            "total_R": 3.7619,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 20,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.45,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9648,
+            "avg_fade_R": 1.9648,
+            "total_R": 17.6829,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 11,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.5455,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0451,
+            "avg_fade_R": 2.0451,
+            "total_R": 12.2706,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 9,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8041,
+            "avg_fade_R": 1.8041,
+            "total_R": 5.4123,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 28,
+        "n_setups_triggered": 9,
+        "trigger_rate": 0.3214,
+        "fade_win_rate": 0.7778,
+        "avg_total_R": 1.2984,
+        "avg_fade_R": 1.556,
+        "total_R": 11.6852,
+        "n_flip": 2,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 19,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.331,
+            "avg_fade_R": 2.331,
+            "total_R": 11.655,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.3333,
+            "avg_total_R": -0.7725,
+            "avg_fade_R": 0.0006,
+            "total_R": -2.3174,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3476,
+            "avg_fade_R": 2.3476,
+            "total_R": 2.3476,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 27,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 0.7778,
+            "avg_total_R": 1.2984,
+            "avg_fade_R": 1.556,
+            "total_R": 11.6852,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 1,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 14,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.7143,
+            "avg_total_R": 0.9966,
+            "avg_fade_R": 1.3279,
+            "total_R": 6.976,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1429,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3546,
+            "avg_fade_R": 2.3546,
+            "total_R": 4.7092,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 26,
+        "n_setups_triggered": 12,
+        "trigger_rate": 0.4615,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.2502,
+        "avg_fade_R": 2.2502,
+        "total_R": 27.0028,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2521,
+            "avg_fade_R": 2.2521,
+            "total_R": 18.017,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2465,
+            "avg_fade_R": 2.2465,
+            "total_R": 8.9858,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 25,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.44,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2449,
+            "avg_fade_R": 2.2449,
+            "total_R": 24.6942,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3086,
+            "avg_fade_R": 2.3086,
+            "total_R": 2.3086,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2641,
+            "avg_fade_R": 2.2641,
+            "total_R": 6.7924,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 16,
+            "n_setups_triggered": 9,
+            "trigger_rate": 0.5625,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2456,
+            "avg_fade_R": 2.2456,
+            "total_R": 20.2104,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "PEPEUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 23,
+        "n_setups_triggered": 23,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.7391,
+        "avg_total_R": 0.0724,
+        "avg_fade_R": 0.0724,
+        "total_R": 1.6661,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 18,
+            "n_setups_triggered": 18,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.0325,
+            "avg_fade_R": 0.0325,
+            "total_R": 0.5851,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.2162,
+            "avg_fade_R": 0.2162,
+            "total_R": 1.081,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 23,
+            "n_setups_triggered": 23,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.7391,
+            "avg_total_R": 0.0724,
+            "avg_fade_R": 0.0724,
+            "total_R": 1.6661,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.1981,
+            "avg_fade_R": 0.1981,
+            "total_R": 0.9904,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 18,
+            "n_setups_triggered": 18,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.0375,
+            "avg_fade_R": 0.0375,
+            "total_R": 0.6757,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 29,
+        "n_setups_triggered": 29,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.8966,
+        "avg_total_R": 0.1471,
+        "avg_fade_R": 0.1471,
+        "total_R": 4.2671,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 18,
+            "n_setups_triggered": 18,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8889,
+            "avg_total_R": 0.0863,
+            "avg_fade_R": 0.0863,
+            "total_R": 1.5542,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.875,
+            "avg_total_R": 0.2461,
+            "avg_fade_R": 0.2461,
+            "total_R": 1.9687,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.2481,
+            "avg_fade_R": 0.2481,
+            "total_R": 0.7442,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 29,
+            "n_setups_triggered": 29,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8966,
+            "avg_total_R": 0.1471,
+            "avg_fade_R": 0.1471,
+            "total_R": 4.2671,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.09,
+            "avg_fade_R": 0.09,
+            "total_R": 0.6299,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 22,
+            "n_setups_triggered": 22,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8636,
+            "avg_total_R": 0.1653,
+            "avg_fade_R": 0.1653,
+            "total_R": 3.6372,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "PEPEUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 39,
+        "n_setups_triggered": 39,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9231,
+        "avg_total_R": 0.4371,
+        "avg_fade_R": 0.4371,
+        "total_R": 17.0461,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 28,
+            "n_setups_triggered": 28,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8929,
+            "avg_total_R": 0.4175,
+            "avg_fade_R": 0.4175,
+            "total_R": 11.6899,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.521,
+            "avg_fade_R": 0.521,
+            "total_R": 3.6468,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.4274,
+            "avg_fade_R": 0.4274,
+            "total_R": 1.7094,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 39,
+            "n_setups_triggered": 39,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9231,
+            "avg_total_R": 0.4371,
+            "avg_fade_R": 0.4371,
+            "total_R": 17.0461,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 28,
+            "n_setups_triggered": 28,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.5428,
+            "avg_fade_R": 0.5428,
+            "total_R": 15.1994,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 11,
+            "n_setups_triggered": 11,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.7273,
+            "avg_total_R": 0.1679,
+            "avg_fade_R": 0.1679,
+            "total_R": 1.8467,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 15,
+        "n_setups_triggered": 15,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9333,
+        "avg_total_R": 0.5076,
+        "avg_fade_R": 0.5076,
+        "total_R": 7.6134,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9333,
+            "avg_total_R": 0.5076,
+            "avg_fade_R": 0.5076,
+            "total_R": 7.6134,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9333,
+            "avg_total_R": 0.5076,
+            "avg_fade_R": 0.5076,
+            "total_R": 7.6134,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.8712,
+            "avg_fade_R": 0.8712,
+            "total_R": 6.97,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8571,
+            "avg_total_R": 0.0919,
+            "avg_fade_R": 0.0919,
+            "total_R": 0.6434,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "PEPEUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 23,
+        "n_setups_triggered": 21,
+        "trigger_rate": 0.913,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.9697,
+        "avg_fade_R": 1.9697,
+        "total_R": 41.3638,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 2,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 19,
+            "n_setups_triggered": 19,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0996,
+            "avg_fade_R": 2.0996,
+            "total_R": 39.892,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.7359,
+            "avg_fade_R": 0.7359,
+            "total_R": 1.4718,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 23,
+            "n_setups_triggered": 21,
+            "trigger_rate": 0.913,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9697,
+            "avg_fade_R": 1.9697,
+            "total_R": 41.3638,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 9,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.7778,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7614,
+            "avg_fade_R": 1.7614,
+            "total_R": 12.3296,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 14,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0739,
+            "avg_fade_R": 2.0739,
+            "total_R": 29.0342,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 27,
+        "n_setups_triggered": 23,
+        "trigger_rate": 0.8519,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 0.718,
+        "avg_fade_R": 0.718,
+        "total_R": 16.5134,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 4,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 21,
+            "n_setups_triggered": 21,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.6557,
+            "avg_fade_R": 0.6557,
+            "total_R": 13.7687,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3724,
+            "avg_fade_R": 1.3724,
+            "total_R": 2.7447,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 27,
+            "n_setups_triggered": 23,
+            "trigger_rate": 0.8519,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.718,
+            "avg_fade_R": 0.718,
+            "total_R": 16.5134,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 14,
+            "n_setups_triggered": 10,
+            "trigger_rate": 0.7143,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.737,
+            "avg_fade_R": 0.737,
+            "total_R": 7.3703,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 13,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.7033,
+            "avg_fade_R": 0.7033,
+            "total_R": 9.1431,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SHIBUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 26,
+        "n_setups_triggered": 18,
+        "trigger_rate": 0.6923,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.3148,
+        "avg_fade_R": 1.3148,
+        "total_R": 23.666,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 8,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.2325,
+            "avg_fade_R": 1.2325,
+            "total_R": 18.4877,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8923,
+            "avg_fade_R": 1.8923,
+            "total_R": 3.7846,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3937,
+            "avg_fade_R": 1.3937,
+            "total_R": 1.3937,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 26,
+            "n_setups_triggered": 18,
+            "trigger_rate": 0.6923,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.3148,
+            "avg_fade_R": 1.3148,
+            "total_R": 23.666,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 12,
+            "n_setups_triggered": 12,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7104,
+            "avg_fade_R": 1.7104,
+            "total_R": 20.5246,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4286,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.5236,
+            "avg_fade_R": 0.5236,
+            "total_R": 3.1414,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 22,
+        "n_setups_triggered": 22,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9545,
+        "avg_total_R": 0.1288,
+        "avg_fade_R": 0.1288,
+        "total_R": 2.8335,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 17,
+            "n_setups_triggered": 17,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9412,
+            "avg_total_R": 0.089,
+            "avg_fade_R": 0.089,
+            "total_R": 1.5127,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 5,
+            "n_setups_triggered": 5,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.2642,
+            "avg_fade_R": 0.2642,
+            "total_R": 1.3208,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 22,
+            "n_setups_triggered": 22,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9545,
+            "avg_total_R": 0.1288,
+            "avg_fade_R": 0.1288,
+            "total_R": 2.8335,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 7,
+            "n_setups_triggered": 7,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.1155,
+            "avg_fade_R": 0.1155,
+            "total_R": 0.8088,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9333,
+            "avg_total_R": 0.135,
+            "avg_fade_R": 0.135,
+            "total_R": 2.0247,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SHIBUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 15,
+        "n_setups_triggered": 15,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 0.706,
+        "avg_fade_R": 0.706,
+        "total_R": 10.5898,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 14,
+            "n_setups_triggered": 14,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.7065,
+            "avg_fade_R": 0.7065,
+            "total_R": 9.8914,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.6984,
+            "avg_fade_R": 0.6984,
+            "total_R": 0.6984,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 15,
+            "n_setups_triggered": 15,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.706,
+            "avg_fade_R": 0.706,
+            "total_R": 10.5898,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 9,
+            "n_setups_triggered": 9,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.5694,
+            "avg_fade_R": 0.5694,
+            "total_R": 5.1244,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.9109,
+            "avg_fade_R": 0.9109,
+            "total_R": 5.4654,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 22,
+        "n_setups_triggered": 22,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 0.3677,
+        "avg_fade_R": 0.3677,
+        "total_R": 8.0897,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 17,
+            "n_setups_triggered": 17,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.3664,
+            "avg_fade_R": 0.3664,
+            "total_R": 6.2284,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.3908,
+            "avg_fade_R": 0.3908,
+            "total_R": 1.1724,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.3445,
+            "avg_fade_R": 0.3445,
+            "total_R": 0.6889,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 22,
+            "n_setups_triggered": 22,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.3677,
+            "avg_fade_R": 0.3677,
+            "total_R": 8.0897,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 13,
+            "n_setups_triggered": 13,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.2095,
+            "avg_fade_R": 0.2095,
+            "total_R": 2.7236,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 9,
+            "n_setups_triggered": 9,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 0.5962,
+            "avg_fade_R": 0.5962,
+            "total_R": 5.3661,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "SHIBUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 28,
+        "n_setups_triggered": 19,
+        "trigger_rate": 0.6786,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.496,
+        "avg_fade_R": 1.496,
+        "total_R": 28.4231,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 9,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 19,
+            "n_setups_triggered": 19,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.496,
+            "avg_fade_R": 1.496,
+            "total_R": 28.4231,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 28,
+            "n_setups_triggered": 19,
+            "trigger_rate": 0.6786,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.496,
+            "avg_fade_R": 1.496,
+            "total_R": 28.4231,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 13,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.6154,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.2248,
+            "avg_fade_R": 1.2248,
+            "total_R": 9.7988,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 15,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.7333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6931,
+            "avg_fade_R": 1.6931,
+            "total_R": 18.6243,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 14,
+        "n_setups_triggered": 14,
+        "trigger_rate": 1.0,
+        "fade_win_rate": 0.9286,
+        "avg_total_R": 0.8714,
+        "avg_fade_R": 0.8714,
+        "total_R": 12.1998,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "3": {
+            "n_setups": 14,
+            "n_setups_triggered": 14,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9286,
+            "avg_total_R": 0.8714,
+            "avg_fade_R": 0.8714,
+            "total_R": 12.1998,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 14,
+            "n_setups_triggered": 14,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.9286,
+            "avg_total_R": 0.8714,
+            "avg_fade_R": 0.8714,
+            "total_R": 12.1998,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.1431,
+            "avg_fade_R": 1.1431,
+            "total_R": 11.4305,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.75,
+            "avg_total_R": 0.1923,
+            "avg_fade_R": 0.1923,
+            "total_R": 0.7693,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "WIFUSDT",
+      "tf": "15m",
+      "train": {
+        "n_setups": 24,
+        "n_setups_triggered": 10,
+        "trigger_rate": 0.4167,
+        "fade_win_rate": 0.9,
+        "avg_total_R": 1.4557,
+        "avg_fade_R": 1.6076,
+        "total_R": 14.5567,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.875,
+            "avg_total_R": 1.3035,
+            "avg_fade_R": 1.4934,
+            "total_R": 10.4281,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.0643,
+            "avg_fade_R": 2.0643,
+            "total_R": 4.1286,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 14,
+            "n_setups_triggered": 8,
+            "trigger_rate": 0.5714,
+            "fade_win_rate": 0.875,
+            "avg_total_R": 1.228,
+            "avg_fade_R": 1.4179,
+            "total_R": 9.824,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 10,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.2,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3663,
+            "avg_fade_R": 2.3663,
+            "total_R": 4.7327,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.3571,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1152,
+            "avg_fade_R": 2.1152,
+            "total_R": 10.5759,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 10,
+            "n_setups_triggered": 5,
+            "trigger_rate": 0.5,
+            "fade_win_rate": 0.8,
+            "avg_total_R": 0.7962,
+            "avg_fade_R": 1.1,
+            "total_R": 3.9808,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 28,
+        "n_setups_triggered": 18,
+        "trigger_rate": 0.6429,
+        "fade_win_rate": 0.7778,
+        "avg_total_R": 0.3402,
+        "avg_fade_R": 0.7795,
+        "total_R": 6.1232,
+        "n_flip": 4,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 13,
+            "n_setups_triggered": 13,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.6923,
+            "avg_total_R": -0.1363,
+            "avg_fade_R": 0.4719,
+            "total_R": -1.7724,
+            "n_flip": 4,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.6101,
+            "avg_fade_R": 1.6101,
+            "total_R": 4.8302,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.5327,
+            "avg_fade_R": 1.5327,
+            "total_R": 3.0654,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "low": {
+            "n_setups": 27,
+            "n_setups_triggered": 17,
+            "trigger_rate": 0.6296,
+            "fade_win_rate": 0.7647,
+            "avg_total_R": 0.2585,
+            "avg_fade_R": 0.7236,
+            "total_R": 4.3939,
+            "n_flip": 4,
+            "flip_win_rate": 0.0
+          },
+          "normal": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.7293,
+            "avg_fade_R": 1.7293,
+            "total_R": 1.7293,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 9,
+            "n_setups_triggered": 3,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": -0.2111,
+            "avg_fade_R": 0.4189,
+            "total_R": -0.6332,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 19,
+            "n_setups_triggered": 15,
+            "trigger_rate": 0.7895,
+            "fade_win_rate": 0.8,
+            "avg_total_R": 0.4504,
+            "avg_fade_R": 0.8516,
+            "total_R": 6.7564,
+            "n_flip": 3,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "WIFUSDT",
+      "tf": "1h",
+      "train": {
+        "n_setups": 25,
+        "n_setups_triggered": 17,
+        "trigger_rate": 0.68,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 2.2064,
+        "avg_fade_R": 2.2064,
+        "total_R": 37.5096,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 8,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2202,
+            "avg_fade_R": 2.2202,
+            "total_R": 22.2024,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 4,
+            "n_setups_triggered": 4,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1887,
+            "avg_fade_R": 2.1887,
+            "total_R": 8.7547,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 3,
+            "n_setups_triggered": 3,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1842,
+            "avg_fade_R": 2.1842,
+            "total_R": 6.5525,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 24,
+            "n_setups_triggered": 16,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2,
+            "avg_fade_R": 2.2,
+            "total_R": 35.2004,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3092,
+            "avg_fade_R": 2.3092,
+            "total_R": 2.3092,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 19,
+            "n_setups_triggered": 15,
+            "trigger_rate": 0.7895,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2091,
+            "avg_fade_R": 2.2091,
+            "total_R": 33.1363,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 6,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1867,
+            "avg_fade_R": 2.1867,
+            "total_R": 4.3733,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 22,
+        "n_setups_triggered": 8,
+        "trigger_rate": 0.3636,
+        "fade_win_rate": 1.0,
+        "avg_total_R": 1.978,
+        "avg_fade_R": 1.978,
+        "total_R": 15.8244,
+        "n_flip": 0,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 14,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 6,
+            "n_setups_triggered": 6,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1341,
+            "avg_fade_R": 2.1341,
+            "total_R": 12.8044,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.51,
+            "avg_fade_R": 1.51,
+            "total_R": 3.02,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "normal": {
+            "n_setups": 21,
+            "n_setups_triggered": 7,
+            "trigger_rate": 0.3333,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.9315,
+            "avg_fade_R": 1.9315,
+            "total_R": 13.5207,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "high": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3037,
+            "avg_fade_R": 2.3037,
+            "total_R": 2.3037,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 9,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.6667,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 1.8836,
+            "avg_fade_R": 1.8836,
+            "total_R": 11.3015,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 13,
+            "n_setups_triggered": 2,
+            "trigger_rate": 0.1538,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.2614,
+            "avg_fade_R": 2.2614,
+            "total_R": 4.5229,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        }
+      }
+    },
+    {
+      "symbol": "WIFUSDT",
+      "tf": "4h",
+      "train": {
+        "n_setups": 22,
+        "n_setups_triggered": 12,
+        "trigger_rate": 0.5455,
+        "fade_win_rate": 0.8333,
+        "avg_total_R": 1.4768,
+        "avg_fade_R": 1.6648,
+        "total_R": 17.7214,
+        "n_flip": 2,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 10,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 10,
+            "n_setups_triggered": 10,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.8,
+            "avg_total_R": 1.3034,
+            "avg_fade_R": 1.529,
+            "total_R": 13.0336,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3424,
+            "avg_fade_R": 2.3424,
+            "total_R": 2.3424,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3454,
+            "avg_fade_R": 2.3454,
+            "total_R": 2.3454,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 22,
+            "n_setups_triggered": 12,
+            "trigger_rate": 0.5455,
+            "fade_win_rate": 0.8333,
+            "avg_total_R": 1.4768,
+            "avg_fade_R": 1.6648,
+            "total_R": 17.7214,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "resistance": {
+            "n_setups": 8,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.75,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.1205,
+            "avg_fade_R": 2.1205,
+            "total_R": 12.723,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "support": {
+            "n_setups": 14,
+            "n_setups_triggered": 6,
+            "trigger_rate": 0.4286,
+            "fade_win_rate": 0.6667,
+            "avg_total_R": 0.8331,
+            "avg_fade_R": 1.2091,
+            "total_R": 4.9984,
+            "n_flip": 2,
+            "flip_win_rate": 0.0
+          }
+        }
+      },
+      "test": {
+        "n_setups": 28,
+        "n_setups_triggered": 11,
+        "trigger_rate": 0.3929,
+        "fade_win_rate": 0.9091,
+        "avg_total_R": 1.9053,
+        "avg_fade_R": 2.0107,
+        "total_R": 20.9579,
+        "n_flip": 1,
+        "flip_win_rate": 0.0,
+        "by_setup_touch": {
+          "0": {
+            "n_setups": 17,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          },
+          "3": {
+            "n_setups": 8,
+            "n_setups_triggered": 8,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3313,
+            "avg_fade_R": 2.3313,
+            "total_R": 18.6503,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          },
+          "4": {
+            "n_setups": 2,
+            "n_setups_triggered": 2,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 0.5,
+            "avg_total_R": 0.001,
+            "avg_fade_R": 0.581,
+            "total_R": 0.0021,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "5": {
+            "n_setups": 1,
+            "n_setups_triggered": 1,
+            "trigger_rate": 1.0,
+            "fade_win_rate": 1.0,
+            "avg_total_R": 2.3055,
+            "avg_fade_R": 2.3055,
+            "total_R": 2.3055,
+            "n_flip": 0,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_vol_regime": {
+          "high": {
+            "n_setups": 28,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.3929,
+            "fade_win_rate": 0.9091,
+            "avg_total_R": 1.9053,
+            "avg_fade_R": 2.0107,
+            "total_R": 20.9579,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          }
+        },
+        "by_side": {
+          "support": {
+            "n_setups": 17,
+            "n_setups_triggered": 11,
+            "trigger_rate": 0.6471,
+            "fade_win_rate": 0.9091,
+            "avg_total_R": 1.9053,
+            "avg_fade_R": 2.0107,
+            "total_R": 20.9579,
+            "n_flip": 1,
+            "flip_win_rate": 0.0
+          },
+          "resistance": {
+            "n_setups": 11,
+            "n_setups_triggered": 0,
+            "trigger_rate": 0.0,
+            "fade_win_rate": 0.0,
+            "avg_total_R": 0.0,
+            "total_R": 0.0,
+            "n_flip": 0,
+            "flip_win_rate": 0.0,
+            "avg_fade_R": 0.0
+          }
+        }
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@ class AddAlertReq(BaseModel):
     intercept: float
     kind: str = "support"        # support | resistance
     mode: str = "single"         # single | repeat
+    threshold: float = 0.003    # user-defined touch threshold (default 0.3%)
     label: str = ""
 
 
@@ -29,6 +30,7 @@ async def api_add_alert(req: AddAlertReq):
         symbol=req.symbol, timeframe=req.timeframe,
         slope=req.slope, intercept=req.intercept,
         kind=req.kind, mode=req.mode, label=req.label,
+        threshold=req.threshold,
     )
     return {"ok": True, "alert_id": a.alert_id}
 

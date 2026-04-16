@@ -1,0 +1,35 @@
+{
+  "id": "rsi_oversold",
+  "name": "RSI \u8d85\u5356",
+  "description": "RSI < 30 \u8d85\u5356\u505a\u591a",
+  "category": "momentum",
+  "indicator": "rsi",
+  "params": {
+    "period": 14
+  },
+  "condition": "lt",
+  "threshold": 30,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.7060387,
+  "test_history": [
+    {
+      "score": 0.8795,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.7060778
+    },
+    {
+      "score": 0.3403,
+      "trades": 6,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.749876
+    }
+  ],
+  "test_count": 2,
+  "avg_score": 0.6099,
+  "total_trades": 10
+}

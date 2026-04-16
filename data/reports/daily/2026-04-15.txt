@@ -1,0 +1,41 @@
+================================================================================
+DAILY STRATEGY REPORT — 2026-04-15
+Generated: 2026-04-15T02:42:52.509760+00:00
+================================================================================
+
+TODAY: 0 trades | wins=0 losses=0 | net=+0.00%
+
+STRATEGY OVERVIEW (all time):
+
+  RIBBON
+    Total: 3068 trades | win 86.9% | expect +0.684% | sharpe +22.43
+    Avg win: +1.00% | Avg loss: -1.42% | Best: +19.10% | Worst: -19.70%
+    Last 7d: 19 trades, net +10.79%, win 84%, avg +0.568%
+    Top 3:    LINKUSDT(+308.5%), WIFUSDT(+269.8%), XRPUSDT(+246.3%)
+    Bottom 3: SUIUSDT(+56.4%), BNBUSDT(+37.6%), BTCUSDT(+19.8%)
+
+  TRENDLINE
+    Total: 13742 trades | win 53.6% | expect +0.296% | sharpe +35.64
+    Avg win: +1.20% | Avg loss: -0.75% | Best: +1.20% | Worst: -0.75%
+    Last 7d: 155 trades, net +41.69%, win 52%, avg +0.269%
+    Top 3:    SOLUSDT(+465.5%), NEARUSDT(+395.0%), DOGEUSDT(+370.8%)
+    Bottom 3: XRPUSDT(+128.2%), BNBUSDT(+121.8%), SUIUSDT(+105.0%)
+
+RECOMMENDATIONS:
+  - All systems nominal. No parameter changes needed.
+
+MARKET STATE:
+  Active signals: 0
+  Approaching (3/4 conditions): 22
+    BTCUSDT    1h   BULL  ADX=28.8
+    BTCUSDT    4h   BULL  ADX=38.9
+    ETHUSDT    1h   BULL  ADX=14.9
+    ETHUSDT    4h   BULL  ADX=27.0
+    DOGEUSDT   1h   BULL  ADX=30.1
+    DOGEUSDT   4h   BULL  ADX=29.5
+    NEARUSDT   1h   BEAR  ADX=44.8
+    BNBUSDT    1h   BULL  ADX=24.3
+    LINKUSDT   1h   BULL  ADX=26.6
+    PEPEUSDT   1h   BULL  ADX=10.3
+
+================================================================================

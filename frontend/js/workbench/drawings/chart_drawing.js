@@ -795,6 +795,7 @@ function openContextMenu(ev, lineId) {
   _menu.innerHTML = `
     <div data-act="select" style="padding:6px 14px;cursor:pointer">选中此线</div>
     <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划</div>
+    <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div data-act="delete" style="padding:6px 14px;cursor:pointer;color:#ff5252">删除此线</div>
   `;
   _menu.addEventListener('click', async (e) => {
@@ -810,6 +811,9 @@ function openContextMenu(ev, lineId) {
         try { await openTradePlanModal(line); }
         catch (err) { console.warn('[chart_drawing] trade plan modal', err); }
       }
+    } else if (act === 'add_alert') {
+      const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
+      if (line) openAlertDialog(line);
     } else if (act === 'delete') {
       await deleteLine(lineId);
     }
@@ -829,6 +833,69 @@ function onOutsideMenu(ev) {
 function closeContextMenu() {
   if (_menu && _menu.parentNode) _menu.parentNode.removeChild(_menu);
   _menu = null;
+}
+
+// ─── Alert dialog ──────────────────────────────────────────
+function openAlertDialog(line) {
+  const overlay = document.createElement('div');
+  Object.assign(overlay.style, {
+    position: 'fixed', inset: '0', background: 'rgba(0,0,0,0.6)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '10000',
+  });
+  const slope = (line.price_end - line.price_start) / (line.t_end - line.t_start) || 0;
+  const intercept = line.price_start - slope * line.t_start;
+  const kind = line.price_end >= line.price_start ? 'support' : 'resistance';
+  overlay.innerHTML = `
+    <div style="background:#141a26;border:1px solid #2a3548;border-radius:8px;padding:20px;min-width:300px;color:#d8dde8">
+      <h3 style="margin:0 0 12px;color:#38bdf8">🔔 添加价格警报</h3>
+      <div style="margin-bottom:10px;font-size:12px;color:#8899aa">
+        ${line.symbol || ''} · ${kind} 线
+      </div>
+      <label style="font-size:12px;display:block;margin-bottom:4px">触发范围 (%)</label>
+      <input id="alert-threshold" type="number" value="0.3" step="0.05" min="0.01" max="5"
+        style="width:100%;padding:6px;background:#0d1117;border:1px solid #2a3548;color:#fff;border-radius:4px;margin-bottom:10px">
+      <label style="font-size:12px;display:block;margin-bottom:4px">模式</label>
+      <select id="alert-mode" style="width:100%;padding:6px;background:#0d1117;border:1px solid #2a3548;color:#fff;border-radius:4px;margin-bottom:10px">
+        <option value="single">单次触发</option>
+        <option value="repeat">重复触发 (5分钟冷却)</option>
+      </select>
+      <label style="font-size:12px;display:block;margin-bottom:4px">备注 (可选)</label>
+      <input id="alert-label" type="text" placeholder="我的支撑线警报"
+        style="width:100%;padding:6px;background:#0d1117;border:1px solid #2a3548;color:#fff;border-radius:4px;margin-bottom:14px">
+      <div style="display:flex;gap:8px">
+        <button id="alert-confirm" style="flex:1;padding:8px;background:#38bdf8;color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:bold">确认添加</button>
+        <button id="alert-cancel" style="flex:1;padding:8px;background:#2a3548;color:#d8dde8;border:none;border-radius:4px;cursor:pointer">取消</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#alert-cancel').onclick = () => overlay.remove(); // SAFE: programmatic, not inline HTML
+  overlay.querySelector('#alert-confirm').onclick = async () => { // SAFE: programmatic, not inline HTML
+    const threshold = parseFloat(overlay.querySelector('#alert-threshold').value) / 100;
+    const mode = overlay.querySelector('#alert-mode').value;
+    const label = overlay.querySelector('#alert-label').value;
+    try {
+      const sym = drawingsState.currentSymbol || line.symbol || 'BTC/USDT:USDT';
+      const tf = drawingsState.currentTimeframe || line.timeframe || '4h';
+      const resp = await fetch('/api/alerts/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: sym, timeframe: tf,
+          slope, intercept, kind, mode, label,
+          threshold,
+        }),
+      });
+      const data = await resp.json();
+      if (data.ok) {
+        overlay.remove();
+        console.log('[alert] added:', data.alert_id);
+      }
+    } catch (err) {
+      console.error('[alert] failed:', err);
+    }
+  };
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
 }
 
 async function deleteLine(lineId) {

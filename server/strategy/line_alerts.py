@@ -35,6 +35,7 @@ class LineAlert:
     active: bool = True
     last_fired_ts: float = 0.0
     cooldown_s: float = 300.0          # 5 min cooldown for repeat alerts
+    threshold: float = 0.003          # user-defined touch threshold (default 0.3%)
     label: str = ""                    # optional user note
 
 
@@ -56,13 +57,14 @@ def add_alert(
     symbol: str, timeframe: str,
     slope: float, intercept: float, kind: str,
     mode: str = "single", label: str = "",
+    threshold: float = 0.003,
 ) -> LineAlert:
     alerts = _load_alerts()
     alert_id = f"alert_{symbol}_{timeframe}_{int(time.time())}"
     a = LineAlert(
         alert_id=alert_id, symbol=symbol, timeframe=timeframe,
         slope=slope, intercept=intercept, kind=kind,
-        mode=mode, label=label,
+        mode=mode, label=label, threshold=threshold,
     )
     alerts.append(a)
     _save_alerts(alerts)
@@ -122,7 +124,8 @@ def check_alerts(current_prices: dict[str, float], bar_index: int = 0):
 
         distance_pct = abs(price - line_price) / line_price
 
-        if distance_pct <= TOUCH_THRESHOLD:
+        touch_thresh = a.threshold if a.threshold > 0 else TOUCH_THRESHOLD
+        if distance_pct <= touch_thresh:
             # Cooldown check for repeat alerts
             if a.mode == "repeat" and (now - a.last_fired_ts) < a.cooldown_s:
                 continue

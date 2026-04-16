@@ -1,0 +1,33 @@
+{
+  "id": "trend_up",
+  "name": "\u4e0a\u5347\u8d8b\u52bf",
+  "description": "",
+  "category": "structure",
+  "indicator": "trend_strength_up",
+  "params": {},
+  "condition": "gt",
+  "threshold": 0.5,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.7084708,
+  "test_history": [
+    {
+      "score": 0.8795,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.708502
+    },
+    {
+      "score": 0.3403,
+      "trades": 6,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.7731078
+    }
+  ],
+  "test_count": 2,
+  "avg_score": 0.6099,
+  "total_trades": 10
+}

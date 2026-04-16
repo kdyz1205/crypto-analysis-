@@ -1,0 +1,31 @@
+{
+  "id": "bd34f50ac08d",
+  "strategy_id": "e2f0bd3015cb",
+  "strategy_name": "AI-12811e",
+  "source": "ai",
+  "symbol": "BTCUSDT",
+  "timeframe": "4h",
+  "trigger_modes": [
+    "rejection",
+    "failed_breakout",
+    "retest"
+  ],
+  "factor_ids": [
+    "rsi_oversold",
+    "trend_up",
+    "kc_squeeze"
+  ],
+  "return_pct": 2.17,
+  "win_rate": 75.0,
+  "profit_factor": 8.05,
+  "sharpe_ratio": 2.0,
+  "max_drawdown_pct": 0.3,
+  "trade_count": 4,
+  "score": 0.8795,
+  "deployment_eligible": false,
+  "deployed": false,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "simulation_job_id": "2c407ba16b90",
+  "ranked_at": 1775945309.392405
+}

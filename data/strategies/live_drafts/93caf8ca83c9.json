@@ -1,0 +1,25 @@
+{
+  "id": "93caf8ca83c9",
+  "strategy_id": "41f86189887c",
+  "leaderboard_entry_id": "7d00c7ed889d",
+  "capital_allocation": 15.0,
+  "risk_per_trade": 0.01,
+  "max_concurrent_positions": 3,
+  "exchange": "bitget",
+  "symbols": [
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h"
+  ],
+  "auto_submit": false,
+  "runtime_days": 30,
+  "status": "stopped",
+  "source_pattern_id": "d2fc83d075ea",
+  "decision_rule": "reversal_strict",
+  "pattern_decision": "reversal",
+  "pattern_ev": 8.13,
+  "created_at": 1776051421.457646,
+  "approved_at": 1776051421.474328,
+  "notes": ""
+}

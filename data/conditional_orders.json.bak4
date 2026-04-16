@@ -1,0 +1,485 @@
+[
+  {
+    "conditional_id": "cond_8d108a76f6d4ec",
+    "manual_line_id": "manual-RAVEUSDT-15m-support-1776144600-1776174124",
+    "symbol": "RAVEUSDT",
+    "timeframe": "15m",
+    "side": "support",
+    "t_start": 1776144600,
+    "t_end": 1776174124,
+    "price_start": 6.639828886900167,
+    "price_end": 6.3388431358396975,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.012677686271679397,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.02218595097543894,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776127409,
+    "updated_at": 1776127409,
+    "triggered_at": 1776127409,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427747325517393921",
+    "fill_price": 6.351520822111377,
+    "fill_qty": 1.5744260752774786,
+    "events": [
+      {
+        "ts": 1776127409,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-RAVEUSDT-15m-support-1776144600-1776174124, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776127409,
+        "kind": "exchange_submitted",
+        "price": 6.351520822111377,
+        "line_price": 6.3388431358396975,
+        "distance_atr": null,
+        "message": "limit @ 6.3515 size=1.5744 orderId=1427747325517393921",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ad3e4ee8aa2c31",
+    "manual_line_id": "manual-RAVEUSDT-15m-support-1776138300-1776150000",
+    "symbol": "RAVEUSDT",
+    "timeframe": "15m",
+    "side": "support",
+    "t_start": 1776069000,
+    "t_end": 1776176975,
+    "price_start": 5.2425541815958425,
+    "price_end": 7.919877036659553,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.03959938518329777,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.02375963110997866,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776127571,
+    "updated_at": 1776127571,
+    "triggered_at": 1776127571,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427748008387833857",
+    "fill_price": 7.95947642184285,
+    "fill_qty": 1.2563640458256058,
+    "events": [
+      {
+        "ts": 1776127571,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-RAVEUSDT-15m-support-1776138300-1776150000, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776127571,
+        "kind": "exchange_submitted",
+        "price": 7.95947642184285,
+        "line_price": 7.919877036659553,
+        "distance_atr": null,
+        "message": "limit @ 7.9595 size=1.2564 orderId=1427748008387833857",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_854197911e042e",
+    "manual_line_id": "manual-HYPEUSDT-5m-support-1776148200-1776152700",
+    "symbol": "HYPEUSDT",
+    "timeframe": "5m",
+    "side": "support",
+    "t_start": 1776152100,
+    "t_end": 1776160012,
+    "price_start": 44.79250872318034,
+    "price_end": 44.52354949081367,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "short",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.11130887372703419,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.11130887372703419,
+      "stop_atr": 0.3,
+      "rr_target": 1.5,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776130726,
+    "updated_at": 1776130726,
+    "triggered_at": 1776130726,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427761240942997505",
+    "fill_price": 44.41224061708664,
+    "fill_qty": 0.22516315009229051,
+    "events": [
+      {
+        "ts": 1776130726,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-5m-support-1776148200-1776152700, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776130726,
+        "kind": "exchange_submitted",
+        "price": 44.41224061708664,
+        "line_price": 44.52354949081367,
+        "distance_atr": null,
+        "message": "limit @ 44.4122 size=0.2252 orderId=1427761240942997505",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_ce7fbffe9dc57b",
+    "manual_line_id": "manual-HYPEUSDT-15m-support-1776151800-1776158158",
+    "symbol": "HYPEUSDT",
+    "timeframe": "15m",
+    "side": "support",
+    "t_start": 1776151800,
+    "t_end": 1776161673,
+    "price_start": 44.350378231910454,
+    "price_end": 44.580370449171845,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.0891607408983437,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.06687055567375777,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 5.483014025999999,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776131228,
+    "updated_at": 1776131228,
+    "triggered_at": 1776131228,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427763343316905985",
+    "fill_price": 44.66953119007019,
+    "fill_qty": 0.12274617350850653,
+    "events": [
+      {
+        "ts": 1776131228,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-15m-support-1776151800-1776158158, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776131228,
+        "kind": "exchange_submitted",
+        "price": 44.66953119007019,
+        "line_price": 44.580370449171845,
+        "distance_atr": null,
+        "message": "limit @ 44.6695 size=0.1227 orderId=1427763343316905985",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_0026c39560fd3f",
+    "manual_line_id": "manual-HYPEUSDT-5m-support-1776148200-1776152700",
+    "symbol": "HYPEUSDT",
+    "timeframe": "5m",
+    "side": "support",
+    "t_start": 1776159859,
+    "t_end": 1776167771,
+    "price_start": 44.81187902187764,
+    "price_end": 44.54291978951097,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.22271459894755485,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.1336287593685329,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 10.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776131458,
+    "updated_at": 1776131458,
+    "triggered_at": 1776131458,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427764309590532096",
+    "fill_price": 44.765634388458516,
+    "fill_qty": 0.22338564250478268,
+    "events": [
+      {
+        "ts": 1776131458,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-5m-support-1776148200-1776152700, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776131458,
+        "kind": "exchange_submitted",
+        "price": 44.765634388458516,
+        "line_price": 44.54291978951097,
+        "distance_atr": null,
+        "message": "limit @ 44.7656 size=0.2234 orderId=1427764309590532096",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_34f58922f4c29c",
+    "manual_line_id": "manual-HYPEUSDT-5m-support-1776148200-1776152700",
+    "symbol": "HYPEUSDT",
+    "timeframe": "5m",
+    "side": "support",
+    "t_start": 1776152045,
+    "t_end": 1776165826,
+    "price_start": 44.808717041599806,
+    "price_end": 44.73541737960828,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "short",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.04473541737960828,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.08947083475921656,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 8.1117798053,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776131685,
+    "updated_at": 1776131685,
+    "triggered_at": 1776131685,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427765261294886912",
+    "fill_price": 44.69068196222867,
+    "fill_qty": 0.1815094209606345,
+    "events": [
+      {
+        "ts": 1776131685,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-5m-support-1776148200-1776152700, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776131685,
+        "kind": "exchange_submitted",
+        "price": 44.69068196222867,
+        "line_price": 44.73541737960828,
+        "distance_atr": null,
+        "message": "limit @ 44.6907 size=0.1815 orderId=1427765261294886912",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  },
+  {
+    "conditional_id": "cond_d768d7d1c06413",
+    "manual_line_id": "manual-HYPEUSDT-5m-support-1776148200-1776152700",
+    "symbol": "HYPEUSDT",
+    "timeframe": "5m",
+    "side": "support",
+    "t_start": 1776152045,
+    "t_end": 1776165826,
+    "price_start": 44.808717041599806,
+    "price_end": 44.73541737960828,
+    "pattern_stats_at_create": {},
+    "trigger": {
+      "tolerance_atr": 0,
+      "poll_seconds": 60,
+      "max_age_seconds": 0,
+      "max_distance_atr": 0,
+      "break_threshold_atr": 0
+    },
+    "order": {
+      "direction": "long",
+      "order_kind": "bounce",
+      "entry_offset_points": 0.2236770868980414,
+      "entry_offset_atr": 0.0,
+      "stop_points": 0.13420625213882484,
+      "stop_atr": 0.3,
+      "rr_target": 2.0,
+      "tp_price": null,
+      "notional_usd": 8.0,
+      "equity_pct": null,
+      "risk_pct": 0.005,
+      "submit_to_exchange": true,
+      "exchange_mode": "live"
+    },
+    "status": "triggered",
+    "created_at": 1776131774,
+    "updated_at": 1776131774,
+    "triggered_at": 1776131774,
+    "cancelled_at": null,
+    "cancel_reason": "",
+    "exchange_order_id": "1427765635670073346",
+    "fill_price": 44.959094466506315,
+    "fill_qty": 0.17793952691729256,
+    "events": [
+      {
+        "ts": 1776131774,
+        "kind": "created",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "Created from manual_line=manual-HYPEUSDT-5m-support-1776148200-1776152700, side=support, mode=live, submit_to_exchange=True",
+        "extra": {}
+      },
+      {
+        "ts": 1776131774,
+        "kind": "exchange_submitted",
+        "price": 44.959094466506315,
+        "line_price": 44.73541737960828,
+        "distance_atr": null,
+        "message": "limit @ 44.9591 size=0.1779 orderId=1427765635670073346",
+        "extra": {
+          "mode": "live"
+        }
+      }
+    ],
+    "last_poll_ts": null,
+    "last_market_price": null,
+    "last_line_price": null,
+    "last_distance_atr": null
+  }
+]

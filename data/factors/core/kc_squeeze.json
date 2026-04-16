@@ -1,0 +1,61 @@
+{
+  "id": "kc_squeeze",
+  "name": "KC \u538b\u7f29",
+  "description": "BB\u5728KC\u5185",
+  "category": "volatility",
+  "indicator": "squeeze",
+  "params": {},
+  "condition": "gt",
+  "threshold": 0.5,
+  "source": "system",
+  "stage": "core",
+  "confidence": 0.5,
+  "created_at": 1775945309.540773,
+  "test_history": [
+    {
+      "score": 0.7124,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.5408053
+    },
+    {
+      "score": 0.4153,
+      "trades": 8,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.5941167
+    },
+    {
+      "score": 0.8795,
+      "trades": 4,
+      "symbol": "BTCUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.725549
+    },
+    {
+      "score": 0.3403,
+      "trades": 6,
+      "symbol": "ETHUSDT",
+      "timeframe": "4h",
+      "tested_at": 1775945309.7975254
+    },
+    {
+      "score": 0.6411600000000001,
+      "trades": 6,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.846138
+    },
+    {
+      "score": 0.37377,
+      "trades": 10,
+      "symbol": "SOLUSDT",
+      "timeframe": "1h",
+      "tested_at": 1775945309.9151285
+    }
+  ],
+  "test_count": 6,
+  "avg_score": 0.5604049999999999,
+  "total_trades": 38
+}

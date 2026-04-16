@@ -1,0 +1,111 @@
+{
+  "id": "56be5e85edef",
+  "name": "ETHUSDT-reversal-G999",
+  "source": "pattern_engine",
+  "template_id": "",
+  "config": {
+    "market": {
+      "symbols": [
+        "ETHUSDT"
+      ],
+      "main_tf": "4h",
+      "confirm_tf": "1d",
+      "entry_tf": ""
+    },
+    "logic_tags": [
+      "reversal",
+      "third_touch"
+    ],
+    "logic_combine": "AND",
+    "conditions": [
+      {
+        "indicator": "zone_distance",
+        "condition": "lt",
+        "threshold": 0.5,
+        "threshold_upper": 0.0,
+        "params": {
+          "unit": "atr"
+        },
+        "enabled": true
+      },
+      {
+        "indicator": "rsi",
+        "condition": "lt",
+        "threshold": 35.0,
+        "threshold_upper": 0.0,
+        "params": {
+          "period": 14
+        },
+        "enabled": true
+      }
+    ],
+    "entry": {
+      "modes": [
+        "rejection"
+      ],
+      "logic_combine": "OR",
+      "offset_pct": 0.0
+    },
+    "exit": {
+      "stop_type": "structure",
+      "stop_pct": 1.0,
+      "stop_atr_mult": 1.5,
+      "tp_type": "rr",
+      "rr_target": 6.38,
+      "tp_pct": 3.0,
+      "trailing_pct": 1.0
+    },
+    "risk": {
+      "risk_per_trade": 0.01,
+      "max_concurrent": 2,
+      "max_daily_loss_pct": 5.0,
+      "max_drawdown_pct": 10.0,
+      "max_consecutive_losses": 5,
+      "auto_pause_on_dd": true
+    }
+  },
+  "logic_tags": [
+    "reversal",
+    "third_touch"
+  ],
+  "factor_ids": [
+    "zone_distance",
+    "rsi"
+  ],
+  "trigger_modes": [
+    "rejection"
+  ],
+  "entry_mode": "rejection",
+  "exit_rules": {
+    "stop_type": "structure",
+    "tp_type": "rr",
+    "rr_target": 6.38
+  },
+  "risk_rules": {
+    "risk_per_trade": 0.01,
+    "max_dd": 10.0
+  },
+  "symbols": [
+    "ETHUSDT"
+  ],
+  "timeframes": [
+    "4h",
+    "1d"
+  ],
+  "params": {
+    "rr_target": 6.38,
+    "risk_per_trade": 0.01
+  },
+  "status": "draft",
+  "generation": 999,
+  "batch_id": "writeback-test",
+  "parent_strategy_id": "",
+  "source_pattern_id": "a8ec010cb2ad",
+  "decision_rule": "reversal_strict",
+  "pattern_ev": 8.45,
+  "pattern_confidence": 1.0,
+  "pattern_decision": "reversal",
+  "pattern_reason": "[strict] bounce prob 100% dominates break 33% (spread +67%), EV=8.45 ATR",
+  "created_at": 1776051485.0758367,
+  "updated_at": 1776051485.0758371
+}

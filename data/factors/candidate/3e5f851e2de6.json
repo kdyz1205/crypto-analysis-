@@ -1,0 +1,16 @@
+{
+  "id": "3e5f851e2de6",
+  "name": "ADX_strong_trend_test",
+  "description": "",
+  "category": "trend",
+  "indicator": "adx",
+  "params": {
+    "period": 14
+  },
+  "condition": "gt",
+  "threshold": 25.0,
+  "source": "test",
+  "stage": "candidate",
+  "confidence": 0.0,
+  "created_at": 1775944838.7888913
+}

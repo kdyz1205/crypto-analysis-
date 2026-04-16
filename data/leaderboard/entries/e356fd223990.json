@@ -1,0 +1,30 @@
+{
+  "id": "e356fd223990",
+  "strategy_id": "4b91ed7d2c08",
+  "strategy_name": "AI-fe31fd",
+  "source": "ai",
+  "symbol": "BTCUSDT",
+  "timeframe": "4h",
+  "trigger_modes": [
+    "pre_limit",
+    "rejection"
+  ],
+  "factor_ids": [
+    "cci_overbought",
+    "volume_surge",
+    "zone_strong"
+  ],
+  "return_pct": 1.25,
+  "win_rate": 50.0,
+  "profit_factor": 3.07,
+  "sharpe_ratio": 0.98,
+  "max_drawdown_pct": 0.3,
+  "trade_count": 4,
+  "score": 0.7124,
+  "deployment_eligible": false,
+  "deployed": false,
+  "generation": 1,
+  "batch_id": "test-gen-1-1775944838",
+  "simulation_job_id": "2c407ba16b90",
+  "ranked_at": 1775945309.388759
+}
