@@ -1092,12 +1092,19 @@ async def _do_scan() -> None:
     if _trendline_limit_signals:
         try:
             from server.strategy.trendline_order_manager import update_trendline_orders
+            # Dynamic RR: keep target ~0.75% regardless of buffer
+            # buffer 0.10% → RR=8, buffer 0.15% → RR=5, buffer 0.20% → RR=4
+            default_buffer = cfg.get("buffer_pct", 0.12) / 100
+            target_abs = 0.0075  # 0.75% target (constant)
+            dynamic_rr = target_abs / default_buffer if default_buffer > 0 else 8.0
+            dynamic_rr = max(3.0, min(15.0, dynamic_rr))  # clamp [3, 15]
+
             tl_cfg = {
-                "buffer_pct": cfg.get("buffer_pct", 0.20),
-                "rr": 15.0,  # V3 limit order optimal
-                "leverage": int(cfg.get("leverage", 20)),
+                "buffer_pct": cfg.get("buffer_pct", 0.12),
+                "rr": dynamic_rr,
+                "leverage": int(cfg.get("leverage", 30)),
                 "equity": equity,
-                "risk_pct": 0.03,  # 3% per trade to ensure above min trade size
+                "risk_pct": 0.03,
             }
             print(f"[trendline_orders] equity=${equity:.2f} signals={len(_trendline_limit_signals)} risk_pct={tl_cfg['risk_pct']}", flush=True)
             tl_result = await update_trendline_orders(

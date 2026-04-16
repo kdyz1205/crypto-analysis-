@@ -1,16 +1,7 @@
 {
   "boot": {
-    "duration_s": 24.14,
-    "console_errors": [
-      {
-        "type": "warning",
-        "text": "[stream] disconnected (attempt 1/10), retry in 3s"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_RESET"
-      }
-    ],
+    "duration_s": 33.97,
+    "console_errors": [],
     "network_errors": []
   },
   "market": {
@@ -20,10 +11,10 @@
     "decision_rail_text": [],
     "virtual_badge_count": 0,
     "error_keywords": [],
-    "body_text_head": "Trading OS\n市场\n策略\n1m\n5m\n15m\n1h\n4h\n1d\nLin\nLog\nMA\nWYC\n\t\n\t\n\n\t\n\t\n╱\n画线\n✕\n清空\n按 T 画线 · Esc 取消\nBitget 实盘\n权益 $30.39 · 可用 $30.80\n持仓 1\nLONG BLURUSDT · qty 13158.4 · entry 0.025600782694 · mark 0.02557\n挂单 0\n\n无挂单\n\n我的手画线\n10\n清空\n线 43.272 → 43.490 4/14 22:08 ×\n线 38.699 → 39.300 4/14 16:42 ×\n线 37.501 → 38.699 4/14 16:29 ×\n线 37.501 → 38.699 4/14 16:26 ×\n线 38.872 → 40.076 4/14 16:01 ×\n线 40.389 → 43.178 4/14 12:17 ×\n线 40.142 → 44.590 4/14 12:07 ×\n线 42.153 → 41.641 4/14 12:07 ×\n线 39.743 → 43.238 4/14 12:07 ×\n线 34.527 → 37.829 4/14 0:15 ×\n\n悬停高亮 · 点击选中 · × 删除\n\n条件单\n0 活跃 · 1 触发 · 44 取消\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt 43.537 · line 37.536 · 5.76 ATR · 15U · RR 2 · 仅警报\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …73900288\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …65228032\nHYPEUSDT 4h\n反弹\nlong\ntriggered\nlog\n撤Bitget\n×\nmkt — · line — · 未探测 · 6U · RR 2 · ✓ Bitget …77257728\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56966912\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84813056\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …46895104\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72810496\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …35513600\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …13901315\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …37876992\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …81785856\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …11489280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …91075584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …02437888\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line "
+    "body_text_head": "Trading OS\n市场\n策略\n1m\n5m\n15m\n1h\n4h\n1d\nLin\nLog\nMA\nWYC\n\t\n\t\n\n\t\n\t\n╱\n画线\n✕\n清空\n按 T 画线 · Esc 取消\nBitget 实盘\n权益 $29.04 · 可用 $29.04\n持仓 0\n\n无持仓\n\n挂单 0\n\n无挂单\n\n我的手画线\n10\n清空\n线 43.272 → 43.490 4/14 22:08 ×\n线 38.699 → 39.300 4/14 16:42 ×\n线 37.501 → 38.699 4/14 16:29 ×\n线 37.501 → 38.699 4/14 16:26 ×\n线 38.872 → 40.076 4/14 16:01 ×\n线 40.389 → 43.178 4/14 12:17 ×\n线 40.142 → 44.590 4/14 12:07 ×\n线 42.153 → 41.641 4/14 12:07 ×\n线 39.743 → 43.238 4/14 12:07 ×\n线 34.527 → 37.829 4/14 0:15 ×\n\n悬停高亮 · 点击选中 · × 删除\n\n条件单\n0 活跃 · 1 触发 · 44 取消\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt 43.537 · line 37.536 · 5.76 ATR · 15U · RR 2 · 仅警报\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …73900288\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …65228032\nHYPEUSDT 4h\n反弹\nlong\ntriggered\nlog\n撤Bitget\n×\nmkt — · line — · 未探测 · 6U · RR 2 · ✓ Bitget …77257728\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56966912\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84813056\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …46895104\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72810496\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …35513600\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …13901315\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …37876992\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …81785856\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …11489280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …91075584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …02437888\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …87759616\nHYPEUSDT 4h\n反弹\nsho"
   },
   "monitor": {
-    "body_text": "Trading OS\n市场\n策略\n1m\n5m\n15m\n1h\n4h\n1d\nLin\nLog\nMA\nWYC\n\t\n\t\n\n\t\n\t\n╱\n画线\n✕\n清空\n按 T 画线 · Esc 取消\nBitget 实盘\n权益 $30.39 · 可用 $30.80\n持仓 1\nLONG BLURUSDT · qty 13158.4 · entry 0.025600782694 · mark 0.02557\n挂单 0\n\n无挂单\n\n我的手画线\n10\n清空\n线 43.272 → 43.490 4/14 22:08 ×\n线 38.699 → 39.300 4/14 16:42 ×\n线 37.501 → 38.699 4/14 16:29 ×\n线 37.501 → 38.699 4/14 16:26 ×\n线 38.872 → 40.076 4/14 16:01 ×\n线 40.389 → 43.178 4/14 12:17 ×\n线 40.142 → 44.590 4/14 12:07 ×\n线 42.153 → 41.641 4/14 12:07 ×\n线 39.743 → 43.238 4/14 12:07 ×\n线 34.527 → 37.829 4/14 0:15 ×\n\n悬停高亮 · 点击选中 · × 删除\n\n条件单\n0 活跃 · 1 触发 · 44 取消\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt 43.537 · line 37.536 · 5.76 ATR · 15U · RR 2 · 仅警报\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …73900288\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …65228032\nHYPEUSDT 4h\n反弹\nlong\ntriggered\nlog\n撤Bitget\n×\nmkt — · line — · 未探测 · 6U · RR 2 · ✓ Bitget …77257728\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56966912\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84813056\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …46895104\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72810496\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …35513600\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …13901315\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …37876992\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …81785856\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …11489280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …91075584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …02437888\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …87759616\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …18138368\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84680960\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …23868416\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …08321280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56974592\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …76526080\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72431875\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …32515584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …63748096\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …98972416\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nm",
+    "body_text": "Trading OS\n市场\n策略\n1m\n5m\n15m\n1h\n4h\n1d\nLin\nLog\nMA\nWYC\n\t\n\t\n\n\t\n\t\n╱\n画线\n✕\n清空\n按 T 画线 · Esc 取消\nBitget 实盘\n权益 $29.04 · 可用 $29.04\n持仓 0\n\n无持仓\n\n挂单 0\n\n无挂单\n\n我的手画线\n10\n清空\n线 43.272 → 43.490 4/14 22:08 ×\n线 38.699 → 39.300 4/14 16:42 ×\n线 37.501 → 38.699 4/14 16:29 ×\n线 37.501 → 38.699 4/14 16:26 ×\n线 38.872 → 40.076 4/14 16:01 ×\n线 40.389 → 43.178 4/14 12:17 ×\n线 40.142 → 44.590 4/14 12:07 ×\n线 42.153 → 41.641 4/14 12:07 ×\n线 39.743 → 43.238 4/14 12:07 ×\n线 34.527 → 37.829 4/14 0:15 ×\n\n悬停高亮 · 点击选中 · × 删除\n\n条件单\n0 活跃 · 1 触发 · 44 取消\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt 43.537 · line 37.536 · 5.76 ATR · 15U · RR 2 · 仅警报\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …73900288\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …65228032\nHYPEUSDT 4h\n反弹\nlong\ntriggered\nlog\n撤Bitget\n×\nmkt — · line — · 未探测 · 6U · RR 2 · ✓ Bitget …77257728\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56966912\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84813056\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …46895104\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72810496\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …35513600\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …13901315\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …37876992\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …81785856\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …11489280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …91075584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …02437888\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …87759616\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …18138368\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84680960\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …23868416\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …08321280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56974592\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …76526080\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72431875\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …32515584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …63748096\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …98972416\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …42565632\nHYPEUS",
     "error_keywords": []
   },
   "btc_5m": {
@@ -36,65 +27,11 @@
     "body_text_head": "Trading OS\n市场\n策略\n1m\n5m\n15m\n1h\n4h\n1d\nLin\nLog\nMA\nWYC\n\t\n\t\n\n\t\n\t\n╱\n画线\n✕\n清空\n按 T 画线 · Esc 取消\nBitget 实盘\n权益 $29.04 · 可用 $29.04\n持仓 0\n\n无持仓\n\n挂单 0\n\n无挂单\n\n我的手画线\n0\n\n按工具栏画一条线开始。\nT 画线 · Esc 取消\n\n条件单\n0 活跃 · 1 触发 · 44 取消\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt 43.537 · line 37.536 · 5.76 ATR · 15U · RR 2 · 仅警报\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …73900288\nHYPEUSDT 4h\n反弹\nlong\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …65228032\nHYPEUSDT 4h\n反弹\nlong\ntriggered\nlog\n撤Bitget\n×\nmkt — · line — · 未探测 · 6U · RR 2 · ✓ Bitget …77257728\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …56966912\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84813056\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …46895104\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …72810496\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …35513600\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …13901315\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …37876992\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …81785856\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …11489280\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …91075584\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …02437888\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …87759616\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …18138368\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …84680960\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · line — · 未探测 · 15U · RR 2 · ✓ Bitget …23868416\nHYPEUSDT 4h\n反弹\nshort\ncancelled\nlog\n×\nmkt — · lin"
   },
   "console_summary": {
-    "total_messages": 26,
-    "error_count": 8,
-    "warning_count": 5,
-    "errors": [
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_RESET"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      },
-      {
-        "type": "error",
-        "text": "[chart] load failed: TypeError: Failed to fetch\n    at http://localhost:8000/js/util/fetch.js:51:25\n    at fetchJson (http://localhost:8000/js/util/fetch.js:74:5)\n    at Module.getOhlcv (http://localhost:8000/js/services/market.js:57:22)\n    at loadCurrent (http://localhost:8000/js/workbench/chart.js:230:34)\n    at http://localhost:8000/js/workbench/chart.js:128:10\n    at publish (http://localhost"
-      },
-      {
-        "type": "error",
-        "text": "Failed to load resource: net::ERR_CONNECTION_REFUSED"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "warning",
-        "text": "[stream] disconnected (attempt 1/10), retry in 3s"
-      },
-      {
-        "type": "warning",
-        "text": "[cond_panel] refreshPending err TypeError: Failed to fetch\n    at http://localhost:8000/js/util/fetch.js:51:25\n    at fetchJson (http://localhost:8000/js/util/fetch.js:74:5)\n    at Module.listConditionals (http://localhost:8000/js/services/conditionals.js:26:10)\n    at refreshPending (http://localhost:8000/js/workbench/conditional_panel.js:236:32)\n    at http://localhost:8000/js/workbench/conditio"
-      },
-      {
-        "type": "warning",
-        "text": "[stream] disconnected (attempt 2/10), retry in 5s"
-      },
-      {
-        "type": "warning",
-        "text": "[chart] interval refresh failed: TypeError: Failed to fetch\n    at http://localhost:8000/js/util/fetch.js:51:25\n    at fetchJson (http://localhost:8000/js/util/fetch.js:74:5)\n    at Module.getOhlcv (http://localhost:8000/js/services/market.js:57:22)\n    at loadCurrent (http://localhost:8000/js/workbench/chart.js:230:34)\n    at http://localhost:8000/js/workbench/chart.js:128:10\n    at publish (http"
-      },
-      {
-        "type": "warning",
-        "text": "[stream] disconnected (attempt 3/10), retry in 7s"
-      }
-    ]
+    "total_messages": 12,
+    "error_count": 0,
+    "warning_count": 0,
+    "errors": [],
+    "warnings": []
   },
   "network_error_summary": {
     "total": 0,
