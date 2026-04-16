@@ -954,6 +954,11 @@ async def _do_scan() -> None:
             if bars is None or len(bars["c"]) < cfg["min_bars"]:
                 continue
 
+            # Cache last close for price alerts
+            if not hasattr(_state, 'last_prices'):
+                _state.last_prices = {}
+            _state.last_prices[sym] = float(bars["c"][-1])
+
             # Run strategies — first signal wins
             plan = None
 
@@ -1098,6 +1103,15 @@ async def _loop() -> None:
                 _state.last_error = f"scan err: {e}"
                 print(f"[mar_bb] {_state.last_error}", flush=True)
                 traceback.print_exc()
+            # Check trendline price alerts after each scan
+            try:
+                from .line_alerts import check_alerts as _check_line_alerts
+                prices = {s: _state.last_prices.get(s, 0) for s in _state.last_prices} if hasattr(_state, 'last_prices') else {}
+                if not prices and hasattr(_state, 'positions'):
+                    pass  # no cached prices yet
+                _check_line_alerts(prices)
+            except Exception as e:
+                print(f"[mar_bb] alert check err: {e}", flush=True)
             await asyncio.sleep(int(_state.config.get("scan_interval_s", 60)))
     except asyncio.CancelledError:
         print("[mar_bb] runner loop cancelled", flush=True)
