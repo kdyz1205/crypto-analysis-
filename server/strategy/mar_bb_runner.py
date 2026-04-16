@@ -1049,6 +1049,19 @@ async def _do_scan() -> None:
                 orders_this_scan += 1
                 held_symbols.add(sym.upper())
                 print(f"[mar_bb] FILLED {sym} {tf} order_id={resp.get('exchange_order_id')}", flush=True)
+                # Emit event for Telegram notification
+                try:
+                    from server.core.events import bus, Event
+                    bus.emit(Event("position.opened", {
+                        "symbol": sym, "side": plan.get("direction", "long"),
+                        "size_usd": plan.get("notional", 0),
+                        "entry_price": plan.get("entry", 0),
+                        "sl": plan.get("stop", 0), "tp": plan.get("tp", 0),
+                        "strategy": plan.get("strategy", ""),
+                        "timeframe": tf,
+                    }))
+                except Exception:
+                    pass
             else:
                 _state.orders_rejected += 1
                 _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
