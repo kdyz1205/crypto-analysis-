@@ -1136,6 +1136,15 @@ async def _do_scan() -> None:
     except Exception as e:
         print(f"[mar_bb] reversal check err: {e}", flush=True)
 
+    # ── Level 3-5: Evolution system hooks ──
+    try:
+        from server.strategy.evolution import after_scan, daily_maintenance, weekly_maintenance
+        after_scan()
+        daily_maintenance()
+        weekly_maintenance()
+    except Exception as e:
+        print(f"[evolution] hook err: {e}", flush=True)
+
     _state.scans_completed += 1
     _state.last_scan_ts = int(time.time())
     _state.last_scan_duration_s = round(time.time() - t0, 2)

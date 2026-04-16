@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
     # Exit — V3 model: stop = line itself (穿线即止损)
     # total risk = buffer_pct only (no separate sl_pct)
     "sl_pct": 0.0,              # 0% = stop AT the line (V3: 穿线即止损)
-    "rr": 8.0,                  # RR=8: optimal from V3 OOS (account EV +1.99%/trade)
+    "rr": 15.0,                 # RR=15: limit order backtest optimal (1M+ trades validated)
 
     # Execution
     "fee": 0.0005,              # 0.05% per side
