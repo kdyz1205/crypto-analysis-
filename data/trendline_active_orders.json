@@ -1,70 +1,36 @@
 [
   {
-    "symbol": "ETHUSDT",
-    "timeframe": "5m",
-    "kind": "resistance",
-    "slope": -0.20218181818182446,
-    "intercept": 2535.472181818187,
-    "anchor1_bar": 0,
-    "anchor2_bar": 861,
-    "current_projected_price": 2361.1914545454542,
-    "limit_price": 2358.559964,
-    "stop_price": 2361.3936363636362,
-    "tp_price": 2340.87076427,
-    "exchange_order_id": "1428547255171772416",
-    "created_ts": 1776318122.4381137,
-    "last_updated_ts": 1776318561.53036,
-    "status": "placed"
-  },
-  {
-    "symbol": "NEARUSDT",
-    "timeframe": "5m",
-    "kind": "resistance",
-    "slope": 0.00020714285714285548,
-    "intercept": 1.264807142857144,
-    "anchor1_bar": 0,
-    "anchor2_bar": 861,
-    "current_projected_price": 1.4431571428571424,
-    "limit_price": 1.4414253542857138,
-    "stop_price": 1.4431571428571424,
-    "tp_price": 1.430614664128571,
-    "exchange_order_id": "1428548680358551552",
-    "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
-    "status": "placed"
-  },
-  {
     "symbol": "DOTUSDT",
     "timeframe": "5m",
     "kind": "resistance",
-    "slope": 0.00028749999999999886,
-    "intercept": 0.9847250000000007,
+    "slope": 0.00030263157894736724,
+    "intercept": 0.9754342105263165,
     "anchor1_bar": 0,
     "anchor2_bar": 861,
-    "current_projected_price": 1.2322624999999998,
-    "limit_price": 1.2307837849999999,
-    "stop_price": 1.2322624999999998,
-    "tp_price": 1.2215529066125,
-    "exchange_order_id": "1428548683357478912",
-    "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "current_projected_price": 1.2359999999999998,
+    "limit_price": 1.2345167999999997,
+    "stop_price": 1.2359999999999998,
+    "tp_price": 1.2252579239999999,
+    "exchange_order_id": "1428549533547094016",
+    "created_ts": 1776318665.588187,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
-    "symbol": "CRVUSDT",
+    "symbol": "ENAUSDT",
     "timeframe": "5m",
-    "kind": "support",
-    "slope": 3.3333333333333335e-05,
-    "intercept": 0.19493333333333332,
+    "kind": "resistance",
+    "slope": 2.1264367816092005e-05,
+    "intercept": 0.08518563218390801,
     "anchor1_bar": 0,
     "anchor2_bar": 861,
-    "current_projected_price": 0.22363333333333332,
-    "limit_price": 0.22390169333333335,
-    "stop_price": 0.22363333333333332,
-    "tp_price": 0.22558095603333336,
-    "exchange_order_id": "1428548686233198592",
-    "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "current_projected_price": 0.10349425287356323,
+    "limit_price": 0.10337005977011496,
+    "stop_price": 0.10349425287356323,
+    "tp_price": 0.1025947843218391,
+    "exchange_order_id": "1428549536659267584",
+    "created_ts": 1776318665.588187,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -75,30 +41,13 @@
     "intercept": 0.0840666666666664,
     "anchor1_bar": 0,
     "anchor2_bar": 861,
-    "current_projected_price": 0.08119666666666672,
+    "current_projected_price": 0.0811933333333334,
     "limit_price": 0.08109923066666673,
     "stop_price": 0.08119666666666672,
     "tp_price": 0.08049098643666673,
     "exchange_order_id": "1428548689170784256",
     "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
-    "status": "placed"
-  },
-  {
-    "symbol": "ZAMAUSDT",
-    "timeframe": "5m",
-    "kind": "support",
-    "slope": 1.85106382978724e-05,
-    "intercept": 0.015891063829787187,
-    "anchor1_bar": 0,
-    "anchor2_bar": 861,
-    "current_projected_price": 0.03182872340425533,
-    "limit_price": 0.03186691787234044,
-    "stop_price": 0.03182872340425533,
-    "tp_price": 0.032105919756382995,
-    "exchange_order_id": "1428548692142972928",
-    "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -115,7 +64,7 @@
     "tp_price": 2231.5282550825,
     "exchange_order_id": "1428548694984089600",
     "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -132,7 +81,7 @@
     "tp_price": 94.68342804910102,
     "exchange_order_id": "1428548697840410624",
     "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -149,7 +98,7 @@
     "tp_price": 1.548275961649999,
     "exchange_order_id": "1428548699086090240",
     "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -166,7 +115,7 @@
     "tp_price": 4794.423908313169,
     "exchange_order_id": "1428546804735533056",
     "created_ts": 1776318004.49522,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -183,7 +132,7 @@
     "tp_price": 0.12027204715213675,
     "exchange_order_id": "1428548702888779776",
     "created_ts": 1776318461.9732628,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   },
   {
@@ -200,7 +149,7 @@
     "tp_price": 0.11072725231188121,
     "exchange_order_id": "1428546813002506241",
     "created_ts": 1776318004.49522,
-    "last_updated_ts": 1776318561.53036,
+    "last_updated_ts": 1776318884.7506652,
     "status": "placed"
   }
 ]

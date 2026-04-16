@@ -1141,8 +1141,14 @@ async def _do_scan() -> None:
     try:
         from server.strategy.evolution import after_scan, daily_maintenance, weekly_maintenance
         after_scan()
-        daily_maintenance()
-        weekly_maintenance()
+        # These may be async in some versions; handle both
+        import asyncio
+        dm = daily_maintenance()
+        if asyncio.iscoroutine(dm):
+            await dm
+        wm = weekly_maintenance()
+        if asyncio.iscoroutine(wm):
+            await wm
     except Exception as e:
         print(f"[evolution] hook err: {e}", flush=True)
 
