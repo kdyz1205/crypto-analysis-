@@ -1090,7 +1090,8 @@ async def _do_scan() -> None:
             from server.strategy.trendline_order_manager import update_trendline_orders
             tl_cfg = {
                 "buffer_pct": cfg.get("buffer_pct", 0.12),
-                "rr": 12.0,  # fixed RR=12; walking stop makes effective RR grow over time
+                "rr": 12.0,
+                "prices": getattr(_state, 'last_prices', {}),  # for broken-line detection
                 "leverage": int(cfg.get("leverage", 30)),
                 "equity": equity,
                 "risk_pct": 0.03,

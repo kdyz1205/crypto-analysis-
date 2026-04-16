@@ -5372,12 +5372,12 @@
       "reverse_rr_target": null,
       "reverse_leverage": null
     },
-    "status": "triggered",
+    "status": "cancelled",
     "created_at": 1776229604,
-    "updated_at": 1776309797,
+    "updated_at": 1776321411,
     "triggered_at": 1776229604,
-    "cancelled_at": null,
-    "cancel_reason": "",
+    "cancelled_at": 1776321411,
+    "cancel_reason": "reconcile: bitget order no longer exists",
     "exchange_order_id": "1428512334877257728",
     "fill_price": 42.122982942209376,
     "fill_qty": 0.14429268871153003,
@@ -5407,6 +5407,15 @@
         "line_price": 42.122982942209376,
         "distance_atr": null,
         "message": "replanned: new trigger 42.1230 (was 41.5821, drift 1.301%) new orderId=1428512334877257728",
+        "extra": {}
+      },
+      {
+        "ts": 1776321411,
+        "kind": "cancelled",
+        "price": null,
+        "line_price": null,
+        "distance_atr": null,
+        "message": "reconcile: order 1428512334877257728 not on Bitget anymore",
         "extra": {}
       }
     ],
