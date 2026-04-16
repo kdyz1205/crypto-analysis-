@@ -1098,11 +1098,12 @@ async def _do_scan() -> None:
             from server.strategy.trendline_order_manager import update_trendline_orders
             tl_cfg = {
                 "buffer_pct": cfg.get("buffer_pct", 0.05),
-                "rr": cfg.get("rr", 8.0),
+                "rr": 15.0,  # V3 limit order optimal
                 "leverage": int(cfg.get("leverage", 20)),
                 "equity": equity,
-                "risk_pct": tf_risk.get(timeframes[0], 0.01) if timeframes else 0.01,
+                "risk_pct": 0.03,  # 3% per trade to ensure above min trade size
             }
+            print(f"[trendline_orders] equity=${equity:.2f} signals={len(_trendline_limit_signals)} risk_pct={tl_cfg['risk_pct']}", flush=True)
             tl_result = await update_trendline_orders(
                 _trendline_limit_signals,
                 current_bar_index=int(time.time()),  # use timestamp as bar proxy
