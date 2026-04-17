@@ -41,6 +41,14 @@ def _cache_ttl(interval: str) -> int:
         return OHLCV_CACHE_TTL_FAST
     return OHLCV_CACHE_TTL_HEAVY if interval in ("4h", "1d", "1w") else OHLCV_CACHE_TTL_SHORT
 
+def _utc_epoch_seconds(value) -> int:
+    """Convert exchange candle open_time to Unix seconds, treating naive values as UTC."""
+    if hasattr(value, "to_pydatetime"):
+        value = value.to_pydatetime()
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return int(value.timestamp())
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 SYMBOLS_FILE = PROJECT_ROOT / "binance_futures_usdt.txt"
@@ -965,6 +973,20 @@ async def _fetch_candles_since_bitget(symbol: str, interval: str, start_ms: int)
         cursor_end = oldest_ts - 1
         await _asyncio.sleep(0.06)
 
+    # history-candles may lag or omit the still-forming candle. Merge the
+    # public live candle tail so charts can show the current bar immediately
+    # after a 4h/1h/etc rollover instead of waiting for the next closed bar.
+    try:
+        live_rows = await client.get_candles(
+            symbol.upper(), granularity, limit=3, history=False,
+        )
+        for row in live_rows:
+            ts_ms = int(row[0])
+            if ts_ms >= start_ms:
+                all_records.extend(bitget_candles_to_records([row]))
+    except Exception as e:
+        print(f"[data_service] incremental live candle fetch failed for {symbol}: {e}")
+
     if not all_records:
         return pl.DataFrame()
 
@@ -1257,7 +1279,7 @@ async def get_ohlcv(
                         if not is_okx_file:
                             interval_ms = INTERVAL_MS.get(base_interval, 60 * 60 * 1000)
                             now_ms = int(time.time() * 1000)
-                            if csv_last_ms is not None and (now_ms - csv_last_ms) >= interval_ms * 2:
+                            if csv_last_ms is not None and (now_ms - csv_last_ms) >= interval_ms:
                                 try:
                                     df = await _incremental_update(symbol, base_interval)
                                     used_api_tail = True
@@ -1306,7 +1328,7 @@ async def get_ohlcv(
     volume = []
     timestamps = []
     for row in df.iter_rows(named=True):
-        ts = int(row["open_time"].timestamp())
+        ts = _utc_epoch_seconds(row["open_time"])
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
         v = float(row["volume"])
         candles.append({"time": ts, "open": o, "high": h, "low": l, "close": c})
@@ -1496,7 +1518,7 @@ async def get_ohlcv_with_df(
     volume = []
     timestamps = []
     for row in df.iter_rows(named=True):
-        ts = int(row["open_time"].timestamp())
+        ts = _utc_epoch_seconds(row["open_time"])
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
         v = float(row["volume"])
         candles.append({"time": ts, "open": o, "high": h, "low": l, "close": c})
@@ -1600,9 +1622,9 @@ def _history_metadata(
         "sourceBarCount": source_count,
         "historyMode": history_mode,
         "loadedBarCount": window_count,
-        "earliestLoadedTimestamp": int(earliest_window.timestamp()) if earliest_window is not None else None,
-        "latestLoadedTimestamp": int(latest_window.timestamp()) if latest_window is not None else None,
-        "listingStartTimestamp": int(earliest_source.timestamp()) if earliest_source is not None else None,
+        "earliestLoadedTimestamp": _utc_epoch_seconds(earliest_window) if earliest_window is not None else None,
+        "latestLoadedTimestamp": _utc_epoch_seconds(latest_window) if latest_window is not None else None,
+        "listingStartTimestamp": _utc_epoch_seconds(earliest_source) if earliest_source is not None else None,
         "isFullHistory": is_full_history,
         "isTruncated": is_truncated,
         "truncationReason": truncation_reason,

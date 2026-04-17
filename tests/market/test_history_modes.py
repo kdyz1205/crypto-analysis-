@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import polars as pl
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -65,6 +66,49 @@ def test_history_metadata_marks_truncation() -> None:
     assert metadata["isTruncated"] is True
     assert metadata["truncationReason"] == "fast_window"
     assert metadata["listingStartTimestamp"] < metadata["latestLoadedTimestamp"]
+
+
+def test_utc_epoch_seconds_treats_naive_exchange_times_as_utc() -> None:
+    naive = datetime(2026, 4, 17, 8, 0)
+    aware = datetime(2026, 4, 17, 8, 0, tzinfo=timezone.utc)
+
+    assert data_service._utc_epoch_seconds(naive) == int(aware.timestamp())
+
+
+@pytest.mark.asyncio
+async def test_get_ohlcv_updates_csv_tail_after_one_elapsed_interval(monkeypatch) -> None:
+    data_service._ohlcv_result_cache.clear()
+    start = datetime(2026, 4, 17, 0, 0, tzinfo=timezone.utc)
+    existing = _sample_df(rows=3).with_columns(
+        (pl.lit(start) + pl.duration(hours=4) * pl.int_range(0, 3)).alias("open_time")
+    )
+    updated = _sample_df(rows=4).with_columns(
+        (pl.lit(start) + pl.duration(hours=4) * pl.int_range(0, 4)).alias("open_time")
+    )
+    now = datetime(2026, 4, 17, 13, 1, tzinfo=timezone.utc).timestamp()
+    calls = []
+
+    async def fake_incremental_update(symbol, interval):
+        calls.append((symbol, interval))
+        return updated
+
+    async def fake_price_precision(symbol):
+        return None
+
+    monkeypatch.setattr(data_service, "OFFLINE_ONLY", False)
+    monkeypatch.setattr(data_service, "API_ONLY", False)
+    monkeypatch.setattr(data_service, "EXCHANGE", "bitget")
+    monkeypatch.setattr(data_service, "_find_csv", lambda symbol, interval: data_service.Path(f"{symbol.lower()}_{interval}.csv"))
+    monkeypatch.setattr(data_service, "_load_csv", lambda path: existing)
+    monkeypatch.setattr(data_service, "_incremental_update", fake_incremental_update)
+    monkeypatch.setattr(data_service, "get_symbol_price_precision", fake_price_precision)
+    monkeypatch.setattr(data_service.time, "time", lambda: now)
+
+    result = await data_service.get_ohlcv("TESTUSDT", "4h", days=1, history_mode="fast_window")
+
+    assert calls == [("TESTUSDT", "4h")]
+    assert result["candles"][-1]["time"] == int(datetime(2026, 4, 17, 12, 0, tzinfo=timezone.utc).timestamp())
+    assert result["latestLoadedTimestamp"] == result["candles"][-1]["time"]
 
 
 def test_api_ohlcv_forwards_history_mode(monkeypatch) -> None:

@@ -93,6 +93,15 @@ DEFAULT_RUNNER_CFG = {
     "dry_run": False,
     "auto_start": True,
     "strategies": ["trendline"],  # MA Ribbon disabled pending SL/TP indicator research
+    "model_gate": {
+        "enabled": True,
+        "fail_open": True,
+        # Explicit model roles. Do not replace the trade model with the AUC=0.928 line model.
+        "primary_trade_model": "C:/Users/alexl/trading-system/checkpoints/trendline_quality/v3_trade_outcome_auc_0.825.pt",
+        "aux_line_quality_model": "C:/Users/alexl/Desktop/crypto-analysis-/checkpoints/trendline_quality/pattern_bounce_auc_0.928.pt",
+        "min_trade_win_prob": 0.50,
+        "min_line_quality_prob": 0.50,
+    },
 }
 
 
@@ -309,34 +318,79 @@ _trendline_params: dict[str, dict] = {}
 
 
 def register_trendline_params(symbol: str, slope: float, intercept: float,
-                               entry_bar: int, entry_price: float, side: str, tf: str):
+                               entry_bar: int, entry_price: float, side: str,
+                               tf: str, created_ts: float = 0, tp_price: float = 0,
+                               last_sl_set: float = 0,
+                               line_ref_ts: float = 0,
+                               line_ref_price: float = 0):
     """Called when opening a trendline trade — stores line params for SL trailing."""
-    _trendline_params[symbol.upper()] = {
+    key = symbol.upper()
+    if key in _trendline_params:
+        return
+    params = {
         "slope": slope, "intercept": intercept,
         "entry_bar": entry_bar, "entry_price": entry_price,
-        "side": side, "tf": tf, "opened_ts": int(time.time()),
+        "side": side, "tf": tf,
+        "opened_ts": int(created_ts) if created_ts > 0 else int(time.time()),
+        "last_sl_set": float(last_sl_set or 0),
+        "tp_price": tp_price,
     }
+    if line_ref_ts > 0 and line_ref_price > 0:
+        params["line_ref_ts"] = int(line_ref_ts)
+        params["line_ref_price"] = float(line_ref_price)
+    _trendline_params[key] = params
 
 
-def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int) -> float | None:
-    """
-    Calculate where the SL should be NOW based on the REAL trendline projection.
-    V3 model: SL = line itself (穿线即止损). No buffer below/above.
+def _position_open_ts(pos: dict) -> int:
+    """Best-effort Bitget position open timestamp in seconds."""
+    # Do not use uTime/utime here: Bitget updates those on position changes,
+    # which resets bars_since after every SL move and stops trailing.
+    for key in ("openTime", "openTimestamp", "cTime", "ctime", "createdTime", "createTime"):
+        raw = pos.get(key)
+        if raw in (None, "", 0, "0"):
+            continue
+        try:
+            ts = int(float(raw))
+        except (TypeError, ValueError):
+            continue
+        if ts > 10_000_000_000:
+            ts //= 1000
+        if ts > 0:
+            return ts
+    return 0
 
-    projected_line = slope × (entry_bar + bars_since) + intercept
-    SL = projected_line (the line IS the stop)
-    """
+
+def _round_price(price: float) -> float:
+    if price >= 1000:
+        return round(price, 1)
+    elif price >= 1:
+        return round(price, 2)
+    elif price >= 0.1:
+        return round(price, 4)
+    elif price >= 0.001:
+        return round(price, 5)
+    else:
+        return round(price, 6)
+
+
+def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int | None = None) -> float | None:
     params = _trendline_params.get(symbol.upper())
     if not params:
         return None
 
-    current_bar = params["entry_bar"] + bars_since_entry
-    projected_line = params["slope"] * current_bar + params["intercept"]
+    if params.get("line_ref_ts") and params.get("line_ref_price"):
+        tf_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+        bar_dur = tf_seconds.get(params.get("tf", "1h"), 3600)
+        ts = int(now_ts or time.time())
+        elapsed_bars = max(0, int((ts - int(params["line_ref_ts"])) / bar_dur))
+        projected_line = float(params["line_ref_price"]) + float(params["slope"]) * elapsed_bars
+    else:
+        current_bar = params["entry_bar"] + bars_since_entry
+        projected_line = params["slope"] * current_bar + params["intercept"]
     if projected_line <= 0:
         return None
 
-    # V3: stop = line itself. No sl_pct offset.
-    return projected_line
+    return _round_price(projected_line)
 
 
 async def _update_trailing_stops(cfg: dict) -> int:
@@ -348,10 +402,12 @@ async def _update_trailing_stops(cfg: dict) -> int:
     Returns number of SL updates made.
     """
     if not _trendline_params:
+        print("[trailing] skip: no trendline params registered", flush=True)
         return 0
 
     bitget_positions, ok = await _get_bitget_positions()
     if not ok or not bitget_positions:
+        print(f"[trailing] skip: position fetch ok={ok} positions={len(bitget_positions) if bitget_positions else 0}", flush=True)
         return 0
 
     updates = 0
@@ -360,51 +416,100 @@ async def _update_trailing_stops(cfg: dict) -> int:
     for pos in bitget_positions:
         symbol = (pos.get("symbol") or "").upper()
         if symbol not in _trendline_params:
+            print(f"[trailing] skip {symbol}: not a tracked trendline position", flush=True)
             continue
 
         params = _trendline_params[symbol]
         side = (pos.get("holdSide") or pos.get("posSide") or "").lower()
-        entry_price = float(pos.get("openAvgPrice") or params["entry_price"] or 0)
-        current_sl = float(pos.get("stopLossTriggerPrice") or 0)
+        entry_price = float(pos.get("openPriceAvg") or pos.get("averageOpenPrice") or pos.get("openAvgPrice") or params["entry_price"] or 0)
+        current_sl = params.get("last_sl_set", 0.0)
+        tf = params.get("tf", "1h")
+        pos_open_ts = _position_open_ts(pos)
+        if pos_open_ts > 0 and pos_open_ts != params.get("opened_ts"):
+            params["opened_ts"] = pos_open_ts
 
         if entry_price <= 0:
+            print(f"[trailing] skip {symbol}: entry_price unavailable in position row", flush=True)
             continue
 
-        # Estimate bars since entry based on time + TF
-        tf = params.get("tf", "1h")
         tf_seconds = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
         bar_dur = tf_seconds.get(tf, 3600)
         elapsed = now_ts - params["opened_ts"]
         bars_since = max(1, elapsed // bar_dur)
 
-        new_sl = _calc_trendline_trailing_sl(symbol, bars_since)
+        # Only update SL when a new bar has started (not every scan)
+        last_bar = params.get("last_update_bar", 0)
+        if current_sl > 0 and bars_since <= last_bar:
+            print(f"[trailing] skip {symbol}: bars_since={bars_since} last_update_bar={last_bar}", flush=True)
+            continue
+
+        new_sl = _calc_trendline_trailing_sl(symbol, bars_since, now_ts=now_ts)
         if new_sl is None or new_sl <= 0:
+            print(f"[trailing] skip {symbol}: invalid projected SL {new_sl}", flush=True)
             continue
 
         # Only move SL in the profitable direction (never widen it)
         if side == "long":
             if current_sl > 0 and new_sl <= current_sl:
-                continue  # new SL is worse (lower), don't move
+                print(f"[trailing] skip {symbol}: long SL would not tighten {current_sl:.6f}->{new_sl:.6f}", flush=True)
+                continue
         elif side == "short":
             if current_sl > 0 and new_sl >= current_sl:
-                continue  # new SL is worse (higher), don't move
+                print(f"[trailing] skip {symbol}: short SL would not tighten {current_sl:.6f}->{new_sl:.6f}", flush=True)
+                continue
+        else:
+            print(f"[trailing] skip {symbol}: unknown holdSide={side}", flush=True)
+            continue
 
-        # Move it
+        # Same value as last time → skip
         try:
             from server.execution.live_adapter import LiveExecutionAdapter
             adapter = LiveExecutionAdapter()
+            actual_current_sl = await adapter.get_position_sl_trigger_price(
+                symbol,
+                side,
+                cfg.get("mode", "live"),
+                entry_price=entry_price,
+            )
+            if actual_current_sl and actual_current_sl > 0:
+                current_sl = actual_current_sl
+                params["last_sl_set"] = actual_current_sl
+
+            if current_sl > 0 and abs(new_sl - current_sl) / current_sl < 0.0001:
+                print(f"[trailing] skip {symbol}: projected SL change below threshold {current_sl:.6f}->{new_sl:.6f}", flush=True)
+                continue
+            # TP never touched — only cancel+replace SL, preset TP stays
+            tp = None
             resp = await adapter.update_position_sl_tp(
-                symbol, side, new_sl=new_sl, mode=cfg.get("mode", "live"),
+                symbol, side, new_sl=new_sl, new_tp=tp,
+                mode=cfg.get("mode", "live"),
             )
             if resp.get("ok"):
+                placed_sl = float(resp.get("actual_sl_after") or resp.get("new_sl") or new_sl)
+                from server.strategy.trade_log import log_sl_move
+                log_sl_move(symbol, side, current_sl, placed_sl, tf=tf, bars=bars_since)
+                try:
+                    from server.strategy.ml_trade_db import log_sl_moved
+                    log_sl_moved(
+                        symbol=symbol, direction=side, tf=tf,
+                        old_sl=current_sl, new_sl=placed_sl,
+                        projected_line=new_sl, bars_since_entry=bars_since,
+                        entry_price=entry_price,
+                    )
+                except Exception as exc:
+                    print(f"[trailing] ml sl log err {symbol}: {exc}", flush=True)
+                params["last_sl_set"] = placed_sl
+                params["last_update_bar"] = bars_since
                 updates += 1
-                is_profit = (side == "long" and new_sl > entry_price) or \
-                            (side == "short" and new_sl < entry_price)
-                label = "PROFIT-LOCK" if is_profit else "TIGHTEN"
-                print(f"[trailing] {label} {symbol} {side}: SL {current_sl:.6f} -> {new_sl:.6f}"
-                      f" (entry={entry_price:.6f}, bars={bars_since})", flush=True)
+                print(
+                    f"[trailing] MOVED SL {symbol} {current_sl:.6f} -> {placed_sl:.6f} "
+                    f"bars={bars_since} tf={tf} verified={resp.get('sl_verified')}",
+                    flush=True,
+                )
             else:
-                print(f"[trailing] {symbol} SL update failed: {resp.get('reason')}", flush=True)
+                reason = resp.get("reason", "")
+                print(f"[trailing] {symbol} SL update failed: {reason}", flush=True)
+                # No manual close — preset SL on Bitget handles it automatically
         except Exception as e:
             print(f"[trailing] {symbol} err: {e}", flush=True)
 
@@ -691,7 +796,7 @@ def _check_trendline_signal(
     line_intercept = float(line_info["intercept"]) if line_info and "intercept" in line_info else 0.0
     line_entry_bar = i  # the bar index where signal fired
 
-    return {
+    plan = {
         "strategy": "trendline",
         "symbol": symbol, "timeframe": tf,
         "direction": direction,
@@ -707,6 +812,35 @@ def _check_trendline_signal(
         "line_intercept": line_intercept,
         "line_entry_bar": line_entry_bar,
     }
+
+    try:
+        from server.strategy.trendline_model_gate import score_trendline_gate, result_dict
+        kind = "support" if direction == "long" else "resistance"
+        gate = score_trendline_gate(
+            symbol=symbol,
+            timeframe=tf,
+            kind=kind,
+            line_info=line_info or {},
+            bars=bars,
+            cfg=cfg,
+        )
+        plan["model_gate"] = result_dict(gate)
+        if not gate.accepted:
+            print(
+                f"[trendline_model_gate] REJECT {symbol} {tf} {kind}: {gate.reason} "
+                f"line={gate.line_quality_prob} trade={gate.trade_win_prob}",
+                flush=True,
+            )
+            return None
+        print(
+            f"[trendline_model_gate] PASS {symbol} {tf} {kind}: {gate.reason} "
+            f"line={gate.line_quality_prob} trade={gate.trade_win_prob}",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"[trendline_model_gate] fail-open {symbol} {tf}: {e}", flush=True)
+
+    return plan
 
 
 async def _anchor_sl_tp_to_mark(plan: dict) -> dict:
@@ -859,6 +993,11 @@ async def _do_scan() -> None:
     # Fetch equity ONCE per scan
     equity = await _get_equity() if cfg.get("sizing_mode") == "fixed_risk" else 0
     if cfg.get("sizing_mode") == "fixed_risk":
+        if equity <= 0:
+            _state.last_error = "equity_fetch_failed — halting scan"
+            print(f"[mar_bb] HALT: equity=${equity:.2f}, skipping scan", flush=True)
+            _state.scans_completed += 1
+            return
         print(f"[mar_bb] equity=${equity:.2f}", flush=True)
 
     # Daily drawdown check
@@ -884,6 +1023,11 @@ async def _do_scan() -> None:
 
     # Snapshot Bitget positions ONCE
     bitget_positions, ok = await _get_bitget_positions()
+    if not ok:
+        _state.last_error = "position_fetch_failed — halting scan to prevent duplicate orders"
+        print(f"[mar_bb] HALT: position fetch failed, skipping scan", flush=True)
+        _state.scans_completed += 1
+        return
     held_symbols: set[str] = set()
     for p in bitget_positions:
         sym = (p.get("symbol") or "").upper()
@@ -1003,6 +1147,7 @@ async def _do_scan() -> None:
                             "stop_price": tl_plan["stop_price"],
                             "tp_price": tl_plan["tp_price"],
                             "bar_count": len(bars["c"]),  # actual bar count for projection
+                            "model_gate": tl_plan.get("model_gate"),
                         })
                 except Exception as e:
                     print(f"[mar_bb] trendline {sym} {tf} err: {e}", flush=True)
@@ -1062,8 +1207,9 @@ async def _do_scan() -> None:
                         "timeframe": tf,
                     }
                     bus.emit(Event("position.opened", payload))
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"[mar_bb] event emit err {sym}: {exc}", flush=True)
+                    traceback.print_exc()
                 try:
                     from server.strategy.trade_log import log_trade
                     log_trade(
@@ -1077,35 +1223,45 @@ async def _do_scan() -> None:
                         leverage=int(cfg.get("leverage", 20)),
                         order_id=resp.get("exchange_order_id", ""),
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    print(f"[mar_bb] trade log err {sym}: {exc}", flush=True)
+                    traceback.print_exc()
             else:
                 _state.orders_rejected += 1
                 _state.last_error = f"{sym}: {resp.get('reason', 'unknown')}"
                 print(f"[mar_bb] REJECTED {sym}: {_state.last_error}", flush=True)
 
     # ── Trendline LIMIT orders: place/update/cancel passive limit orders ──
-    if _trendline_limit_signals:
+    if "trendline" in enabled_strats:
         try:
             from server.strategy.trendline_order_manager import update_trendline_orders
             tl_cfg = {
-                "buffer_pct": cfg.get("buffer_pct", 0.12),
-                "rr": 12.0,
-                "prices": getattr(_state, 'last_prices', {}),  # for broken-line detection
+                "buffer_pct": cfg.get("buffer_pct", 0.10),
+                "rr": 15.0,
+                "prices": getattr(_state, 'last_prices', {}),
                 "leverage": int(cfg.get("leverage", 30)),
                 "equity": equity,
-                "risk_pct": 0.03,
+                "risk_pct": 0.01,
+                "max_position_pct": float(cfg.get("max_position_pct", 0.50)),
+                "mode": cfg.get("mode", "live"),
+                "held_symbols": held_symbols,
+                "tf_risk": tf_risk,
+                "tf_buffer": {"5m": 0.05, "15m": 0.10, "1h": 0.20, "4h": 0.30},
             }
             print(f"[trendline_orders] equity=${equity:.2f} signals={len(_trendline_limit_signals)} risk_pct={tl_cfg['risk_pct']}", flush=True)
             # current_bar_index = length of the OHLCV data (bar count, NOT timestamp)
             # The trendline slope/intercept are relative to bar indices 0..N
-            last_bars_len = max(sig.get("bar_count", 500) for sig in _trendline_limit_signals) if _trendline_limit_signals else 500
+            last_bars_len = max(sig.get("bar_count", 500) for sig in _trendline_limit_signals) if _trendline_limit_signals else 0
             tl_result = await update_trendline_orders(
                 _trendline_limit_signals,
                 current_bar_index=last_bars_len - 1,
                 cfg=tl_cfg,
             )
-            if tl_result.get("placed", 0) > 0 or tl_result.get("cancelled", 0) > 0:
+            if (
+                tl_result.get("placed", 0) > 0
+                or tl_result.get("updated", 0) > 0
+                or tl_result.get("cancelled", 0) > 0
+            ):
                 print(f"[mar_bb] trendline limits: {tl_result}", flush=True)
         except Exception as e:
             print(f"[mar_bb] trendline limit orders err: {e}", flush=True)
@@ -1114,26 +1270,65 @@ async def _do_scan() -> None:
     # ── Sync plan order fills: if Bitget opened a position from our plan order,
     #    register it in _trendline_params so trailing stop can track it ──
     try:
-        from server.strategy.trendline_order_manager import _load_active
+        from server.strategy.trendline_order_manager import _load_active, _save_active
         active_orders = _load_active()
         bitget_pos, pos_ok = await _get_bitget_positions()
+        print(f"[trailing] sync check: pos_ok={pos_ok} positions={len(bitget_pos)} active_orders={len(active_orders)}", flush=True)
         if pos_ok and bitget_pos:
-            held_syms_upper = {(p.get("symbol") or "").upper() for p in bitget_pos if float(p.get("available") or 0) > 0}
+            held_positions_by_symbol = {}
+            for p in bitget_pos:
+                sym = (p.get("symbol") or "").upper()
+                size = float(p.get("total") or p.get("available") or 0)
+                if size > 0:
+                    held_positions_by_symbol[sym] = p
+            held_syms_upper = set(held_positions_by_symbol)
+            print(f"[trailing] held positions: {held_syms_upper}", flush=True)
+            active_dirty = False
             for ao in active_orders:
                 sym_upper = ao.symbol.upper()
                 if sym_upper in held_syms_upper and sym_upper not in _trendline_params:
-                    # Plan order was triggered! Register for trailing stop.
+                    pos = held_positions_by_symbol.get(sym_upper, {})
+                    opened_ts = _position_open_ts(pos) or int(time.time())
                     register_trendline_params(
                         sym_upper,
                         slope=ao.slope, intercept=ao.intercept,
-                        entry_bar=ao.anchor2_bar,
+                        entry_bar=ao.bar_count - 1,
                         entry_price=ao.limit_price,
                         side="long" if ao.kind == "support" else "short",
-                        tf="5m",  # default; will use actual TF when available
+                        tf=ao.timeframe,
+                        created_ts=opened_ts,
+                        tp_price=ao.tp_price,
+                        last_sl_set=ao.stop_price,
+                        line_ref_ts=getattr(ao, "line_ref_ts", 0) or ao.last_updated_ts,
+                        line_ref_price=getattr(ao, "line_ref_price", 0) or ao.current_projected_price,
                     )
-                    print(f"[trailing] registered {sym_upper} from plan order fill (slope={ao.slope:.8f})", flush=True)
+                    from server.strategy.trade_log import log_fill
+                    log_fill(ao.exchange_order_id, sym_upper,
+                             "long" if ao.kind == "support" else "short",
+                             ao.limit_price, 0, tf=ao.timeframe,
+                              slope=ao.slope, intercept=ao.intercept)
+                    try:
+                        from server.strategy.ml_trade_db import log_plan_triggered
+                        log_plan_triggered(
+                            ao.exchange_order_id, sym_upper,
+                            "long" if ao.kind == "support" else "short",
+                            fill_price=ao.limit_price,
+                            trigger_price=ao.limit_price,
+                            tf=ao.timeframe,
+                            slope=ao.slope,
+                            intercept=ao.intercept,
+                        )
+                    except Exception as exc:
+                        print(f"[trailing] ml fill log err {sym_upper}: {exc}", flush=True)
+                    if ao.status != "filled":
+                        ao.status = "filled"
+                        active_dirty = True
+                    print(f"[trailing] registered {sym_upper} tf={ao.timeframe} tp={ao.tp_price:.6f}", flush=True)
+            if active_dirty:
+                _save_active(active_orders)
     except Exception as e:
         print(f"[trailing] sync err: {e}", flush=True)
+        import traceback; traceback.print_exc()
 
     # ── Trailing SL: move SL tighter on open trendline positions ──
     try:
@@ -1141,9 +1336,53 @@ async def _do_scan() -> None:
         if sl_updates > 0:
             print(f"[mar_bb] updated {sl_updates} trailing SL(s)", flush=True)
         # Clean up params for positions that are no longer open
-        for sym in list(_trendline_params.keys()):
-            if sym not in held_symbols:
-                del _trendline_params[sym]
+        # Use fresh position data, not stale held_symbols from scan start
+        fresh_pos, fresh_ok = await _get_bitget_positions()
+        if fresh_ok:
+            fresh_syms = {(p.get("symbol") or "").upper() for p in fresh_pos}
+            for sym in list(_trendline_params.keys()):
+                if sym not in fresh_syms:
+                    # Position closed (SL/TP triggered on Bitget) — log PnL
+                    params = _trendline_params[sym]
+                    try:
+                        from server.execution.live_adapter import LiveExecutionAdapter
+                        adapter = LiveExecutionAdapter()
+                        hist = await adapter._bitget_request(
+                            "GET", "/api/v2/mix/position/history-position",
+                            mode=cfg.get("mode", "live"), body=None,
+                            params={"symbol": sym, "productType": "USDT-FUTURES", "limit": "5"},
+                        )
+                        closed_list = (hist.get("data") or {}).get("list") or []
+                        if closed_list:
+                            last = closed_list[0]
+                            pnl = float(last.get("netProfit") or last.get("achievedProfits") or 0)
+                            open_price = float(last.get("openPriceAvg") or 0)
+                            close_price = float(last.get("closePriceAvg") or 0)
+                            pnl_pct = pnl / float(last.get("margin") or 1) if float(last.get("margin") or 0) > 0 else 0
+                            from server.strategy.trade_log import log_close
+                            log_close("", sym, params.get("side", ""), close_price, pnl, pnl_pct,
+                                      reason="sl_or_tp", tf=params.get("tf", ""),
+                                      entry_price=open_price)
+                            try:
+                                from server.strategy.ml_trade_db import log_position_closed
+                                log_position_closed(
+                                    symbol=sym,
+                                    direction=params.get("side", ""),
+                                    tf=params.get("tf", ""),
+                                    entry_price=open_price,
+                                    close_price=close_price,
+                                    pnl_usd=pnl,
+                                    pnl_pct=pnl_pct,
+                                    reason="sl_or_tp",
+                                    hold_seconds=max(0, int(time.time()) - int(params.get("opened_ts", time.time()))),
+                                )
+                            except Exception as exc:
+                                print(f"[trailing] ml close log err {sym}: {exc}", flush=True)
+                            print(f"[trailing] RESOLVED {sym} {params.get('side','')} PnL=${pnl:+.4f} ({pnl_pct*100:+.2f}%)", flush=True)
+                    except Exception as e:
+                        print(f"[trailing] PnL fetch {sym}: {e}", flush=True)
+                    print(f"[trailing] cleaned up {sym} (no longer in positions)", flush=True)
+                    del _trendline_params[sym]
     except Exception as e:
         print(f"[mar_bb] trailing SL err: {e}", flush=True)
 
