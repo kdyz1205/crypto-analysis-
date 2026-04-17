@@ -64,7 +64,7 @@ class _RecordingAdapter(LiveExecutionAdapter):
         }
 
 
-def _intent(symbol: str = "BTCUSDT") -> OrderIntent:
+def _intent(symbol: str = "BTCUSDT", *, order_type: str = "market", post_only: bool = False) -> OrderIntent:
     return OrderIntent(
         order_intent_id="intent-1",
         signal_id="sig-1",
@@ -73,7 +73,7 @@ def _intent(symbol: str = "BTCUSDT") -> OrderIntent:
         symbol=symbol,
         timeframe="1h",
         side="short",
-        order_type="market",
+        order_type=order_type,  # type: ignore[arg-type]
         trigger_mode="rejection",
         entry_price=100.0,
         stop_price=105.0,
@@ -82,6 +82,7 @@ def _intent(symbol: str = "BTCUSDT") -> OrderIntent:
         status="approved",
         created_at_bar=1,
         created_at_ts=1,
+        post_only=post_only,
     )
 
 
@@ -102,6 +103,21 @@ async def test_live_adapter_demo_mode_path_is_callable() -> None:
     assert ("POST", "/api/v2/mix/order/place-order", "demo") in adapter.calls
     assert adapter.last_body["clientOid"] == "client-1"
     assert adapter.last_body["productType"] == "USDT-FUTURES"
+
+
+@pytest.mark.asyncio
+async def test_submit_live_entry_can_send_post_only_limit_with_preset_sl_tp() -> None:
+    adapter = _RecordingAdapter()
+
+    result = await adapter.submit_live_entry(_intent(order_type="limit", post_only=True), "demo")
+
+    assert result["ok"] is True
+    assert adapter.last_body["orderType"] == "limit"
+    assert adapter.last_body["price"] == "100"
+    assert adapter.last_body["force"] == "post_only"
+    assert adapter.last_body["presetStopLossPrice"] == "105"
+    assert adapter.last_body["presetStopSurplusPrice"] == "90"
+    assert result["request_body_excerpt"]["force"] == "post_only"
 
 
 @pytest.mark.asyncio

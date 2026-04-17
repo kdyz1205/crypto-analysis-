@@ -109,6 +109,18 @@ def _auto_poll_seconds(timeframe: str) -> int:
     return table.get(timeframe, 60)
 
 
+def _project_manual_line_price(drawing, ts: int) -> float:
+    span = int(drawing.t_end) - int(drawing.t_start)
+    if span <= 0:
+        return float(drawing.price_start)
+    if ts <= int(drawing.t_start) and not bool(getattr(drawing, "extend_left", False)):
+        return float(drawing.price_start)
+    if ts >= int(drawing.t_end) and not bool(getattr(drawing, "extend_right", True)):
+        return float(drawing.price_end)
+    slope = (float(drawing.price_end) - float(drawing.price_start)) / span
+    return float(drawing.price_start) + slope * (ts - int(drawing.t_start))
+
+
 @router.post("/conditionals")
 async def api_create_conditional(req: ConditionalCreateReq):
     drawing = _drawings.get(req.manual_line_id)
@@ -134,6 +146,8 @@ async def api_create_conditional(req: ConditionalCreateReq):
         t_end=drawing.t_end,
         price_start=drawing.price_start,
         price_end=drawing.price_end,
+        extend_left=bool(drawing.extend_left),
+        extend_right=bool(drawing.extend_right),
         pattern_stats_at_create=dict(req.pattern_stats),
         trigger=TriggerConfig(
             tolerance_atr=req.trigger.tolerance_atr,
@@ -234,19 +248,10 @@ async def api_cancel_conditional(conditional_id: str, reason: str = Query("manua
                     bitget_result = True
                 else:
                     # Fall back to plan-order cancel
-                    plan_resp = await adapter._bitget_request(
-                        "POST", "/api/v2/mix/order/cancel-plan-order",
-                        mode=mode,
-                        body={
-                            "symbol": sym,
-                            "productType": "USDT-FUTURES",
-                            "marginCoin": "USDT",
-                            "orderIdList": [{"orderId": item.exchange_order_id}],
-                        },
-                    )
-                    bitget_result = plan_resp.get("code") == "00000"
+                    plan_resp = await adapter.cancel_plan_order_any_type(sym, item.exchange_order_id, mode)
+                    bitget_result = bool(plan_resp.get("ok"))
                     if not bitget_result:
-                        print(f"[cancel] both cancel paths failed: order={resp.get('msg')} plan={plan_resp.get('msg')}")
+                        print(f"[cancel] both cancel paths failed: order={resp.get('msg')} plan={plan_resp.get('reason')}")
         except Exception as e:
             print(f"[cancel] Bitget cancel exception: {e}")
 
@@ -293,17 +298,8 @@ async def api_delete_conditional(
                 if resp.get("code") == "00000":
                     bitget_cancelled = True
                 else:
-                    plan_resp = await adapter._bitget_request(
-                        "POST", "/api/v2/mix/order/cancel-plan-order",
-                        mode=mode,
-                        body={
-                            "symbol": sym,
-                            "productType": "USDT-FUTURES",
-                            "marginCoin": "USDT",
-                            "orderIdList": [{"orderId": item.exchange_order_id}],
-                        },
-                    )
-                    bitget_cancelled = plan_resp.get("code") == "00000"
+                    plan_resp = await adapter.cancel_plan_order_any_type(sym, item.exchange_order_id, mode)
+                    bitget_cancelled = bool(plan_resp.get("ok"))
                 if not bitget_cancelled and not force:
                     raise HTTPException(
                         409,
@@ -331,13 +327,21 @@ class PlaceLineOrderReq(BaseModel):
     manual_line_id: str
     direction: Literal["long", "short"]
     kind: Literal["bounce", "break"] = "bounce"
-    tolerance_pct: float = 0.1     # how close mark must be to line to fire
-    stop_offset_pct: float = 0.3
+    # Single line-relative distance. Entry is line +/- tolerance_pct.
+    # The stop is the line itself; stop_offset_pct is kept only for old
+    # clients and is ignored by this endpoint.
+    tolerance_pct: float = 0.1
+    stop_offset_pct: float = 0.0
     size_usdt: float = Field(..., gt=0, description="Notional to commit, in USDT")
     leverage: int = Field(5, ge=1, le=100)
     mode: Literal["demo", "live"] = "live"
     rr_target: float = 2.0
     notify_tg: bool = Field(True, description="Send TG alert on trigger")
+    reverse_enabled: bool = False
+    reverse_entry_offset_pct: float = 0.0
+    reverse_stop_offset_pct: float = 0.0  # deprecated; reverse stop is the line
+    reverse_rr_target: float | None = None
+    reverse_leverage: float | None = None
 
 
 _TF_LADDER = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w"]
@@ -520,23 +524,11 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Project the line to NOW. CLAMP within [t_start, t_end] — extrapolating
-    # outside the anchor window can give negative prices for lines drawn
-    # entirely in the future (user clicks on the chart's right-side future
-    # bars), or absurdly high prices for past lines extended forward.
-    # Inside the window we interpolate. Outside, snap to the nearest anchor.
-    span = drawing.t_end - drawing.t_start
+    # Project the line to NOW using the drawing extension flags. Most user
+    # lines extend right, so a live plan order must track the extended line
+    # instead of freezing at price_end after the second anchor.
     now_ts_ = now_ts()
-    if span > 0:
-        if now_ts_ <= drawing.t_start:
-            line_now = drawing.price_start
-        elif now_ts_ >= drawing.t_end:
-            line_now = drawing.price_end
-        else:
-            slope = (drawing.price_end - drawing.price_start) / span
-            line_now = drawing.price_start + slope * (now_ts_ - drawing.t_start)
-    else:
-        line_now = drawing.price_end or drawing.price_start
+    line_now = _project_manual_line_price(drawing, now_ts_)
     ref_price = float(line_now)
     if ref_price <= 0:
         raise HTTPException(
@@ -585,12 +577,12 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     offset = req.tolerance_pct / 100.0
     if req.direction == "long":
         entry_price = ref_price * (1.0 + offset)
-        stop_price  = ref_price * (1.0 - req.stop_offset_pct / 100.0)
+        stop_price = ref_price
         risk = entry_price - stop_price
         tp_price = entry_price + risk * req.rr_target
     else:
         entry_price = ref_price * (1.0 - offset)
-        stop_price  = ref_price * (1.0 + req.stop_offset_pct / 100.0)
+        stop_price = ref_price
         risk = stop_price - entry_price
         tp_price = entry_price - risk * req.rr_target
 
@@ -606,7 +598,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         symbol=drawing.symbol.upper(),
         timeframe=drawing.timeframe,
         side=req.direction,         # type: ignore
-        order_type="market",        # plan order fires as market on trigger
+        order_type="limit",
         trigger_mode="manual",
         entry_price=entry_price,
         stop_price=stop_price,
@@ -616,6 +608,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         reason="manual_line_draw",
         created_at_bar=-1,
         created_at_ts=time.time(),
+        post_only=True,
     )
 
     # Set leverage first
@@ -638,12 +631,8 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         print(f"[place-line-order] set-leverage warning: {e}")
 
     # SUBMIT BITGET PLAN ORDER (visible in user's 计划委托 tab)
-    result = await adapter.submit_live_plan_entry(
-        intent,
-        mode=req.mode,
-        trigger_price=entry_price,
-        trigger_type="mark_price",
-    )
+    # place-order supports force=post_only; place-plan-order does not.
+    result = await adapter.submit_live_entry(intent, mode=req.mode)
 
     if not result.get("ok"):
         return {
@@ -663,6 +652,8 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         t_end=drawing.t_end,
         price_start=drawing.price_start,
         price_end=drawing.price_end,
+        extend_left=bool(drawing.extend_left),
+        extend_right=bool(drawing.extend_right),
         pattern_stats_at_create={},
         trigger=TriggerConfig(
             tolerance_atr=req.tolerance_pct / 0.3,
@@ -676,14 +667,19 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             order_kind="breakout" if req.kind == "break" else "bounce",
             # Store the absolute entry offset so replan can re-apply tolerance
             entry_offset_points=ref_price * req.tolerance_pct / 100.0,
-            stop_points=ref_price * req.stop_offset_pct / 100.0,
+            stop_points=0.0,
             tolerance_pct_of_line=req.tolerance_pct,
-            stop_offset_pct_of_line=req.stop_offset_pct,
+            stop_offset_pct_of_line=0.0,
             rr_target=req.rr_target,
             tp_price=tp_price,
             notional_usd=req.size_usdt,
             submit_to_exchange=True,
             exchange_mode=req.mode,
+            reverse_enabled=req.reverse_enabled,
+            reverse_entry_offset_pct=req.reverse_entry_offset_pct,
+            reverse_stop_offset_pct=0.0,
+            reverse_rr_target=req.reverse_rr_target,
+            reverse_leverage=req.reverse_leverage,
         ),
         status="triggered",                                  # plan placed on Bitget
         created_at=now_ts(),
@@ -712,31 +708,59 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             price=ref_price,
             line_price=ref_price,
             message=(
-                f"Bitget plan order placed: {req.direction} trigger@{_fmt(entry_price)} "
+                f"Bitget post-only limit placed: {req.direction} entry@{_fmt(entry_price)} "
                 f"sl@{_fmt(stop_price)} tp@{_fmt(tp_price)} qty={quantity:.6f} "
                 f"orderId={result.get('exchange_order_id')}"
             ),
         ))
+        try:
+            from ..strategy.drawing_learner import capture_user_order_intent
+            capture_user_order_intent(
+                manual_line_id=req.manual_line_id,
+                symbol=drawing.symbol,
+                timeframe=drawing.timeframe,
+                side=drawing.side,
+                direction=req.direction,
+                order_kind="breakout" if req.kind == "break" else "bounce",
+                line_price=ref_price,
+                entry_price=entry_price,
+                stop_price=stop_price,
+                tp_price=tp_price,
+                tolerance_pct=req.tolerance_pct,
+                stop_offset_pct=0.0,
+                rr_target=req.rr_target,
+                size_usdt=req.size_usdt,
+                exchange_order_id=str(result.get("exchange_order_id") or ""),
+            )
+        except Exception as exc:
+            print(f"[drawing_learner] order-intent capture err: {exc}", flush=True)
     except Exception as e:
         # CRITICAL: cond create failed BUT Bitget order was placed.
         # We now have a ghost — Bitget order with no local cond.
         # Try to cancel the Bitget order so we don't leak.
         print(f"[place-line-order] cond create failed: {e} — rolling back Bitget order", flush=True)
         try:
-            await adapter._bitget_request(
-                "POST", "/api/v2/mix/order/cancel-plan-order",
-                mode=req.mode,
-                body={
-                    "symbol": drawing.symbol.upper(),
-                    "productType": "USDT-FUTURES",
-                    "marginCoin": "USDT",
-                    "orderIdList": [{"orderId": result.get("exchange_order_id", "")}],
-                },
+            cancel_resp = await adapter.cancel_order(
+                drawing.symbol.upper(), str(result.get("exchange_order_id", "")), req.mode,
             )
+            if not cancel_resp.get("ok"):
+                await adapter.cancel_plan_order_any_type(
+                    drawing.symbol.upper(), str(result.get("exchange_order_id", "")), req.mode,
+                )
             print(f"[place-line-order] rolled back ghost order {result.get('exchange_order_id')}", flush=True)
         except Exception as e2:
             print(f"[place-line-order] ROLLBACK FAILED — manual cleanup needed for {result.get('exchange_order_id')}: {e2}", flush=True)
         raise HTTPException(500, f"cond persistence failed after Bitget place: {e}")
+
+    return {
+        "ok": True,
+        "conditional": cond.to_dict(),
+        "exchange_order_id": result.get("exchange_order_id"),
+        "message": (
+            f"Bitget post-only limit submitted: {req.direction} entry {_fmt(entry_price)} · "
+            f"SL {_fmt(stop_price)} · TP {_fmt(tp_price)}."
+        ),
+    }
 
     return {
         "ok": True,
@@ -1102,7 +1126,7 @@ def _derive_recommendations(
 
     return {
         "tolerance_pct": tolerance_pct,
-        "stop_pct": stop_pct,
+        "stop_pct": tolerance_pct,
         "rr_target": rr_target,
         "confidence_label": stats.get("trustworthiness", "low"),
         "atr_pct": round(atr_pct, 3),
@@ -1114,7 +1138,7 @@ def _derive_recommendations(
         "bb_state": bb_state,
         "rationale": (
             f"{n} 条相似形态: 反弹 {int(p_bounce*100)}% · "
-            f"DD80% {stop_atr:.1f}ATR -> stop {stop_pct}% · "
+            f"DD80% {stop_atr:.1f}ATR · SL=line · "
             f"目标 {target_atr:.1f}ATR -> RR {rr_target}"
             + (f" · ATR={atr_pct:.2f}% ({regime})" if atr_pct > 0 else "")
             + (f" · {touch_count}触" if touch_count > 2 else "")
@@ -1128,7 +1152,7 @@ def _derive_recommendations(
 def _default_recommendations() -> dict:
     return {
         "tolerance_pct": 0.2,
-        "stop_pct": 0.5,
+        "stop_pct": 0.2,
         "rr_target": 2.0,
         "confidence_label": "none",
         "rationale": "无历史样本 — 使用保守默认值",
@@ -1192,7 +1216,7 @@ def _apply_smart_adjustments(
 
     # Final clamp + rounding
     out["tolerance_pct"] = round(max(0.05, min(1.5, out["tolerance_pct"])), 2)
-    out["stop_pct"] = round(max(0.2, min(5.0, out["stop_pct"])), 2)
+    out["stop_pct"] = out["tolerance_pct"]
     out["atr_pct"] = round(atr_pct, 3)
     out["regime"] = regime
     out["touch_count"] = touch_count

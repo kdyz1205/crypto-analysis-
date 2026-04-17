@@ -137,6 +137,8 @@ class LiveExecutionAdapter:
             if limit_price is None:
                 return self._error_result("price_precision_error", mode=mode, intent=intent)
             body["price"] = limit_price
+            if getattr(intent, "post_only", False):
+                body["force"] = "post_only"
 
         # Attach preset SL/TP so when the entry fills, Bitget auto-creates
         # plan orders to close the position. Without this, the user has to
@@ -167,6 +169,14 @@ class LiveExecutionAdapter:
                     "orderId": data.get("orderId"),
                     "clientOid": data.get("clientOid"),
                 },
+                "request_body_excerpt": {
+                    "orderType": body["orderType"],
+                    "price": body.get("price"),
+                    "force": body.get("force"),
+                    "presetStopLossPrice": body.get("presetStopLossPrice"),
+                    "presetStopSurplusPrice": body.get("presetStopSurplusPrice"),
+                    "size": body["size"],
+                },
             }
         return self._error_result(
             self._extract_error_reason(response),
@@ -174,6 +184,46 @@ class LiveExecutionAdapter:
             intent=intent,
             response=response,
         )
+
+    async def cancel_order(
+        self,
+        symbol: str,
+        order_id: str,
+        mode: LiveMode,
+    ) -> dict[str, Any]:
+        """Cancel a regular Bitget order from the open-orders book."""
+        normalized_symbol = symbol.upper().replace("/", "")
+        oid = str(order_id or "")
+        if not oid:
+            return {
+                "ok": False,
+                "symbol": normalized_symbol,
+                "order_id": oid,
+                "reason": "missing_order_id",
+            }
+        body = {
+            "symbol": normalized_symbol,
+            "productType": self.product_type,
+            "marginCoin": self.margin_coin,
+            "orderId": oid,
+        }
+        response = await self._bitget_request(
+            "POST", "/api/v2/mix/order/cancel-order", mode=mode, body=body,
+        )
+        if response.get("code") == "00000":
+            return {
+                "ok": True,
+                "symbol": normalized_symbol,
+                "order_id": oid,
+                "exchange_response_excerpt": self._excerpt(response),
+            }
+        return {
+            "ok": False,
+            "symbol": normalized_symbol,
+            "order_id": oid,
+            "reason": self._extract_error_reason(response),
+            "exchange_response_excerpt": self._excerpt(response),
+        }
 
     async def submit_live_plan_entry(
         self,
@@ -378,6 +428,35 @@ class LiveExecutionAdapter:
             if not order_id:
                 continue
             if symbol and row_symbol and row_symbol != symbol.upper().replace("/", ""):
+                continue
+            rows.append(row)
+        return rows
+
+    async def get_pending_orders(
+        self,
+        mode: LiveMode,
+        *,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return Bitget regular pending orders for exchange-truth sync."""
+        params: dict[str, str] = {"productType": self.product_type}
+        response = await self._bitget_request(
+            "GET",
+            "/api/v2/mix/order/orders-pending",
+            mode=mode,
+            body=None,
+            params=params,
+        )
+        if response.get("code") != "00000":
+            raise RuntimeError(f"pending order fetch failed: {self._extract_error_reason(response)}")
+        rows = []
+        normalized_symbol = symbol.upper().replace("/", "") if symbol else ""
+        for row in self._as_rows(response.get("data")):
+            order_id = row.get("orderId") or row.get("order_id")
+            row_symbol = str(row.get("symbol") or "").upper()
+            if not order_id:
+                continue
+            if normalized_symbol and row_symbol and row_symbol != normalized_symbol:
                 continue
             rows.append(row)
         return rows

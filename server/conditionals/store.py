@@ -133,6 +133,9 @@ class ConditionalOrderStore:
                     it.updated_at = now_ts()
                     if status == "triggered":
                         it.triggered_at = now_ts()
+                    elif status == "filled":
+                        if it.triggered_at is None:
+                            it.triggered_at = now_ts()
                     elif status == "cancelled":
                         it.cancelled_at = now_ts()
                         it.cancel_reason = reason
@@ -235,6 +238,8 @@ class ConditionalOrderStore:
             last_market_price=d.get("last_market_price"),
             last_line_price=d.get("last_line_price"),
             last_distance_atr=d.get("last_distance_atr"),
+            extend_left=bool(d.get("extend_left", False)),
+            extend_right=bool(d.get("extend_right", True)),
         )
 
 

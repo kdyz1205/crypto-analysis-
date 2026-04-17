@@ -120,6 +120,8 @@ def force_replan_line(manual_line_id: str) -> int:
                     cond.t_end = drawing.t_end
                     cond.price_start = drawing.price_start
                     cond.price_end = drawing.price_end
+                    cond.extend_left = bool(drawing.extend_left)
+                    cond.extend_right = bool(drawing.extend_right)
                     _store.update(cond)
             except Exception as e:
                 print(f"[force_replan] failed to refresh anchors for {cond.conditional_id}: {e}", flush=True)
@@ -438,6 +440,8 @@ async def _write_trade_snapshot(
             "t_end": cond.t_end,
             "price_start": cond.price_start,
             "price_end": cond.price_end,
+            "extend_left": cond.extend_left,
+            "extend_right": cond.extend_right,
             "slope_per_sec": (
                 (cond.price_end - cond.price_start) / max(1, cond.t_end - cond.t_start)
             ),
@@ -511,7 +515,7 @@ async def _spawn_reverse_conditional(src: ConditionalOrder, reason: str) -> None
     from .types import OrderConfig, TriggerConfig
     if not src.order.reverse_enabled:
         return
-    if src.order.reverse_entry_offset_pct <= 0 or src.order.reverse_stop_offset_pct <= 0:
+    if src.order.reverse_entry_offset_pct <= 0:
         print(
             f"[reverse] src={src.conditional_id} reverse_enabled but "
             f"entry/stop pct not set — skipping",
@@ -532,6 +536,8 @@ async def _spawn_reverse_conditional(src: ConditionalOrder, reason: str) -> None
         t_end=src.t_end,
         price_start=src.price_start,
         price_end=src.price_end,
+        extend_left=src.extend_left,
+        extend_right=src.extend_right,
         pattern_stats_at_create={
             **(src.pattern_stats_at_create or {}),
             "_reversed_from": src.conditional_id,
@@ -559,7 +565,7 @@ async def _spawn_reverse_conditional(src: ConditionalOrder, reason: str) -> None
             submit_to_exchange=src.order.submit_to_exchange,
             exchange_mode=src.order.exchange_mode,
             tolerance_pct_of_line=src.order.reverse_entry_offset_pct,
-            stop_offset_pct_of_line=src.order.reverse_stop_offset_pct,
+            stop_offset_pct_of_line=0.0,
             leverage=src.order.reverse_leverage or src.order.leverage,
             # Don't chain auto-reverse infinitely by default
             reverse_enabled=False,
@@ -663,8 +669,8 @@ def _compute_trade_prices(cond: ConditionalOrder, line_price: float, atr: float)
     dir_sign = 1 if oc.direction == "long" else -1
 
     tol_pct = float(oc.tolerance_pct_of_line or 0.0)
-    stop_pct = float(oc.stop_offset_pct_of_line or 0.0)
-    if tol_pct <= 0 or stop_pct <= 0:
+    stop_pct = 0.0
+    if tol_pct <= 0:
         raise ValueError(
             f"tolerance_pct_of_line ({tol_pct}) and stop_offset_pct_of_line "
             f"({stop_pct}) must both be > 0 — legacy absolute-offset mode is "
@@ -672,7 +678,7 @@ def _compute_trade_prices(cond: ConditionalOrder, line_price: float, atr: float)
         )
 
     entry_price = line_price * (1.0 + (tol_pct / 100.0) * dir_sign)
-    stop_price = line_price * (1.0 - (stop_pct / 100.0) * dir_sign)
+    stop_price = line_price
 
     # TP: absolute > rr
     risk = abs(entry_price - stop_price)
@@ -708,7 +714,7 @@ async def _submit_live(cond, qty, entry_price, stop_price, tp_price, market_pric
         symbol=cond.symbol,
         timeframe=cond.timeframe,
         side=cond.order.direction,  # type: ignore
-        order_type="market",
+        order_type="limit",
         trigger_mode="conditional_touch",
         entry_price=float(entry_price),
         stop_price=float(stop_price),
@@ -718,6 +724,7 @@ async def _submit_live(cond, qty, entry_price, stop_price, tp_price, market_pric
         reason=f"conditional {cond.conditional_id} triggered",
         created_at_bar=-1,
         created_at_ts=now_ts(),
+        post_only=True,
     )
 
     adapter = LiveExecutionAdapter()
@@ -856,6 +863,102 @@ async def _compute_qty(cond: ConditionalOrder, market_price: float, atr: float) 
 # ─────────────────────────────────────────────────────────────
 # Price + ATR fetchers
 # ─────────────────────────────────────────────────────────────
+def _tf_seconds(tf: str) -> int:
+    return _TF_REPLAN_SECONDS.get(tf, 900)
+
+
+def _manual_slope_per_bar(cond: ConditionalOrder) -> float:
+    span = int(cond.t_end) - int(cond.t_start)
+    if span <= 0:
+        return 0.0
+    return (float(cond.price_end) - float(cond.price_start)) / span * _tf_seconds(cond.timeframe)
+
+
+def _position_size(row: dict[str, Any]) -> float:
+    for key in ("total", "available", "size", "pos", "position"):
+        raw = row.get(key)
+        if raw in (None, "", 0, "0"):
+            continue
+        try:
+            value = abs(float(raw))
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return 0.0
+
+
+def _position_open_ts(row: dict[str, Any]) -> int:
+    for key in ("openTime", "openTimestamp", "cTime", "ctime", "createdTime", "createTime"):
+        raw = row.get(key)
+        if raw in (None, "", 0, "0"):
+            continue
+        try:
+            ts = int(float(raw))
+        except (TypeError, ValueError):
+            continue
+        if ts > 10_000_000_000:
+            ts //= 1000
+        if ts > 0:
+            return ts
+    return 0
+
+
+def _position_entry_price(row: dict[str, Any]) -> float:
+    for key in ("openPriceAvg", "averageOpenPrice", "openAvgPrice", "entryPrice"):
+        raw = row.get(key)
+        if raw in (None, "", 0, "0"):
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return 0.0
+
+
+def _find_position_for_cond(rows: list[dict[str, Any]], cond: ConditionalOrder) -> dict[str, Any] | None:
+    symbol = cond.symbol.upper()
+    want_side = cond.order.direction.lower()
+    fallback: dict[str, Any] | None = None
+    for row in rows:
+        if str(row.get("symbol") or "").upper() != symbol:
+            continue
+        if _position_size(row) <= 0:
+            continue
+        side = str(row.get("holdSide") or row.get("posSide") or "").lower()
+        if side == want_side:
+            return row
+        if fallback is None:
+            fallback = row
+    return fallback
+
+
+def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict[str, Any], now: int) -> None:
+    from server.strategy.mar_bb_runner import register_trendline_params
+
+    opened_ts = _position_open_ts(pos) or int(cond.triggered_at or now)
+    line_ref_price = float(cond.line_price_at(opened_ts))
+    entry_price = _position_entry_price(pos) or float(cond.fill_price or line_ref_price)
+    if line_ref_price <= 0 or entry_price <= 0:
+        return
+    register_trendline_params(
+        cond.symbol.upper(),
+        slope=_manual_slope_per_bar(cond),
+        intercept=0.0,
+        entry_bar=0,
+        entry_price=entry_price,
+        side=cond.order.direction,
+        tf=cond.timeframe,
+        created_ts=opened_ts,
+        tp_price=float(cond.order.tp_price or 0.0),
+        last_sl_set=line_ref_price,
+        line_ref_ts=opened_ts,
+        line_ref_price=line_ref_price,
+    )
+
+
 async def _reconcile_against_bitget() -> None:
     """Compare local triggered conds against actual Bitget plan orders.
     Any local cond whose exchange_order_id is NOT on Bitget gets marked
@@ -863,6 +966,106 @@ async def _reconcile_against_bitget() -> None:
     triggered = _store.list_all(status="triggered")
     if not triggered:
         return
+    try:
+        from server.execution.live_adapter import LiveExecutionAdapter
+        adapter = LiveExecutionAdapter()
+        if not adapter.has_api_keys():
+            return
+
+        modes = {
+            cond.order.exchange_mode
+            for cond in triggered
+            if cond.order.exchange_mode in {"demo", "live"}
+        }
+        pending_oids_by_mode: dict[str, set[str]] = {}
+        positions_by_mode: dict[str, list[dict[str, Any]]] = {}
+
+        for mode in modes:
+            pending_oids: set[str] = set()
+            try:
+                for row in await adapter.get_pending_orders(mode):  # type: ignore[arg-type]
+                    oid = str(row.get("orderId") or row.get("order_id") or "")
+                    if oid:
+                        pending_oids.add(oid)
+            except Exception as e:
+                print(f"[reconcile] regular pending fetch failed mode={mode}: {e}", flush=True)
+            try:
+                for row in await adapter.get_pending_plan_orders(mode, plan_type="normal_plan"):  # type: ignore[arg-type]
+                    oid = str(row.get("orderId") or row.get("order_id") or "")
+                    if oid:
+                        pending_oids.add(oid)
+            except Exception as e:
+                print(f"[reconcile] plan pending fetch failed mode={mode}: {e}", flush=True)
+
+            try:
+                pos_resp = await adapter._bitget_request(
+                    "GET", "/api/v2/mix/position/all-position",
+                    mode=mode,
+                    params={"productType": "USDT-FUTURES", "marginCoin": "USDT"},
+                )
+                positions_by_mode[mode] = adapter._as_rows(pos_resp.get("data")) if pos_resp.get("code") == "00000" else []
+            except Exception as e:
+                print(f"[reconcile] position fetch failed mode={mode}: {e}", flush=True)
+                positions_by_mode[mode] = []
+            pending_oids_by_mode[mode] = pending_oids
+
+        for cond in triggered:
+            oid = str(cond.exchange_order_id or "")
+            if not oid:
+                continue
+            mode = cond.order.exchange_mode
+            if mode not in {"demo", "live"}:
+                continue
+            if oid in pending_oids_by_mode.get(mode, set()):
+                continue
+
+            pos = _find_position_for_cond(positions_by_mode.get(mode, []), cond)
+            if pos is not None:
+                now = now_ts()
+                _register_manual_trailing_if_position_open(cond, pos, now)
+                entry = _position_entry_price(pos) or float(cond.fill_price or 0.0)
+                qty = _position_size(pos) or float(cond.fill_qty or 0.0)
+                cond.status = "filled"
+                cond.fill_price = entry or cond.fill_price
+                cond.fill_qty = qty or cond.fill_qty
+                try:
+                    latest = _store.get(cond.conditional_id)
+                    if latest is not None:
+                        cond.events = latest.events
+                    _store.update(cond)
+                    opened_ts = _position_open_ts(pos) or now
+                    _store.append_event(cond.conditional_id, ConditionalEvent(
+                        ts=now,
+                        kind="exchange_acked",
+                        price=entry or None,
+                        line_price=cond.line_price_at(opened_ts),
+                        message="entry filled; registered manual line slope for trailing SL",
+                    ))
+                except Exception as e:
+                    print(f"[reconcile] fill status update failed for {cond.conditional_id}: {e}", flush=True)
+                print(f"[reconcile] cond {cond.conditional_id} filled; trailing SL registered", flush=True)
+                continue
+
+            print(f"[reconcile] cond {cond.conditional_id} oid={oid} not pending and no position; marking cancelled", flush=True)
+            _store.set_status(
+                cond.conditional_id, "cancelled",
+                reason="reconcile: bitget order no longer exists",
+            )
+            try:
+                _store.append_event(cond.conditional_id, ConditionalEvent(
+                    ts=now_ts(), kind="cancelled",
+                    message=f"reconcile: order {oid} not on Bitget anymore",
+                ))
+            except Exception:
+                pass
+            try:
+                await _spawn_reverse_conditional(cond, reason="reconcile_order_gone")
+            except Exception as e:
+                print(f"[reconcile] reverse spawn failed for {cond.conditional_id}: {e}", flush=True)
+    except Exception as e:
+        print(f"[reconcile] err: {e}", flush=True)
+    return
+
     try:
         from server.execution.live_adapter import LiveExecutionAdapter
         adapter = LiveExecutionAdapter()
@@ -1034,28 +1237,19 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         if (now - last) < interval:
             return
 
-    # Project the line's price at NOW (clamped to anchor window)
-    span = cond.t_end - cond.t_start
-    if span <= 0:
-        return
-    if now <= cond.t_start:
-        line_now = cond.price_start
-    elif now >= cond.t_end:
-        line_now = cond.price_end
-    else:
-        slope = (cond.price_end - cond.price_start) / span
-        line_now = cond.price_start + slope * (now - cond.t_start)
+    # Project the line's price at NOW using the same extension semantics
+    # the chart uses. If extend_right=True, orders keep tracking the line
+    # after the second anchor instead of freezing at price_end.
+    line_now = cond.line_price_at(now)
 
     # Re-apply the original LINE-RELATIVE percentages so each replan tracks
     # the new line price exactly. pct-only — legacy points path deleted.
     direction = cond.order.direction
     tol_pct = cond.order.tolerance_pct_of_line or 0.0
-    stop_pct = cond.order.stop_offset_pct_of_line or 0.0
-    if tol_pct <= 0 or stop_pct <= 0:
+    if tol_pct <= 0:
         _append_event(cond, ConditionalEvent(
             ts=now, kind="exchange_error",
-            message=f"replan aborted: tolerance_pct_of_line={tol_pct} stop_offset_pct_of_line={stop_pct} "
-                    "(both must be > 0; legacy absolute-offset path is deleted)",
+            message=f"replan aborted: tolerance_pct_of_line={tol_pct} must be > 0",
         ))
         return
     new_trigger = (
@@ -1087,37 +1281,31 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
                 pass
             return
 
-    # Cancel old Bitget plan
+    # Cancel the old Bitget entry order. New manual-line entries are regular
+    # post-only limits; older records may still be normal_plan trigger orders.
     from server.execution.live_adapter import LiveExecutionAdapter
     adapter = LiveExecutionAdapter()
     if not adapter.has_api_keys():
         return
     sym = cond.symbol.upper()
-    cancel_body = {
-        "symbol": sym,
-        "productType": "USDT-FUTURES",
-        "marginCoin": "USDT",
-        "orderIdList": [{"orderId": cond.exchange_order_id}],
-    }
-    cancel_resp = await adapter._bitget_request(
-        "POST", "/api/v2/mix/order/cancel-plan-order",
-        mode=cond.order.exchange_mode, body=cancel_body,
-    )
-    if cancel_resp.get("code") != "00000":
+    cancel_resp = await adapter.cancel_order(sym, cond.exchange_order_id, cond.order.exchange_mode)
+    if not cancel_resp.get("ok"):
+        cancel_resp = await adapter.cancel_plan_order_any_type(sym, cond.exchange_order_id, cond.order.exchange_mode)
+    if not cancel_resp.get("ok"):
         _append_event(cond, ConditionalEvent(
             ts=now, kind="exchange_error",
-            message=f"replan cancel failed: {cancel_resp.get('msg','?')}",
+            message=f"replan cancel failed: {cancel_resp.get('reason','?')}",
         ))
         return
 
     # Recompute SL / TP from the new LINE projection using line-relative pct.
     rr = cond.order.rr_target or 2.0
     if direction == "long":
-        new_stop = line_now * (1 - stop_pct / 100.0)
+        new_stop = line_now
         risk = new_trigger - new_stop
         new_tp = new_trigger + risk * rr
     else:
-        new_stop = line_now * (1 + stop_pct / 100.0)
+        new_stop = line_now
         risk = new_stop - new_trigger
         new_tp = new_trigger - risk * rr
 
@@ -1146,8 +1334,8 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         symbol=sym,
         timeframe=cond.timeframe,
         side=direction,  # type: ignore
-        order_type="market",
-        trigger_mode="manual",
+        order_type="limit",
+        trigger_mode="manual_replan",
         entry_price=float(new_trigger),
         stop_price=float(new_stop),
         tp_price=float(new_tp),
@@ -1156,11 +1344,9 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         reason="line_slope_replan",
         created_at_bar=-1,
         created_at_ts=now,
+        post_only=True,
     )
-    place = await adapter.submit_live_plan_entry(
-        intent, mode=cond.order.exchange_mode,
-        trigger_price=float(new_trigger), trigger_type="mark_price",
-    )
+    place = await adapter.submit_live_entry(intent, mode=cond.order.exchange_mode)
     if place.get("ok"):
         cond.exchange_order_id = place.get("exchange_order_id") or ""
         cond.fill_price = float(new_trigger)
@@ -1177,7 +1363,7 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
             line_price=float(new_trigger),
             message=(
                 f"replanned: new trigger {new_trigger:.4f} (was {old_trigger:.4f}, "
-                f"drift {(abs(new_trigger-old_trigger)/old_trigger*100):.3f}%) "
+                f"drift {(abs(new_trigger-old_trigger)/old_trigger*100 if old_trigger > 0 else 0.0):.3f}%) "
                 f"new orderId={cond.exchange_order_id}"
             ),
         ))

@@ -59,6 +59,7 @@ class OrderIntent:
     reason: str = ""
     created_at_bar: int = -1
     created_at_ts: Any = None
+    post_only: bool = False
 
 
 @dataclass(slots=True)

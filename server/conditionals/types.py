@@ -14,7 +14,7 @@ from typing import Any, Literal
 #               (line broken / price drifted too far / expired)
 #   failed    — triggered but exchange submit errored
 # ─────────────────────────────────────────────────────────────────────
-ConditionalStatus = Literal["pending", "triggered", "cancelled", "failed"]
+ConditionalStatus = Literal["pending", "triggered", "filled", "cancelled", "failed"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +84,7 @@ class OrderConfig:
     # Whether to actually submit to exchange (True) or only alert (False)
     submit_to_exchange: bool = False
     # Exchange account mode (only if submit_to_exchange=True)
-    exchange_mode: Literal["paper", "live"] = "paper"
+    exchange_mode: Literal["paper", "demo", "live"] = "paper"
     # Line-relative percentages — the ONLY supported offset mode. Every
     # replan re-applies these to the NEW projected line price, so sloped
     # lines get their orders moved every bar. 0 = not set (rejected by
@@ -169,6 +169,11 @@ class ConditionalOrder:
     last_line_price: float | None = None
     last_distance_atr: float | None = None
 
+    # Copied from the manual drawing. Most user lines extend right, so a
+    # Bitget plan order must keep repricing after the second anchor.
+    extend_left: bool = False
+    extend_right: bool = True
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         # events is already dicts via asdict
@@ -177,22 +182,17 @@ class ConditionalOrder:
     def line_price_at(self, ts: int) -> float:
         """Project the line's price at timestamp `ts`.
 
-        CLAMPED within [t_start, t_end]. Outside the anchor window we
-        snap to the nearest anchor instead of extrapolating, because:
-          - lines drawn entirely in the future (chart's right-offset
-            empty bars) extrapolate backward to negative prices when
-            slope is positive
-          - lines drawn entirely in the past extrapolate forward to
-            absurdly high/low prices when projected far ahead
-        Both are correct math but useless for trading. Snapping gives
-        the user "the closest meaningful price the line says".
+        Respects the manual drawing's extension flags. With extend_right=True
+        the line keeps projecting after the second anchor; with
+        extend_left=True it also projects before the first anchor. Otherwise
+        it snaps to the nearest anchor outside the anchor window.
         """
         span = self.t_end - self.t_start
         if span <= 0:
             return self.price_start
-        if ts <= self.t_start:
+        if ts <= self.t_start and not self.extend_left:
             return self.price_start
-        if ts >= self.t_end:
+        if ts >= self.t_end and not self.extend_right:
             return self.price_end
         slope_per_sec = (self.price_end - self.price_start) / span
         return self.price_start + slope_per_sec * (ts - self.t_start)

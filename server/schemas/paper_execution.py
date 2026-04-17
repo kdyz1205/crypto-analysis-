@@ -24,6 +24,7 @@ class OrderIntentModel(BaseModel):
     reason: str = ""
     created_at_bar: int
     created_at_ts: object | None = None
+    post_only: bool = False
 
 
 class PaperOrderModel(BaseModel):
