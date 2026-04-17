@@ -13,6 +13,10 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.py" },
     { "src": "/static/(.*)", "dest": "/frontend/$1" },
+    { "src": "/js/(.*)", "dest": "/frontend/js/$1" },
+    { "src": "/v2", "dest": "/frontend/v2.html" },
+    { "src": "/v2.html", "dest": "/frontend/v2.html" },
+    { "src": "/v2.css", "dest": "/frontend/v2.css" },
     { "src": "/(style\\.css|app\\.js)(.*)", "dest": "/frontend/$1" },
     { "src": "/", "dest": "/frontend/index.html" }
   ]

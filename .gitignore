@@ -33,6 +33,7 @@ strategy_presets.json
 support_resistance.py
 note*
 tmp_stage*.log
+tmp_pytest/
 data/*.csv
 data/*.csv.gz
 
