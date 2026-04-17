@@ -130,6 +130,26 @@ def _would_trigger_immediately(kind: str, current_price: float, limit_price: flo
     return current_price >= limit_price
 
 
+def _price_from_cfg(symbol: str, cfg: dict) -> float:
+    prices = cfg.get("prices") or {}
+    raw = prices.get(symbol) or prices.get(symbol.upper()) or prices.get(symbol.lower()) or 0
+    try:
+        return float(raw or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _touched_status(kind: str, current_price: float, projected_price: float, limit_price: float) -> str | None:
+    """Return the terminal status for a passive order that is no longer ahead of price."""
+    if not _would_trigger_immediately(kind, current_price, limit_price):
+        return None
+    if kind == "support" and current_price <= projected_price:
+        return "broken"
+    if kind == "resistance" and current_price >= projected_price:
+        return "broken"
+    return "stale"
+
+
 def _is_line_broken(kind: str, projected_price: float, current_close: float, atr: float) -> bool:
     """A line is broken when price closes decisively through it."""
     if projected_price <= 0:
@@ -189,6 +209,37 @@ async def update_trendline_orders(
     except Exception as exc:
         print(f"[trendline_orders] pending normal_plan sync failed: {exc}", flush=True)
 
+    local_placed_ids = {
+        str(o.exchange_order_id or "")
+        for o in active
+        if o.status == "placed" and str(o.exchange_order_id or "")
+    }
+    if pending_sync_ok:
+        for row in pending_rows:
+            row_id = str(row.get("orderId") or row.get("order_id") or "")
+            row_symbol = str(row.get("symbol") or "").upper()
+            client_oid = str(row.get("clientOid") or "")
+            if not row_id or not row_symbol or row_id in local_placed_ids:
+                continue
+            if not client_oid.startswith("tl_"):
+                continue
+            cancel_resp = await adapter.cancel_plan_order(
+                row_symbol,
+                row_id,
+                mode,
+                plan_type="normal_plan",
+            )
+            if cancel_resp.get("ok"):
+                cancelled += 1
+                pending_normal_ids_by_symbol.get(row_symbol, set()).discard(row_id)
+                print(
+                    f"[trendline_orders] ORPHAN-CANCEL {row_symbol}: "
+                    f"exchange normal_plan order_id={row_id} not managed locally",
+                    flush=True,
+                )
+            else:
+                print(f"[trendline_orders] orphan cancel {row_symbol} failed: {cancel_resp}", flush=True)
+
     # Index only exchange-live local orders by (symbol, tf, kind). Historical
     # stale/filled records are kept for evidence but must not block fresh lines.
     inactive_orders = [o for o in active if o.status != "placed"]
@@ -245,7 +296,7 @@ async def update_trendline_orders(
             tp_px = limit_px * (1 - buffer_pct * rr)
             direction = "short"
 
-        current_close = cfg.get("prices", {}).get(sym, 0) or cfg.get("prices", {}).get(sym_upper, 0) or sig.get("entry_price", 0)
+        current_close = _price_from_cfg(sym_upper, cfg) or float(sig.get("entry_price", 0) or 0)
         if _would_trigger_immediately(kind, float(current_close or 0), limit_px):
             print(f"[trendline_orders] SKIP {sym} {tf}: current={float(current_close):.8f} would trigger entry={limit_px:.8f}", flush=True)
             continue
@@ -380,14 +431,9 @@ async def update_trendline_orders(
         # No broken-line detection needed — if price crosses through,
         # the plan order triggers and preset SL handles it automatically.
 
-        # Not broken → move only after at least one full TF bar elapsed.
-        # This avoids missing the 90s wall-clock window and prevents repeated
-        # cancel/re-place loops inside the same boundary window.
-        if bars_elapsed <= 0:
-            surviving.append(order)
-            continue
-
-        # Bar boundary → cancel old + place new at updated coordinates
+        # Recalculate target coordinates first. Broken/touched orders must be
+        # cancelled immediately; only healthy orders wait for the next TF bar
+        # before moving.
         buffer_pct = _buffer_fraction_for_tf(tf, cfg)
 
         if order.kind == "support":
@@ -400,6 +446,42 @@ async def update_trendline_orders(
             stop_px = proj
             tp_px = limit_px * (1 - buffer_pct * rr)
             direction = "short"
+
+        current_price = _price_from_cfg(order.symbol, cfg)
+        touched_status = _touched_status(order.kind, current_price, proj, limit_px)
+        if touched_status:
+            try:
+                cancel_resp = await adapter.cancel_plan_order(
+                    order.symbol.upper(),
+                    order.exchange_order_id,
+                    mode,
+                    plan_type="normal_plan",
+                )
+                if cancel_resp.get("ok"):
+                    order.status = touched_status
+                    surviving.append(order)
+                    cancelled += 1
+                    print(
+                        f"[trendline_orders] CANCEL {order.symbol} {tf}: "
+                        f"current={current_price:.8f} already touched entry={limit_px:.8f}; "
+                        f"status={touched_status}",
+                        flush=True,
+                    )
+                    continue
+                print(f"[trendline_orders] cancel touched {order.symbol} failed: {cancel_resp}", flush=True)
+            except Exception as e:
+                print(f"[trendline_orders] cancel touched {order.symbol} err: {e}", flush=True)
+            surviving.append(order)
+            continue
+
+        # Not touched/broken -> move only after at least one full TF bar elapsed.
+        # This avoids missing the 90s wall-clock window and prevents repeated
+        # cancel/re-place loops inside the same boundary window.
+        if bars_elapsed <= 0:
+            surviving.append(order)
+            continue
+
+        # Bar boundary -> cancel old + place new at updated coordinates
 
         # Cancel old
         try:
