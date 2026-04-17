@@ -341,6 +341,32 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
     _trendline_params[key] = params
 
 
+def _select_active_order_for_position(active_orders: list, symbol: str):
+    """Pick one local trendline order to restore trailing for an open position.
+
+    A restart can leave historical stale/filled rows in the active-order file.
+    Only live-ish rows should restore trailing, and only one row per symbol.
+    """
+    sym_upper = symbol.upper()
+    candidates = [
+        ao for ao in active_orders
+        if getattr(ao, "symbol", "").upper() == sym_upper
+        and getattr(ao, "status", "") in {"placed", "filled"}
+    ]
+    if not candidates:
+        return None
+
+    def _key(ao) -> tuple[int, float, float]:
+        status_rank = 1 if getattr(ao, "status", "") == "placed" else 0
+        return (
+            status_rank,
+            float(getattr(ao, "last_updated_ts", 0) or 0),
+            float(getattr(ao, "created_ts", 0) or 0),
+        )
+
+    return max(candidates, key=_key)
+
+
 def _position_open_ts(pos: dict) -> int:
     """Best-effort Bitget position open timestamp in seconds."""
     # Do not use uTime/utime here: Bitget updates those on position changes,
@@ -1284,46 +1310,50 @@ async def _do_scan() -> None:
             held_syms_upper = set(held_positions_by_symbol)
             print(f"[trailing] held positions: {held_syms_upper}", flush=True)
             active_dirty = False
-            for ao in active_orders:
-                sym_upper = ao.symbol.upper()
-                if sym_upper in held_syms_upper and sym_upper not in _trendline_params:
-                    pos = held_positions_by_symbol.get(sym_upper, {})
-                    opened_ts = _position_open_ts(pos) or int(time.time())
-                    register_trendline_params(
-                        sym_upper,
-                        slope=ao.slope, intercept=ao.intercept,
-                        entry_bar=ao.bar_count - 1,
-                        entry_price=ao.limit_price,
-                        side="long" if ao.kind == "support" else "short",
+            for sym_upper in held_syms_upper:
+                if sym_upper in _trendline_params:
+                    continue
+                ao = _select_active_order_for_position(active_orders, sym_upper)
+                if ao is None:
+                    print(f"[trailing] skip register {sym_upper}: no active trendline order candidate", flush=True)
+                    continue
+                pos = held_positions_by_symbol.get(sym_upper, {})
+                opened_ts = _position_open_ts(pos) or int(time.time())
+                register_trendline_params(
+                    sym_upper,
+                    slope=ao.slope, intercept=ao.intercept,
+                    entry_bar=ao.bar_count - 1,
+                    entry_price=ao.limit_price,
+                    side="long" if ao.kind == "support" else "short",
+                    tf=ao.timeframe,
+                    created_ts=opened_ts,
+                    tp_price=ao.tp_price,
+                    last_sl_set=ao.stop_price,
+                    line_ref_ts=getattr(ao, "line_ref_ts", 0) or ao.last_updated_ts,
+                    line_ref_price=getattr(ao, "line_ref_price", 0) or ao.current_projected_price,
+                )
+                from server.strategy.trade_log import log_fill
+                log_fill(ao.exchange_order_id, sym_upper,
+                         "long" if ao.kind == "support" else "short",
+                         ao.limit_price, 0, tf=ao.timeframe,
+                          slope=ao.slope, intercept=ao.intercept)
+                try:
+                    from server.strategy.ml_trade_db import log_plan_triggered
+                    log_plan_triggered(
+                        ao.exchange_order_id, sym_upper,
+                        "long" if ao.kind == "support" else "short",
+                        fill_price=ao.limit_price,
+                        trigger_price=ao.limit_price,
                         tf=ao.timeframe,
-                        created_ts=opened_ts,
-                        tp_price=ao.tp_price,
-                        last_sl_set=ao.stop_price,
-                        line_ref_ts=getattr(ao, "line_ref_ts", 0) or ao.last_updated_ts,
-                        line_ref_price=getattr(ao, "line_ref_price", 0) or ao.current_projected_price,
+                        slope=ao.slope,
+                        intercept=ao.intercept,
                     )
-                    from server.strategy.trade_log import log_fill
-                    log_fill(ao.exchange_order_id, sym_upper,
-                             "long" if ao.kind == "support" else "short",
-                             ao.limit_price, 0, tf=ao.timeframe,
-                              slope=ao.slope, intercept=ao.intercept)
-                    try:
-                        from server.strategy.ml_trade_db import log_plan_triggered
-                        log_plan_triggered(
-                            ao.exchange_order_id, sym_upper,
-                            "long" if ao.kind == "support" else "short",
-                            fill_price=ao.limit_price,
-                            trigger_price=ao.limit_price,
-                            tf=ao.timeframe,
-                            slope=ao.slope,
-                            intercept=ao.intercept,
-                        )
-                    except Exception as exc:
-                        print(f"[trailing] ml fill log err {sym_upper}: {exc}", flush=True)
-                    if ao.status != "filled":
-                        ao.status = "filled"
-                        active_dirty = True
-                    print(f"[trailing] registered {sym_upper} tf={ao.timeframe} tp={ao.tp_price:.6f}", flush=True)
+                except Exception as exc:
+                    print(f"[trailing] ml fill log err {sym_upper}: {exc}", flush=True)
+                if ao.status != "filled":
+                    ao.status = "filled"
+                    active_dirty = True
+                print(f"[trailing] registered {sym_upper} tf={ao.timeframe} tp={ao.tp_price:.6f}", flush=True)
             if active_dirty:
                 _save_active(active_orders)
     except Exception as e:

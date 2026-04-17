@@ -1,4 +1,5 @@
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -112,3 +113,28 @@ def test_trailing_projection_can_use_timestamp_reference():
     )
 
     assert runner._calc_trendline_trailing_sl("LINKUSDT", 999, now_ts=ref_ts + 7200) == 102.0
+
+
+def test_select_active_order_for_position_ignores_stale_and_prefers_latest_placed():
+    orders = [
+        SimpleNamespace(symbol="ENAUSDT", status="stale", last_updated_ts=999, created_ts=999),
+        SimpleNamespace(symbol="ENAUSDT", status="filled", last_updated_ts=100, created_ts=100),
+        SimpleNamespace(symbol="ENAUSDT", status="placed", last_updated_ts=90, created_ts=90),
+        SimpleNamespace(symbol="BTCUSDT", status="placed", last_updated_ts=200, created_ts=200),
+    ]
+
+    selected = runner._select_active_order_for_position(orders, "ENAUSDT")
+
+    assert selected is orders[2]
+
+
+def test_select_active_order_for_position_restores_latest_filled_after_restart():
+    orders = [
+        SimpleNamespace(symbol="ENAUSDT", status="filled", last_updated_ts=100, created_ts=100),
+        SimpleNamespace(symbol="ENAUSDT", status="filled", last_updated_ts=200, created_ts=200),
+        SimpleNamespace(symbol="ENAUSDT", status="stale", last_updated_ts=300, created_ts=300),
+    ]
+
+    selected = runner._select_active_order_for_position(orders, "ENAUSDT")
+
+    assert selected is orders[1]
