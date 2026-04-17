@@ -115,6 +115,47 @@ def test_trailing_projection_can_use_timestamp_reference():
     assert runner._calc_trendline_trailing_sl("LINKUSDT", 999, now_ts=ref_ts + 7200) == 102.0
 
 
+@pytest.mark.asyncio
+async def test_trailing_sl_moves_two_tick_short_change(monkeypatch):
+    _FakeSLAdapter.instances.clear()
+    _FakeSLAdapter.actual_sl = 200.98
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeSLAdapter)
+    now_ts = int(time.time())
+
+    async def fake_positions():
+        return ([{
+            "symbol": "NVDAUSDT",
+            "holdSide": "short",
+            "total": "0.15",
+            "averageOpenPrice": "200.91",
+        }], True)
+
+    monkeypatch.setattr(runner, "_get_bitget_positions", fake_positions)
+    runner._trendline_params.clear()
+    runner.register_trendline_params(
+        "NVDAUSDT",
+        slope=-0.01,
+        intercept=0.0,
+        entry_bar=0,
+        entry_price=200.91,
+        side="short",
+        tf="5m",
+        created_ts=now_ts - 600,
+        tp_price=199.38,
+        last_sl_set=200.98,
+        line_ref_ts=now_ts - 600,
+        line_ref_price=200.98,
+    )
+
+    updated = await runner._update_trailing_stops({"mode": "demo"})
+
+    updates = [update for adapter in _FakeSLAdapter.instances for update in adapter.updates]
+    assert updated == 1
+    assert updates[-1][0] == "NVDAUSDT"
+    assert updates[-1][1] == "short"
+    assert updates[-1][2] == pytest.approx(200.96)
+
+
 def test_select_active_order_for_position_ignores_stale_and_prefers_latest_placed():
     orders = [
         SimpleNamespace(symbol="ENAUSDT", status="stale", last_updated_ts=999, created_ts=999),

@@ -501,8 +501,8 @@ async def _update_trailing_stops(cfg: dict) -> int:
                 current_sl = actual_current_sl
                 params["last_sl_set"] = actual_current_sl
 
-            if current_sl > 0 and abs(new_sl - current_sl) / current_sl < 0.0001:
-                print(f"[trailing] skip {symbol}: projected SL change below threshold {current_sl:.6f}->{new_sl:.6f}", flush=True)
+            if current_sl > 0 and abs(new_sl - current_sl) <= 1e-12:
+                print(f"[trailing] skip {symbol}: projected SL unchanged {current_sl:.6f}->{new_sl:.6f}", flush=True)
                 continue
             # TP never touched — only cancel+replace SL, preset TP stays
             tp = None
