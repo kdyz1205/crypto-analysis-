@@ -551,3 +551,104 @@ async def update_trendline_orders(
 
     _save_active(surviving)
     return {"placed": placed, "updated": updated, "cancelled": cancelled}
+
+
+async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelled") -> dict:
+    """Cancel every exchange-live trendline plan order managed by this system.
+
+    Used by risk halts. It cancels local active orders plus exchange orphan
+    `tl_` plan orders, but leaves manual non-`tl_` plan orders untouched.
+    """
+    from server.execution.live_adapter import LiveExecutionAdapter
+
+    adapter = LiveExecutionAdapter()
+    if not adapter.has_api_keys():
+        return {"cancelled": 0, "failed": 0, "reason": "api_keys_missing"}
+
+    mode = cfg.get("mode", "live")
+    active = _load_active()
+    cancelled = failed = 0
+    cancelled_ids: set[str] = set()
+    pending_rows: list[dict] = []
+
+    try:
+        pending_rows = await adapter.get_pending_plan_orders(mode, plan_type="normal_plan")
+    except Exception as exc:
+        print(f"[trendline_orders] halt pending sync failed: {exc}", flush=True)
+
+    pending_ids = {
+        str(row.get("orderId") or row.get("order_id") or "")
+        for row in pending_rows
+        if str(row.get("orderId") or row.get("order_id") or "")
+    }
+
+    surviving: list[ActiveLineOrder] = []
+    for order in active:
+        if order.status != "placed":
+            surviving.append(order)
+            continue
+
+        order_id = str(order.exchange_order_id or "")
+        if pending_ids and order_id and order_id not in pending_ids:
+            order.status = "stale"
+            surviving.append(order)
+            continue
+
+        try:
+            cancel_resp = await adapter.cancel_plan_order(
+                order.symbol.upper(),
+                order_id,
+                mode,
+                plan_type="normal_plan",
+            )
+            if cancel_resp.get("ok"):
+                order.status = status
+                cancelled += 1
+                cancelled_ids.add(order_id)
+                print(
+                    f"[trendline_orders] HALT-CANCEL {order.symbol} {order.timeframe}: "
+                    f"order_id={order_id} status={status}",
+                    flush=True,
+                )
+            else:
+                failed += 1
+                print(f"[trendline_orders] halt cancel {order.symbol} failed: {cancel_resp}", flush=True)
+        except Exception as exc:
+            failed += 1
+            print(f"[trendline_orders] halt cancel {order.symbol} err: {exc}", flush=True)
+        surviving.append(order)
+
+    for row in pending_rows:
+        row_id = str(row.get("orderId") or row.get("order_id") or "")
+        if not row_id or row_id in cancelled_ids:
+            continue
+        client_oid = str(row.get("clientOid") or "")
+        if not client_oid.startswith("tl_"):
+            continue
+        row_symbol = str(row.get("symbol") or "").upper()
+        if not row_symbol:
+            continue
+        try:
+            cancel_resp = await adapter.cancel_plan_order(
+                row_symbol,
+                row_id,
+                mode,
+                plan_type="normal_plan",
+            )
+            if cancel_resp.get("ok"):
+                cancelled += 1
+                cancelled_ids.add(row_id)
+                print(
+                    f"[trendline_orders] HALT-ORPHAN-CANCEL {row_symbol}: "
+                    f"order_id={row_id} status={status}",
+                    flush=True,
+                )
+            else:
+                failed += 1
+                print(f"[trendline_orders] halt orphan cancel {row_symbol} failed: {cancel_resp}", flush=True)
+        except Exception as exc:
+            failed += 1
+            print(f"[trendline_orders] halt orphan cancel {row_symbol} err: {exc}", flush=True)
+
+    _save_active(surviving)
+    return {"cancelled": cancelled, "failed": failed, "status": status}

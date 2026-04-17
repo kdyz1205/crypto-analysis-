@@ -25,6 +25,7 @@ API:
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import json
 import time
 import traceback
@@ -113,6 +114,10 @@ def _state_file() -> Path:
         return Path(__file__).resolve().parents[2] / "data" / "mar_bb_state.json"
 
 
+def _daily_risk_file() -> Path:
+    return _state_file().with_name("mar_bb_daily_risk.json")
+
+
 @dataclass
 class OpenPosition:
     symbol: str
@@ -142,6 +147,7 @@ class RunnerState:
     config: dict = field(default_factory=dict)
     open_position: dict | None = None
     recent_signals: list = field(default_factory=list)     # last 20 signals
+    daily_risk: dict | None = None
 
 
 _state = RunnerState()
@@ -549,6 +555,55 @@ _daily_equity_start: float = 0.0   # equity at start of current UTC day
 _daily_date: str = ""              # "YYYY-MM-DD" of current tracking day
 
 
+def _utc_day() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+
+
+def _load_daily_risk(today: str | None = None) -> bool:
+    """Restore today's daily-DD baseline so a restart cannot reset it."""
+    global _daily_equity_start, _daily_date
+    day = today or _utc_day()
+    try:
+        path = _daily_risk_file()
+        if not path.exists():
+            return False
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("date") != day:
+            return False
+        start = float(data.get("equity_start") or 0.0)
+        if start <= 0:
+            return False
+        _daily_date = day
+        _daily_equity_start = start
+        _state.daily_risk = data
+        return True
+    except Exception as exc:
+        print(f"[mar_bb] daily risk load err: {exc}", flush=True)
+        return False
+
+
+def _save_daily_risk(*, equity: float, dd_pct: float, limit: float, halted: bool) -> None:
+    """Persist daily-DD state independently from runner status/counters."""
+    if not _daily_date or _daily_equity_start <= 0:
+        return
+    data = {
+        "date": _daily_date,
+        "equity_start": _daily_equity_start,
+        "last_equity": equity,
+        "last_dd_pct": dd_pct,
+        "limit_pct": limit,
+        "halted": halted,
+        "updated_ts": int(time.time()),
+    }
+    _state.daily_risk = data
+    try:
+        path = _daily_risk_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception as exc:
+        print(f"[mar_bb] daily risk save err: {exc}", flush=True)
+
+
 def _get_daily_dd_limit(equity: float, cfg: dict) -> float:
     """Return max daily drawdown % for current equity tier."""
     tiers = cfg.get("daily_dd_tiers", [(0, 0.50)])
@@ -565,21 +620,27 @@ def _check_daily_dd(equity: float, cfg: dict) -> tuple[bool, float, float]:
     Resets at UTC midnight.
     """
     global _daily_equity_start, _daily_date
-    import datetime as _dt
 
-    today = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d")
+    today = _utc_day()
+    if today != _daily_date or _daily_equity_start <= 0:
+        _load_daily_risk(today)
+
     if today != _daily_date or _daily_equity_start <= 0:
         _daily_equity_start = equity
         _daily_date = today
-        return False, 0.0, _get_daily_dd_limit(equity, cfg)
+        limit = _get_daily_dd_limit(equity, cfg)
+        _save_daily_risk(equity=equity, dd_pct=0.0, limit=limit, halted=False)
+        return False, 0.0, limit
 
     if _daily_equity_start <= 0:
         return False, 0.0, 0.50
 
     dd_pct = (_daily_equity_start - equity) / _daily_equity_start
     limit = _get_daily_dd_limit(_daily_equity_start, cfg)
+    halted = dd_pct >= limit
+    _save_daily_risk(equity=equity, dd_pct=dd_pct, limit=limit, halted=halted)
 
-    if dd_pct >= limit:
+    if halted:
         return True, dd_pct, limit
     return False, dd_pct, limit
 
@@ -1034,6 +1095,13 @@ async def _do_scan() -> None:
             f"for ${_daily_equity_start:.0f} tier). No new trades until UTC midnight."
         )
         print(f"[mar_bb] {_state.last_error}", flush=True)
+        try:
+            from server.strategy.trendline_order_manager import cancel_all_trendline_plan_orders
+
+            cancel_result = await cancel_all_trendline_plan_orders(cfg, status="daily_halt")
+            print(f"[mar_bb] daily DD halt cancelled trendline plans: {cancel_result}", flush=True)
+        except Exception as exc:
+            print(f"[mar_bb] daily DD halt cancel err: {exc}", flush=True)
         _state.last_scan_ts = int(time.time())
         _state.last_scan_duration_s = round(time.time() - t0, 2)
         _state.scans_completed += 1

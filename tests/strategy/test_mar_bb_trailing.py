@@ -1,3 +1,4 @@
+import json
 import time
 from types import SimpleNamespace
 
@@ -179,3 +180,126 @@ def test_select_active_order_for_position_restores_latest_filled_after_restart()
     selected = runner._select_active_order_for_position(orders, "ENAUSDT")
 
     assert selected is orders[1]
+
+
+def test_daily_dd_baseline_persists_across_restart(monkeypatch, tmp_path):
+    risk_file = tmp_path / "mar_bb_daily_risk.json"
+    monkeypatch.setattr(runner, "_daily_risk_file", lambda: risk_file)
+    monkeypatch.setattr(runner, "_utc_day", lambda: "2026-04-17")
+    runner._daily_equity_start = 0.0
+    runner._daily_date = ""
+    runner._state.daily_risk = None
+    cfg = {"daily_dd_tiers": [(0, 0.50)]}
+
+    halted, dd, limit = runner._check_daily_dd(1000.0, cfg)
+
+    assert (halted, dd, limit) == (False, 0.0, 0.50)
+    saved = json.loads(risk_file.read_text(encoding="utf-8"))
+    assert saved["date"] == "2026-04-17"
+    assert saved["equity_start"] == 1000.0
+
+    # Simulate a process restart: globals are gone but the file remains.
+    runner._daily_equity_start = 0.0
+    runner._daily_date = ""
+
+    halted, dd, limit = runner._check_daily_dd(800.0, cfg)
+
+    assert halted is False
+    assert dd == pytest.approx(0.20)
+    assert limit == 0.50
+    saved = json.loads(risk_file.read_text(encoding="utf-8"))
+    assert saved["equity_start"] == 1000.0
+    assert saved["last_equity"] == 800.0
+    assert saved["last_dd_pct"] == pytest.approx(0.20)
+
+
+def test_daily_dd_halts_after_restart_when_persisted_limit_is_hit(monkeypatch, tmp_path):
+    risk_file = tmp_path / "mar_bb_daily_risk.json"
+    risk_file.write_text(json.dumps({
+        "date": "2026-04-17",
+        "equity_start": 1000.0,
+        "last_equity": 1000.0,
+        "last_dd_pct": 0.0,
+        "limit_pct": 0.10,
+        "halted": False,
+        "updated_ts": 1,
+    }), encoding="utf-8")
+    monkeypatch.setattr(runner, "_daily_risk_file", lambda: risk_file)
+    monkeypatch.setattr(runner, "_utc_day", lambda: "2026-04-17")
+    runner._daily_equity_start = 0.0
+    runner._daily_date = ""
+    cfg = {"daily_dd_tiers": [(0, 0.10)]}
+
+    halted, dd, limit = runner._check_daily_dd(899.0, cfg)
+
+    assert halted is True
+    assert dd == pytest.approx(0.101)
+    assert limit == 0.10
+    saved = json.loads(risk_file.read_text(encoding="utf-8"))
+    assert saved["halted"] is True
+    assert saved["equity_start"] == 1000.0
+
+
+def test_daily_dd_resets_on_new_utc_day(monkeypatch, tmp_path):
+    risk_file = tmp_path / "mar_bb_daily_risk.json"
+    risk_file.write_text(json.dumps({
+        "date": "2026-04-16",
+        "equity_start": 1000.0,
+        "last_equity": 700.0,
+        "last_dd_pct": 0.30,
+        "limit_pct": 0.50,
+        "halted": False,
+        "updated_ts": 1,
+    }), encoding="utf-8")
+    monkeypatch.setattr(runner, "_daily_risk_file", lambda: risk_file)
+    monkeypatch.setattr(runner, "_utc_day", lambda: "2026-04-17")
+    runner._daily_equity_start = 1000.0
+    runner._daily_date = "2026-04-16"
+    cfg = {"daily_dd_tiers": [(0, 0.50)]}
+
+    halted, dd, limit = runner._check_daily_dd(900.0, cfg)
+
+    assert (halted, dd, limit) == (False, 0.0, 0.50)
+    saved = json.loads(risk_file.read_text(encoding="utf-8"))
+    assert saved["date"] == "2026-04-17"
+    assert saved["equity_start"] == 900.0
+
+
+@pytest.mark.asyncio
+async def test_daily_dd_halt_cancels_managed_trendline_plans(monkeypatch):
+    called = {}
+
+    async def fake_get_equity():
+        return 500.0
+
+    async def fake_cancel(cfg, *, status):
+        called["cfg"] = cfg
+        called["status"] = status
+        return {"cancelled": 2, "failed": 0, "status": status}
+
+    monkeypatch.setattr(runner, "_get_equity", fake_get_equity)
+    monkeypatch.setattr(runner, "_check_daily_dd", lambda equity, cfg: (True, 0.60, 0.50))
+    monkeypatch.setattr(runner, "_save_state", lambda: None)
+    monkeypatch.setattr(
+        "server.strategy.trendline_order_manager.cancel_all_trendline_plan_orders",
+        fake_cancel,
+    )
+    runner._daily_equity_start = 1000.0
+    runner._state.config = {
+        "top_n": 1,
+        "scan_interval_s": 60,
+        "timeframes": ["5m"],
+        "sizing_mode": "fixed_risk",
+        "risk_pct": 0.01,
+        "max_concurrent_positions": 1,
+        "mode": "demo",
+        "leverage": 30,
+    }
+    before = runner._state.scans_completed
+
+    await runner._do_scan()
+
+    assert called["status"] == "daily_halt"
+    assert called["cfg"] is runner._state.config
+    assert "DAILY DD HALT" in runner._state.last_error
+    assert runner._state.scans_completed == before + 1

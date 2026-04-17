@@ -394,3 +394,47 @@ async def test_exchange_held_symbol_blocks_new_plan_order(monkeypatch):
     adapter = _FakeTrendlineAdapter.instances[-1]
     assert result == {"placed": 0, "updated": 0, "cancelled": 0}
     assert adapter.intents == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_trendline_plan_orders_for_risk_halt_skips_manual_orders(monkeypatch):
+    active_file = _test_active_file("active_halt_cancel.json")
+    monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", active_file)
+    active_file.write_text(json.dumps([
+        {
+            "symbol": "LINKUSDT",
+            "timeframe": "1h",
+            "kind": "support",
+            "slope": 0.0,
+            "intercept": 100.0,
+            "anchor1_bar": 1,
+            "anchor2_bar": 5,
+            "bar_count": 10,
+            "current_projected_price": 100.0,
+            "limit_price": 100.2,
+            "stop_price": 100.0,
+            "tp_price": 103.206,
+            "exchange_order_id": "managed-plan",
+            "created_ts": time.time(),
+            "last_updated_ts": time.time(),
+            "status": "placed",
+        }
+    ]), encoding="utf-8")
+    _FakeTrendlineAdapter.pending_plan_rows.extend([
+        {"symbol": "LINKUSDT", "orderId": "managed-plan", "clientOid": "tl_LINKUSDT_managed"},
+        {"symbol": "ETHUSDT", "orderId": "orphan-plan", "clientOid": "tl_ETHUSDT_orphan"},
+        {"symbol": "BTCUSDT", "orderId": "manual-plan", "clientOid": "manual_123"},
+    ])
+
+    result = await tom.cancel_all_trendline_plan_orders(_cfg(), status="daily_halt")
+
+    saved = json.loads(active_file.read_text(encoding="utf-8"))
+    adapter = _FakeTrendlineAdapter.instances[-1]
+    cancel_bodies = [
+        req[3] for req in adapter.requests
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
+    ]
+    assert result == {"cancelled": 2, "failed": 0, "status": "daily_halt"}
+    assert saved[0]["status"] == "daily_halt"
+    assert [body["orderId"] for body in cancel_bodies] == ["managed-plan", "orphan-plan"]
+    assert all(body["planType"] == "normal_plan" for body in cancel_bodies)
