@@ -12,11 +12,12 @@ class _FakeTrendlineAdapter:
     instances: list["_FakeTrendlineAdapter"] = []
     open_position_symbols: set[str] = set()
     pending_order_ids: set[str] = set()
+    pending_plan_order_ids: set[str] = set()
     pending_order_rows: list[dict] = []
     pending_plan_rows: list[dict] = []
 
     def __init__(self) -> None:
-        self.intents: list[tuple[OrderIntent, str, float]] = []
+        self.intents: list[tuple[OrderIntent, str, float | None]] = []
         self.requests: list[tuple[str, str, str, dict | None]] = []
         _FakeTrendlineAdapter.instances.append(self)
 
@@ -45,10 +46,19 @@ class _FakeTrendlineAdapter:
         return rows
 
     async def get_pending_plan_orders(self, mode: str, *, plan_type: str = "normal_plan", symbol: str | None = None):
-        return [
-            row for row in self.pending_plan_rows
-            if symbol is None or row.get("symbol") == symbol
-        ]
+        if self.pending_plan_rows:
+            return [
+                row for row in self.pending_plan_rows
+                if symbol is None or row.get("symbol") == symbol
+            ]
+        rows = []
+        for order_id in self.pending_plan_order_ids:
+            rows.append({
+                "symbol": symbol or "LINKUSDT",
+                "orderId": order_id,
+                "planType": plan_type,
+            })
+        return rows
 
     async def cancel_order(self, symbol: str, order_id: str, mode: str):
         body = {
@@ -75,12 +85,17 @@ class _FakeTrendlineAdapter:
         self.intents.append((intent, mode, None))
         return {"ok": True, "exchange_order_id": f"order-{len(self.intents)}"}
 
+    async def submit_live_plan_entry(self, intent: OrderIntent, mode: str, trigger_price: float):
+        self.intents.append((intent, mode, trigger_price))
+        return {"ok": True, "exchange_order_id": f"plan-{len(self.intents)}"}
+
 
 @pytest.fixture(autouse=True)
 def _fake_adapter(monkeypatch):
     _FakeTrendlineAdapter.instances.clear()
     _FakeTrendlineAdapter.open_position_symbols.clear()
     _FakeTrendlineAdapter.pending_order_ids.clear()
+    _FakeTrendlineAdapter.pending_plan_order_ids.clear()
     _FakeTrendlineAdapter.pending_order_rows.clear()
     _FakeTrendlineAdapter.pending_plan_rows.clear()
     monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeTrendlineAdapter)
@@ -131,9 +146,8 @@ async def test_new_order_uses_percent_tf_buffer_limit_entry_and_tf_risk(monkeypa
     assert result["placed"] == 1
     assert mode == "demo"
     assert intent.order_type == "limit"
-    assert intent.trigger_mode == "limit"
-    assert intent.post_only is True
-    assert trigger is None
+    assert intent.trigger_mode == "plan"
+    assert trigger == pytest.approx(100.2)
     assert intent.entry_price == pytest.approx(100.2)
     assert intent.stop_price == pytest.approx(100.0)
     assert intent.tp_price == pytest.approx(103.206)
@@ -147,7 +161,7 @@ async def test_new_order_uses_percent_tf_buffer_limit_entry_and_tf_risk(monkeypa
 async def test_existing_move_uses_tf_risk_instead_of_fallback_risk(monkeypatch):
     active_file = _test_active_file("active_move.json")
     monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", active_file)
-    _FakeTrendlineAdapter.pending_order_ids.add("old-order")
+    _FakeTrendlineAdapter.pending_plan_order_ids.add("old-order")
     active_file.write_text(json.dumps([
         {
             "symbol": "LINKUSDT",
@@ -175,15 +189,15 @@ async def test_existing_move_uses_tf_risk_instead_of_fallback_risk(monkeypatch):
     intent, mode, trigger = adapter.intents[-1]
     assert result["updated"] == 1
     assert mode == "demo"
-    assert intent.trigger_mode == "limit"
-    assert intent.post_only is True
-    assert trigger is None
+    assert intent.trigger_mode == "plan"
+    assert trigger == pytest.approx(100.2)
     assert intent.quantity == pytest.approx(75.0)
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-order"
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
     ]
     assert cancel_bodies[-1]["orderId"] == "old-order"
+    assert cancel_bodies[-1]["planType"] == "normal_plan"
 
 
 @pytest.mark.asyncio
@@ -217,7 +231,7 @@ async def test_missing_exchange_order_is_marked_stale_without_replace(monkeypatc
     adapter = _FakeTrendlineAdapter.instances[-1]
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-order"
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
     ]
     assert result == {"placed": 0, "updated": 0, "cancelled": 0}
     assert saved[0]["status"] == "stale"
@@ -229,7 +243,7 @@ async def test_missing_exchange_order_is_marked_stale_without_replace(monkeypatc
 async def test_existing_support_order_broken_before_move_is_cancelled_without_replace(monkeypatch):
     active_file = _test_active_file("active_broken_before_move.json")
     monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", active_file)
-    _FakeTrendlineAdapter.pending_order_ids.add("old-order")
+    _FakeTrendlineAdapter.pending_plan_order_ids.add("old-order")
     active_file.write_text(json.dumps([
         {
             "symbol": "LINKUSDT",
@@ -264,9 +278,10 @@ async def test_existing_support_order_broken_before_move_is_cancelled_without_re
     assert adapter.intents == []
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-order"
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
     ]
     assert cancel_bodies[-1]["orderId"] == "old-order"
+    assert cancel_bodies[-1]["planType"] == "normal_plan"
 
 
 @pytest.mark.asyncio
@@ -293,7 +308,7 @@ async def test_exchange_orphan_trendline_order_is_cancelled(monkeypatch):
             "status": "placed",
         }
     ]), encoding="utf-8")
-    _FakeTrendlineAdapter.pending_order_rows.extend([
+    _FakeTrendlineAdapter.pending_plan_rows.extend([
         {"symbol": "LINKUSDT", "orderId": "managed-order", "clientOid": "tl_LINKUSDT_managed"},
         {"symbol": "ETHUSDT", "orderId": "orphan-order", "clientOid": "tl_ETHUSDT_orphan"},
         {"symbol": "BTCUSDT", "orderId": "manual-order", "clientOid": "manual_123"},
@@ -304,11 +319,12 @@ async def test_exchange_orphan_trendline_order_is_cancelled(monkeypatch):
     adapter = _FakeTrendlineAdapter.instances[-1]
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-order"
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
     ]
     assert result == {"placed": 0, "updated": 0, "cancelled": 1}
     assert [body["orderId"] for body in cancel_bodies] == ["orphan-order"]
     assert cancel_bodies[0]["symbol"] == "ETHUSDT"
+    assert cancel_bodies[0]["planType"] == "normal_plan"
 
 
 @pytest.mark.asyncio
@@ -439,7 +455,7 @@ async def test_cancel_all_trendline_orders_for_risk_halt_skips_manual_orders(mon
             "status": "placed",
         }
     ]), encoding="utf-8")
-    _FakeTrendlineAdapter.pending_order_rows.extend([
+    _FakeTrendlineAdapter.pending_plan_rows.extend([
         {"symbol": "LINKUSDT", "orderId": "managed-order", "clientOid": "tl_LINKUSDT_managed"},
         {"symbol": "ETHUSDT", "orderId": "orphan-order", "clientOid": "tl_ETHUSDT_orphan"},
         {"symbol": "BTCUSDT", "orderId": "manual-order", "clientOid": "manual_123"},
@@ -451,21 +467,22 @@ async def test_cancel_all_trendline_orders_for_risk_halt_skips_manual_orders(mon
     adapter = _FakeTrendlineAdapter.instances[-1]
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-order"
+        if req[1] == "/api/v2/mix/order/cancel-plan-order"
     ]
     assert result == {"cancelled": 2, "failed": 0, "status": "daily_halt"}
     assert saved[0]["status"] == "daily_halt"
     assert [body["orderId"] for body in cancel_bodies] == ["managed-order", "orphan-order"]
+    assert [body["planType"] for body in cancel_bodies] == ["normal_plan", "normal_plan"]
 
 
 @pytest.mark.asyncio
-async def test_cancel_all_cleans_legacy_trendline_plan_orders(monkeypatch):
-    active_file = _test_active_file("active_halt_legacy_plan_cancel.json")
+async def test_cancel_all_cleans_legacy_regular_trendline_orders(monkeypatch):
+    active_file = _test_active_file("active_halt_legacy_regular_cancel.json")
     monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", active_file)
     active_file.write_text("[]", encoding="utf-8")
-    _FakeTrendlineAdapter.pending_plan_rows.extend([
-        {"symbol": "ETHUSDT", "orderId": "legacy-plan", "clientOid": "tl_ETHUSDT_legacy"},
-        {"symbol": "BTCUSDT", "orderId": "manual-plan", "clientOid": "manual_123"},
+    _FakeTrendlineAdapter.pending_order_rows.extend([
+        {"symbol": "ETHUSDT", "orderId": "legacy-regular", "clientOid": "tl_ETHUSDT_legacy"},
+        {"symbol": "BTCUSDT", "orderId": "manual-regular", "clientOid": "manual_123"},
     ])
 
     result = await tom.cancel_all_trendline_plan_orders(_cfg(), status="daily_halt")
@@ -473,8 +490,7 @@ async def test_cancel_all_cleans_legacy_trendline_plan_orders(monkeypatch):
     adapter = _FakeTrendlineAdapter.instances[-1]
     cancel_bodies = [
         req[3] for req in adapter.requests
-        if req[1] == "/api/v2/mix/order/cancel-plan-order"
+        if req[1] == "/api/v2/mix/order/cancel-order"
     ]
     assert result == {"cancelled": 1, "failed": 0, "status": "daily_halt"}
-    assert [body["orderId"] for body in cancel_bodies] == ["legacy-plan"]
-    assert cancel_bodies[0]["planType"] == "normal_plan"
+    assert [body["orderId"] for body in cancel_bodies] == ["legacy-regular"]

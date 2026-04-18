@@ -196,24 +196,24 @@ async def update_trendline_orders(
         position_guard_ok = False
         print(f"[trendline_orders] position guard failed; skipping new orders: {exc}", flush=True)
 
-    pending_order_ids_by_symbol: dict[str, set[str]] = {}
-    pending_sync_ok = False
-    try:
-        pending_rows = await adapter.get_pending_orders(mode)
-        for row in pending_rows:
-            row_symbol = str(row.get("symbol") or "").upper()
-            row_id = str(row.get("orderId") or row.get("order_id") or "")
-            if row_symbol and row_id:
-                pending_order_ids_by_symbol.setdefault(row_symbol, set()).add(row_id)
-        pending_sync_ok = True
-    except Exception as exc:
-        print(f"[trendline_orders] pending regular order sync failed: {exc}", flush=True)
-
     local_placed_ids = {
         str(o.exchange_order_id or "")
         for o in active
         if o.status == "placed" and str(o.exchange_order_id or "")
     }
+    pending_plan_ids_by_symbol: dict[str, set[str]] = {}
+    pending_sync_ok = False
+    try:
+        pending_rows = await adapter.get_pending_plan_orders(mode, plan_type="normal_plan")
+        for row in pending_rows:
+            row_symbol = str(row.get("symbol") or "").upper()
+            row_id = str(row.get("orderId") or row.get("order_id") or "")
+            if row_symbol and row_id:
+                pending_plan_ids_by_symbol.setdefault(row_symbol, set()).add(row_id)
+        pending_sync_ok = True
+    except Exception as exc:
+        print(f"[trendline_orders] pending normal_plan sync failed: {exc}", flush=True)
+
     if pending_sync_ok:
         for row in pending_rows:
             row_id = str(row.get("orderId") or row.get("order_id") or "")
@@ -223,29 +223,6 @@ async def update_trendline_orders(
                 continue
             if not client_oid.startswith("tl_"):
                 continue
-            cancel_resp = await adapter.cancel_order(row_symbol, row_id, mode)
-            if cancel_resp.get("ok"):
-                cancelled += 1
-                pending_order_ids_by_symbol.get(row_symbol, set()).discard(row_id)
-                print(
-                    f"[trendline_orders] ORPHAN-CANCEL {row_symbol}: "
-                    f"exchange regular order_id={row_id} not managed locally",
-                    flush=True,
-                )
-            else:
-                print(f"[trendline_orders] orphan cancel {row_symbol} failed: {cancel_resp}", flush=True)
-
-    # Clean up historical tl_ normal_plan orders left by older builds. New
-    # trendline entries must be regular post-only limit orders; normal_plan is
-    # only kept here as a legacy cleanup path.
-    try:
-        legacy_plan_rows = await adapter.get_pending_plan_orders(mode, plan_type="normal_plan")
-        for row in legacy_plan_rows:
-            row_id = str(row.get("orderId") or row.get("order_id") or "")
-            row_symbol = str(row.get("symbol") or "").upper()
-            client_oid = str(row.get("clientOid") or "")
-            if not row_id or not row_symbol or not client_oid.startswith("tl_"):
-                continue
             cancel_resp = await adapter.cancel_plan_order(
                 row_symbol,
                 row_id,
@@ -254,15 +231,38 @@ async def update_trendline_orders(
             )
             if cancel_resp.get("ok"):
                 cancelled += 1
+                pending_plan_ids_by_symbol.get(row_symbol, set()).discard(row_id)
                 print(
-                    f"[trendline_orders] LEGACY-PLAN-CANCEL {row_symbol}: "
-                    f"normal_plan order_id={row_id} not allowed for trendline",
+                    f"[trendline_orders] ORPHAN-PLAN-CANCEL {row_symbol}: "
+                    f"exchange normal_plan order_id={row_id} not managed locally",
                     flush=True,
                 )
             else:
-                print(f"[trendline_orders] legacy plan cancel {row_symbol} failed: {cancel_resp}", flush=True)
+                print(f"[trendline_orders] orphan plan cancel {row_symbol} failed: {cancel_resp}", flush=True)
+
+    # Clean up regular tl_ orders left by the brief post-only implementation.
+    # Automatic scanner orders must be normal_plan so they do not reserve
+    # margin across the whole market.
+    try:
+        legacy_regular_rows = await adapter.get_pending_orders(mode)
+        for row in legacy_regular_rows:
+            row_id = str(row.get("orderId") or row.get("order_id") or "")
+            row_symbol = str(row.get("symbol") or "").upper()
+            client_oid = str(row.get("clientOid") or "")
+            if not row_id or not row_symbol or not client_oid.startswith("tl_"):
+                continue
+            cancel_resp = await adapter.cancel_order(row_symbol, row_id, mode)
+            if cancel_resp.get("ok"):
+                cancelled += 1
+                print(
+                    f"[trendline_orders] LEGACY-REGULAR-CANCEL {row_symbol}: "
+                    f"regular order_id={row_id} not allowed for automatic trendline",
+                    flush=True,
+                )
+            else:
+                print(f"[trendline_orders] legacy regular cancel {row_symbol} failed: {cancel_resp}", flush=True)
     except Exception as exc:
-        print(f"[trendline_orders] legacy normal_plan cleanup failed: {exc}", flush=True)
+        print(f"[trendline_orders] legacy regular order cleanup failed: {exc}", flush=True)
 
     # Index only exchange-live local orders by (symbol, tf, kind). Historical
     # stale/filled records are kept for evidence but must not block fresh lines.
@@ -337,8 +337,10 @@ async def update_trendline_orders(
         if qty <= 0:
             continue
 
-        # Place a regular post-only limit order. Bitget trigger/plan orders do
-        # not support post-only, so they cannot guarantee maker entry.
+        # Place a Bitget normal_plan limit trigger order. This keeps the
+        # automatic all-market scanner from reserving margin for every line.
+        # Bitget's plan-order API does not expose post-only, so maker-only
+        # cannot be guaranteed on this automatic path.
         try:
             try:
                 await adapter._bitget_request(
@@ -357,14 +359,13 @@ async def update_trendline_orders(
                 line_id="",
                 client_order_id=f"tl_{sym[:10]}_{now_ts}",
                 symbol=sym.upper(), timeframe=tf, side=direction,
-                order_type="limit", trigger_mode="limit",
+                order_type="limit", trigger_mode="plan",
                 entry_price=limit_px, stop_price=stop_px, tp_price=tp_px,
                 quantity=qty, status="approved",
-                reason="trendline_post_only_limit",
+                reason="trendline_plan_order",
                 created_at_bar=bar_count - 1, created_at_ts=now_ts,
-                post_only=True,
             )
-            resp = await adapter.submit_live_entry(intent, mode=mode)
+            resp = await adapter.submit_live_plan_entry(intent, mode=mode, trigger_price=limit_px)
 
             if resp.get("ok"):
                 order_id = resp.get("exchange_order_id", "")
@@ -393,7 +394,7 @@ async def update_trendline_orders(
                         direction=direction, entry_price=limit_px,
                         stop_price=stop_px, tp_price=tp_px,
                         size_usd=qty * limit_px, leverage=leverage,
-                        order_id=order_id, status="limit_placed",
+                        order_id=order_id, status="plan_placed",
                         buffer_pct=buffer_pct, risk_usd=risk_usd,
                     )
                     from server.strategy.ml_trade_db import log_plan_placed
@@ -431,14 +432,14 @@ async def update_trendline_orders(
             continue
 
         if pending_sync_ok:
-            live_ids = pending_order_ids_by_symbol.get(order.symbol.upper(), set())
+            live_ids = pending_plan_ids_by_symbol.get(order.symbol.upper(), set())
             order_id = str(order.exchange_order_id or "")
             if order_id and order_id not in live_ids:
                 order.status = "stale"
                 surviving.append(order)
                 print(
                     f"[trendline_orders] STALE {order.symbol} {order.timeframe}: "
-                    f"exchange missing regular order_id={order_id}; local line disabled",
+                    f"exchange missing normal_plan order_id={order_id}; local line disabled",
                     flush=True,
                 )
                 continue
@@ -477,7 +478,12 @@ async def update_trendline_orders(
         touched_status = _touched_status(order.kind, current_price, proj, limit_px)
         if touched_status:
             try:
-                cancel_resp = await adapter.cancel_order(order.symbol.upper(), order.exchange_order_id, mode)
+                cancel_resp = await adapter.cancel_plan_order(
+                    order.symbol.upper(),
+                    order.exchange_order_id,
+                    mode,
+                    plan_type="normal_plan",
+                )
                 if cancel_resp.get("ok"):
                     order.status = touched_status
                     surviving.append(order)
@@ -506,7 +512,12 @@ async def update_trendline_orders(
 
         # Cancel old
         try:
-            cancel_resp = await adapter.cancel_order(order.symbol.upper(), order.exchange_order_id, mode)
+            cancel_resp = await adapter.cancel_plan_order(
+                order.symbol.upper(),
+                order.exchange_order_id,
+                mode,
+                plan_type="normal_plan",
+            )
             if not cancel_resp.get("ok"):
                 print(f"[trendline_orders] cancel {order.symbol} failed: {cancel_resp}", flush=True)
                 surviving.append(order)
@@ -536,14 +547,13 @@ async def update_trendline_orders(
                 signal_id=f"tl_sig_{now_ts}", line_id="",
                 client_order_id=f"tl_{order.symbol[:10]}_{now_ts}",
                 symbol=order.symbol.upper(), timeframe=tf, side=direction,
-                order_type="limit", trigger_mode="limit",
+                order_type="limit", trigger_mode="plan",
                 entry_price=limit_px, stop_price=stop_px, tp_price=tp_px,
                 quantity=qty, status="approved",
-                reason="trendline_post_only_limit",
+                reason="trendline_plan_order",
                 created_at_bar=new_bar_index, created_at_ts=now_ts,
-                post_only=True,
             )
-            resp = await adapter.submit_live_entry(intent, mode=mode)
+            resp = await adapter.submit_live_plan_entry(intent, mode=mode, trigger_price=limit_px)
 
             if resp.get("ok"):
                 order.exchange_order_id = resp.get("exchange_order_id", "")
@@ -573,9 +583,9 @@ async def update_trendline_orders(
 async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelled") -> dict:
     """Cancel every exchange-live trendline order managed by this system.
 
-    Used by risk halts. It cancels local active post-only limit orders plus
-    exchange orphan `tl_` orders. It also cleans up historical `tl_`
-    normal_plan orders left by older builds, while leaving manual non-`tl_`
+    Used by risk halts. It cancels local active normal_plan orders plus
+    exchange orphan `tl_` normal_plan orders. It also cleans up regular `tl_`
+    limit orders left by the old automatic path, while leaving manual non-`tl_`
     orders untouched.
     """
     from server.execution.live_adapter import LiveExecutionAdapter
@@ -588,21 +598,21 @@ async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelle
     active = _load_active()
     cancelled = failed = 0
     cancelled_ids: set[str] = set()
-    pending_rows: list[dict] = []
-    legacy_plan_rows: list[dict] = []
+    pending_plan_rows: list[dict] = []
+    legacy_regular_rows: list[dict] = []
 
     try:
-        pending_rows = await adapter.get_pending_orders(mode)
+        pending_plan_rows = await adapter.get_pending_plan_orders(mode, plan_type="normal_plan")
     except Exception as exc:
-        print(f"[trendline_orders] halt pending regular sync failed: {exc}", flush=True)
+        print(f"[trendline_orders] halt pending normal_plan sync failed: {exc}", flush=True)
     try:
-        legacy_plan_rows = await adapter.get_pending_plan_orders(mode, plan_type="normal_plan")
+        legacy_regular_rows = await adapter.get_pending_orders(mode)
     except Exception as exc:
-        print(f"[trendline_orders] halt legacy plan sync failed: {exc}", flush=True)
+        print(f"[trendline_orders] halt legacy regular sync failed: {exc}", flush=True)
 
     pending_ids = {
         str(row.get("orderId") or row.get("order_id") or "")
-        for row in pending_rows
+        for row in pending_plan_rows
         if str(row.get("orderId") or row.get("order_id") or "")
     }
 
@@ -619,7 +629,12 @@ async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelle
             continue
 
         try:
-            cancel_resp = await adapter.cancel_order(order.symbol.upper(), order_id, mode)
+            cancel_resp = await adapter.cancel_plan_order(
+                order.symbol.upper(),
+                order_id,
+                mode,
+                plan_type="normal_plan",
+            )
             if cancel_resp.get("ok"):
                 order.status = status
                 cancelled += 1
@@ -637,34 +652,7 @@ async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelle
             print(f"[trendline_orders] halt cancel {order.symbol} err: {exc}", flush=True)
         surviving.append(order)
 
-    for row in pending_rows:
-        row_id = str(row.get("orderId") or row.get("order_id") or "")
-        if not row_id or row_id in cancelled_ids:
-            continue
-        client_oid = str(row.get("clientOid") or "")
-        if not client_oid.startswith("tl_"):
-            continue
-        row_symbol = str(row.get("symbol") or "").upper()
-        if not row_symbol:
-            continue
-        try:
-            cancel_resp = await adapter.cancel_order(row_symbol, row_id, mode)
-            if cancel_resp.get("ok"):
-                cancelled += 1
-                cancelled_ids.add(row_id)
-                print(
-                    f"[trendline_orders] HALT-ORPHAN-CANCEL {row_symbol}: "
-                    f"order_id={row_id} status={status}",
-                    flush=True,
-                )
-            else:
-                failed += 1
-                print(f"[trendline_orders] halt orphan cancel {row_symbol} failed: {cancel_resp}", flush=True)
-        except Exception as exc:
-            failed += 1
-            print(f"[trendline_orders] halt orphan cancel {row_symbol} err: {exc}", flush=True)
-
-    for row in legacy_plan_rows:
+    for row in pending_plan_rows:
         row_id = str(row.get("orderId") or row.get("order_id") or "")
         if not row_id or row_id in cancelled_ids:
             continue
@@ -685,16 +673,43 @@ async def cancel_all_trendline_plan_orders(cfg: dict, *, status: str = "cancelle
                 cancelled += 1
                 cancelled_ids.add(row_id)
                 print(
-                    f"[trendline_orders] HALT-LEGACY-PLAN-CANCEL {row_symbol}: "
+                    f"[trendline_orders] HALT-ORPHAN-CANCEL {row_symbol}: "
                     f"order_id={row_id} status={status}",
                     flush=True,
                 )
             else:
                 failed += 1
-                print(f"[trendline_orders] halt legacy plan cancel {row_symbol} failed: {cancel_resp}", flush=True)
+                print(f"[trendline_orders] halt orphan cancel {row_symbol} failed: {cancel_resp}", flush=True)
         except Exception as exc:
             failed += 1
-            print(f"[trendline_orders] halt legacy plan cancel {row_symbol} err: {exc}", flush=True)
+            print(f"[trendline_orders] halt orphan cancel {row_symbol} err: {exc}", flush=True)
+
+    for row in legacy_regular_rows:
+        row_id = str(row.get("orderId") or row.get("order_id") or "")
+        if not row_id or row_id in cancelled_ids:
+            continue
+        client_oid = str(row.get("clientOid") or "")
+        if not client_oid.startswith("tl_"):
+            continue
+        row_symbol = str(row.get("symbol") or "").upper()
+        if not row_symbol:
+            continue
+        try:
+            cancel_resp = await adapter.cancel_order(row_symbol, row_id, mode)
+            if cancel_resp.get("ok"):
+                cancelled += 1
+                cancelled_ids.add(row_id)
+                print(
+                    f"[trendline_orders] HALT-LEGACY-REGULAR-CANCEL {row_symbol}: "
+                    f"order_id={row_id} status={status}",
+                    flush=True,
+                )
+            else:
+                failed += 1
+                print(f"[trendline_orders] halt legacy regular cancel {row_symbol} failed: {cancel_resp}", flush=True)
+        except Exception as exc:
+            failed += 1
+            print(f"[trendline_orders] halt legacy regular cancel {row_symbol} err: {exc}", flush=True)
 
     _save_active(surviving)
     return {"cancelled": cancelled, "failed": failed, "status": status}
