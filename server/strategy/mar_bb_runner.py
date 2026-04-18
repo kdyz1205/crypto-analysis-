@@ -1497,9 +1497,11 @@ async def _do_scan() -> None:
     # ── Level 3-5: Evolution system hooks ──
     try:
         from server.strategy.evolution import after_scan, daily_maintenance, weekly_maintenance
-        after_scan()
-        # These may be async in some versions; handle both
         import asyncio
+        scan_hook = after_scan()
+        if asyncio.iscoroutine(scan_hook):
+            await scan_hook
+        # These may be async in some versions; handle both
         dm = daily_maintenance()
         if asyncio.iscoroutine(dm):
             await dm
