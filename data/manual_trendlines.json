@@ -973,5 +973,30 @@
     "created_at": 1776499769,
     "updated_at": 1776499769,
     "line_width": 1.8
+  },
+  {
+    "manual_line_id": "manual-DOGEUSDT-1h-resistance-1776438000-1776591969",
+    "symbol": "DOGEUSDT",
+    "timeframe": "1h",
+    "side": "resistance",
+    "source": "manual",
+    "t_start": 1776441600,
+    "t_end": 1776591969,
+    "price_start": 0.10218039134650807,
+    "price_end": 0.0986105135456275,
+    "extend_left": false,
+    "extend_right": false,
+    "locked": false,
+    "label": "trendline 09:39",
+    "notes": "",
+    "comparison_status": "uncompared",
+    "override_mode": "display_only",
+    "nearest_auto_line_id": null,
+    "slope_diff": null,
+    "projected_price_diff": null,
+    "overlap_ratio": null,
+    "created_at": 1776505168,
+    "updated_at": 1776505175,
+    "line_width": 1.8
   }
 ]
