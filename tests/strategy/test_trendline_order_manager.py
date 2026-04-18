@@ -125,6 +125,15 @@ def _test_active_file(name: str) -> Path:
     return path
 
 
+def test_elapsed_tf_bars_uses_candle_boundary_not_full_duration():
+    placed_at_12_38 = 12 * 3600 + 38 * 60
+    before_12_45 = 12 * 3600 + 44 * 60 + 59
+    at_12_45 = 12 * 3600 + 45 * 60
+
+    assert tom._elapsed_tf_bars_since(placed_at_12_38, "15m", before_12_45) == 0
+    assert tom._elapsed_tf_bars_since(placed_at_12_38, "15m", at_12_45) == 1
+
+
 @pytest.mark.asyncio
 async def test_new_order_uses_percent_tf_buffer_limit_entry_and_tf_risk(monkeypatch):
     monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", _test_active_file("active_new.json"))
@@ -145,7 +154,7 @@ async def test_new_order_uses_percent_tf_buffer_limit_entry_and_tf_risk(monkeypa
     intent, mode, trigger = adapter.intents[-1]
     assert result["placed"] == 1
     assert mode == "demo"
-    assert intent.order_type == "limit"
+    assert intent.order_type == "market"
     assert intent.trigger_mode == "plan"
     assert trigger == pytest.approx(100.2)
     assert intent.entry_price == pytest.approx(100.2)
@@ -189,6 +198,7 @@ async def test_existing_move_uses_tf_risk_instead_of_fallback_risk(monkeypatch):
     intent, mode, trigger = adapter.intents[-1]
     assert result["updated"] == 1
     assert mode == "demo"
+    assert intent.order_type == "market"
     assert intent.trigger_mode == "plan"
     assert trigger == pytest.approx(100.2)
     assert intent.quantity == pytest.approx(75.0)

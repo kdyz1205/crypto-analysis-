@@ -90,6 +90,15 @@ def _is_bar_boundary(tf: str) -> bool:
     return True
 
 
+def _elapsed_tf_bars_since(previous_ts: float, tf: str, now_ts: float | None = None) -> int:
+    """Return how many TF candle boundaries have passed since previous_ts."""
+    if previous_ts <= 0:
+        return 0
+    bar_dur = TF_SECONDS.get(tf, 300)
+    now_val = float(now_ts if now_ts is not None else time.time())
+    return max(0, int(now_val // bar_dur) - int(float(previous_ts) // bar_dur))
+
+
 def _buffer_fraction_for_tf(tf: str, cfg: dict) -> float:
     """Return buffer as a fraction. Config values are documented percentages."""
     raw_buffer_pct = float(cfg.get("buffer_pct", 0.10))
@@ -337,10 +346,11 @@ async def update_trendline_orders(
         if qty <= 0:
             continue
 
-        # Place a Bitget normal_plan limit trigger order. This keeps the
+        # Place a Bitget normal_plan market trigger order. This keeps the
         # automatic all-market scanner from reserving margin for every line.
-        # Bitget's plan-order API does not expose post-only, so maker-only
-        # cannot be guaranteed on this automatic path.
+        # The trigger is the line +/- buffer; once triggered, Bitget opens
+        # with market execution so the bounce entry does not miss because of
+        # an unfilled limit child order.
         try:
             try:
                 await adapter._bitget_request(
@@ -359,10 +369,10 @@ async def update_trendline_orders(
                 line_id="",
                 client_order_id=f"tl_{sym[:10]}_{now_ts}",
                 symbol=sym.upper(), timeframe=tf, side=direction,
-                order_type="limit", trigger_mode="plan",
+                order_type="market", trigger_mode="plan",
                 entry_price=limit_px, stop_price=stop_px, tp_price=tp_px,
                 quantity=qty, status="approved",
-                reason="trendline_plan_order",
+                reason="trendline_plan_market",
                 created_at_bar=bar_count - 1, created_at_ts=now_ts,
             )
             resp = await adapter.submit_live_plan_entry(intent, mode=mode, trigger_price=limit_px)
@@ -394,7 +404,7 @@ async def update_trendline_orders(
                         direction=direction, entry_price=limit_px,
                         stop_price=stop_px, tp_price=tp_px,
                         size_usd=qty * limit_px, leverage=leverage,
-                        order_id=order_id, status="plan_placed",
+                        order_id=order_id, status="plan_market_placed",
                         buffer_pct=buffer_pct, risk_usd=risk_usd,
                     )
                     from server.strategy.ml_trade_db import log_plan_placed
@@ -445,10 +455,10 @@ async def update_trendline_orders(
                 continue
 
         tf = order.timeframe
-        # Recalculate projection (bar_count + 1 for each elapsed bar)
-        # Estimate: bars elapsed = time since last update / bar duration
-        bar_dur = TF_SECONDS.get(tf, 300)
-        bars_elapsed = max(0, int((now - order.last_updated_ts) / bar_dur))
+        # Recalculate projection on TF candle boundaries, not "duration since
+        # placement". Example: a 15m order placed at 12:38 moves at 12:45,
+        # not at 12:53.
+        bars_elapsed = _elapsed_tf_bars_since(order.last_updated_ts, tf, now)
         new_bar_index = order.bar_count - 1 + bars_elapsed
         proj = order.slope * new_bar_index + order.intercept
 
@@ -547,10 +557,10 @@ async def update_trendline_orders(
                 signal_id=f"tl_sig_{now_ts}", line_id="",
                 client_order_id=f"tl_{order.symbol[:10]}_{now_ts}",
                 symbol=order.symbol.upper(), timeframe=tf, side=direction,
-                order_type="limit", trigger_mode="plan",
+                order_type="market", trigger_mode="plan",
                 entry_price=limit_px, stop_price=stop_px, tp_price=tp_px,
                 quantity=qty, status="approved",
-                reason="trendline_plan_order",
+                reason="trendline_plan_market",
                 created_at_bar=new_bar_index, created_at_ts=now_ts,
             )
             resp = await adapter.submit_live_plan_entry(intent, mode=mode, trigger_price=limit_px)

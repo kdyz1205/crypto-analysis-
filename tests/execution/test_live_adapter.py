@@ -155,19 +155,34 @@ def test_bitget_credentials_support_secret_aliases(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_submit_live_plan_entry_uses_limit_trigger_with_preset_sl_tp() -> None:
+async def test_submit_live_plan_entry_uses_market_trigger_with_preset_sl_tp() -> None:
     adapter = _RecordingAdapter()
 
     result = await adapter.submit_live_plan_entry(_intent(), "demo", trigger_price=100.0)
 
     assert result["ok"] is True
     assert ("POST", "/api/v2/mix/order/place-plan-order", "demo") in adapter.calls
+    assert adapter.last_body["orderType"] == "market"
+    assert adapter.last_body["triggerPrice"] == "100"
+    assert "executePrice" not in adapter.last_body
+    assert "price" not in adapter.last_body
+    assert adapter.last_body["stopLossTriggerPrice"] == "105"
+    assert adapter.last_body["stopSurplusTriggerPrice"] == "90"
+    assert result["request_body_excerpt"]["orderType"] == "market"
+    assert result["request_body_excerpt"]["price"] is None
+
+
+@pytest.mark.asyncio
+async def test_submit_live_plan_entry_can_use_limit_trigger_when_requested() -> None:
+    adapter = _RecordingAdapter()
+
+    result = await adapter.submit_live_plan_entry(_intent(order_type="limit"), "demo", trigger_price=100.0)
+
+    assert result["ok"] is True
     assert adapter.last_body["orderType"] == "limit"
     assert adapter.last_body["triggerPrice"] == "100"
     assert adapter.last_body["executePrice"] == "100"
     assert adapter.last_body["price"] == "100"
-    assert adapter.last_body["stopLossTriggerPrice"] == "105"
-    assert adapter.last_body["stopSurplusTriggerPrice"] == "90"
     assert result["request_body_excerpt"]["orderType"] == "limit"
     assert result["request_body_excerpt"]["price"] == "100"
 

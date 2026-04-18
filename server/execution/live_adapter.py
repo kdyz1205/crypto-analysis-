@@ -256,6 +256,9 @@ class LiveExecutionAdapter:
             return self._error_result("trigger_price_precision_error", mode=mode, intent=intent)
 
         side = "buy" if intent.side == "long" else "sell"
+        order_type = (getattr(intent, "order_type", "market") or "market").lower()
+        if order_type not in {"market", "limit"}:
+            return self._error_result(f"unsupported_plan_order_type:{order_type}", mode=mode, intent=intent)
         body: dict[str, Any] = {
             "symbol": intent.symbol.upper(),
             "productType": self.product_type,
@@ -265,13 +268,14 @@ class LiveExecutionAdapter:
             "size": normalized_size,
             "side": side,
             "tradeSide": "open",
-            "orderType": "limit",
+            "orderType": order_type,
             "triggerPrice": normalized_trigger,
-            "executePrice": normalized_trigger,
-            "price": normalized_trigger,
             "triggerType": trigger_type,
             "clientOid": self._client_order_id(intent),
         }
+        if order_type == "limit":
+            body["executePrice"] = normalized_trigger
+            body["price"] = normalized_trigger
         # Preset SL/TP — position protected from moment of fill
         if intent.stop_price and intent.stop_price > 0:
             sl = self._normalize_price(float(intent.stop_price), contract)
@@ -300,13 +304,13 @@ class LiveExecutionAdapter:
                 "submitted_notional": submitted_notional,
                 "submitted_order_type": body["orderType"],
                 "submitted_trigger_type": trigger_type,
-                "submitted_limit_price": normalized_trigger,
+                "submitted_limit_price": body.get("executePrice"),
                 "exchange_response_excerpt": data,
                 "request_body_excerpt": {
                     "orderType": body["orderType"],
                     "triggerPrice": body["triggerPrice"],
-                    "executePrice": body["executePrice"],
-                    "price": body["price"],
+                    "executePrice": body.get("executePrice"),
+                    "price": body.get("price"),
                     "stopLossTriggerPrice": body.get("stopLossTriggerPrice"),
                     "stopSurplusTriggerPrice": body.get("stopSurplusTriggerPrice"),
                     "size": body["size"],

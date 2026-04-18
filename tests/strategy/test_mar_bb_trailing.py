@@ -116,6 +116,29 @@ def test_trailing_projection_can_use_timestamp_reference():
     assert runner._calc_trendline_trailing_sl("LINKUSDT", 999, now_ts=ref_ts + 7200) == 102.0
 
 
+def test_trailing_projection_uses_tf_boundary_not_full_duration():
+    runner._trendline_params.clear()
+    placed_at_12_38 = 12 * 3600 + 38 * 60
+    at_12_45 = 12 * 3600 + 45 * 60
+
+    runner.register_trendline_params(
+        "LINKUSDT",
+        slope=1.0,
+        intercept=0.0,
+        entry_bar=999,
+        entry_price=100.0,
+        side="long",
+        tf="15m",
+        created_ts=placed_at_12_38,
+        tp_price=130.0,
+        last_sl_set=100.0,
+        line_ref_ts=placed_at_12_38,
+        line_ref_price=100.0,
+    )
+
+    assert runner._calc_trendline_trailing_sl("LINKUSDT", 999, now_ts=at_12_45) == 101.0
+
+
 @pytest.mark.asyncio
 async def test_trailing_sl_moves_two_tick_short_change(monkeypatch):
     _FakeSLAdapter.instances.clear()
