@@ -11,9 +11,17 @@
 import { startTrendlineTool } from './chart_drawing.js';
 import * as drawingsSvc from '../../services/drawings.js';
 import { marketState } from '../../state/market.js';
+import { subscribe } from '../../util/events.js';
+import {
+  clearMultiSelected,
+  setDrawingsError,
+  setManualDrawings,
+  setSelectedManualLine,
+} from '../../state/drawings.js';
 
 let toolbar = null;
 let statusEl = null;
+let trendlineBtn = null;
 
 export function initDrawToolbar(containerEl) {
   if (toolbar) return toolbar;
@@ -29,6 +37,7 @@ export function initDrawToolbar(containerEl) {
   `;
   containerEl.appendChild(toolbar);
   statusEl = toolbar.querySelector('.dtb-status');
+  trendlineBtn = toolbar.querySelector('[data-tool="trendline"]');
 
   toolbar.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-tool]');
@@ -45,6 +54,10 @@ export function initDrawToolbar(containerEl) {
       drawingsSvc
         .clearManualDrawings(marketState.currentSymbol, marketState.currentInterval)
         .then(() => {
+          setSelectedManualLine(null);
+          clearMultiSelected();
+          setManualDrawings([]);
+          setDrawingsError(null);
           import('./manual_trendline_controller.js').then((mod) => {
             mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
           });
@@ -56,6 +69,11 @@ export function initDrawToolbar(containerEl) {
   });
 
   // (T-shortcut also handled inside chart_drawing.js itself)
+  subscribe('drawtool.mode', (mode) => {
+    const phase = mode?.phase || 'idle';
+    updateStatus(phase, mode?.state || null, mode?.reason || null);
+    trendlineBtn?.classList.toggle('is-active', phase === 'picking_first' || phase === 'picking_second');
+  });
 
   updateStatus('idle', null);
   return toolbar;

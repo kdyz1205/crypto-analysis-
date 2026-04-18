@@ -98,6 +98,14 @@ export function initConditionalPanel(container) {
       const sel = drawingsState.selectedLineId;
       const lines = drawingsState.lines || [];
       const found = sel ? lines.find((l) => l.manual_line_id === sel) : null;
+      if (sel && !found) {
+        currentLine = null;
+        currentAnalyze = null;
+        marketContext = null;
+        setSelectedManualLine(null);
+        render();
+        return;
+      }
       if (found) {
         const geomChanged =
           found.t_start !== currentLine.t_start ||
@@ -592,7 +600,7 @@ function renderSelectedSection(loading) {
       lines.push(`📏 距线 <b style="color:${dColor}">${esc(ds.zone)}</b> (${(ds.gap_pct||0).toFixed(2)}%)`);
     }
     if (r) {
-      lines.push(`<span style="color:#94a3b8">推荐: 容差 <b style="color:#fbbf24">${r.tolerance_pct}%</b> · 止损 <b style="color:#fbbf24">${r.stop_pct}%</b> · RR <b style="color:#fbbf24">${r.rr_target}</b></span>`);
+      lines.push(`<span style="color:#94a3b8">推荐: Buffer <b style="color:#fbbf24">${r.tolerance_pct}%</b> · SL=线 · RR <b style="color:#fbbf24">${r.rr_target}</b></span>`);
     }
     if (lines.length) {
       smartHtml = `
@@ -738,6 +746,8 @@ async function openOrderModal() {
     t_end: Number(currentLine.t_end),
     price_start: Number(currentLine.price_start),
     price_end: Number(currentLine.price_end),
+    extend_left: !!currentLine.extend_left,
+    extend_right: currentLine.extend_right !== false,
   };
 
   // Show an instant loading scrim so user sees IMMEDIATE feedback after
@@ -763,7 +773,8 @@ async function openOrderModal() {
   loadingScrim.addEventListener('click', (ev) => { if (ev.target === loadingScrim) { cancelled = true; removeScrim(); } });
   document.body.appendChild(loadingScrim);
 
-  // refPrice projection (clamped)
+  // refPrice projection. Match backend extension semantics so the modal
+  // shows the same moving line price the Bitget plan order will track.
   let refPrice = line.price_end || line.price_start || 0;
   try {
     const ts = Math.floor(Date.now() / 1000);
@@ -771,8 +782,8 @@ async function openOrderModal() {
     if (span > 0) {
       const slope = (line.price_end - line.price_start) / span;
       const projected = line.price_start + slope * (ts - line.t_start);
-      if (ts < line.t_start) refPrice = line.price_start;
-      else if (ts > line.t_end) refPrice = line.price_end;
+      if (ts < line.t_start && !line.extend_left) refPrice = line.price_start;
+      else if (ts > line.t_end && !line.extend_right) refPrice = line.price_end;
       else refPrice = projected;
     }
   } catch {}
@@ -803,7 +814,6 @@ async function openOrderModal() {
   console.log('[cond_panel] modal data (fast path)', { balance, liveMark, refPrice, acctErr, markErr });
 
   const defTolerance = recs?.tolerance_pct ?? 0.1;
-  const defStop = recs?.stop_pct ?? 0.3;
   const defRR = recs?.rr_target ?? 2;
   const defaultPct = 20;
   const defaultSize = balance ? Math.max(5, Math.floor(balance * defaultPct / 100)) : 10;
@@ -856,9 +866,9 @@ async function openOrderModal() {
         <small style="color:#888;margin-left:4px;font-size:10px">价格摸到线 ± 容差时触发</small>
       </div>
       <div class="cond-modal-row">
-        <label>止损 (%)</label>
-        <input type="number" name="stop_pct" value="${defStop}" step="0.05" min="0.05" />
-        <small style="color:#888;margin-left:4px;font-size:10px">穿过线该% → 离场</small>
+        <label>止损</label>
+        <div style="flex:1;color:#fbbf24;background:#0b0f17;border:1px solid #2a3548;border-radius:3px;padding:5px 8px;font-size:11px">SL = trendline</div>
+        <small style="color:#888;margin-left:4px;font-size:10px">价格穿过线即离场</small>
       </div>
       <div class="cond-modal-row">
         <label>RR 目标</label>
@@ -917,7 +927,7 @@ async function openOrderModal() {
         破位 <b style="color:#ff5252">${pct(stats.p_break)}%</b> ·
         EV <b style="color:${(stats.expected_value||0)>=0?'#00e676':'#ff5252'}">${num(stats.expected_value)}R</b><br>
         可信度 <b style="color:${stats.trustworthiness==='high'?'#00e676':stats.trustworthiness==='medium'?'#fbbf24':'#888'}">${esc(stats.trustworthiness||'low')}</b>
-        ${r ? `· 推荐 容差 ${r.tolerance_pct}% · 止损 ${r.stop_pct}% · RR ${r.rr_target}` : ''}
+        ${r ? `· 推荐 Buffer ${r.tolerance_pct}% · SL=线 · RR ${r.rr_target}` : ''}
       `;
     } catch (err) {
       console.warn('[cond_panel] analyze background fill err', err);
@@ -1000,7 +1010,6 @@ async function openOrderModal() {
       return Number.isFinite(v) && v > 0 ? v : fallback;
     };
     const tolerancePct = fieldVal('tolerance_pct', 0.1);
-    const stopPct = fieldVal('stop_pct', 0.3);
     const rrTarget = fieldVal('rr', 2.0);
     const leverage = Math.max(1, Math.min(100, Math.round(fieldVal('leverage', 5))));
     // Two modes: percentage of balance (when balance loaded) OR direct USDT
@@ -1039,35 +1048,21 @@ async function openOrderModal() {
     }
 
     try {
-      // Route through /api/conditionals (watcher-based) instead of
-      // place-line-order (static Bitget plan order). Watcher re-projects
-      // the line every poll, so stale lines still trigger when price
-      // eventually touches their current projection. No "line too far
-      // from mark" rejection — price just has to come back.
-      const resp = await condSvc.createConditional({
+      // Place a real Bitget plan order. The backend persists it as a
+      // triggered conditional so the watcher can move it with the line by
+      // cancelling and replacing the exchange-side plan order.
+      const resp = await condSvc.placeLineOrder({
         manual_line_id: line.manual_line_id,
-        trigger: {
-          tolerance_atr: 0.2,
-          poll_seconds: 0,
-          max_age_seconds: 0,
-          max_distance_atr: 0,
-          break_threshold_atr: 0.5,
-        },
-        order: {
-          direction,
-          order_kind: chosenKind === 'break' ? 'breakout' : 'bounce',
-          tolerance_pct_of_line: tolerancePct,
-          stop_offset_pct_of_line: stopPct,
-          rr_target: rrTarget,
-          notional_usd: sizeUsdt,
-          leverage: null,      // sizeUsdt is already the absolute notional
-          submit_to_exchange: true,
-          exchange_mode: 'live',
-          reverse_enabled: false,
-        },
-        pattern_stats: {},
+        direction,
+        kind: chosenKind,
+        tolerance_pct: tolerancePct,
+        stop_offset_pct: 0,
+        size_usdt: sizeUsdt,
+        leverage,
+        mode: 'live',
+        rr_target: rrTarget,
       });
-      console.log('[cond_panel] createConditional response', resp);
+      console.log('[cond_panel] placeLineOrder response', resp);
 
       if (!resp?.ok) {
         // Humanised rejection messages
@@ -1088,13 +1083,13 @@ async function openOrderModal() {
         return;
       }
 
-      // Success — pending conditional now armed in watcher
+      // Success - Bitget plan order is live and tracked by the watcher.
       const cid = resp.conditional?.conditional_id || '?';
       showStatus(
-        `<b style="color:#00e676">✓ 条件单已 armed</b><br>` +
+        `<b style="color:#00e676">✓ Bitget plan order 已挂出</b><br>` +
         `id: <code>${cid.slice(0, 18)}</code><br>` +
         `${esc(resp.message || '')}<br>` +
-        `<small>watcher 每秒检查一次。价格摸到线 ± ${tolerancePct}% 时立刻打到 Bitget。<br>2 秒后关闭。</small>`,
+        `<small>watcher 会按周期移动这个 plan order，让它跟随斜线投影。<br>2 秒后关闭。</small>`,
         'success'
       );
       await refreshPending();

@@ -15,7 +15,7 @@
 //      idle ──[T / 画线]──> drawing_first_point
 //      drawing_first_point ──[click]──> drawing_second_point  (set draft.start)
 //      drawing_second_point ──[mousemove]──> stays            (update draft.end)
-//      drawing_second_point ──[click]──> drawing_first_point  (commit, sticky)
+//      drawing_second_point ──[click]──> idle                 (commit once)
 //      drawing_* ──[Esc]──> idle
 //      idle ──[mousedown anchor]──> dragging_anchor
 //      idle ──[mousedown body]──> dragging_line
@@ -24,7 +24,7 @@
 
 import { drawingsState, setManualDrawings, setSelectedManualLine } from '../../state/drawings.js';
 import { marketState } from '../../state/market.js';
-import { subscribe } from '../../util/events.js';
+import { publish, subscribe } from '../../util/events.js';
 import { fetchJson } from '../../util/fetch.js';
 import * as drawingsSvc from '../../services/drawings.js';
 import { openTradePlanModal } from './trade_plan_modal.js';
@@ -33,6 +33,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_R = 6;        // visible handle radius
 const ANCHOR_HIT = 12;     // hit test radius for anchors
 const BODY_HIT = 8;        // hit test distance for line body
+const DEFAULT_LINE_WIDTH = 1.8;
 
 // ─────────────────────────────────────────────────────────────
 // Module deps (set by init)
@@ -195,7 +196,11 @@ function screenToData(x, y) {
     const t = ts.coordinateToTime(x);
     if (t != null) time = typeof t === 'object' ? Number(t.timestamp ?? t) : Number(t);
   } catch {}
-  if (time == null) time = xToFutureTime(x);
+  if (isFutureX(x)) {
+    time = xToFutureTime(x);
+  } else if (time == null) {
+    time = xToFutureTime(x);
+  }
   if (time == null) return null;
   let price;
   try { price = _candleSeries.coordinateToPrice(y); } catch { return null; }
@@ -233,6 +238,17 @@ function xToFutureTime(x) {
   return Math.floor(last.time + bars * barIntervalSec());
 }
 
+function isFutureX(x) {
+  const c = marketState.lastCandles || [];
+  if (!c.length || !_chart) return false;
+  const last = c[c.length - 1];
+  const ts = _chart.timeScale();
+  const lastX = ts.timeToCoordinate(last.time);
+  if (lastX == null) return false;
+  const spacing = ts.options().barSpacing || 8;
+  return x > lastX + spacing * 0.5;
+}
+
 // Pixel from a DOM event (relative to chart container)
 function eventPixel(ev) {
   const rect = _container.getBoundingClientRect();
@@ -252,8 +268,9 @@ function hitTest(px, py) {
   }
   // Then line bodies
   for (const line of lines) {
-    const a = dataToScreen(toPoint(line, 'start'));
-    const b = dataToScreen(toPoint(line, 'end'));
+    const [displayA, displayB] = displayEndpoints(line);
+    const a = dataToScreen(displayA);
+    const b = dataToScreen(displayB);
     if (!a || !b) continue;
     if (distancePointToSegment(px, py, a.x, a.y, b.x, b.y) <= BODY_HIT) {
       return { lineId: line.manual_line_id, mode: 'body' };
@@ -273,6 +290,55 @@ function toPoint(line, which) {
   return which === 'start'
     ? { time: line.t_start, price: line.price_start }
     : { time: line.t_end, price: line.price_end };
+}
+
+function numericTime(value) {
+  if (value == null) return null;
+  if (typeof value === 'object') return Number(value.timestamp ?? value.time ?? value);
+  return Number(value);
+}
+
+function projectLinePrice(a, b, time) {
+  const span = b.time - a.time;
+  if (!span) return a.price;
+  const slope = (b.price - a.price) / span;
+  return a.price + slope * (time - a.time);
+}
+
+function visibleTimeBounds(fallbackA, fallbackB) {
+  const candles = marketState.lastCandles || [];
+  let from = candles.length ? Number(candles[0].time) : Number(fallbackA.time);
+  let to = candles.length ? Number(candles[candles.length - 1].time) + barIntervalSec() * 8 : Number(fallbackB.time);
+  try {
+    const vr = _chart?.timeScale?.().getVisibleRange?.();
+    const vf = numericTime(vr?.from);
+    const vt = numericTime(vr?.to);
+    if (Number.isFinite(vf)) from = vf;
+    if (Number.isFinite(vt)) to = vt;
+  } catch {}
+  return { from, to };
+}
+
+function displayEndpoints(line, start = toPoint(line, 'start'), end = toPoint(line, 'end')) {
+  if (!start || !end) return [start, end];
+  let a = start;
+  let b = end;
+  if (b.time < a.time) [a, b] = [b, a];
+
+  let from = a.time;
+  let to = b.time;
+  const bounds = visibleTimeBounds(a, b);
+  if (line?.extend_left && Number.isFinite(bounds.from) && bounds.from < from) {
+    from = Math.floor(bounds.from);
+  }
+  if (line?.extend_right !== false && Number.isFinite(bounds.to) && bounds.to > to) {
+    to = Math.floor(bounds.to);
+  }
+
+  return [
+    { time: from, price: projectLinePrice(a, b, from) },
+    { time: to, price: projectLinePrice(a, b, to) },
+  ];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -306,6 +372,15 @@ function transition(next, reason = '') {
   }
 
   tx.state = next;
+  publish('drawtool.mode', {
+    state: next,
+    previous: prev,
+    reason,
+    active: next === 'drawing_first_point' || next === 'drawing_second_point',
+    phase: next === 'drawing_first_point'
+      ? 'picking_first'
+      : (next === 'drawing_second_point' ? 'picking_second' : 'idle'),
+  });
 
   // Chart freeze/thaw is IDEMPOTENT and always re-asserted, so a stuck
   // freeze from any earlier race gets recovered every time we land in idle.
@@ -508,10 +583,11 @@ async function commitDraft() {
     price_start: a.price,
     price_end: b.price,
     extend_left: false,
-    extend_right: true,
+    extend_right: false,
     locked: false,
     label: `trendline ${new Date().toISOString().slice(11, 16)}`,
     notes: '',
+    line_width: DEFAULT_LINE_WIDTH,
     created_at: Math.floor(Date.now() / 1000),
     updated_at: Math.floor(Date.now() / 1000),
     _pending: true,   // marker for UI ("saving...")
@@ -533,13 +609,21 @@ async function commitDraft() {
       price_start: a.price,
       price_end: b.price,
       extend_left: false,
-      extend_right: true,
+      extend_right: false,
       locked: false,
       label: tempLine.label,
       notes: '',
+      line_width: DEFAULT_LINE_WIDTH,
       override_mode: 'display_only',
     });
-    real = resp?.drawing;
+    real = resp?.drawing ? {
+      ...resp.drawing,
+      t_start: tempLine.t_start,
+      t_end: tempLine.t_end,
+      price_start: tempLine.price_start,
+      price_end: tempLine.price_end,
+      line_width: tempLine.line_width,
+    } : null;
     console.log('[chart_drawing] commit ok', real?.manual_line_id);
   } catch (err) {
     // AbortError is NOT a failure — it means a later refresh superseded
@@ -571,14 +655,8 @@ async function commitDraft() {
     setSelectedManualLine(real.manual_line_id);
   }
 
-  // Auto-open TradePlan modal so the user can immediately attach an
-  // order to the line they just drew. If they cancel, the line still
-  // exists — they can right-click it later to attach a plan.
-  try {
-    await openTradePlanModal(real);
-  } catch (err) {
-    console.warn('[chart_drawing] trade plan modal error', err);
-  }
+  // Stay idle after one line. The user explicitly chooses the next action:
+  // press T to draw another line, or right-click this line to create a plan.
 }
 
 async function commitDrag() {
@@ -714,22 +792,26 @@ function render() {
       }
     }
 
-    const a = dataToScreen(drawA);
-    const b = dataToScreen(drawB);
+    const [displayA, displayB] = displayEndpoints(line, drawA, drawB);
+    const a = dataToScreen(displayA);
+    const b = dataToScreen(displayB);
     if (!a || !b) continue;
 
     const isSel = line.manual_line_id === selId;
     const isHov = line.manual_line_id === hovId;
     const color = (isSel || isHov) ? 'rgba(251,191,36,1)' : 'rgba(251,191,36,0.45)';
-    const width = isSel ? 3 : (isHov ? 2.5 : 1.8);
+    const baseWidth = lineStrokeWidth(line);
+    const width = isSel ? baseWidth + 1.0 : (isHov ? baseWidth + 0.6 : baseWidth);
 
     // Visible line
     appendLine(a.x, a.y, b.x, b.y, color, width);
 
     // Anchors only when selected or hovered
     if (isSel || isHov) {
-      appendCircle(a.x, a.y, ANCHOR_R, color);
-      appendCircle(b.x, b.y, ANCHOR_R, color);
+      const anchorA = dataToScreen(drawA);
+      const anchorB = dataToScreen(drawB);
+      if (anchorA) appendCircle(anchorA.x, anchorA.y, ANCHOR_R, color);
+      if (anchorB) appendCircle(anchorB.x, anchorB.y, ANCHOR_R, color);
     }
   }
 
@@ -796,6 +878,13 @@ function openContextMenu(ev, lineId) {
     <div data-act="select" style="padding:6px 14px;cursor:pointer">选中此线</div>
     <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划</div>
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
+    <div style="height:1px;background:#2a3548;margin:4px 0"></div>
+    <div style="padding:5px 14px;color:#8a92a5">线宽</div>
+    <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px</div>
+    <div data-act="set_width" data-width="2" style="padding:6px 14px;cursor:pointer">2 px</div>
+    <div data-act="set_width" data-width="3" style="padding:6px 14px;cursor:pointer">3 px</div>
+    <div data-act="set_width" data-width="4" style="padding:6px 14px;cursor:pointer">4 px</div>
+    <div data-act="set_width" data-width="5" style="padding:6px 14px;cursor:pointer">5 px</div>
     <div data-act="delete" style="padding:6px 14px;cursor:pointer;color:#ff5252">删除此线</div>
   `;
   _menu.addEventListener('click', async (e) => {
@@ -814,6 +903,8 @@ function openContextMenu(ev, lineId) {
     } else if (act === 'add_alert') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
       if (line) openAlertDialog(line);
+    } else if (act === 'set_width') {
+      await setLineWidth(lineId, Number(item.dataset.width || DEFAULT_LINE_WIDTH));
     } else if (act === 'delete') {
       await deleteLine(lineId);
     }
@@ -899,11 +990,40 @@ function openAlertDialog(line) {
 }
 
 async function deleteLine(lineId) {
+  if (!lineId) return;
+  const previous = drawingsState.lines || [];
   const keep = (drawingsState.lines || []).filter((l) => l.manual_line_id !== lineId);
   setManualDrawings(keep);
+  if (drawingsState.selectedLineId === lineId) setSelectedManualLine(null);
+  if (lineId.startsWith('temp-')) return;
   try {
-    await fetchJson(`/api/drawings/${encodeURIComponent(lineId)}`, { method: 'DELETE', timeout: 8000 });
+    await drawingsSvc.deleteManualDrawing(lineId);
   } catch (err) {
+    setManualDrawings(previous);
     alert(`删除失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
   }
+}
+
+async function setLineWidth(lineId, width) {
+  const lineWidth = Math.max(1, Math.min(Number(width) || DEFAULT_LINE_WIDTH, 8));
+  const lines = drawingsState.lines || [];
+  const idx = lines.findIndex((l) => l.manual_line_id === lineId);
+  if (idx < 0) return;
+  const previous = lines.slice();
+  const next = lines.slice();
+  next[idx] = { ...next[idx], line_width: lineWidth };
+  setManualDrawings(next);
+  if (lineId.startsWith('temp-')) return;
+  try {
+    await drawingsSvc.updateManualDrawing(lineId, { line_width: lineWidth });
+  } catch (err) {
+    setManualDrawings(previous);
+    alert(`线宽保存失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
+  }
+}
+
+function lineStrokeWidth(line) {
+  const width = Number(line?.line_width);
+  if (!Number.isFinite(width)) return DEFAULT_LINE_WIDTH;
+  return Math.max(1, Math.min(width, 8));
 }

@@ -47,9 +47,9 @@ export async function deleteConditional(id) {
 }
 
 /**
- * Place a REAL limit order on Bitget derived from a drawn line.
- * The order goes directly to the exchange orderbook — visible in the
- * Bitget app immediately. Cancel from app or via cancelConditional.
+ * Place a REAL Bitget plan order derived from a drawn line.
+ * The backend keeps a local conditional record so the watcher can move
+ * the exchange-side trigger as the sloped line projection changes.
  */
 export async function placeLineOrder(payload) {
   return fetchJson('/api/drawings/manual/place-line-order', {

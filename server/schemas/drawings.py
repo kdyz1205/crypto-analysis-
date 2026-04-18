@@ -18,7 +18,7 @@ class ManualTrendlineModel(BaseModel):
     price_start: float
     price_end: float
     extend_left: bool = False
-    extend_right: bool = True
+    extend_right: bool = False
     locked: bool = False
     label: str = ""
     notes: str = ""
@@ -30,6 +30,7 @@ class ManualTrendlineModel(BaseModel):
     overlap_ratio: float | None = None
     created_at: int
     updated_at: int
+    line_width: float = 1.8
 
 
 class ManualTrendlineCreateRequest(BaseModel):
@@ -41,11 +42,12 @@ class ManualTrendlineCreateRequest(BaseModel):
     price_start: float
     price_end: float
     extend_left: bool = False
-    extend_right: bool = True
+    extend_right: bool = False
     locked: bool = False
     label: str = ""
     notes: str = ""
     override_mode: str = "display_only"
+    line_width: float = Field(default=1.8, ge=1.0, le=8.0)
 
 
 class ManualTrendlineUpdateRequest(BaseModel):
@@ -59,6 +61,7 @@ class ManualTrendlineUpdateRequest(BaseModel):
     label: str | None = None
     notes: str | None = None
     override_mode: str | None = None
+    line_width: float | None = Field(default=None, ge=1.0, le=8.0)
 
 
 class ManualTrendlineListResponse(BaseModel):

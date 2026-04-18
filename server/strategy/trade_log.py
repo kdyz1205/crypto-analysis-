@@ -42,6 +42,52 @@ def log_trade(
     return record
 
 
+def log_fill(order_id: str, symbol: str, direction: str, fill_price: float,
+             quantity: float, **extra):
+    """Record when a plan order triggers and position opens."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": time.time(), "dt": datetime.now(timezone.utc).isoformat(),
+        "event": "fill", "order_id": order_id, "symbol": symbol,
+        "direction": direction, "fill_price": fill_price, "quantity": quantity,
+        **extra,
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    return record
+
+
+def log_close(order_id: str, symbol: str, direction: str, close_price: float,
+              pnl: float, pnl_pct: float, reason: str = "", **extra):
+    """Record when a position is closed (SL/TP/manual/line-broken)."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": time.time(), "dt": datetime.now(timezone.utc).isoformat(),
+        "event": "close", "order_id": order_id, "symbol": symbol,
+        "direction": direction, "close_price": close_price,
+        "pnl": pnl, "pnl_pct": pnl_pct, "reason": reason,
+        **extra,
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    return record
+
+
+def log_sl_move(symbol: str, direction: str, old_sl: float, new_sl: float,
+                tf: str = "", bars: int = 0, **extra):
+    """Record SL movement at bar boundary."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts": time.time(), "dt": datetime.now(timezone.utc).isoformat(),
+        "event": "sl_move", "symbol": symbol, "direction": direction,
+        "old_sl": old_sl, "new_sl": new_sl, "tf": tf, "bars": bars,
+        **extra,
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    return record
+
+
 def get_trades(last_n: int = 100) -> list[dict]:
     if not LOG_FILE.exists():
         return []

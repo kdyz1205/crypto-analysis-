@@ -1,0 +1,20 @@
+[
+  {
+    "symbol": "LINKUSDT",
+    "timeframe": "1h",
+    "kind": "support",
+    "slope": 0.1,
+    "intercept": 99.1,
+    "anchor1_bar": 1,
+    "anchor2_bar": 5,
+    "bar_count": 10,
+    "current_projected_price": 100.0,
+    "limit_price": 100.2,
+    "stop_price": 100.0,
+    "tp_price": 103.206,
+    "exchange_order_id": "fake-plan-1",
+    "created_ts": 1776413019.962938,
+    "last_updated_ts": 1776413019.962938,
+    "status": "placed"
+  }
+]

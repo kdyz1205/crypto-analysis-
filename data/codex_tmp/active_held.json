@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "LINKUSDT",
+    "timeframe": "1h",
+    "kind": "support",
+    "slope": 0.0,
+    "intercept": 100.0,
+    "anchor1_bar": 1,
+    "anchor2_bar": 5,
+    "bar_count": 10,
+    "current_projected_price": 100.0,
+    "limit_price": 100.2,
+    "stop_price": 100.0,
+    "tp_price": 103.206,
+    "exchange_order_id": "old-order",
+    "created_ts": 1776481687.8502638,
+    "last_updated_ts": 1776485187.8502638,
+    "status": "filled",
+    "line_ref_ts": 1776485187.8502638,
+    "line_ref_price": 100.0
+  }
+]

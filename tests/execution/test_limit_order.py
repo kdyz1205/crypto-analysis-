@@ -28,3 +28,10 @@ def test_normalize_price_uses_pricePlace_fallback():
     contract = {"pricePlace": "0.001"}
     result = adapter._normalize_price(50.1234, contract)
     assert result == "50.123"
+
+
+def test_normalize_price_uses_raw_bitget_price_place_and_end_step():
+    adapter = LiveExecutionAdapter.__new__(LiveExecutionAdapter)
+    contract = {"pricePlace": "3", "priceEndStep": "5"}
+    result = adapter._normalize_price(50.1239, contract)
+    assert result == "50.12"

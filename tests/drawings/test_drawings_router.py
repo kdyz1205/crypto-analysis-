@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import server.routers.drawings as drawings_router
+import server.strategy.drawing_learner as drawing_learner
 from server.drawings.store import ManualTrendlineStore
 
 
@@ -35,6 +36,7 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(drawings_router, "get_ohlcv_with_df", fake_get_ohlcv_with_df)
     drawings_router.store = ManualTrendlineStore(tmp_path / "manual_trendlines.json")
+    monkeypatch.setattr(drawing_learner, "ML_DRAWINGS_FILE", tmp_path / "user_drawings_ml.jsonl")
 
     client = TestClient(_build_app())
     create_response = client.post(
@@ -47,6 +49,7 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
             "t_end": 1712678400,
             "price_start": 100.0,
             "price_end": 105.0,
+            "line_width": 3.0,
             "label": "manual resistance",
             "override_mode": "display_only",
         },
@@ -54,7 +57,8 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
     assert create_response.status_code == 200
     created = create_response.json()["drawing"]
     assert created["manual_line_id"].startswith("manual-BTCUSDT-4h-resistance")
-    assert created["comparison_status"] in {"supports_auto", "near_auto", "conflicts_auto", "no_nearby_auto"}
+    assert created["comparison_status"] == "uncompared"
+    assert created["line_width"] == 3.0
 
     list_response = client.get("/api/drawings?symbol=BTCUSDT&timeframe=4h")
     assert list_response.status_code == 200
@@ -66,6 +70,7 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
             "override_mode": "suppress_nearest_auto_line",
             "locked": True,
             "extend_left": True,
+            "line_width": 5.0,
             "label": "desk override",
             "notes": "manual review line",
         },
@@ -75,6 +80,7 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
     assert updated["override_mode"] == "suppress_nearest_auto_line"
     assert updated["locked"] is True
     assert updated["extend_left"] is True
+    assert updated["line_width"] == 5.0
     assert updated["label"] == "desk override"
     assert updated["notes"] == "manual review line"
 
@@ -85,3 +91,42 @@ def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
     empty_response = client.get("/api/drawings?symbol=BTCUSDT&timeframe=4h")
     assert empty_response.status_code == 200
     assert empty_response.json()["drawings"] == []
+
+
+def test_clear_drawings_removes_only_requested_symbol_timeframe(monkeypatch, tmp_path: Path) -> None:
+    drawings_router.store = ManualTrendlineStore(tmp_path / "manual_trendlines.json")
+    monkeypatch.setattr(drawing_learner, "ML_DRAWINGS_FILE", tmp_path / "user_drawings_ml.jsonl")
+    client = TestClient(_build_app())
+
+    rows = [
+        ("HYPEUSDT", "15m", 1712592000, 1712678400, 100.0, 101.0),
+        ("HYPEUSDT", "15m", 1712682000, 1712768400, 102.0, 103.0),
+        ("HYPEUSDT", "4h", 1712592000, 1712678400, 104.0, 105.0),
+    ]
+    for symbol, timeframe, t1, t2, p1, p2 in rows:
+        response = client.post(
+            "/api/drawings",
+            json={
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "side": "support",
+                "t_start": t1,
+                "t_end": t2,
+                "price_start": p1,
+                "price_end": p2,
+                "label": "manual support",
+                "override_mode": "display_only",
+            },
+        )
+        assert response.status_code == 200
+
+    clear_response = client.post("/api/drawings/clear?symbol=HYPEUSDT&timeframe=15m")
+    assert clear_response.status_code == 200
+    assert clear_response.json()["removed"] == 2
+
+    h15 = client.get("/api/drawings?symbol=HYPEUSDT&timeframe=15m")
+    h4 = client.get("/api/drawings?symbol=HYPEUSDT&timeframe=4h")
+    assert h15.status_code == 200
+    assert h4.status_code == 200
+    assert h15.json()["drawings"] == []
+    assert len(h4.json()["drawings"]) == 1

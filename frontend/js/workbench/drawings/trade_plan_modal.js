@@ -3,13 +3,13 @@
 // "Create Trade Plan from Line" modal.
 //
 // Opened by:
-//   - commitDraft() in chart_drawing.js right after a line lands
 //   - right-click menu "Create Trade Plan"
 //   - panel "+" button
 //
-// Emits: POST /api/conditionals with a line-relative-pct payload that
-// the watcher understands. No absolute points offsets — the line is the
-// reference, pct buffers are the only offset mode.
+// Emits POST /api/drawings/manual/place-line-order when "submit to exchange"
+// is enabled. The backend places a Bitget plan order and the watcher moves
+// that exchange-side order as the line projection changes. If submission is
+// disabled, it falls back to a local watcher-only conditional.
 //
 // Leverage math (cross-margin):
 //   notional        = account_equity * leverage
@@ -28,8 +28,8 @@ const LS_KEY = 'v2.tradeplan.defaults.v1';
 const DEFAULTS = {
   direction: 'short',           // support→long, resistance→short — auto-set on open
   order_kind: 'bounce',         // bounce | breakout
-  buffer_pct: 0.05,             // tolerance_pct_of_line
-  stop_pct: 0.1,                // stop_offset_pct_of_line
+  buffer_pct: 0.05,             // entry offset; also full line-stop risk
+  stop_pct: 0.05,               // legacy default, ignored
   rr_target: 2.0,
   leverage: 10,
   notional_usd: 100,            // only used if leverage=0
@@ -38,7 +38,7 @@ const DEFAULTS = {
   // auto-reverse
   reverse_enabled: true,
   reverse_buffer_pct: 0.05,
-  reverse_stop_pct: 0.1,
+  reverse_stop_pct: 0.05,       // legacy default, ignored
   reverse_rr_target: 2.0,
 };
 
@@ -109,7 +109,7 @@ export function openTradePlanModal(line) {
       direction: $('[name=direction]').value,
       order_kind: $('[name=order_kind]').value,
       buffer_pct: Number($('[name=buffer_pct]').value) || 0,
-      stop_pct: Number($('[name=stop_pct]').value) || 0,
+      stop_pct: Number($('[name=buffer_pct]').value) || 0,
       rr_target: Number($('[name=rr_target]').value) || 0,
       leverage: Number($('[name=leverage]').value) || 0,
       notional_usd: Number($('[name=notional_usd]').value) || 0,
@@ -117,7 +117,7 @@ export function openTradePlanModal(line) {
       submit_to_exchange: $('[name=submit_to_exchange]').checked,
       reverse_enabled: $('[name=reverse_enabled]').checked,
       reverse_buffer_pct: Number($('[name=reverse_buffer_pct]').value) || 0,
-      reverse_stop_pct: Number($('[name=reverse_stop_pct]').value) || 0,
+      reverse_stop_pct: Number($('[name=reverse_buffer_pct]').value) || 0,
       reverse_rr_target: Number($('[name=reverse_rr_target]').value) || 0,
     });
 
@@ -187,50 +187,55 @@ export function openTradePlanModal(line) {
           throw new Error('size_usdt 计算失败 — 填一个 notional 或确保账户有余额');
         }
 
-        // /api/conditionals — creates a WATCHER-BASED trigger:
-        //   - The watcher polls current mark every poll_seconds
-        //   - Each poll it RE-PROJECTS the line to NOW (not using the
-        //     line's original price_end which may be stale)
-        //   - When current mark is within tolerance of the projected
-        //     line value, the watcher fires a MARKET order using the
-        //     mark at that moment as entry
-        //   - There is NO "line too far from mark" rejection — an old
-        //     line just sits and waits for price to come back to it
-        //   - Fully dynamic: price keeps moving, line's projected value
-        //     keeps updating, entry fires the moment they meet
-        // This is the correct model for "draw a line, set and forget".
-        // The old /api/drawings/manual/place-line-order path created a
-        // static Bitget plan order which was why old stale lines got
-        // rejected with "line_too_far_from_mark".
+        // Place a real Bitget plan order. The backend stores it as a
+        // triggered conditional so the watcher can cancel+replace it as
+        // the sloped line projection moves.
         const payload = {
           manual_line_id: line.manual_line_id,
-          trigger: {
-            tolerance_atr: 0.2,
-            poll_seconds: 0,           // router picks per TF
-            max_age_seconds: 0,        // never expire by time
-            max_distance_atr: 0,       // never expire by drift
-            break_threshold_atr: 0.5,
-          },
-          order: {
-            direction: v.direction,
-            order_kind: v.order_kind === 'breakout' ? 'breakout' : 'bounce',
-            tolerance_pct_of_line: v.buffer_pct,
-            stop_offset_pct_of_line: v.stop_pct,
-            rr_target: v.rr_target,
-            leverage: v.leverage > 0 ? v.leverage : null,
-            notional_usd: v.leverage > 0 ? null : size_usdt,
-            submit_to_exchange: true,
-            exchange_mode: v.exchange_mode,
-            reverse_enabled: v.reverse_enabled,
-            reverse_entry_offset_pct: v.reverse_buffer_pct,
-            reverse_stop_offset_pct: v.reverse_stop_pct,
-            reverse_rr_target: v.reverse_rr_target,
-            reverse_leverage: v.leverage > 0 ? v.leverage : null,
-          },
-          pattern_stats: {},
+          direction: v.direction,
+          kind: v.order_kind === 'breakout' ? 'break' : 'bounce',
+          tolerance_pct: v.buffer_pct,
+          stop_offset_pct: 0,
+          size_usdt,
+          leverage: v.leverage > 0 ? Math.round(v.leverage) : 1,
+          mode: v.exchange_mode === 'paper' ? 'demo' : 'live',
+          rr_target: v.rr_target,
+          reverse_enabled: v.reverse_enabled,
+          reverse_entry_offset_pct: v.reverse_buffer_pct,
+          reverse_stop_offset_pct: 0,
+          reverse_rr_target: v.reverse_rr_target,
+          reverse_leverage: v.leverage > 0 ? Math.round(v.leverage) : null,
         };
 
-        const resp = await createConditional(payload);
+        const resp = v.submit_to_exchange
+          ? await placeLineOrder(payload)
+          : await createConditional({
+              manual_line_id: line.manual_line_id,
+              trigger: {
+                tolerance_atr: 0.2,
+                poll_seconds: 0,
+                max_age_seconds: 0,
+                max_distance_atr: 0,
+                break_threshold_atr: 0.5,
+              },
+              order: {
+                direction: v.direction,
+                order_kind: v.order_kind === 'breakout' ? 'breakout' : 'bounce',
+                tolerance_pct_of_line: v.buffer_pct,
+                stop_offset_pct_of_line: 0,
+                rr_target: v.rr_target,
+                leverage: null,
+                notional_usd: size_usdt,
+                submit_to_exchange: false,
+                exchange_mode: 'paper',
+                reverse_enabled: v.reverse_enabled,
+                reverse_entry_offset_pct: v.reverse_buffer_pct,
+                reverse_stop_offset_pct: 0,
+                reverse_rr_target: v.reverse_rr_target,
+                reverse_leverage: null,
+              },
+              pattern_stats: {},
+            });
         if (!resp?.ok) {
           const err = resp?.error || resp?.detail || resp?.reason || 'create failed';
           throw new Error(err);
@@ -290,8 +295,8 @@ function renderShell(line, v) {
         <div class="tp-row">
           <label class="tp-label">入场 Buffer %</label>
           <input type="number" name="buffer_pct" value="${v.buffer_pct}" step="0.01" min="0"/>
-          <label class="tp-label">止损距离 %</label>
-          <input type="number" name="stop_pct" value="${v.stop_pct}" step="0.01" min="0"/>
+          <label class="tp-label">止损</label>
+          <div class="tp-static">SL = line</div>
           <label class="tp-label">RR</label>
           <input type="number" name="rr_target" value="${v.rr_target}" step="0.1" min="0"/>
         </div>
@@ -326,8 +331,8 @@ function renderShell(line, v) {
         <div class="tp-row">
           <label class="tp-label">反手 Buffer %</label>
           <input type="number" name="reverse_buffer_pct" value="${v.reverse_buffer_pct}" step="0.01" min="0"/>
-          <label class="tp-label">反手止损 %</label>
-          <input type="number" name="reverse_stop_pct" value="${v.reverse_stop_pct}" step="0.01" min="0"/>
+          <label class="tp-label">反手止损</label>
+          <div class="tp-static">SL = line</div>
           <label class="tp-label">反手 RR</label>
           <input type="number" name="reverse_rr_target" value="${v.reverse_rr_target}" step="0.1" min="0"/>
         </div>
@@ -379,6 +384,11 @@ function injectStyles() {
     }
     .tp-row input[type=number]:focus, .tp-row select:focus {
       outline: none; border-color: #38bdf8;
+    }
+    .tp-static {
+      background: #141a26; border: 1px solid #2a3548; color: #fbbf24;
+      padding: 6px 10px; border-radius: 4px; font-size: 12px;
+      min-width: 82px; box-sizing: border-box; text-align: center;
     }
     .tp-preview {
       background: #141a26; border: 1px solid #1d2537;

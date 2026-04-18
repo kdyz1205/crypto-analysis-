@@ -1,0 +1,22 @@
+[
+  {
+    "symbol": "LINKUSDT",
+    "timeframe": "1h",
+    "kind": "support",
+    "slope": 0.0,
+    "intercept": 100.0,
+    "anchor1_bar": 1,
+    "anchor2_bar": 5,
+    "bar_count": 10,
+    "current_projected_price": 100.0,
+    "limit_price": 100.2,
+    "stop_price": 100.0,
+    "tp_price": 103.206,
+    "exchange_order_id": "managed-order",
+    "created_ts": 1776488887.9142346,
+    "last_updated_ts": 1776488887.9142346,
+    "status": "daily_halt",
+    "line_ref_ts": 1776488887.9142346,
+    "line_ref_price": 100.0
+  }
+]

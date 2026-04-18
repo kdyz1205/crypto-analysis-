@@ -159,19 +159,11 @@ async def api_live_cancel_order(
                 "bitget": resp.get("data"), "local_cond_updated": local_updated}
 
     # Fall through to plan / trigger order cancel
-    plan_body = {
-        "symbol": sym,
-        "productType": "USDT-FUTURES",
-        "marginCoin": "USDT",
-        "orderIdList": [{"orderId": order_id}],
-    }
-    plan_resp = await adapter._bitget_request(
-        "POST", "/api/v2/mix/order/cancel-plan-order", mode=norm_mode, body=plan_body,
-    )
-    if plan_resp.get("code") == "00000":
+    plan_resp = await adapter.cancel_plan_order_any_type(sym, order_id, norm_mode)
+    if plan_resp.get("ok"):
         local_updated = _mark_local_cond_cancelled(order_id, reason="user cancel via api (plan)")
         return {"ok": True, "order_id": order_id, "kind": "plan",
-                "bitget": plan_resp.get("data"), "local_cond_updated": local_updated}
+                "bitget": plan_resp.get("exchange_response_excerpt"), "local_cond_updated": local_updated}
 
     # Even on Bitget failure, mark local cancelled if the order was
     # already gone server-side — prevents zombie cond from re-spawning.
@@ -179,7 +171,7 @@ async def api_live_cancel_order(
     return {
         "ok": False,
         "order_id": order_id,
-        "reason": plan_resp.get("msg") or resp.get("msg") or "both cancel paths failed",
+        "reason": plan_resp.get("reason") or resp.get("msg") or "both cancel paths failed",
         "raw_order": resp,
         "raw_plan": plan_resp,
         "local_cond_updated": local_updated,

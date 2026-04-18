@@ -1,0 +1,46 @@
+C:\Users\alexl\Desktop\crypto-analysis-\server\routers\tools_api.py:138: FastAPIDeprecationWarning: `regex` has been deprecated, please use `pattern` instead
+  side: str = Query(..., regex="^(support|resistance)$"),
+INFO:     Started server process [43356]
+INFO:     Waiting for application startup.
+[AI Chat] CLAUDE_CODE_CLI_MODE=True BRIDGE_MODE='true'
+[OKX] API key loaded (live trading available)
+[Agent] Loaded state: gen=0 equity=10000.00 trades=0
+[Telegram] Config loaded from env: chat_id=6357154428
+[AI Chat] Anthropic client initialized
+[Agent] Initialized. Mode=paper Gen=0
+[AI Chat] Ready. API key=set
+[Healer] Self-healing active. AI=enabled
+[AuditSubscriber] Registered for 7 event prefixes
+[TelegramSubscriber] Registered for chat_id=6357154428
+[SSESubscriber] Registered broadcast for 7 event prefixes
+[EventBus] Phase 3 subscribers registered
+[conditional_watcher] started
+[mar_bb] auto-started: top_n=100 tf=1h max_pos=100 notional=$12.0
+[orderbook] started feed for BTCUSDT
+[orderbook] started feed for ETHUSDT
+[orderbook] started feed for SOLUSDT
+[orderbook] started feed for HYPEUSDT
+[orderbook] started feed for DOGEUSDT
+[orderbook] started feed for XRPUSDT
+[orderbook] started feed for BNBUSDT
+[orderbook] started feed for NEARUSDT
+[orderbook] started feed for SUIUSDT
+[orderbook] started feed for PEPEUSDT
+[orderbook] service started, tracking ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'HYPEUSDT', 'DOGEUSDT', 'XRPUSDT', 'BNBUSDT', 'NEARUSDT', 'SUIUSDT', 'PEPEUSDT']
+[orderbook] L2 websocket service started
+[Scheduler] Started with 6 default handlers
+[Runtime] Subaccount runtime manager ready
+[Evolution] Engine available but not auto-started (avoids API congestion)
+[Healer] Started. Watching for errors...
+[conditional_watcher] main loop entering
+[mar_bb] runner loop started, cfg={'top_n': 100, 'scan_interval_s': 60, 'timeframes': ['5m', '15m', '1h', '4h'], 'timeframe': '1h', 'tf_risk': {'3m': 0.003, '5m': 0.003, '15m': 0.007, '1h': 0.015, '4h': 0.03}, 'sizing_mode': 'fixed_risk', 'risk_pct': 0.01, 'notional_usd': 12.0, 'max_position_pct': 0.5, 'leverage': 30, 'max_concurrent_positions': 100, 'daily_dd_tiers': [(100000, 0.03), (25000, 0.06), (5000, 0.1), (2000, 0.15), (1000, 0.25), (500, 0.35), (0, 0.5)], 'trendline_reversal': {'15m': False, '1h': False, '4h': False}, 'reversal_rr': 2.0, 'mode': 'live', 'min_bars': 100, 'dry_run': False, 'auto_start': True, 'strategies': ['trendline']}
+[mar_bb] scan start: top_n=100 TFs=['5m', '15m', '1h', '4h'] max=100 leverage=30x
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('0.0.0.0', 8000): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+[Scheduler] Loop started (0 tasks loaded)
+[Agent] Stopped.
+[conditional_watcher] cancelled, exiting cleanly
+[mar_bb] runner loop cancelled
+[mar_bb] runner loop exited

@@ -24,6 +24,7 @@ let strategyLayerPanel = null;
 let chartModePanel = null;
 let chartLoadSeq = 0;
 let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
+const FUTURE_DRAW_BARS = 48;
 
 // Lazy backfill state. Kept at module level so the visible-range
 // subscriber can see the current candle buffer without a closure over
@@ -69,7 +70,7 @@ export function initChart(containerId = 'chart-container') {
       borderColor: '#2a3548',
       timeVisible: true,
       secondsVisible: false,
-      rightOffset: 80,   // generous future space so drawn lines can project weeks ahead
+      rightOffset: FUTURE_DRAW_BARS,
     },
   });
 
@@ -291,7 +292,7 @@ export async function loadCurrent(forcePatterns = false) {
         try {
           if (totalBars > VISIBLE_BARS) {
             const fromTime = candles[totalBars - VISIBLE_BARS].time;
-            const toTime   = candles[totalBars - 1].time + barDur * 4;
+            const toTime   = candles[totalBars - 1].time + barDur * FUTURE_DRAW_BARS;
             ts.setVisibleRange({ from: fromTime, to: toTime });
             // Verify it stuck
             const got = ts.getVisibleRange();
