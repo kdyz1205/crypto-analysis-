@@ -10,6 +10,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import time
 from typing import Any, Literal
@@ -33,6 +34,10 @@ router = APIRouter(prefix="/api", tags=["conditionals"])
 
 _store = ConditionalOrderStore()
 _drawings = ManualTrendlineStore()
+_MARK_PRICE_CACHE: dict[str, tuple[float, float]] = {}
+_LEVERAGE_SET_CACHE: dict[tuple[str, str, int], float] = {}
+_MARK_PRICE_CACHE_SECONDS = 2.0
+_LEVERAGE_SET_CACHE_SECONDS = 3600.0
 
 
 # ─────────────────────────────────────────────────────────────
@@ -328,10 +333,10 @@ class PlaceLineOrderReq(BaseModel):
     direction: Literal["long", "short"]
     kind: Literal["bounce", "break"] = "bounce"
     # Single line-relative distance. Entry is line +/- tolerance_pct.
-    # The stop is the line itself; stop_offset_pct is kept only for old
-    # clients and is ignored by this endpoint.
+    # Stop sits just beyond the line so a wick has to cross it by a tiny
+    # amount before the trade is invalidated.
     tolerance_pct: float = 0.1
-    stop_offset_pct: float = 0.0
+    stop_offset_pct: float = 0.01
     size_usdt: float = Field(..., gt=0, description="Notional to commit, in USDT")
     leverage: int = Field(5, ge=1, le=100)
     mode: Literal["demo", "live"] = "live"
@@ -339,7 +344,7 @@ class PlaceLineOrderReq(BaseModel):
     notify_tg: bool = Field(True, description="Send TG alert on trigger")
     reverse_enabled: bool = False
     reverse_entry_offset_pct: float = 0.0
-    reverse_stop_offset_pct: float = 0.0  # deprecated; reverse stop is the line
+    reverse_stop_offset_pct: float = 0.0
     reverse_rr_target: float | None = None
     reverse_leverage: float | None = None
 
@@ -475,6 +480,7 @@ async def volatility_context(symbol: str, timeframe: str) -> dict:
         regime = "normal"
     else:
         regime = "wide"
+
     return {
         "atr_abs": atr_abs,
         "atr_pct": atr_pct,
@@ -489,10 +495,17 @@ async def volatility_context(symbol: str, timeframe: str) -> dict:
 async def _fetch_bitget_mark_price(symbol: str) -> float | None:
     """Fetch real-time mark price from Bitget public ticker (no auth)."""
     import httpx
+    normalized = symbol.upper()
+    now = time.time()
+    cached = _MARK_PRICE_CACHE.get(normalized)
+    if cached and now - cached[0] <= _MARK_PRICE_CACHE_SECONDS:
+        return cached[1]
+
     url = "https://api.bitget.com/api/v2/mix/market/ticker"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(url, params={"symbol": symbol.upper(), "productType": "USDT-FUTURES"})
+        timeout = httpx.Timeout(connect=1.0, read=2.0, write=2.0, pool=0.5)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.get(url, params={"symbol": normalized, "productType": "USDT-FUTURES"})
             if r.status_code != 200:
                 return None
             j = r.json()
@@ -501,7 +514,11 @@ async def _fetch_bitget_mark_price(symbol: str) -> float | None:
                 return None
             row = data[0] if isinstance(data, list) else data
             mp = row.get("markPrice") or row.get("lastPr")
-            return float(mp) if mp else None
+            if not mp:
+                return None
+            price = float(mp)
+            _MARK_PRICE_CACHE[normalized] = (now, price)
+            return price
     except Exception:
         return None
 
@@ -509,17 +526,7 @@ async def _fetch_bitget_mark_price(symbol: str) -> float | None:
 @router.post("/conditionals/place-line-order")   # legacy alias for cached frontends
 @router.post("/drawings/manual/place-line-order")
 async def api_place_line_order(req: PlaceLineOrderReq):
-    """Submit a Bitget plan order (trigger order) so the user sees it in
-    the Bitget app's 计划委托 / Trigger Orders tab. The trigger price is
-    the line's CURRENT projected price; SL and TP are attached as presets.
-
-    Direction is auto-derived from line vs current mark + bounce/break:
-      bounce + line above mark → SHORT (rejection)
-      bounce + line below mark → LONG  (support bounce)
-      break  + line above mark → LONG  (break above resistance)
-      break  + line below mark → SHORT (break below support)
-    The user can override via req.direction.
-    """
+    """Submit a Bitget trigger-market plan order for a manual line."""
     drawing = _drawings.get(req.manual_line_id)
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
@@ -536,59 +543,51 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             f"line has no usable price (computed ref={ref_price:.6f}, "
             f"price_start={drawing.price_start}, price_end={drawing.price_end}, "
             f"t_start={drawing.t_start}, t_end={drawing.t_end}, now={now_ts_}). "
-            f"This shouldn't happen after the clamp — report it."
+            f"This shouldn't happen after the clamp - report it."
         )
 
-    # Trust the user's direction. Only safety guard: reject lines
-    # ABSURDLY far from mark. Threshold is ATR-aware — meme coins with
-    # 4% ATR shouldn't be rejected at 10% gap (that's only 2.5 ATR),
-    # while stable BTC with 0.4% ATR should reject anything > 10%.
+    # Trust the user's direction. Only safety guard: reject obviously stale
+    # lines far away from the current mark, using ATR as the scale.
+    timing_start = time.perf_counter()
     mark_price = await _fetch_bitget_mark_price(drawing.symbol)
+    mark_elapsed_ms = int((time.perf_counter() - timing_start) * 1000)
     if mark_price and mark_price > 0:
         gap_pct = abs(ref_price - mark_price) / mark_price * 100
-        # Get ATR% to derive a sensible threshold
-        try:
-            vol_ctx = await volatility_context(drawing.symbol, drawing.timeframe)
-            atr_pct = float(vol_ctx.get("atr_pct") or 0.0)
-        except Exception:
-            atr_pct = 0.0
-        # Threshold: max(10%, 5×ATR). Wide regimes get more headroom.
-        threshold = max(10.0, atr_pct * 5.0)
+        # Keep the live order path fast. Full ATR/BB analysis belongs in the
+        # preview/analyze path; here a fixed stale-line guard is enough.
+        threshold = 10.0
         if gap_pct > threshold:
             raise HTTPException(
                 400,
                 f"line_too_far_from_mark: line@{ref_price:.4f} vs mark@{mark_price:.4f} "
-                f"({gap_pct:.1f}% away, threshold {threshold:.1f}% = max(10%, 5×ATR={atr_pct:.2f}%)). "
+                f"({gap_pct:.1f}% away, threshold {threshold:.1f}%). "
                 f"refusing to place obviously stale order.",
             )
 
-    # Log the decision for post-mortem, but never block on it
     print(
         f"[place-line-order] line={drawing.price_start:.4f}->{drawing.price_end:.4f} "
-        f"ref@{ref_price:.4f} mark={mark_price} kind={req.kind} dir={req.direction}"
+        f"ref@{ref_price:.4f} mark={mark_price} kind={req.kind} dir={req.direction} "
+        f"mark_ms={mark_elapsed_ms}"
     )
 
-    # Compute prices for entry / stop / TP (all from the line):
-    #   LONG:  entry = line × (1 + 容差%),  stop = line × (1 - 止损%)
-    #   SHORT: entry = line × (1 - 容差%),  stop = line × (1 + 止损%)
-    # 容差 here = "how far from the line do we set the trigger" — for
-    # bounce, that's 'just slightly inside the line' (above for long,
-    # below for short) anticipating the rejection.
+    # Compute prices from the projected line:
+    # LONG:  trigger = line * (1 + buffer), stop = line * (1 - stop_offset)
+    # SHORT: trigger = line * (1 - buffer), stop = line * (1 + stop_offset)
     offset = req.tolerance_pct / 100.0
+    stop_offset = max(0.0, req.stop_offset_pct) / 100.0
     if req.direction == "long":
         entry_price = ref_price * (1.0 + offset)
-        stop_price = ref_price
+        stop_price = ref_price * (1.0 - stop_offset)
         risk = entry_price - stop_price
         tp_price = entry_price + risk * req.rr_target
     else:
         entry_price = ref_price * (1.0 - offset)
-        stop_price = ref_price
+        stop_price = ref_price * (1.0 + stop_offset)
         risk = stop_price - entry_price
         tp_price = entry_price - risk * req.rr_target
 
     quantity = req.size_usdt / entry_price
 
-    # Build OrderIntent
     from ..execution.types import OrderIntent
     intent = OrderIntent(
         order_intent_id=f"line_{req.manual_line_id[-12:]}_{int(time.time())}",
@@ -598,7 +597,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         symbol=drawing.symbol.upper(),
         timeframe=drawing.timeframe,
         side=req.direction,         # type: ignore
-        order_type="limit",
+        order_type="market",
         trigger_mode="manual",
         entry_price=entry_price,
         stop_price=stop_price,
@@ -608,32 +607,50 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         reason="manual_line_draw",
         created_at_bar=-1,
         created_at_ts=time.time(),
-        post_only=True,
+        post_only=False,
     )
 
-    # Set leverage first
     from ..execution.live_adapter import LiveExecutionAdapter
     adapter = LiveExecutionAdapter()
     if not adapter.has_api_keys():
         raise HTTPException(503, "Bitget API keys not configured")
-    try:
-        await adapter._bitget_request(
-            "POST", "/api/v2/mix/account/set-leverage",
-            mode=req.mode,
-            body={
-                "symbol": drawing.symbol.upper(),
-                "productType": "USDT-FUTURES",
-                "marginCoin": "USDT",
-                "leverage": str(int(req.leverage)),
-            },
-        )
-    except Exception as e:
-        print(f"[place-line-order] set-leverage warning: {e}")
+    leverage_key = (req.mode, drawing.symbol.upper(), int(req.leverage))
+    leverage_cached_at = _LEVERAGE_SET_CACHE.get(leverage_key, 0.0)
+    leverage_elapsed_ms = 0
+    if time.time() - leverage_cached_at > _LEVERAGE_SET_CACHE_SECONDS:
+        leverage_start = time.perf_counter()
+        try:
+            leverage_resp = await asyncio.wait_for(
+                adapter._bitget_request(
+                    "POST", "/api/v2/mix/account/set-leverage",
+                    mode=req.mode,
+                    body={
+                        "symbol": drawing.symbol.upper(),
+                        "productType": "USDT-FUTURES",
+                        "marginCoin": "USDT",
+                        "leverage": str(int(req.leverage)),
+                    },
+                ),
+                timeout=3.0,
+            )
+            if leverage_resp.get("code") == "00000":
+                _LEVERAGE_SET_CACHE[leverage_key] = time.time()
+            else:
+                print(f"[place-line-order] set-leverage rejected: {leverage_resp}", flush=True)
+        except Exception as e:
+            print(f"[place-line-order] set-leverage warning: {e}", flush=True)
+        leverage_elapsed_ms = int((time.perf_counter() - leverage_start) * 1000)
 
-    # SUBMIT BITGET PLAN ORDER (visible in user's 计划委托 tab)
-    # place-order supports force=post_only; place-plan-order does not.
-    result = await adapter.submit_live_entry(intent, mode=req.mode)
-
+    submit_start = time.perf_counter()
+    result = await adapter.submit_live_plan_entry(intent, mode=req.mode, trigger_price=entry_price)
+    submit_elapsed_ms = int((time.perf_counter() - submit_start) * 1000)
+    total_elapsed_ms = int((time.perf_counter() - timing_start) * 1000)
+    print(
+        f"[place-line-order] bitget_submit ok={result.get('ok')} "
+        f"mark_ms={mark_elapsed_ms} leverage_ms={leverage_elapsed_ms} "
+        f"submit_ms={submit_elapsed_ms} total_ms={total_elapsed_ms}",
+        flush=True,
+    )
     if not result.get("ok"):
         return {
             "ok": False,
@@ -667,9 +684,9 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             order_kind="breakout" if req.kind == "break" else "bounce",
             # Store the absolute entry offset so replan can re-apply tolerance
             entry_offset_points=ref_price * req.tolerance_pct / 100.0,
-            stop_points=0.0,
+            stop_points=ref_price * max(0.0, req.stop_offset_pct) / 100.0,
             tolerance_pct_of_line=req.tolerance_pct,
-            stop_offset_pct_of_line=0.0,
+            stop_offset_pct_of_line=max(0.0, req.stop_offset_pct),
             rr_target=req.rr_target,
             tp_price=tp_price,
             notional_usd=req.size_usdt,
@@ -708,7 +725,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             price=ref_price,
             line_price=ref_price,
             message=(
-                f"Bitget post-only limit placed: {req.direction} entry@{_fmt(entry_price)} "
+                f"Bitget trigger-market plan placed: {req.direction} trigger@{_fmt(entry_price)} "
                 f"sl@{_fmt(stop_price)} tp@{_fmt(tp_price)} qty={quantity:.6f} "
                 f"orderId={result.get('exchange_order_id')}"
             ),
@@ -727,7 +744,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
                 stop_price=stop_price,
                 tp_price=tp_price,
                 tolerance_pct=req.tolerance_pct,
-                stop_offset_pct=0.0,
+                stop_offset_pct=max(0.0, req.stop_offset_pct),
                 rr_target=req.rr_target,
                 size_usdt=req.size_usdt,
                 exchange_order_id=str(result.get("exchange_order_id") or ""),
@@ -740,11 +757,11 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         # Try to cancel the Bitget order so we don't leak.
         print(f"[place-line-order] cond create failed: {e} — rolling back Bitget order", flush=True)
         try:
-            cancel_resp = await adapter.cancel_order(
+            cancel_resp = await adapter.cancel_plan_order_any_type(
                 drawing.symbol.upper(), str(result.get("exchange_order_id", "")), req.mode,
             )
             if not cancel_resp.get("ok"):
-                await adapter.cancel_plan_order_any_type(
+                await adapter.cancel_order(
                     drawing.symbol.upper(), str(result.get("exchange_order_id", "")), req.mode,
                 )
             print(f"[place-line-order] rolled back ghost order {result.get('exchange_order_id')}", flush=True)
@@ -757,20 +774,11 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         "conditional": cond.to_dict(),
         "exchange_order_id": result.get("exchange_order_id"),
         "message": (
-            f"Bitget post-only limit submitted: {req.direction} entry {_fmt(entry_price)} · "
+            f"Bitget trigger-market plan submitted: {req.direction} trigger {_fmt(entry_price)} · "
             f"SL {_fmt(stop_price)} · TP {_fmt(tp_price)}."
         ),
     }
 
-    return {
-        "ok": True,
-        "conditional": cond.to_dict(),
-        "exchange_order_id": result.get("exchange_order_id"),
-        "message": (
-            f"Bitget plan 单已挂:{req.direction} trigger {_fmt(entry_price)} · "
-            f"SL {_fmt(stop_price)} · TP {_fmt(tp_price)}。去 Bitget app 计划委托 tab 查看。"
-        ),
-    }
 
 
 # ─────────────────────────────────────────────────────────────

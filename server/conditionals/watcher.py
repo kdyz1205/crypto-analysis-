@@ -62,6 +62,11 @@ _REPLAN_DRIFT_PCT = 0.05
 _RECONCILE_EVERY_TICKS = 30   # 30s with 1s tick
 _reconcile_counter = 0
 
+
+def _bar_open_ts(ts: int, timeframe: str) -> int:
+    interval = _TF_REPLAN_SECONDS.get(timeframe, 900)
+    return int(ts // interval * interval)
+
 # Outcome backfill: scan pending trade snapshots and try to fill in
 # exit_price / PnL / MAE / MFE from 1m K-line history. Runs much less
 # often than reconcile because it loads 1m data per symbol.
@@ -669,7 +674,7 @@ def _compute_trade_prices(cond: ConditionalOrder, line_price: float, atr: float)
     dir_sign = 1 if oc.direction == "long" else -1
 
     tol_pct = float(oc.tolerance_pct_of_line or 0.0)
-    stop_pct = 0.0
+    stop_pct = max(0.0, float(oc.stop_offset_pct_of_line or 0.0))
     if tol_pct <= 0:
         raise ValueError(
             f"tolerance_pct_of_line ({tol_pct}) and stop_offset_pct_of_line "
@@ -678,7 +683,7 @@ def _compute_trade_prices(cond: ConditionalOrder, line_price: float, atr: float)
         )
 
     entry_price = line_price * (1.0 + (tol_pct / 100.0) * dir_sign)
-    stop_price = line_price
+    stop_price = line_price * (1.0 - (stop_pct / 100.0) * dir_sign)
 
     # TP: absolute > rr
     risk = abs(entry_price - stop_price)
@@ -943,6 +948,12 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
     entry_price = _position_entry_price(pos) or float(cond.fill_price or line_ref_price)
     if line_ref_price <= 0 or entry_price <= 0:
         return
+    stop_offset_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0))
+    last_sl_set = (
+        line_ref_price * (1.0 - stop_offset_pct / 100.0)
+        if cond.order.direction == "long"
+        else line_ref_price * (1.0 + stop_offset_pct / 100.0)
+    )
     register_trendline_params(
         cond.symbol.upper(),
         slope=_manual_slope_per_bar(cond),
@@ -953,9 +964,10 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         tf=cond.timeframe,
         created_ts=opened_ts,
         tp_price=float(cond.order.tp_price or 0.0),
-        last_sl_set=line_ref_price,
+        last_sl_set=last_sl_set,
         line_ref_ts=opened_ts,
         line_ref_price=line_ref_price,
+        stop_offset_pct=stop_offset_pct,
     )
 
 
@@ -1232,9 +1244,8 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if forced:
         _force_replan_set.discard(cond.conditional_id)
     else:
-        interval = _TF_REPLAN_SECONDS.get(cond.timeframe, 900)
         last = cond.last_poll_ts or cond.triggered_at or cond.created_at
-        if (now - last) < interval:
+        if _bar_open_ts(now, cond.timeframe) <= _bar_open_ts(last, cond.timeframe):
             return
 
     # Project the line's price at NOW using the same extension semantics
@@ -1257,20 +1268,10 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         else line_now * (1 - tol_pct / 100.0)
     )
 
-    # Skip if drift below threshold (volatility-aware: wide regimes
-    # tolerate larger drift before a replan, avoiding cancel/replace churn).
-    try:
-        from server.routers.conditionals import volatility_context
-        vol_ctx = await volatility_context(cond.symbol, cond.timeframe)
-        atr_pct_vol = float(vol_ctx.get("atr_pct") or 0.0)
-    except Exception:
-        atr_pct_vol = 0.0
-    drift_threshold = max(_REPLAN_DRIFT_PCT, atr_pct_vol * 0.20)
-
     old_trigger = cond.fill_price or 0
-    if old_trigger > 0 and not forced:
+    if old_trigger > 0:
         drift_pct = abs(new_trigger - old_trigger) / old_trigger * 100
-        if drift_pct < drift_threshold:
+        if drift_pct <= 0.000001:
             cond.last_poll_ts = now
             try:
                 latest = _store.get(cond.conditional_id)
@@ -1281,8 +1282,9 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
                 pass
             return
 
-    # Cancel the old Bitget entry order. New manual-line entries are regular
-    # post-only limits; older records may still be normal_plan trigger orders.
+    # Cancel the old Bitget entry order. Current manual-line entries must be
+    # normal_plan trigger-market orders; older records may still be regular
+    # limit orders, so try both cancel paths.
     from server.execution.live_adapter import LiveExecutionAdapter
     adapter = LiveExecutionAdapter()
     if not adapter.has_api_keys():
@@ -1300,12 +1302,13 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
 
     # Recompute SL / TP from the new LINE projection using line-relative pct.
     rr = cond.order.rr_target or 2.0
+    stop_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0))
     if direction == "long":
-        new_stop = line_now
+        new_stop = line_now * (1.0 - stop_pct / 100.0)
         risk = new_trigger - new_stop
         new_tp = new_trigger + risk * rr
     else:
-        new_stop = line_now
+        new_stop = line_now * (1.0 + stop_pct / 100.0)
         risk = new_stop - new_trigger
         new_tp = new_trigger - risk * rr
 
@@ -1324,7 +1327,9 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         ))
         return
 
-    # Build a fresh OrderIntent with new prices
+    # Build a fresh OrderIntent with new prices. Keep it as a Bitget
+    # trigger-market plan order so it does not reserve regular order margin
+    # before the line is touched.
     from server.execution.types import OrderIntent
     intent = OrderIntent(
         order_intent_id=f"replan_{cond.conditional_id}_{now}",
@@ -1334,7 +1339,7 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         symbol=sym,
         timeframe=cond.timeframe,
         side=direction,  # type: ignore
-        order_type="limit",
+        order_type="market",
         trigger_mode="manual_replan",
         entry_price=float(new_trigger),
         stop_price=float(new_stop),
@@ -1344,9 +1349,9 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         reason="line_slope_replan",
         created_at_bar=-1,
         created_at_ts=now,
-        post_only=True,
+        post_only=False,
     )
-    place = await adapter.submit_live_entry(intent, mode=cond.order.exchange_mode)
+    place = await adapter.submit_live_plan_entry(intent, mode=cond.order.exchange_mode, trigger_price=float(new_trigger))
     if place.get("ok"):
         cond.exchange_order_id = place.get("exchange_order_id") or ""
         cond.fill_price = float(new_trigger)
@@ -1364,7 +1369,7 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
             message=(
                 f"replanned: new trigger {new_trigger:.4f} (was {old_trigger:.4f}, "
                 f"drift {(abs(new_trigger-old_trigger)/old_trigger*100 if old_trigger > 0 else 0.0):.3f}%) "
-                f"new orderId={cond.exchange_order_id}"
+                f"trigger-market plan new orderId={cond.exchange_order_id}"
             ),
         ))
     else:
