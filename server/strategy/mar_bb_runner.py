@@ -54,7 +54,10 @@ DEFAULT_RUNNER_CFG = {
     "scan_interval_s": 60,
     "maintenance_interval_s": 10,
     # ── Multi-timeframe ──
-    "timeframes": ["5m", "15m", "1h", "4h"],
+    # 5m dropped: V3 backtest shows -EV after commissions (see memory
+    # "Trendline TF decision" 2026-04). 15m marginal edge +0.065% net, only
+    # viable with ML gate thresholds >= 0.55. 1h/4h profitable unfiltered.
+    "timeframes": ["15m", "1h", "4h"],
     "timeframe": "1h",                       # legacy single-TF fallback
     # ── Per-TF risk config (Axel's interim values, pending Kelly backtest) ──
     "tf_risk": {
@@ -64,13 +67,27 @@ DEFAULT_RUNNER_CFG = {
         "1h":  0.015,   # 1.5%
         "4h":  0.030,   # 3.0%
     },
+    # Stop is placed just beyond the trendline, not exactly on it. Values are
+    # documented percentages: 0.01 means 0.01% beyond the line.
+    "stop_offset_pct": 0.01,
+    "tf_stop_offset": {
+        "5m": 0.01,
+        "15m": 0.01,
+        "1h": 0.01,
+        "4h": 0.01,
+    },
+    "trendline_cooldown_bars_after_close": 4,
     # ── Position sizing ──
     "sizing_mode": "fixed_risk",
     "risk_pct": 0.01,               # fallback if TF not in tf_risk
     "notional_usd": 12.0,           # fallback for fixed_notional mode
-    "max_position_pct": 0.50,       # max 50% equity per single position
-    "leverage": 30,
-    "max_concurrent_positions": 100,
+    # Calibrated 2026-04-19 for small-equity ($4-10) live trading after the
+    # -81% incident on 2026-04-18. Old defaults (leverage=30, concurrent=100,
+    # max_pos_pct=0.50, <$500 DD 50%) were unsafe at this equity tier. See
+    # data/logs/phase4_preflight.md for the live-readiness audit.
+    "max_position_pct": 0.20,       # max 20% equity per single position
+    "leverage": 10,                  # 10x: 10% liquidation buffer (vs 3.3% at 30x)
+    "max_concurrent_positions": 3,   # $4 equity mathematically can't fund more
     # ── Daily drawdown halt (adaptive by equity tier) ──
     # Format: [(equity_threshold, max_daily_dd_pct), ...] — checked top-down
     "daily_dd_tiers": [
@@ -80,7 +97,7 @@ DEFAULT_RUNNER_CFG = {
         (2000,   0.15),   # $2k-5k: max 15%
         (1000,   0.25),   # $1k-2k: max 25%
         (500,    0.35),   # $500-1k: max 35%
-        (0,      0.50),   # <$500: max 50%
+        (0,      0.20),   # <$500: max 20% (was 0.50 — tightened after -81% DD)
     ],
     # ── Trendline reversal (breakout flip) ──
     # When a trendline trade hits SL (line broken), auto-open reverse direction.
@@ -95,7 +112,11 @@ DEFAULT_RUNNER_CFG = {
     "mode": "live",
     "min_bars": 100,
     "dry_run": False,
-    "auto_start": True,
+    # auto_start=False: server restart must require a manual POST to
+    # /api/mar-bb/start (or UI button). The MAR_BB_AUTOSTART env var is the
+    # second guard; this default is the first. Changed from True on 2026-04-19
+    # after the -81% DD incident.
+    "auto_start": False,
     "strategies": ["trendline"],  # MA Ribbon disabled pending SL/TP indicator research
     "model_gate": {
         "enabled": True,
@@ -103,8 +124,11 @@ DEFAULT_RUNNER_CFG = {
         # Explicit model roles. Do not replace the trade model with the AUC=0.928 line model.
         "primary_trade_model": "C:/Users/alexl/trading-system/checkpoints/trendline_quality/v3_trade_outcome_auc_0.825.pt",
         "aux_line_quality_model": "C:/Users/alexl/Desktop/crypto-analysis-/checkpoints/trendline_quality/pattern_bounce_auc_0.928.pt",
-        "min_trade_win_prob": 0.50,
-        "min_line_quality_prob": 0.50,
+        # Global gate — applies to every TF. 0.55 picked to push 15m from
+        # marginal +0.065% net EV into clearly-profitable territory while still
+        # letting 1h/4h through (those are +0.18%/+0.26% net even unfiltered).
+        "min_trade_win_prob": 0.55,
+        "min_line_quality_prob": 0.55,
     },
 }
 
@@ -151,6 +175,13 @@ class RunnerState:
     open_position: dict | None = None
     recent_signals: list = field(default_factory=list)     # last 20 signals
     daily_risk: dict | None = None
+    # Consecutive-loss circuit breaker (Stage 4a, 2026-04-19):
+    # recent_close_outcomes tracks the most-recent close outcomes
+    # ("win" | "loss"); when there are >= 3 losses in a row, trading is
+    # paused until breaker_until_ts elapses (default +1h). Cleared on any win.
+    recent_close_outcomes: list = field(default_factory=list)
+    breaker_until_ts: float = 0.0
+    breaker_reason: str = ""
 
 
 _state = RunnerState()
@@ -331,7 +362,8 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
                                tf: str, created_ts: float = 0, tp_price: float = 0,
                                last_sl_set: float = 0,
                                line_ref_ts: float = 0,
-                               line_ref_price: float = 0):
+                               line_ref_price: float = 0,
+                               stop_offset_pct: float = 0):
     """Called when opening a trendline trade — stores line params for SL trailing."""
     key = symbol.upper()
     if key in _trendline_params:
@@ -343,6 +375,7 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
         "opened_ts": int(created_ts) if created_ts > 0 else int(time.time()),
         "last_sl_set": float(last_sl_set or 0),
         "tp_price": tp_price,
+        "stop_offset_pct": max(0.0, float(stop_offset_pct or 0)),
     }
     if line_ref_ts > 0 and line_ref_price > 0:
         params["line_ref_ts"] = int(line_ref_ts)
@@ -374,6 +407,106 @@ def _select_active_order_for_position(active_orders: list, symbol: str):
         )
 
     return max(candidates, key=_key)
+
+
+def _stop_offset_pct_from_active_order(ao) -> float:
+    line_price = float(
+        getattr(ao, "line_ref_price", 0)
+        or getattr(ao, "current_projected_price", 0)
+        or 0
+    )
+    stop_price = float(getattr(ao, "stop_price", 0) or 0)
+    if line_price <= 0 or stop_price <= 0:
+        return 0.0
+    if getattr(ao, "kind", "") == "support":
+        return max(0.0, (line_price - stop_price) / line_price * 100.0)
+    return max(0.0, (stop_price - line_price) / line_price * 100.0)
+
+
+def _tf_seconds(tf: str) -> int:
+    return {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}.get(tf, 3600)
+
+
+def _manual_slope_per_bar(cond) -> float:
+    span = int(cond.t_end) - int(cond.t_start)
+    if span <= 0:
+        return 0.0
+    return (float(cond.price_end) - float(cond.price_start)) / span * _tf_seconds(cond.timeframe)
+
+
+def _manual_conditional_for_position(symbol: str, pos: dict):
+    """Restore trailing from manual line conditionals when active-orders lack a row."""
+    try:
+        from server.conditionals.store import ConditionalOrderStore
+        store = ConditionalOrderStore()
+        rows = []
+        for status in ("filled", "triggered"):
+            rows.extend(store.list_all(status=status, symbol=symbol.upper()))
+    except Exception as exc:
+        print(f"[trailing] manual conditional lookup err {symbol}: {exc}", flush=True)
+        return None
+    if not rows:
+        return None
+    pos_side = str(pos.get("holdSide") or pos.get("posSide") or "").lower()
+    if pos_side:
+        rows = [row for row in rows if str(row.order.direction).lower() == pos_side] or rows
+    return max(rows, key=lambda row: int(row.triggered_at or row.updated_at or row.created_at or 0))
+
+
+def _register_manual_conditional_trailing(symbol: str, cond, pos: dict) -> bool:
+    opened_ts = _position_open_ts(pos) or int(cond.triggered_at or time.time())
+    line_ref_price = float(cond.line_price_at(opened_ts))
+    entry_price = float(
+        pos.get("openPriceAvg")
+        or pos.get("averageOpenPrice")
+        or pos.get("openAvgPrice")
+        or cond.fill_price
+        or line_ref_price
+        or 0
+    )
+    if line_ref_price <= 0 or entry_price <= 0:
+        return False
+    stop_offset_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0))
+    if cond.order.direction == "long":
+        last_sl_set = line_ref_price * (1.0 - stop_offset_pct / 100.0)
+    else:
+        last_sl_set = line_ref_price * (1.0 + stop_offset_pct / 100.0)
+    register_trendline_params(
+        symbol.upper(),
+        slope=_manual_slope_per_bar(cond),
+        intercept=0.0,
+        entry_bar=0,
+        entry_price=entry_price,
+        side=cond.order.direction,
+        tf=cond.timeframe,
+        created_ts=opened_ts,
+        tp_price=float(cond.order.tp_price or 0.0),
+        last_sl_set=last_sl_set,
+        line_ref_ts=opened_ts,
+        line_ref_price=line_ref_price,
+        stop_offset_pct=stop_offset_pct,
+    )
+    try:
+        from server.conditionals.store import ConditionalOrderStore
+        from server.conditionals.types import ConditionalEvent
+        store = ConditionalOrderStore()
+        if getattr(cond, "status", "") != "filled":
+            cond.status = "filled"
+            cond.fill_price = entry_price
+            latest = store.get(cond.conditional_id)
+            if latest is not None:
+                cond.events = latest.events
+            store.update(cond)
+        store.append_event(cond.conditional_id, ConditionalEvent(
+            ts=int(time.time()),
+            kind="exchange_acked",
+            price=entry_price,
+            line_price=line_ref_price,
+            message="open position detected; registered manual line for trailing SL",
+        ))
+    except Exception as exc:
+        print(f"[trailing] manual conditional status update err {symbol}: {exc}", flush=True)
+    return True
 
 
 def _position_open_ts(pos: dict) -> int:
@@ -423,7 +556,16 @@ def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int 
     if projected_line <= 0:
         return None
 
-    return _round_price(projected_line)
+    offset = max(0.0, float(params.get("stop_offset_pct") or 0.0)) / 100.0
+    side = str(params.get("side") or "").lower()
+    if side == "long":
+        projected_stop = projected_line * (1.0 - offset)
+    elif side == "short":
+        projected_stop = projected_line * (1.0 + offset)
+    else:
+        projected_stop = projected_line
+
+    return _round_price(projected_stop)
 
 
 def _tf_boundaries_elapsed(previous_ts: float, tf: str, now_ts: int | None = None) -> int:
@@ -569,6 +711,12 @@ def _build_trendline_order_cfg(cfg: dict, equity: float, held_symbols: set[str] 
         "held_symbols": held_symbols or set(),
         "tf_risk": cfg.get("tf_risk", DEFAULT_RUNNER_CFG["tf_risk"]),
         "tf_buffer": {"5m": 0.05, "15m": 0.10, "1h": 0.20, "4h": 0.30},
+        "stop_offset_pct": cfg.get("stop_offset_pct", DEFAULT_RUNNER_CFG["stop_offset_pct"]),
+        "tf_stop_offset": cfg.get("tf_stop_offset", DEFAULT_RUNNER_CFG["tf_stop_offset"]),
+        "trendline_cooldown_bars_after_close": cfg.get(
+            "trendline_cooldown_bars_after_close",
+            DEFAULT_RUNNER_CFG["trendline_cooldown_bars_after_close"],
+        ),
     }
 
 
@@ -594,6 +742,15 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                     continue
                 ao = _select_active_order_for_position(active_orders, sym_upper)
                 if ao is None:
+                    pos = held_positions_by_symbol.get(sym_upper, {})
+                    manual_cond = _manual_conditional_for_position(sym_upper, pos)
+                    if manual_cond is not None and _register_manual_conditional_trailing(sym_upper, manual_cond, pos):
+                        print(
+                            f"[trailing] registered manual line {sym_upper} "
+                            f"tf={manual_cond.timeframe} cond={manual_cond.conditional_id}",
+                            flush=True,
+                        )
+                        continue
                     print(f"[trailing] skip register {sym_upper}: no active trendline order candidate", flush=True)
                     continue
                 pos = held_positions_by_symbol.get(sym_upper, {})
@@ -610,6 +767,7 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                     last_sl_set=ao.stop_price,
                     line_ref_ts=getattr(ao, "line_ref_ts", 0) or ao.last_updated_ts,
                     line_ref_price=getattr(ao, "line_ref_price", 0) or ao.current_projected_price,
+                    stop_offset_pct=_stop_offset_pct_from_active_order(ao),
                 )
                 from server.strategy.trade_log import log_fill
                 log_fill(
@@ -668,14 +826,25 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                         closed_list = (hist.get("data") or {}).get("list") or []
                         if closed_list:
                             last = closed_list[0]
-                            pnl = float(last.get("netProfit") or last.get("achievedProfits") or 0)
-                            open_price = float(last.get("openPriceAvg") or 0)
-                            close_price = float(last.get("closePriceAvg") or 0)
-                            pnl_pct = pnl / float(last.get("margin") or 1) if float(last.get("margin") or 0) > 0 else 0
+                            # Centralised field accessors (_bitget_fields) so a
+                            # future Bitget rename only needs to update one
+                            # module, not every call site.
+                            from server.execution import _bitget_fields as bgf
+                            pnl = bgf.realized_pnl_usd(last)
+                            open_price = bgf.open_price(last)
+                            close_price = bgf.close_price(last)
+                            _m = bgf.margin_used(last)
+                            pnl_pct = pnl / _m if _m > 0 else 0
                             from server.strategy.trade_log import log_close
                             log_close("", sym, params.get("side", ""), close_price, pnl, pnl_pct,
                                       reason="sl_or_tp", tf=params.get("tf", ""),
                                       entry_price=open_price)
+                            # Feed the circuit breaker — if 3+ losses pile up,
+                            # trading gets paused on the next scan tick.
+                            try:
+                                record_close_outcome(pnl, cfg=cfg)
+                            except Exception as _exc:
+                                print(f"[mar_bb] breaker record err: {_exc}", flush=True)
                             try:
                                 from server.strategy.ml_trade_db import log_position_closed
                                 log_position_closed(
@@ -692,6 +861,19 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                             except Exception as exc:
                                 print(f"[trailing] ml close log err {sym}: {exc}", flush=True)
                             print(f"[trailing] RESOLVED {sym} {params.get('side','')} PnL=${pnl:+.4f} ({pnl_pct*100:+.2f}%)", flush=True)
+                            try:
+                                from server.strategy.trendline_order_manager import mark_trendline_cooldown
+                                side = str(params.get("side", "")).lower()
+                                kind = "support" if side == "long" else "resistance"
+                                mark_trendline_cooldown(
+                                    sym,
+                                    str(params.get("tf", "")),
+                                    kind,
+                                    bars=int(cfg.get("trendline_cooldown_bars_after_close", 4)),
+                                    reason="position_closed",
+                                )
+                            except Exception as exc:
+                                print(f"[trailing] cooldown set err {sym}: {exc}", flush=True)
                     except Exception as e:
                         print(f"[trailing] PnL fetch {sym}: {e}", flush=True)
                     print(f"[trailing] cleaned up {sym} (no longer in positions)", flush=True)
@@ -707,10 +889,20 @@ async def _run_trendline_fast_maintenance(cfg: dict) -> dict:
     if "trendline" not in enabled_strats:
         return {"ok": True, "skipped": "trendline_disabled"}
 
+    # Halt guard: during a daily-DD halt we must NOT place/re-place plan
+    # orders. Only the SL-trailing step keeps running — that tightens exits
+    # on existing positions, which is risk-reducing, not risk-adding.
+    # Without this guard (pre-2026-04-19) the maintenance loop happily kept
+    # submitting new tl_ plans on 10s cadence even while the 60s scan loop
+    # had already called HALT. Part of the post-mortem on the -81% incident.
+    halt_active = bool((_state.daily_risk or {}).get("halted"))
+
     async with _trendline_maintenance_lock:
         result: dict[str, Any] = {"placed": 0, "updated": 0, "cancelled": 0}
         equity = await _get_equity() if cfg.get("sizing_mode") == "fixed_risk" else float(cfg.get("equity", 0) or 0)
-        if cfg.get("sizing_mode") != "fixed_risk" or equity > 0:
+        if halt_active:
+            print("[maintenance] halt active — skipping plan-order moves, SL trailing still runs", flush=True)
+        elif cfg.get("sizing_mode") != "fixed_risk" or equity > 0:
             try:
                 from server.strategy.trendline_order_manager import update_trendline_orders
                 tl_cfg = _build_trendline_order_cfg(cfg, equity, held_symbols=set())
@@ -729,7 +921,7 @@ async def _run_trendline_fast_maintenance(cfg: dict) -> dict:
             print(f"[maintenance] trailing maintenance err: {exc}", flush=True)
             traceback.print_exc()
             sl_updates = 0
-        return {"ok": True, **result, "sl_updates": sl_updates}
+        return {"ok": True, **result, "sl_updates": sl_updates, "halt_active": halt_active}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -786,6 +978,93 @@ def _save_daily_risk(*, equity: float, dd_pct: float, limit: float, halted: bool
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception as exc:
         print(f"[mar_bb] daily risk save err: {exc}", flush=True)
+
+
+def record_close_outcome(pnl: float, *, cfg: dict | None = None) -> dict:
+    """Call this at every position close to feed the consecutive-loss breaker.
+    Returns {triggered, streak, breaker_until_ts}. Breaker is:
+      - cleared on any win (resets streak to 0)
+      - triggered when streak >= threshold (default 3 consecutive losses)
+      - stays active until breaker_until_ts (default now + 1h)
+    """
+    global _state
+    cfg = cfg or {}
+    threshold = int(cfg.get("consecutive_loss_threshold", 3))
+    pause_s = int(cfg.get("consecutive_loss_pause_s", 3600))  # 1h default
+    outcome = "win" if float(pnl or 0) > 0 else "loss"
+    outcomes = list(_state.recent_close_outcomes or [])
+    outcomes.append(outcome)
+    outcomes = outcomes[-10:]  # keep last 10
+    _state.recent_close_outcomes = outcomes
+    # Count current trailing losses
+    streak = 0
+    for o in reversed(outcomes):
+        if o == "loss":
+            streak += 1
+        else:
+            break
+    triggered = False
+    if streak >= threshold:
+        _state.breaker_until_ts = time.time() + pause_s
+        _state.breaker_reason = f"{streak} consecutive losses; paused {pause_s}s"
+        triggered = True
+        print(f"[mar_bb] CIRCUIT BREAKER: {_state.breaker_reason}", flush=True)
+    elif outcome == "win":
+        # A win clears the breaker even if still within cooldown — explicit
+        # user intent can be encoded later; for now a win is a "reset".
+        _state.breaker_until_ts = 0.0
+        _state.breaker_reason = ""
+    try:
+        _save_state()
+    except Exception:
+        pass
+    return {
+        "triggered": triggered,
+        "streak": streak,
+        "breaker_until_ts": _state.breaker_until_ts,
+        "outcome": outcome,
+    }
+
+
+def breaker_active(now_ts: float | None = None) -> tuple[bool, float]:
+    """Returns (active, seconds_remaining)."""
+    now = float(now_ts if now_ts is not None else time.time())
+    until = float(_state.breaker_until_ts or 0)
+    if until > now:
+        return True, until - now
+    return False, 0.0
+
+
+def reset_daily_halt(*, confirm_code: str) -> dict:
+    """Manually clear the daily-DD halt flag.
+
+    This is intentionally guarded by a literal confirm code — halt exists to
+    protect the user from a cascading loss; bypassing it must be a deliberate
+    act. When halt is cleared, the runner's next scan will be allowed to place
+    orders again.
+
+    Returns {ok, reason, before, after}.
+    """
+    if (confirm_code or "").strip().upper() != "RESET":
+        return {
+            "ok": False,
+            "reason": "confirm_code_mismatch — send {'confirm_code': 'RESET'}",
+        }
+    before = dict(_state.daily_risk or {})
+    # Fall back to sensible defaults if no daily-risk record exists yet.
+    equity = float(before.get("last_equity") or 0.0)
+    dd_pct = float(before.get("last_dd_pct") or 0.0)
+    limit = float(before.get("limit_pct") or 0.5)
+    try:
+        _save_daily_risk(equity=equity, dd_pct=dd_pct, limit=limit, halted=False)
+    except Exception as exc:
+        return {"ok": False, "reason": f"save failed: {exc}"}
+    print(
+        f"[mar_bb] daily halt reset (was dd={dd_pct*100:.1f}% limit={limit*100:.0f}%); "
+        "next scan may place new orders again.",
+        flush=True,
+    )
+    return {"ok": True, "before": before, "after": dict(_state.daily_risk or {})}
 
 
 def _get_daily_dd_limit(equity: float, cfg: dict) -> float:
@@ -927,12 +1206,13 @@ async def _fetch_bars(symbol: str, tf: str, limit_days: int) -> dict | None:
         h = np.array([c["high"] for c in candles], dtype=float)
         l = np.array([c["low"] for c in candles], dtype=float)
         c = np.array([c["close"] for c in candles], dtype=float)
+        t = np.array([int(c.get("timestamp") or c.get("time") or 0) for c in candles], dtype=np.int64)
         vol = data.get("volume") or []
         if vol:
             v = np.array([x.get("value", 0) for x in vol], dtype=float)
         else:
             v = np.ones(len(c), dtype=float)   # fallback if volume missing
-        return {"o": o, "h": h, "l": l, "c": c, "v": v}
+        return {"o": o, "h": h, "l": l, "c": c, "v": v, "t": t}
     except Exception as e:
         print(f"[mar_bb] fetch {symbol} {tf} err: {e}", flush=True)
         return None
@@ -1271,6 +1551,22 @@ async def _do_scan() -> None:
             return
         print(f"[mar_bb] equity=${equity:.2f}", flush=True)
 
+    # Consecutive-loss circuit breaker: if N losses in a row, pause new-order
+    # placement for a cooldown window. Same shape as daily halt — we skip the
+    # rest of the scan (including signal detection) but let maintenance keep
+    # trailing existing SL to protect still-open positions.
+    brk_active, brk_remaining = breaker_active()
+    if brk_active:
+        _state.last_error = (
+            f"CIRCUIT BREAKER: {_state.breaker_reason or 'consecutive losses'} "
+            f"({int(brk_remaining)}s remaining)"
+        )
+        print(f"[mar_bb] {_state.last_error}", flush=True)
+        _state.last_scan_ts = int(time.time())
+        _state.scans_completed += 1
+        _save_state()
+        return
+
     # Daily drawdown check
     dd_halted, dd_current, dd_limit = _check_daily_dd(equity, cfg)
     if dd_halted:
@@ -1279,13 +1575,49 @@ async def _do_scan() -> None:
             f"for ${_daily_equity_start:.0f} tier). No new trades until UTC midnight."
         )
         print(f"[mar_bb] {_state.last_error}", flush=True)
+        # Cancel all pending auto plan orders so in-flight triggers can't fire
+        # AFTER the halt boundary. Re-runs are idempotent — only tl_-prefixed
+        # orders are cancelled (manual line_/cond_/replan_ are preserved).
         try:
             from server.strategy.trendline_order_manager import cancel_all_trendline_plan_orders
-
             cancel_result = await cancel_all_trendline_plan_orders(cfg, status="daily_halt")
             print(f"[mar_bb] daily DD halt cancelled trendline plans: {cancel_result}", flush=True)
         except Exception as exc:
             print(f"[mar_bb] daily DD halt cancel err: {exc}", flush=True)
+        # Auto-flatten OPEN positions too — the -81% incident on 2026-04-18
+        # showed that cancelling pending plans is not enough: positions that
+        # had already filled continued to bleed via Bitget-side preset SL/TP
+        # until they hit their own stops. Halt must CLOSE, not just pause.
+        # Uses the same flatten-all path as the UI 紧急平仓 button.
+        try:
+            from ..execution.live_adapter import LiveExecutionAdapter
+            from ..execution.live_engine import LiveExecutionEngine, LiveBridgeConfig
+            _adapter = LiveExecutionAdapter()
+            _engine = LiveExecutionEngine(
+                adapter_provider=lambda: _adapter,
+                config=LiveBridgeConfig.from_env(),
+            )
+            mode = cfg.get("mode", "live")
+            account = await _adapter.get_live_account_status(mode)
+            closed = 0; attempted = 0
+            for pos in (account.get("positions") or []):
+                sym = str(pos.get("symbol") or "").upper()
+                size = float(pos.get("total") or 0)
+                if not sym or size <= 0:
+                    continue
+                attempted += 1
+                try:
+                    r = await _engine.close_live_position(sym, mode=mode, confirm=True)
+                    if r.get("ok"):
+                        closed += 1
+                    else:
+                        print(f"[mar_bb] halt flatten {sym} skipped: {r.get('reason')}", flush=True)
+                except Exception as exc:
+                    print(f"[mar_bb] halt flatten {sym} err: {exc}", flush=True)
+            print(f"[mar_bb] HALT auto-flatten: closed={closed}/{attempted} positions", flush=True)
+        except Exception as exc:
+            print(f"[mar_bb] halt auto-flatten failed: {exc}", flush=True)
+            import traceback as _tb; _tb.print_exc()
         _state.last_scan_ts = int(time.time())
         _state.last_scan_duration_s = round(time.time() - t0, 2)
         _state.scans_completed += 1
@@ -1412,19 +1744,41 @@ async def _do_scan() -> None:
                     tl_plan = _check_trendline_signal(sym, tf, bars, scan_cfg)
                     if tl_plan and tl_plan.get("strategy") == "trendline":
                         # Don't set `plan` — trendline goes through limit order path
+                        _slope = tl_plan.get("line_slope", 0) or 0.0
+                        _intercept = tl_plan.get("line_intercept", 0) or 0.0
+                        _a1_bar = 0
+                        _a2_bar = int(tl_plan.get("line_entry_bar", 0) or 0)
+                        _ts_arr = bars.get("t")
+                        _n = len(bars["c"])
+                        # Bounds-safe lookup into the bar timestamp array (ms).
+                        def _bar_ts(bar):
+                            if _ts_arr is None: return 0
+                            i = max(0, min(int(bar), _n - 1))
+                            try: return int(_ts_arr[i])
+                            except Exception: return 0
+                        # Projected line price at the two anchor bars — used to
+                        # persist a user-visible trendline when the plan fills.
+                        _a1_ts = _bar_ts(_a1_bar)
+                        _a2_ts = _bar_ts(_a2_bar)
+                        _a1_price = float(_slope * _a1_bar + _intercept)
+                        _a2_price = float(_slope * _a2_bar + _intercept)
                         _trendline_limit_signals.append({
                             "symbol": sym,
                             "timeframe": tf,
                             "kind": "support" if tl_plan["direction"] == "long" else "resistance",
-                            "slope": tl_plan.get("line_slope", 0),
-                            "intercept": tl_plan.get("line_intercept", 0),
-                            "anchor1_bar": 0,
-                            "anchor2_bar": tl_plan.get("line_entry_bar", 0),
+                            "slope": _slope,
+                            "intercept": _intercept,
+                            "anchor1_bar": _a1_bar,
+                            "anchor2_bar": _a2_bar,
+                            "anchor1_ts": _a1_ts,
+                            "anchor2_ts": _a2_ts,
+                            "anchor1_price": _a1_price,
+                            "anchor2_price": _a2_price,
                             "direction": tl_plan["direction"],
                             "entry_price": tl_plan["entry_price"],
                             "stop_price": tl_plan["stop_price"],
                             "tp_price": tl_plan["tp_price"],
-                            "bar_count": len(bars["c"]),  # actual bar count for projection
+                            "bar_count": _n,  # actual bar count for projection
                             "model_gate": tl_plan.get("model_gate"),
                         })
                 except Exception as e:
@@ -1707,5 +2061,8 @@ __all__ = [
     "get_state",
     "manual_kick",
     "update_config",
+    "reset_daily_halt",
+    "record_close_outcome",
+    "breaker_active",
     "DEFAULT_RUNNER_CFG",
 ]

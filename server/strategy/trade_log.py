@@ -11,6 +11,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 LOG_FILE = Path("data/trade_log.jsonl")
+QUARANTINE_FILE = Path("data/trade_log_quarantine.jsonl")
+
+
+def _quarantine(record: dict, reason: str) -> None:
+    """Send a malformed close/fill record to a side file so the audit trail
+    stays intact AND a loud warning shows in logs. Prevents the 2026-04-18
+    pattern where entry/close prices were silently 0.0 for every row.
+    """
+    QUARANTINE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    entry = dict(record)
+    entry["_quarantine_reason"] = reason
+    entry["_quarantine_ts"] = time.time()
+    try:
+        with open(QUARANTINE_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+    print(
+        f"[trade_log] QUARANTINE {reason}: {record.get('symbol','?')} "
+        f"{record.get('direction','?')} close={record.get('close_price')} "
+        f"entry={record.get('entry_price')} pnl={record.get('pnl')}",
+        flush=True,
+    )
 
 
 def log_trade(
@@ -59,7 +82,14 @@ def log_fill(order_id: str, symbol: str, direction: str, fill_price: float,
 
 def log_close(order_id: str, symbol: str, direction: str, close_price: float,
               pnl: float, pnl_pct: float, reason: str = "", **extra):
-    """Record when a position is closed (SL/TP/manual/line-broken)."""
+    """Record when a position is closed (SL/TP/manual/line-broken).
+
+    Integrity guard: close_price and (when supplied) entry_price must be > 0.
+    Rows that fail this check are routed to the quarantine file with a reason,
+    NOT silently written into the main log. This fixes the 2026-04-18 pattern
+    where every trade had `entry_price=0.0, close_price=0.0, pnl_pct=+0.00%`
+    because a Bitget field-name bug returned nulls.
+    """
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "ts": time.time(), "dt": datetime.now(timezone.utc).isoformat(),
@@ -68,6 +98,26 @@ def log_close(order_id: str, symbol: str, direction: str, close_price: float,
         "pnl": pnl, "pnl_pct": pnl_pct, "reason": reason,
         **extra,
     }
+    # Integrity check: reject or quarantine obviously-broken price fields.
+    # We allow pnl=0 (could legitimately break even) and pnl_pct=0 (computed
+    # from zero prices, so it's a symptom, not the cause). close_price=0 is
+    # never legitimate for a real close.
+    entry_px = record.get("entry_price")
+    bad = []
+    try:
+        if float(close_price or 0) <= 0:
+            bad.append("close_price<=0")
+    except (TypeError, ValueError):
+        bad.append("close_price_nonnumeric")
+    if entry_px is not None:
+        try:
+            if float(entry_px or 0) <= 0:
+                bad.append("entry_price<=0")
+        except (TypeError, ValueError):
+            bad.append("entry_price_nonnumeric")
+    if bad:
+        _quarantine(record, reason=",".join(bad))
+        return record
     with open(LOG_FILE, "a") as f:
         f.write(json.dumps(record) + "\n")
     return record
