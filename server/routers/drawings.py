@@ -462,7 +462,7 @@ def _clamp_line_width(value: float | int | None) -> float:
         width = float(value)
     except (TypeError, ValueError):
         width = 1.8
-    return max(1.0, min(width, 8.0))
+    return max(0.5, min(width, 8.0))
 
 
 __all__ = ["router", "store"]
