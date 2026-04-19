@@ -455,6 +455,16 @@ function onMouseMove(ev) {
     scheduleRender();
     return;
   }
+
+  // BUGFIX: while waiting for the first click, the preview dot is drawn
+  // from tx.cursor (see render() step 3 for drawing_first_point). Without
+  // scheduling a render here, the dot freezes at whatever position had the
+  // last render even though cursor moves, producing the "cursor is far from
+  // the mouse" symptom. RAF coalescer in scheduleRender prevents spam.
+  if (tx.state === 'drawing_first_point') {
+    scheduleRender();
+    return;
+  }
 }
 
 function onDocMouseMove(ev) {
@@ -799,12 +809,24 @@ function render() {
 
     const isSel = line.manual_line_id === selId;
     const isHov = line.manual_line_id === hovId;
-    const color = (isSel || isHov) ? 'rgba(251,191,36,1)' : 'rgba(251,191,36,0.45)';
+    const isAuto = line.source === 'auto_triggered';
+    // Auto-triggered (system-drawn) lines use a warm red/amber palette so they
+    // are immediately distinguishable from user-drawn manual lines.
+    let color;
+    if (isSel || isHov) {
+      color = isAuto ? 'rgba(248,113,113,1)' : 'rgba(251,191,36,1)';
+    } else {
+      color = isAuto
+        ? (line.side === 'resistance' ? 'rgba(248,113,113,0.85)' : 'rgba(250,204,21,0.85)')
+        : 'rgba(251,191,36,0.45)';
+    }
     const baseWidth = lineStrokeWidth(line);
     const width = isSel ? baseWidth + 1.0 : (isHov ? baseWidth + 0.6 : baseWidth);
+    // Dashed for auto lines → "not drawn by you, drawn by the system".
+    const dasharray = isAuto ? '8,5' : null;
 
     // Visible line
-    appendLine(a.x, a.y, b.x, b.y, color, width);
+    appendLine(a.x, a.y, b.x, b.y, color, width, dasharray);
 
     // Anchors only when selected or hovered
     if (isSel || isHov) {
@@ -880,6 +902,7 @@ function openContextMenu(ev, lineId) {
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
+    <div data-act="set_width" data-width="0.5" style="padding:6px 14px;cursor:pointer">0.5 px</div>
     <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px</div>
     <div data-act="set_width" data-width="2" style="padding:6px 14px;cursor:pointer">2 px</div>
     <div data-act="set_width" data-width="3" style="padding:6px 14px;cursor:pointer">3 px</div>
@@ -1005,7 +1028,7 @@ async function deleteLine(lineId) {
 }
 
 async function setLineWidth(lineId, width) {
-  const lineWidth = Math.max(1, Math.min(Number(width) || DEFAULT_LINE_WIDTH, 8));
+  const lineWidth = Math.max(0.5, Math.min(Number(width) || DEFAULT_LINE_WIDTH, 8));
   const lines = drawingsState.lines || [];
   const idx = lines.findIndex((l) => l.manual_line_id === lineId);
   if (idx < 0) return;
@@ -1025,5 +1048,5 @@ async function setLineWidth(lineId, width) {
 function lineStrokeWidth(line) {
   const width = Number(line?.line_width);
   if (!Number.isFinite(width)) return DEFAULT_LINE_WIDTH;
-  return Math.max(1, Math.min(width, 8));
+  return Math.max(0.5, Math.min(width, 8));
 }

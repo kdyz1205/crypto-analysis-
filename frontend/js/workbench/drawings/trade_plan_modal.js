@@ -29,7 +29,7 @@ const DEFAULTS = {
   direction: 'short',           // support→long, resistance→short — auto-set on open
   order_kind: 'bounce',         // bounce | breakout
   buffer_pct: 0.05,             // entry offset; also full line-stop risk
-  stop_pct: 0.05,               // legacy default, ignored
+  stop_pct: 0.05,               // line-break confirmation beyond the line
   rr_target: 2.0,
   leverage: 10,
   notional_usd: 100,            // only used if leverage=0
@@ -38,7 +38,7 @@ const DEFAULTS = {
   // auto-reverse
   reverse_enabled: true,
   reverse_buffer_pct: 0.05,
-  reverse_stop_pct: 0.05,       // legacy default, ignored
+  reverse_stop_pct: 0.05,
   reverse_rr_target: 2.0,
 };
 
@@ -61,15 +61,16 @@ function saveDefaults(values) {
 
 let _modal = null;
 let _equityCache = { ts: 0, equity: 0, mode: '' };
+const EQUITY_CACHE_MS = 60_000;
 
 async function fetchEquity(mode) {
   // Cache 10s — account endpoint hits Bitget.
   const now = Date.now();
-  if (_equityCache.mode === mode && now - _equityCache.ts < 10000) {
+  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS) {
     return _equityCache.equity;
   }
   try {
-    const resp = await getLiveAccount(mode);
+    const resp = await getLiveAccount(mode, 5000);
     const equity = Number(
       resp?.equity ?? resp?.account?.equity ?? resp?.usdtEquity ?? resp?.totalEquity ?? 0,
     );
@@ -78,6 +79,14 @@ async function fetchEquity(mode) {
   } catch {
     return 0;
   }
+}
+
+function getCachedEquity(mode) {
+  const now = Date.now();
+  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS) {
+    return Number(_equityCache.equity) || 0;
+  }
+  return 0;
 }
 
 /**
@@ -109,7 +118,7 @@ export function openTradePlanModal(line) {
       direction: $('[name=direction]').value,
       order_kind: $('[name=order_kind]').value,
       buffer_pct: Number($('[name=buffer_pct]').value) || 0,
-      stop_pct: Number($('[name=buffer_pct]').value) || 0,
+      stop_pct: Number($('[name=stop_pct]').value) || 0,
       rr_target: Number($('[name=rr_target]').value) || 0,
       leverage: Number($('[name=leverage]').value) || 0,
       notional_usd: Number($('[name=notional_usd]').value) || 0,
@@ -117,7 +126,7 @@ export function openTradePlanModal(line) {
       submit_to_exchange: $('[name=submit_to_exchange]').checked,
       reverse_enabled: $('[name=reverse_enabled]').checked,
       reverse_buffer_pct: Number($('[name=reverse_buffer_pct]').value) || 0,
-      reverse_stop_pct: Number($('[name=reverse_buffer_pct]').value) || 0,
+      reverse_stop_pct: Number($('[name=reverse_stop_pct]').value) || 0,
       reverse_rr_target: Number($('[name=reverse_rr_target]').value) || 0,
     });
 
@@ -178,10 +187,15 @@ export function openTradePlanModal(line) {
         // from (equity × leverage); otherwise use the raw notional_usd.
         let size_usdt = v.notional_usd;
         if (v.leverage > 0) {
-          try {
-            const equity = await fetchEquity(v.exchange_mode);
-            if (equity > 0) size_usdt = equity * v.leverage;
-          } catch {}
+          const cachedEquity = getCachedEquity(v.exchange_mode);
+          if (cachedEquity > 0) {
+            size_usdt = cachedEquity * v.leverage;
+          } else {
+            try {
+              const equity = await fetchEquity(v.exchange_mode);
+              if (equity > 0) size_usdt = equity * v.leverage;
+            } catch {}
+          }
         }
         if (!size_usdt || size_usdt <= 0) {
           throw new Error('size_usdt 计算失败 — 填一个 notional 或确保账户有余额');
@@ -195,14 +209,14 @@ export function openTradePlanModal(line) {
           direction: v.direction,
           kind: v.order_kind === 'breakout' ? 'break' : 'bounce',
           tolerance_pct: v.buffer_pct,
-          stop_offset_pct: 0,
+          stop_offset_pct: v.stop_pct,
           size_usdt,
           leverage: v.leverage > 0 ? Math.round(v.leverage) : 1,
           mode: v.exchange_mode === 'paper' ? 'demo' : 'live',
           rr_target: v.rr_target,
           reverse_enabled: v.reverse_enabled,
           reverse_entry_offset_pct: v.reverse_buffer_pct,
-          reverse_stop_offset_pct: 0,
+          reverse_stop_offset_pct: v.reverse_stop_pct,
           reverse_rr_target: v.reverse_rr_target,
           reverse_leverage: v.leverage > 0 ? Math.round(v.leverage) : null,
         };
@@ -222,7 +236,7 @@ export function openTradePlanModal(line) {
                 direction: v.direction,
                 order_kind: v.order_kind === 'breakout' ? 'breakout' : 'bounce',
                 tolerance_pct_of_line: v.buffer_pct,
-                stop_offset_pct_of_line: 0,
+                stop_offset_pct_of_line: v.stop_pct,
                 rr_target: v.rr_target,
                 leverage: null,
                 notional_usd: size_usdt,
@@ -230,7 +244,7 @@ export function openTradePlanModal(line) {
                 exchange_mode: 'paper',
                 reverse_enabled: v.reverse_enabled,
                 reverse_entry_offset_pct: v.reverse_buffer_pct,
-                reverse_stop_offset_pct: 0,
+                reverse_stop_offset_pct: v.reverse_stop_pct,
                 reverse_rr_target: v.reverse_rr_target,
                 reverse_leverage: null,
               },
@@ -296,7 +310,7 @@ function renderShell(line, v) {
           <label class="tp-label">入场 Buffer %</label>
           <input type="number" name="buffer_pct" value="${v.buffer_pct}" step="0.01" min="0"/>
           <label class="tp-label">止损</label>
-          <div class="tp-static">SL = line</div>
+          <input type="number" name="stop_pct" value="${v.stop_pct}" step="0.01" min="0"/>
           <label class="tp-label">RR</label>
           <input type="number" name="rr_target" value="${v.rr_target}" step="0.1" min="0"/>
         </div>
@@ -332,7 +346,7 @@ function renderShell(line, v) {
           <label class="tp-label">反手 Buffer %</label>
           <input type="number" name="reverse_buffer_pct" value="${v.reverse_buffer_pct}" step="0.01" min="0"/>
           <label class="tp-label">反手止损</label>
-          <div class="tp-static">SL = line</div>
+          <input type="number" name="reverse_stop_pct" value="${v.reverse_stop_pct}" step="0.01" min="0"/>
           <label class="tp-label">反手 RR</label>
           <input type="number" name="reverse_rr_target" value="${v.reverse_rr_target}" step="0.1" min="0"/>
         </div>

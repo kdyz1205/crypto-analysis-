@@ -24,6 +24,7 @@ let strategyLayerPanel = null;
 let chartModePanel = null;
 let chartLoadSeq = 0;
 let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
+let _lastFullReloadTs = 0;
 const FUTURE_DRAW_BARS = 48;
 
 // Lazy backfill state. Kept at module level so the visible-range
@@ -329,6 +330,7 @@ export async function loadCurrent(forcePatterns = false) {
     }
 
     setCandles(candles);
+    _lastFullReloadTs = Date.now() / 1000;
     setHistoryMeta({
       historyMode: data.historyMode || marketState.historyMode,
       loadedBarCount: data.loadedBarCount ?? candles.length,
@@ -555,6 +557,7 @@ export function startLiveUpdates(intervalMs = 10000) {
   // Full OHLCV reload on a slow cadence — this handles new bars rolling
   // over and keeps historical data honest.
   liveTimer = setInterval(() => {
+    if (!shouldReloadFullCandles()) return;
     void loadCurrent().catch((err) => console.warn('[chart] live update failed:', err));
   }, intervalMs);
   // Direct Bitget WebSocket ticker — tick-level price updates, no polling.
@@ -567,6 +570,16 @@ export function stopLiveUpdates() {
   if (liveTimer) clearInterval(liveTimer);
   liveTimer = null;
   stopTickerWS();
+}
+
+function shouldReloadFullCandles() {
+  const now = Date.now() / 1000;
+  const candles = marketState.lastCandles || [];
+  if (!candles.length || !_lastFullReloadTs) return true;
+  if (now - _lastFullReloadTs >= 300) return true;
+  const last = candles[candles.length - 1];
+  const barSec = barIntervalSec();
+  return now >= Number(last.time) + barSec + 5;
 }
 
 function onTickerTick(tick) {

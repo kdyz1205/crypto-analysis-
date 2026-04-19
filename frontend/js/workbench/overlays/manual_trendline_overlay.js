@@ -19,10 +19,24 @@ function manualColor(line, selectedLineId) {
   if (line.manual_line_id === selectedLineId) return 'rgba(56, 189, 248, 1)';
   // Broken lines (price crossed through after they were drawn) — dim grey.
   if (line._broken) return 'rgba(148, 163, 184, 0.55)';
+  // Auto-triggered lines: the system drew them to show why a plan fired.
+  // Use a distinct warm palette so user can tell at a glance it's not theirs.
+  if (line.source === 'auto_triggered') {
+    return line.side === 'resistance'
+      ? 'rgba(248, 113, 113, 0.9)'  // coral red for auto resistance
+      : 'rgba(250, 204, 21, 0.9)';  // amber for auto support
+  }
   if (line.override_mode === 'promote_to_active' || line.override_mode === 'strategy_input_enabled') {
     return line.side === 'resistance' ? 'rgba(251, 146, 60, 0.95)' : 'rgba(45, 212, 191, 0.95)';
   }
   return line.side === 'resistance' ? 'rgba(125, 211, 252, 0.9)' : 'rgba(103, 232, 249, 0.9)';
+}
+
+// lightweight-charts LineStyle values: 0=Solid, 1=Dotted, 2=Dashed,
+// 3=LargeDashed, 4=SparseDotted.
+function manualLineStyle(line) {
+  if (line.source === 'auto_triggered') return 2;  // dashed → "system drew this"
+  return 0;
 }
 
 function projectPrice(line, targetTime) {
@@ -64,7 +78,7 @@ export function drawManualTrendlineOverlay(chart, lines, options = {}) {
       const series = chart.addLineSeries({
         color: manualColor(line, options.selectedLineId || null),
         lineWidth: isSelected ? 3 : 2,
-        lineStyle: 0,  // solid — dashed is hard to see
+        lineStyle: manualLineStyle(line),
         priceLineVisible: false,
         lastValueVisible: false,
         autoscaleInfoProvider: () => null,
