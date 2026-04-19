@@ -49,34 +49,34 @@ def test_line_price_extends_left_only_when_enabled():
     assert _order(extend_left=True).line_price_at(900) == 0.0
 
 
-def test_trade_prices_use_line_as_stop_for_long():
+def test_trade_prices_can_place_stop_beyond_line_for_long():
     cond = _order(order=OrderConfig(
         direction="long",
         tolerance_pct_of_line=0.1,
-        stop_offset_pct_of_line=0.3,  # deprecated and intentionally ignored
+        stop_offset_pct_of_line=0.3,
         rr_target=8.0,
     ))
 
     entry, stop, tp = _compute_trade_prices(cond, 100.0, 0.0)
 
     assert entry == pytest.approx(100.1)
-    assert stop == pytest.approx(100.0)
-    assert tp == pytest.approx(100.9)
+    assert stop == pytest.approx(99.7)
+    assert tp == pytest.approx(103.3)
 
 
-def test_trade_prices_use_line_as_stop_for_short():
+def test_trade_prices_can_place_stop_beyond_line_for_short():
     cond = _order(order=OrderConfig(
         direction="short",
         tolerance_pct_of_line=0.1,
-        stop_offset_pct_of_line=0.3,  # deprecated and intentionally ignored
+        stop_offset_pct_of_line=0.3,
         rr_target=8.0,
     ))
 
     entry, stop, tp = _compute_trade_prices(cond, 100.0, 0.0)
 
     assert entry == pytest.approx(99.9)
-    assert stop == pytest.approx(100.0)
-    assert tp == pytest.approx(99.1)
+    assert stop == pytest.approx(100.3)
+    assert tp == pytest.approx(96.7)
 
 
 def test_manual_slope_converts_anchor_slope_to_timeframe_bars():

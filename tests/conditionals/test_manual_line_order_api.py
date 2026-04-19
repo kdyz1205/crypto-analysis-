@@ -32,6 +32,7 @@ class _FakeAdapter:
     def __init__(self):
         self.intent = None
         self.mode = None
+        self.trigger_price = None
         self.requests = []
         _FakeAdapter.instances.append(self)
 
@@ -43,12 +44,17 @@ class _FakeAdapter:
         return {"code": "00000", "data": {}}
 
     async def submit_live_entry(self, intent, mode):
+        raise AssertionError("manual line orders must use Bitget plan orders")
+
+    async def submit_live_plan_entry(self, intent, mode, trigger_price):
         self.intent = intent
         self.mode = mode
+        self.trigger_price = trigger_price
         return {
             "ok": True,
-            "exchange_order_id": "regular-order-1",
-            "submitted_price": intent.entry_price,
+            "exchange_order_id": "plan-order-1",
+            "submitted_price": trigger_price,
+            "submitted_order_type": intent.order_type,
         }
 
     async def cancel_order(self, symbol, order_id, mode):
@@ -59,7 +65,7 @@ class _FakeAdapter:
 
 
 @pytest.mark.asyncio
-async def test_place_line_order_submits_post_only_limit_at_line_buffer(monkeypatch):
+async def test_place_line_order_submits_trigger_market_plan_at_line_buffer(monkeypatch, tmp_path):
     drawing = ManualTrendline(
         manual_line_id="line-1",
         symbol="HYPEUSDT",
@@ -104,6 +110,10 @@ async def test_place_line_order_submits_post_only_limit_at_line_buffer(monkeypat
 
     monkeypatch.setattr(live_adapter, "LiveExecutionAdapter", _FakeAdapter)
 
+    from server.strategy import drawing_learner
+
+    monkeypatch.setattr(drawing_learner, "ML_DRAWINGS_FILE", tmp_path / "user_drawings_ml.jsonl")
+
     req = router.PlaceLineOrderReq(
         manual_line_id="line-1",
         direction="long",
@@ -117,13 +127,18 @@ async def test_place_line_order_submits_post_only_limit_at_line_buffer(monkeypat
 
     adapter = _FakeAdapter.instances[-1]
     assert result["ok"] is True
-    assert "post-only limit" in result["message"]
-    assert adapter.intent.order_type == "limit"
-    assert adapter.intent.post_only is True
+    assert "trigger-market plan" in result["message"]
+    assert adapter.intent.order_type == "market"
+    assert adapter.intent.post_only is False
+    assert adapter.trigger_price == pytest.approx(106.053)
     assert adapter.intent.entry_price == pytest.approx(106.053)
-    assert adapter.intent.stop_price == pytest.approx(106.0)
-    assert adapter.intent.tp_price == pytest.approx(106.477)
+    assert adapter.intent.stop_price == pytest.approx(105.9894)
+    assert adapter.intent.tp_price == pytest.approx(106.5618)
     assert adapter.intent.quantity == pytest.approx(10.0 / 106.053)
     assert fake_store.created.status == "triggered"
-    assert fake_store.created.exchange_order_id == "regular-order-1"
-    assert fake_store.created.order.stop_offset_pct_of_line == 0.0
+    assert fake_store.created.exchange_order_id == "plan-order-1"
+    assert fake_store.created.order.stop_offset_pct_of_line == 0.01
+
+    ml_rows = (tmp_path / "user_drawings_ml.jsonl").read_text(encoding="utf-8").splitlines()
+    assert '"event": "user_order_intent"' in ml_rows[-1]
+    assert '"label_reason": "user_placed_line_order"' in ml_rows[-1]

@@ -37,6 +37,12 @@ USER_DRAWINGS_FILE = PROJECT_ROOT / "data" / "user_drawings_ml.jsonl"
 USER_LABELS_FILE = PROJECT_ROOT / "data" / "user_drawing_labels.jsonl"
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints" / "trendline_quality"
 
+BASE_PATTERN_WEIGHT = 1.0
+USER_DRAWING_WEIGHT = 2.0
+USER_DRAWING_OUTCOME_WEIGHT = 4.0
+USER_ORDER_INTENT_WEIGHT = 8.0
+USER_ORDER_OUTCOME_WEIGHT = 10.0
+
 FEATURE_NAMES = [
     "slope_atr",
     "length_bars",
@@ -86,6 +92,7 @@ class Dataset:
     x: np.ndarray
     y_cls: np.ndarray
     y_reg: np.ndarray
+    sample_weight: np.ndarray
     time_position: np.ndarray
     records: list[dict[str, Any]]
     missing: list[str]
@@ -337,6 +344,18 @@ def _user_feature_vector(row: dict[str, Any], symbol_index: dict[str, int]) -> l
     ]
 
 
+def _user_sample_weight(row: dict[str, Any], outcome_label: dict[str, Any]) -> float:
+    has_order_intent = bool(row.get("_has_order_intent"))
+    has_outcome = bool(outcome_label)
+    if has_order_intent and has_outcome:
+        return USER_ORDER_OUTCOME_WEIGHT
+    if has_order_intent:
+        return USER_ORDER_INTENT_WEIGHT
+    if has_outcome:
+        return USER_DRAWING_OUTCOME_WEIGHT
+    return USER_DRAWING_WEIGHT
+
+
 def load_dataset(symbols: list[str], timeframes: list[str]) -> Dataset:
     rows: list[dict[str, Any]] = []
     missing: list[str] = []
@@ -362,6 +381,7 @@ def load_dataset(symbols: list[str], timeframes: list[str]) -> Dataset:
     x_rows: list[list[float]] = []
     y_cls: list[float] = []
     y_reg: list[float] = []
+    sample_weight: list[float] = []
     time_position: list[float] = []
     kept: list[dict[str, Any]] = []
     for row in rows:
@@ -372,6 +392,7 @@ def load_dataset(symbols: list[str], timeframes: list[str]) -> Dataset:
         x_rows.append(features)
         y_cls.append(label)
         y_reg.append(quality)
+        sample_weight.append(BASE_PATTERN_WEIGHT)
         time_position.append(min(max(_safe_float(row.get("time_position")), 0.0), 1.0))
         kept.append(row)
 
@@ -388,6 +409,7 @@ def load_dataset(symbols: list[str], timeframes: list[str]) -> Dataset:
         else:
             y_cls.append(1.0)
             y_reg.append(1.0 if row.get("_has_order_intent") else 0.6)
+        sample_weight.append(_user_sample_weight(row, outcome_label))
         time_position.append(0.49)
         kept.append(row)
 
@@ -398,6 +420,7 @@ def load_dataset(symbols: list[str], timeframes: list[str]) -> Dataset:
         x=np.asarray(x_rows, dtype=np.float32)[order],
         y_cls=np.asarray(y_cls, dtype=np.float32)[order],
         y_reg=np.asarray(y_reg, dtype=np.float32)[order],
+        sample_weight=np.asarray(sample_weight, dtype=np.float32)[order],
         time_position=np.asarray(time_position, dtype=np.float32)[order],
         records=[kept[int(i)] for i in order],
         missing=missing,
@@ -461,28 +484,32 @@ def train_fold(
     train_x, val_x, mean, std = _standardize(train_x_raw, val_x_raw)
     train_y_cls = dataset.y_cls[train_mask]
     train_y_reg = dataset.y_reg[train_mask]
+    train_weight = dataset.sample_weight[train_mask]
     val_y_cls = dataset.y_cls[val_mask]
     val_y_reg = dataset.y_reg[val_mask]
 
     model = TrendlineQualityNet(train_x.shape[1]).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    bce = nn.BCEWithLogitsLoss()
-    mse = nn.MSELoss()
+    bce = nn.BCEWithLogitsLoss(reduction="none")
+    mse = nn.MSELoss(reduction="none")
 
     train_ds = TensorDataset(
         torch.from_numpy(train_x),
         torch.from_numpy(train_y_cls),
         torch.from_numpy(train_y_reg),
+        torch.from_numpy(train_weight),
     )
     loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
     model.train()
     for _ in range(epochs):
-        for xb, yb_cls, yb_reg in loader:
+        for xb, yb_cls, yb_reg, wb in loader:
             xb = xb.to(device)
             yb_cls = yb_cls.to(device)
             yb_reg = yb_reg.to(device)
+            wb = wb.to(device)
             logits, reg = model(xb)
-            loss = bce(logits, yb_cls) + 0.15 * mse(reg, yb_reg)
+            raw_loss = bce(logits, yb_cls) + 0.15 * mse(reg, yb_reg)
+            loss = (raw_loss * wb).sum() / wb.sum().clamp_min(1.0)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
@@ -555,6 +582,13 @@ async def async_main() -> int:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[train] rows={len(dataset.x)} user_rows={dataset.user_rows} features={len(FEATURE_NAMES)} device={device}")
+    print(
+        "[train] weights="
+        f"pattern={BASE_PATTERN_WEIGHT} drawing={USER_DRAWING_WEIGHT} "
+        f"drawing_outcome={USER_DRAWING_OUTCOME_WEIGHT} "
+        f"order_intent={USER_ORDER_INTENT_WEIGHT} "
+        f"order_outcome={USER_ORDER_OUTCOME_WEIGHT}"
+    )
     if dataset.missing:
         print(f"[train] missing={dataset.missing}")
 
@@ -594,6 +628,13 @@ async def async_main() -> int:
         "fold_metrics": fold_results,
         "best_fold": int(best["fold"]),
         "best_auc": float(best["auc"]),
+        "sample_weight_policy": {
+            "base_pattern": BASE_PATTERN_WEIGHT,
+            "user_drawing": USER_DRAWING_WEIGHT,
+            "user_drawing_outcome": USER_DRAWING_OUTCOME_WEIGHT,
+            "user_order_intent": USER_ORDER_INTENT_WEIGHT,
+            "user_order_outcome": USER_ORDER_OUTCOME_WEIGHT,
+        },
         "torch_version": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "device": str(device),

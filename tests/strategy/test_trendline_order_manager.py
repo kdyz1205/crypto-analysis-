@@ -113,6 +113,8 @@ def _cfg(**overrides):
         "mode": "demo",
         "tf_risk": {"5m": 0.003, "15m": 0.007, "1h": 0.015, "4h": 0.030},
         "tf_buffer": {"5m": 0.05, "15m": 0.10, "1h": 0.20, "4h": 0.30},
+        "stop_offset_pct": 0.01,
+        "tf_stop_offset": {"5m": 0.01, "15m": 0.01, "1h": 0.01, "4h": 0.01},
     }
     cfg.update(overrides)
     return cfg
@@ -132,6 +134,22 @@ def test_elapsed_tf_bars_uses_candle_boundary_not_full_duration():
 
     assert tom._elapsed_tf_bars_since(placed_at_12_38, "15m", before_12_45) == 0
     assert tom._elapsed_tf_bars_since(placed_at_12_38, "15m", at_12_45) == 1
+
+
+def test_trade_prices_put_stop_just_beyond_line_and_tp_uses_true_risk():
+    limit_px, stop_px, tp_px, buffer_pct, stop_offset_pct = tom._trade_prices_for_line(
+        "resistance",
+        100.0,
+        "1h",
+        _cfg(),
+        15.0,
+    )
+
+    assert buffer_pct == pytest.approx(0.002)
+    assert stop_offset_pct == pytest.approx(0.0001)
+    assert limit_px == pytest.approx(99.8)
+    assert stop_px == pytest.approx(100.01)
+    assert tp_px == pytest.approx(96.65)
 
 
 @pytest.mark.asyncio
@@ -158,12 +176,64 @@ async def test_new_order_uses_percent_tf_buffer_limit_entry_and_tf_risk(monkeypa
     assert intent.trigger_mode == "plan"
     assert trigger == pytest.approx(100.2)
     assert intent.entry_price == pytest.approx(100.2)
-    assert intent.stop_price == pytest.approx(100.0)
-    assert intent.tp_price == pytest.approx(103.206)
-    assert intent.quantity == pytest.approx(75.0)
+    assert intent.stop_price == pytest.approx(99.99)
+    assert intent.tp_price == pytest.approx(103.35)
+    assert intent.quantity == pytest.approx(71.4285714286)
     saved = json.loads(tom.ACTIVE_LINES_FILE.read_text(encoding="utf-8"))
     assert saved[0]["line_ref_price"] == pytest.approx(100.0)
     assert saved[0]["line_ref_ts"] > 0
+
+
+@pytest.mark.asyncio
+async def test_new_order_allows_current_price_inside_entry_buffer_until_stop_break(monkeypatch):
+    monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", _test_active_file("active_inside_buffer.json"))
+    signal = {
+        "symbol": "LINKUSDT",
+        "timeframe": "1h",
+        "kind": "support",
+        "slope": 0.0,
+        "intercept": 100.0,
+        "bar_count": 10,
+        "anchor1_bar": 1,
+        "anchor2_bar": 5,
+    }
+
+    result = await tom.update_trendline_orders(
+        [signal],
+        current_bar_index=9,
+        cfg=_cfg(prices={"LINKUSDT": 100.1}),
+    )
+
+    adapter = _FakeTrendlineAdapter.instances[-1]
+    intent, _mode, trigger = adapter.intents[-1]
+    assert result["placed"] == 1
+    assert trigger == pytest.approx(100.2)
+    assert intent.stop_price == pytest.approx(99.99)
+
+
+@pytest.mark.asyncio
+async def test_new_order_skips_when_current_price_already_through_stop(monkeypatch):
+    monkeypatch.setattr(tom, "ACTIVE_LINES_FILE", _test_active_file("active_through_stop.json"))
+    signal = {
+        "symbol": "LINKUSDT",
+        "timeframe": "1h",
+        "kind": "support",
+        "slope": 0.0,
+        "intercept": 100.0,
+        "bar_count": 10,
+        "anchor1_bar": 1,
+        "anchor2_bar": 5,
+    }
+
+    result = await tom.update_trendline_orders(
+        [signal],
+        current_bar_index=9,
+        cfg=_cfg(prices={"LINKUSDT": 99.98}),
+    )
+
+    adapter = _FakeTrendlineAdapter.instances[-1]
+    assert result == {"placed": 0, "updated": 0, "cancelled": 0}
+    assert adapter.intents == []
 
 
 @pytest.mark.asyncio
@@ -201,7 +271,9 @@ async def test_existing_move_uses_tf_risk_instead_of_fallback_risk(monkeypatch):
     assert intent.order_type == "market"
     assert intent.trigger_mode == "plan"
     assert trigger == pytest.approx(100.2)
-    assert intent.quantity == pytest.approx(75.0)
+    assert intent.stop_price == pytest.approx(99.99)
+    assert intent.tp_price == pytest.approx(103.35)
+    assert intent.quantity == pytest.approx(71.4285714286)
     cancel_bodies = [
         req[3] for req in adapter.requests
         if req[1] == "/api/v2/mix/order/cancel-plan-order"
