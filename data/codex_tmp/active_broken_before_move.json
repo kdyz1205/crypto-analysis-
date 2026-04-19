@@ -13,10 +13,10 @@
     "stop_price": 100.0,
     "tp_price": 100.8,
     "exchange_order_id": "old-order",
-    "created_ts": 1776487687.7217927,
-    "last_updated_ts": 1776488287.7217927,
+    "created_ts": 1776552498.2240207,
+    "last_updated_ts": 1776553098.2240207,
     "status": "broken",
-    "line_ref_ts": 1776488287.7217927,
+    "line_ref_ts": 1776553098.2240207,
     "line_ref_price": 100.0
   }
 ]

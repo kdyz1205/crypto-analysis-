@@ -13,10 +13,10 @@
     "stop_price": 100.0,
     "tp_price": 103.206,
     "exchange_order_id": "old-stale",
-    "created_ts": 1776481687.7910058,
-    "last_updated_ts": 1776485187.7910058,
+    "created_ts": 1776546498.2984679,
+    "last_updated_ts": 1776549998.2984679,
     "status": "stale",
-    "line_ref_ts": 1776485187.7910058,
+    "line_ref_ts": 1776549998.2984679,
     "line_ref_price": 100.0
   },
   {
@@ -30,13 +30,13 @@
     "bar_count": 10,
     "current_projected_price": 100.0,
     "limit_price": 100.2,
-    "stop_price": 100.0,
-    "tp_price": 103.206,
+    "stop_price": 99.99,
+    "tp_price": 103.35000000000012,
     "exchange_order_id": "plan-1",
-    "created_ts": 1776488887.8079145,
-    "last_updated_ts": 1776488887.8079145,
+    "created_ts": 1776553698.318069,
+    "last_updated_ts": 1776553698.318069,
     "status": "placed",
-    "line_ref_ts": 1776488887.8079145,
+    "line_ref_ts": 1776553698.318069,
     "line_ref_price": 100.0
   }
 ]

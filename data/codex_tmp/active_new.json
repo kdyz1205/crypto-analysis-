@@ -10,13 +10,13 @@
     "bar_count": 10,
     "current_projected_price": 100.0,
     "limit_price": 100.2,
-    "stop_price": 100.0,
-    "tp_price": 103.206,
+    "stop_price": 99.99,
+    "tp_price": 103.35000000000012,
     "exchange_order_id": "plan-1",
-    "created_ts": 1776488887.6184256,
-    "last_updated_ts": 1776488887.6184256,
+    "created_ts": 1776553698.103538,
+    "last_updated_ts": 1776553698.103538,
     "status": "placed",
-    "line_ref_ts": 1776488887.6184256,
+    "line_ref_ts": 1776553698.103538,
     "line_ref_price": 100.0
   }
 ]

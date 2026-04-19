@@ -13,10 +13,10 @@
     "stop_price": 100.0,
     "tp_price": 103.206,
     "exchange_order_id": "managed-order",
-    "created_ts": 1776488887.9142346,
-    "last_updated_ts": 1776488887.9142346,
+    "created_ts": 1776553698.408198,
+    "last_updated_ts": 1776553698.408198,
     "status": "daily_halt",
-    "line_ref_ts": 1776488887.9142346,
+    "line_ref_ts": 1776553698.408198,
     "line_ref_price": 100.0
   }
 ]
