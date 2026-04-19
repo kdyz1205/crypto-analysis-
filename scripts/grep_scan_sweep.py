@@ -247,13 +247,11 @@ RULES: list[ScanRule] = [
 # ──────────────────────────────────────────────────────────────
 # File iteration
 # ──────────────────────────────────────────────────────────────
-DEAD_FILES = {
-    # frontend/app.js is the v1 monolith — replaced by v2 (frontend/js/main.js).
-    # Still served at /  but only loaded by the legacy /index.html, not by /v2.
-    # We don't fix bugs in dead code; we delete it. Until then, exclude.
-    "frontend/app.js",
-    "frontend/index.html",  # legacy v1 entry, deleted from active route set
-}
+DEAD_FILES: set[str] = set()
+# v1 dead-file entries (frontend/app.js, frontend/index.html) were removed
+# from the repo on 2026-04-19 when the legacy monolith UI was deleted.
+# If a future file becomes "soft-deprecated but still on disk", add its
+# repo-relative path here so scans don't block commits on it.
 
 # Files where `realized_pnl` is unambiguously paper/sim only (PaperPosition,
 # PaperFill, etc.). The legacy alias is intentional in these files; the

@@ -6,7 +6,7 @@ import asyncio
 
 import httpx
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 from ..core.config import PROJECT_ROOT, FRONTEND_DIR
 from ..core.log_buffer import _LOG_BUFFER
@@ -25,15 +25,14 @@ async def health_check():
 
 @router.get("/")
 async def index():
-    return FileResponse(
-        str(FRONTEND_DIR / "index.html"),
-        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-    )
+    """Legacy v1 UI was deleted 2026-04-19. Root now redirects to v2 so
+    old bookmarks and run.py launches still land on a working page."""
+    return RedirectResponse(url="/v2", status_code=302)
 
 
 @router.get("/v2")
 async def index_v2():
-    """Phase 2 preview — new layered UI (v2). Old UI at /."""
+    """Main Trading OS UI (layered v2 app)."""
     return FileResponse(
         str(FRONTEND_DIR / "v2.html"),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
@@ -62,15 +61,6 @@ async def serve_css():
     return FileResponse(
         str(FRONTEND_DIR / "style.css"),
         media_type="text/css",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
-    )
-
-
-@router.get("/app.js")
-async def serve_js():
-    return FileResponse(
-        str(FRONTEND_DIR / "app.js"),
-        media_type="application/javascript",
         headers={"Cache-Control": "no-cache, must-revalidate"},
     )
 
