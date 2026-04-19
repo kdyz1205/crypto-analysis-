@@ -7,9 +7,9 @@ export async function getLiveExecutionStatus() {
   return response.status;
 }
 
-export async function getLiveAccount(mode = 'live') {
+export async function getLiveAccount(mode = 'live', timeout = 8000) {
   return fetchJson(`/api/live-execution/account?mode=${encodeURIComponent(mode)}`, {
-    timeout: 30000,
+    timeout,
   });
 }
 

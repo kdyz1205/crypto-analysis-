@@ -22,6 +22,7 @@ let _lastState = null;
 let _lastAccount = null;
 let _lastHistory = null;
 let _historyDays = 30;
+let _haltCountdownTimer = null;
 
 export async function loadRunner(el) {
   _host = el;
@@ -43,6 +44,7 @@ export function unloadRunner() {
 function stopPolling() {
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
   if (_historyTimer) { clearInterval(_historyTimer); _historyTimer = null; }
+  if (_haltCountdownTimer) { clearInterval(_haltCountdownTimer); _haltCountdownTimer = null; }
 }
 
 async function refreshHistory() {
@@ -78,12 +80,28 @@ function render() {
   const s = _lastState || {};
   const a = _lastAccount || {};
 
+  const dr = s.daily_risk || {};
+  const halted = !!dr.halted;
+
   const statusEl = _host.querySelector('#rn-status-pill');
   if (statusEl) {
     const status = s.status || 'idle';
-    statusEl.textContent = status;
-    statusEl.className = `rn-status-pill rn-status-${status}`;
+    if (halted) {
+      // last_dd_pct is a positive fraction (0.5 = 50% drawdown). Display as
+      // a negative percentage (loss) so the user can't misread "+0.50%" as
+      // a 0.5% gain.
+      const ddPct = Number(dr.last_dd_pct || 0) * 100;
+      statusEl.textContent = `HALTED · -${ddPct.toFixed(1)}% today`;
+      statusEl.className = `rn-status-pill rn-status-halted`;
+    } else {
+      statusEl.textContent = status;
+      statusEl.className = `rn-status-pill rn-status-${status}`;
+    }
   }
+
+  // Show/hide reset-halt button + countdown based on halted state
+  const resetBtn = _host.querySelector('#rn-btn-reset-halt');
+  if (resetBtn) resetBtn.style.display = halted ? '' : 'none';
 
   const metaEl = _host.querySelector('#rn-meta');
   if (metaEl) {
@@ -97,6 +115,22 @@ function render() {
       `scans: <b>${s.scans_completed ?? 0}</b> · ` +
       `dur: <b>${s.last_scan_duration_s ?? 0}s</b> · ` +
       `last: <b>${lastScan}</b> (<span class="rn-age">${freshness}s ago</span>)`;
+  }
+
+  // Halt countdown (below meta)
+  const haltEl = _host.querySelector('#rn-halt-countdown');
+  if (haltEl) {
+    if (halted) {
+      haltEl.style.display = '';
+      updateHaltCountdown();
+      if (!_haltCountdownTimer) {
+        _haltCountdownTimer = setInterval(updateHaltCountdown, 1000);
+      }
+    } else {
+      haltEl.style.display = 'none';
+      haltEl.textContent = '';
+      if (_haltCountdownTimer) { clearInterval(_haltCountdownTimer); _haltCountdownTimer = null; }
+    }
   }
 
   // Config form — only fill on first render or when user isn't editing
@@ -411,8 +445,23 @@ function wire(el) {
   // Start / Apply Config (hot-update if running)
   el.querySelector('#rn-btn-start').addEventListener('click', async () => {
     const cfg = readConfig(el);
+    const running = _lastState?.status === 'running';
+
+    // Real-money cold start: require typed "LIVE" confirmation
+    // (skip the modal for hot-update, dry_run, or non-live modes)
+    const mode = cfg.mode || _lastState?.config?.mode || 'live';
+    const needsConfirm = !running && cfg.dry_run === false && mode === 'live';
+    if (needsConfirm) {
+      const ok = await showTypedConfirmModal(el, {
+        title: '真钱启动确认',
+        body: 'Dry run 已关闭,mode=live。输入 <b>LIVE</b> 确认启动真钱交易。',
+        required: 'LIVE',
+        okLabel: '启动真钱',
+      });
+      if (!ok) return;
+    }
+
     try {
-      const running = _lastState?.status === 'running';
       if (running) {
         // Hot-update: config merges into the running loop, no restart
         const resp = await fetchJson('/api/mar-bb/update-config', {
@@ -450,6 +499,60 @@ function wire(el) {
       alert(`扫描失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
     } finally {
       el.querySelector('#rn-btn-kick').disabled = false;
+    }
+  });
+
+  // Emergency flatten-all (red button next to stop)
+  el.querySelector('#rn-btn-flatten').addEventListener('click', async () => {
+    const ok = await showTypedConfirmModal(el, {
+      title: '紧急平仓',
+      body: '输入 <b>FLATTEN</b> 确认平掉所有仓位(并撤销所有计划单)。',
+      required: 'FLATTEN',
+      okLabel: '确认平仓',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const resp = await fetchJson('/api/live-execution/flatten-all', {
+        method: 'POST',
+        body: { mode: 'live', confirm_code: 'FLATTEN', cancel_plans: true },
+        timeout: 30000,
+      });
+      // Backend returns: {ok, mode, attempted, closed, failures[], plan_orders_cancelled, plan_orders_failed}
+      const closed = resp?.closed ?? 0;
+      const total = resp?.attempted ?? 0;
+      const plans = resp?.plan_orders_cancelled ?? 0;
+      const planFail = resp?.plan_orders_failed ?? 0;
+      const fails = (resp?.failures || []).length;
+      const tail = fails > 0 ? ` · ${fails} 失败` : (planFail > 0 ? ` · ${planFail} 计划单失败` : '');
+      flashToast(el, `${closed}/${total} 平掉 · ${plans} 计划撤单${tail}`);
+      await refresh();
+    } catch (err) {
+      alert(`紧急平仓失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
+    }
+  });
+
+  // Reset halt (visible only when halted) — backend now wired, requires confirm_code="RESET"
+  el.querySelector('#rn-btn-reset-halt').addEventListener('click', async () => {
+    const ok = await showTypedConfirmModal(el, {
+      title: '重置 daily halt',
+      body: '输入 <b>RESET</b> 确认清除今日 drawdown halt。runner 下一次扫描将恢复开仓。',
+      required: 'RESET',
+      okLabel: '确认重置',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const resp = await fetchJson('/api/mar-bb/reset-halt', {
+        method: 'POST',
+        body: { confirm_code: 'RESET' },
+        timeout: 8000,
+      });
+      if (!resp?.ok) throw new Error(resp?.reason || 'reset rejected');
+      flashToast(el, 'halt 已重置 — 下次扫描生效');
+      await refresh();
+    } catch (err) {
+      alert(`重置失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
     }
   });
 
@@ -515,9 +618,12 @@ function renderShell() {
           <button class="rn-btn rn-btn-primary" id="rn-btn-start">启动 / 应用配置</button>
           <button class="rn-btn rn-btn-kick" id="rn-btn-kick">立即扫描</button>
           <button class="rn-btn rn-btn-danger" id="rn-btn-stop">停止</button>
+          <button class="rn-btn rn-btn-danger rn-btn-flatten" id="rn-btn-flatten">紧急平仓</button>
+          <button class="rn-btn rn-btn-reset-halt" id="rn-btn-reset-halt" style="display:none">重置 halt</button>
         </div>
       </div>
       <div class="rn-meta" id="rn-meta"></div>
+      <div class="rn-halt-countdown" id="rn-halt-countdown" style="display:none"></div>
 
       <div class="rn-section">
         <div class="rn-section-head">配置</div>
@@ -606,6 +712,71 @@ function flashToast(host, msg) {
   t._timer = setTimeout(() => t.classList.remove('rn-toast-visible'), 2500);
 }
 
+// Typed-confirmation modal. Returns a Promise<boolean> — true if user typed
+// the required string and clicked OK, false on cancel/esc/backdrop.
+// `body` is TRUSTED HTML (set by callers, not user input).
+function showTypedConfirmModal(host, { title, body, required, okLabel, danger }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'rn-modal-overlay';
+    overlay.innerHTML = `
+      <div class="rn-modal">
+        <div class="rn-modal-title">${esc(title || '确认')}</div>
+        <div class="rn-modal-body">${body || ''}</div>
+        <input type="text" class="rn-modal-input" autocomplete="off"
+               placeholder="输入 ${esc(required)}" />
+        <div class="rn-modal-actions">
+          <button class="rn-btn" data-act="cancel">取消</button>
+          <button class="rn-btn ${danger ? 'rn-btn-danger' : 'rn-btn-primary'}"
+                  data-act="ok" disabled>${esc(okLabel || '确认')}</button>
+        </div>
+      </div>
+    `;
+    const input = overlay.querySelector('.rn-modal-input');
+    const okBtn = overlay.querySelector('[data-act=ok]');
+    const cancelBtn = overlay.querySelector('[data-act=cancel]');
+
+    const close = (result) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close(false);
+      if (e.key === 'Enter' && !okBtn.disabled) close(true);
+    };
+
+    input.addEventListener('input', () => {
+      okBtn.disabled = input.value !== required;
+    });
+    okBtn.addEventListener('click', () => { if (!okBtn.disabled) close(true); });
+    cancelBtn.addEventListener('click', () => close(false));
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(false);
+    });
+    document.addEventListener('keydown', onKey);
+
+    host.appendChild(overlay);
+    setTimeout(() => input.focus(), 20);
+  });
+}
+
+// Update the "自动恢复 Xh Ym (UTC 午夜)" text every tick.
+function updateHaltCountdown() {
+  if (!_host) return;
+  const el = _host.querySelector('#rn-halt-countdown');
+  if (!el) return;
+  const now = new Date();
+  const nextUtcMidnight = Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0
+  );
+  let ms = nextUtcMidnight - now.getTime();
+  if (ms < 0) ms = 0;
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  el.textContent = `自动恢复: ${h}h ${m}m (UTC 午夜)`;
+}
+
 function injectStyles() {
   if (document.getElementById('rn-runner-styles')) return;
   const style = document.createElement('style');
@@ -622,6 +793,7 @@ function injectStyles() {
     .rn-status-stopped { background: rgba(255, 82, 82, 0.15); color: #ff5252; }
     .rn-status-idle    { background: rgba(138, 149, 166, 0.2); color: #8a95a6; }
     .rn-status-error   { background: rgba(255, 152, 0, 0.22); color: #ff9800; }
+    .rn-status-halted  { background: #7f1d1d; color: #fff; font-size: 11px; letter-spacing: 0.04em; }
     .rn-actions { display: flex; gap: 8px; }
     .rn-btn {
       background: #1d2537; border: 1px solid #2a3548; color: #d8dde8;
@@ -758,6 +930,47 @@ function injectStyles() {
       font-size: 10px; color: #6b7889; margin-top: 6px;
       font-family: ui-monospace, Menlo, monospace;
     }
+
+    /* Flatten + reset-halt buttons */
+    .rn-btn-flatten { background: #7f1d1d; border-color: #b91c1c; color: #fff; }
+    .rn-btn-flatten:hover { background: #b91c1c; }
+    .rn-btn-reset-halt { background: #422006; border-color: #a16207; color: #fde68a; }
+    .rn-btn-reset-halt:hover { background: #78350f; }
+
+    /* Halt countdown line (below meta) */
+    .rn-halt-countdown {
+      color: #fde68a; font-size: 11px; margin: 0 0 18px;
+      padding: 6px 10px; background: rgba(127, 29, 29, 0.25);
+      border: 1px solid #7f1d1d; border-radius: 4px; display: inline-block;
+    }
+
+    /* Typed-confirmation modal */
+    .rn-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 3000;
+    }
+    .rn-modal {
+      background: #0e141f; border: 1px solid #2a3548; border-radius: 6px;
+      padding: 22px 24px; min-width: 360px; max-width: 460px;
+      color: #d8dde8; font-size: 13px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    }
+    .rn-modal-title {
+      font-size: 15px; font-weight: 700; color: #fca5a5;
+      margin-bottom: 10px;
+    }
+    .rn-modal-body { color: #d8dde8; margin-bottom: 14px; line-height: 1.5; }
+    .rn-modal-body b { color: #fca5a5; font-family: ui-monospace, Menlo, monospace; }
+    .rn-modal-input {
+      width: 100%; box-sizing: border-box;
+      background: #141a26; border: 1px solid #2a3548; color: #d8dde8;
+      padding: 8px 10px; border-radius: 4px; font-size: 13px;
+      font-family: ui-monospace, Menlo, monospace;
+      margin-bottom: 16px;
+    }
+    .rn-modal-input:focus { outline: none; border-color: #0284c7; }
+    .rn-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
     /* Toast */
     .rn-toast {

@@ -55,6 +55,6 @@ export async function placeLineOrder(payload) {
   return fetchJson('/api/drawings/manual/place-line-order', {
     method: 'POST',
     body: payload,
-    timeout: 20000,
+    timeout: 12000,
   });
 }
