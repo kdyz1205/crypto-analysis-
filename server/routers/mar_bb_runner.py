@@ -8,6 +8,7 @@ from ..strategy.mar_bb_runner import (
     DEFAULT_RUNNER_CFG,
     get_state,
     manual_kick,
+    reset_daily_halt,
     start_runner,
     stop_runner,
     update_config,
@@ -33,6 +34,8 @@ class StartReq(BaseModel):
     max_position_pct: float | None = None
     strategies: list[str] | None = None
     tf_risk: dict[str, float] | None = None  # per-TF risk: {"5m":0.015,"1h":0.03}
+    stop_offset_pct: float | None = None
+    tf_stop_offset: dict[str, float] | None = None
 
 
 @router.post("/start")
@@ -73,6 +76,8 @@ class UpdateReq(BaseModel):
     risk_pct: float | None = None
     max_position_pct: float | None = None
     tf_risk: dict[str, float] | None = None
+    stop_offset_pct: float | None = None
+    tf_stop_offset: dict[str, float] | None = None
 
 
 @router.post("/update-config")
@@ -81,6 +86,18 @@ async def api_update_config(req: UpdateReq):
     take effect on the next scan tick."""
     partial = {k: v for k, v in req.model_dump().items() if v is not None}
     return update_config(partial)
+
+
+class ResetHaltReq(BaseModel):
+    confirm_code: str = ""
+
+
+@router.post("/reset-halt")
+async def api_reset_halt(req: ResetHaltReq):
+    """Manually clear today's daily-DD halt.
+    Requires `{"confirm_code":"RESET"}` — a deliberate act because it
+    bypasses the loss-protection guardrail."""
+    return reset_daily_halt(confirm_code=req.confirm_code)
 
 
 @router.get("/history")

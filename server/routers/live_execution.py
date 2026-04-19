@@ -8,6 +8,8 @@ from ..execution.types import OrderIntent
 from ..schemas.live_execution import (
     LiveCloseRequest,
     LiveCloseResponse,
+    LiveFlattenAllRequest,
+    LiveFlattenAllResponse,
     LivePreflightResponse,
     LiveExecutionStatusResponse,
     LivePreviewRequest,
@@ -87,6 +89,96 @@ async def api_live_execution_close(req: LiveCloseRequest):
     mode = _normalize_mode(req.mode)
     result = await live_engine.close_live_position(req.symbol, mode=mode, confirm=req.confirm)
     return {"result": result}
+
+
+@router.post("/flatten-all", response_model=LiveFlattenAllResponse)
+async def api_live_execution_flatten_all(req: LiveFlattenAllRequest):
+    """Emergency kill switch.
+    Closes every position + cancels every plan order for the given mode.
+    Protected by a literal confirmation code to prevent accidental hits.
+    """
+    if (req.confirm_code or "").strip().upper() != "FLATTEN":
+        return {
+            "ok": False,
+            "mode": req.mode,
+            "attempted": 0,
+            "closed": 0,
+            "failures": [],
+            "plan_orders_cancelled": 0,
+            "plan_orders_failed": 0,
+            "reason": "confirm_code_mismatch — send {'confirm_code': 'FLATTEN'}",
+        }
+
+    mode = _normalize_mode(req.mode)
+    adapter = _adapter_provider()
+    if not adapter.has_api_keys():
+        return {
+            "ok": False,
+            "mode": mode,
+            "attempted": 0,
+            "closed": 0,
+            "failures": [],
+            "plan_orders_cancelled": 0,
+            "plan_orders_failed": 0,
+            "reason": "api_keys_missing",
+        }
+
+    # 1. Fetch live positions for the mode.
+    account = await adapter.get_live_account_status(mode)
+    positions = account.get("positions") or []
+    attempted = 0
+    closed = 0
+    failures: list[dict] = []
+    for pos in positions:
+        sym = str(pos.get("symbol") or "").upper()
+        if not sym:
+            continue
+        size = float(pos.get("total") or 0)
+        if size <= 0:
+            continue
+        attempted += 1
+        try:
+            result = await live_engine.close_live_position(sym, mode=mode, confirm=True)
+            if result.get("ok"):
+                closed += 1
+            else:
+                failures.append({
+                    "symbol": sym,
+                    "reason": result.get("reason") or result.get("blocking_reasons") or "unknown",
+                })
+        except Exception as exc:
+            failures.append({"symbol": sym, "reason": f"exception: {exc}"})
+
+    plan_cancelled = 0
+    plan_failed = 0
+    if req.cancel_plans:
+        try:
+            from ..strategy.trendline_order_manager import cancel_all_trendline_plan_orders
+            cfg = {"mode": mode}
+            cancel_resp = await cancel_all_trendline_plan_orders(cfg, status="flatten_all")
+            plan_cancelled = int(cancel_resp.get("cancelled") or 0)
+            plan_failed = int(cancel_resp.get("failed") or 0)
+        except Exception as exc:
+            print(f"[flatten-all] cancel plans err: {exc}", flush=True)
+            plan_failed = -1  # signal exception
+
+    ok = (attempted == closed and plan_failed >= 0)
+    print(
+        f"[flatten-all] mode={mode} attempted={attempted} closed={closed} "
+        f"plan_cancelled={plan_cancelled} plan_failed={plan_failed} "
+        f"failures={len(failures)}",
+        flush=True,
+    )
+    return {
+        "ok": ok,
+        "mode": mode,
+        "attempted": attempted,
+        "closed": closed,
+        "failures": failures,
+        "plan_orders_cancelled": plan_cancelled,
+        "plan_orders_failed": plan_failed,
+        "reason": None if ok else "see failures[]",
+    }
 
 
 def _mark_local_cond_cancelled(order_id: str, reason: str = "cancelled via api") -> bool:

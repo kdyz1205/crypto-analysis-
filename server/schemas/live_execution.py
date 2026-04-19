@@ -151,6 +151,29 @@ class LiveCloseResponse(BaseModel):
     result: LiveExecutionResultModel
 
 
+class LiveFlattenAllRequest(BaseModel):
+    """Emergency kill switch: close every live position + cancel every plan
+    order in one call. Must be invoked with a literal `confirm_code='FLATTEN'`
+    so accidental button mashes cannot fire.
+    """
+    mode: str = "live"
+    confirm_code: str = ""
+    cancel_plans: bool = True   # also cancel open plan / trigger orders
+
+
+class LiveFlattenAllResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    ok: bool
+    mode: str
+    attempted: int                       # positions we tried to close
+    closed: int                          # positions confirmed closed
+    failures: list[dict] = []            # {symbol, reason}
+    plan_orders_cancelled: int = 0
+    plan_orders_failed: int = 0
+    reason: str | None = None
+
+
 class LiveReconcileRequest(BaseModel):
     mode: str = "demo"
 
@@ -166,6 +189,8 @@ __all__ = [
     "LiveCloseResponse",
     "LiveExecutionResultModel",
     "LiveExecutionStatusResponse",
+    "LiveFlattenAllRequest",
+    "LiveFlattenAllResponse",
     "LivePreflightResponse",
     "LivePreviewRequest",
     "LivePreviewResponse",
