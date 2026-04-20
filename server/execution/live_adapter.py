@@ -520,9 +520,14 @@ class LiveExecutionAdapter:
         entry_price = await self._get_position_entry_price(normalized_symbol, hold_side, mode)
         cancelled: list[str] = []
 
-        # Cancel ALL existing SL orders, leave TP untouched.
-        # Key: cancel body MUST include the correct planType or it silently fails.
-        # Bitget sub-types: pos_loss (仓位止损), loss_plan (部分止损/preset SL)
+        # Cancel existing SL (always, when updating SL) and TP (only when
+        # caller passes a new TP). Without cancelling the old TP before
+        # placing a new one, Bitget ends up with TWO TPs on the same
+        # position — a real bug surfaced 2026-04-20 when the user noticed
+        # the TP wasn't moving despite SL trailing: old code wrote
+        # `tp = None` in the trailing call so TPs never rotated.
+        should_cancel_sl = normalized_new_sl is not None
+        should_cancel_tp = normalized_new_tp is not None
         try:
             # Query all SL/TP under "profit_loss" umbrella (returns pos_loss, pos_profit, loss_plan, profit_plan)
             pending = await self._bitget_request(
@@ -537,31 +542,38 @@ class LiveExecutionAdapter:
                 trigger = float(order.get("triggerPrice") or 0)
                 actual_plan_type = order.get("planType", "")
 
-                # Identify SL vs TP by trigger direction against entry
+                # Identify SL vs TP
                 is_sl = False
-                if entry_price and entry_price > 0 and trigger > 0:
-                    if hold_side == "short":
-                        is_sl = trigger > entry_price
-                    elif hold_side == "long":
-                        is_sl = trigger < entry_price
-                # Also catch by planType name
+                is_tp = False
                 if actual_plan_type in ("pos_loss", "loss_plan"):
                     is_sl = True
+                elif actual_plan_type in ("pos_profit", "profit_plan"):
+                    is_tp = True
+                elif entry_price and entry_price > 0 and trigger > 0:
+                    # Fallback: derive from trigger direction vs entry
+                    if hold_side == "short":
+                        is_sl = trigger > entry_price
+                        is_tp = trigger < entry_price
+                    elif hold_side == "long":
+                        is_sl = trigger < entry_price
+                        is_tp = trigger > entry_price
 
-                if is_sl and oid:
+                target_cancel = (is_sl and should_cancel_sl) or (is_tp and should_cancel_tp)
+                if target_cancel and oid:
                     cancel_resp = await self.cancel_plan_order(
                         normalized_symbol,
                         str(oid),
                         mode,
-                        plan_type=actual_plan_type or "pos_loss",
+                        plan_type=actual_plan_type or ("pos_loss" if is_sl else "pos_profit"),
                     )
+                    tag = "SL" if is_sl else "TP"
                     if cancel_resp.get("ok"):
                         cancelled.append(str(oid))
-                        print(f"[live_adapter] cancelled {actual_plan_type} SL {trigger} for {normalized_symbol}", flush=True)
+                        print(f"[live_adapter] cancelled {actual_plan_type} {tag} {trigger} for {normalized_symbol}", flush=True)
                     else:
-                        print(f"[live_adapter] cancel SL {trigger} empty successList: {cancel_resp}", flush=True)
+                        print(f"[live_adapter] cancel {tag} {trigger} empty successList: {cancel_resp}", flush=True)
         except Exception as e:
-            print(f"[live_adapter] SL cancel error: {e}", flush=True)
+            print(f"[live_adapter] SL/TP cancel error: {e}", flush=True)
 
         results = []
         actual_sl_after: float | None = None
@@ -605,7 +617,9 @@ class LiveExecutionAdapter:
             except Exception as e:
                 return {"ok": False, "reason": f"SL: {e}"}
 
-        # Place TP only on first call (when no TP exists yet)
+        # Place new TP (old TP was cancelled above if one existed).
+        # The trailing loop calls this on every bar boundary when the
+        # line has moved far enough to warrant a new TP level.
         if normalized_new_tp is not None:
             try:
                 resp = await self._bitget_request(

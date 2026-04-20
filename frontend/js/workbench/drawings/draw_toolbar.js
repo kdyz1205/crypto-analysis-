@@ -65,6 +65,18 @@ export function initDrawToolbar(containerEl) {
         .catch((err) => alert(`清空失败: ${err?.message || err}`));  // SAFE: alert() renders text, not HTML
       return;
     }
+    if (tool === 'trendline') {
+      // Toggle: if the button is already armed (is-active), treat the click
+      // as a cancel instead of re-arming. This kills the class of bugs where
+      // the state machine thinks it's idle but the user still sees "draw
+      // mode" active — pressing the button again always escapes cleanly.
+      if (btn.classList.contains('is-active')) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        return;
+      }
+      startTrendlineTool();
+      return;
+    }
     startTrendlineTool();
   });
 

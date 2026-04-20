@@ -4,6 +4,12 @@ import { fetchJson } from '../util/fetch.js';
 export const getSymbols = (includeExtended = false) =>
   fetchJson(`/api/symbols${includeExtended ? '?include_extended=true' : ''}`);
 
+// Sortable-picker payload — richer than getSymbols(). Each row carries
+// {symbol, last_price, change24h, volume_usdt}. Backend caches 10 min
+// so calling this on every dropdown open is cheap.
+export const getSymbolsExtended = (topN = 200) =>
+  fetchJson(`/api/symbols/extended?top_n=${topN}`);
+
 export const getSymbolInfo = (symbol) =>
   fetchJson(`/api/symbol-info?symbol=${encodeURIComponent(symbol)}`);
 

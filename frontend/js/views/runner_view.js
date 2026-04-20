@@ -143,6 +143,9 @@ function render() {
     _host.querySelector('[name=notional_usd]').value = cfg.notional_usd ?? 12;
     _host.querySelector('[name=leverage]').value = cfg.leverage ?? 5;
     _host.querySelector('[name=max_concurrent_positions]').value = cfg.max_concurrent_positions ?? 5;
+    // Populate stop_offset_pct from live config (falls back to DEFAULT 0.04)
+    const soEl = _host.querySelector('[name=stop_offset_pct]');
+    if (soEl) soEl.value = cfg.stop_offset_pct ?? 0.04;
     const strats = cfg.strategies || [];
     _host.querySelector('[name=strat_mar_bb]').checked = strats.includes('mar_bb');
     _host.querySelector('[name=strat_trendline]').checked = strats.includes('trendline');
@@ -591,6 +594,8 @@ function wire(el) {
 }
 
 function readConfig(el) {
+  const stopOffsetInput = el.querySelector('[name=stop_offset_pct]');
+  const stopOffsetVal = stopOffsetInput ? Number(stopOffsetInput.value) : NaN;
   return {
     top_n: Number(el.querySelector('[name=top_n]').value) || 100,
     timeframe: el.querySelector('[name=timeframe]').value,
@@ -598,6 +603,9 @@ function readConfig(el) {
     notional_usd: Number(el.querySelector('[name=notional_usd]').value) || 12,
     leverage: Number(el.querySelector('[name=leverage]').value) || 5,
     max_concurrent_positions: Number(el.querySelector('[name=max_concurrent_positions]').value) || 5,
+    // User-configurable SL buffer beyond the trendline. Valid value only if
+    // > 0, otherwise omit so the server default (0.04) stays in effect.
+    stop_offset_pct: (isFinite(stopOffsetVal) && stopOffsetVal > 0) ? stopOffsetVal : undefined,
     dry_run: el.querySelector('[name=dry_run]').checked,
     strategies: [
       el.querySelector('[name=strat_mar_bb]').checked ? 'mar_bb' : null,
@@ -663,6 +671,10 @@ function renderShell() {
           <label class="rn-field">
             <span>最大并发</span>
             <input type="number" name="max_concurrent_positions" min="1" max="20" />
+          </label>
+          <label class="rn-field" title="SL 相对 trendline 的 buffer。0.04 = 价格穿过线 0.04% 才止损。推荐 0.03-0.05%">
+            <span>止损 buffer (% 超线)</span>
+            <input type="number" name="stop_offset_pct" min="0" max="1" step="0.01" />
           </label>
           <label class="rn-field rn-field-check">
             <input type="checkbox" name="dry_run"/>

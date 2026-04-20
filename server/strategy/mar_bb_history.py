@@ -28,12 +28,25 @@ from server.execution.live_adapter import LiveExecutionAdapter
 
 
 def _tag_strategy(client_oid: str | None, order_source: str | None = None) -> str:
-    """Classify a closed position by our clientOid prefix convention."""
+    """Classify a closed position by our clientOid prefix convention.
+
+    Prefixes we emit (see trendline_order_manager + mar_bb_runner + watcher):
+      tl_        — automatic runner trendline plan (the main strategy)
+      marbb_     — MA Ribbon breakout plan
+      line_      — user-drawn line order, initial placement
+      replan_    — conditional watcher re-placing a line after trigger/cancel
+      cond_      — conditional watcher's own side-orders
+      rev_       — reverse/auto-flip after SL
+    """
     coid = (client_oid or "").lower()
+    if coid.startswith("tl_"):
+        return "trendline_auto"
     if coid.startswith("marbb_"):
         return "mar_bb"
     if coid.startswith("line_"):
         return "trendline_manual"
+    if coid.startswith("replan_"):
+        return "trendline_replan"
     if coid.startswith("cond_"):
         return "conditional"
     if coid.startswith("rev_"):

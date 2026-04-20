@@ -8,8 +8,12 @@ export async function getLiveExecutionStatus() {
 }
 
 export async function getLiveAccount(mode = 'live', timeout = 8000) {
+  // P12: account is a polled endpoint — must always be fresh. The default
+  // 30s GET cache would show stale equity / positions / pending orders,
+  // which breaks the trade-plan modal preview and the header KPI.
   return fetchJson(`/api/live-execution/account?mode=${encodeURIComponent(mode)}`, {
     timeout,
+    noCache: true,
   });
 }
 

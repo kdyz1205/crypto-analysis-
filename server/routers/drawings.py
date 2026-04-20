@@ -141,6 +141,12 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
 
 @router.delete("/{manual_line_id}", response_model=ManualTrendlineClearResponse)
 async def api_delete_drawing(manual_line_id: str):
+    # Capture the line + current market features BEFORE removing it so we
+    # get the negative-signal training row ("user removed this line"). This
+    # is the only place 'deleted' events enter user_drawings_ml.jsonl.
+    existing = store.get(manual_line_id)
+    if existing is not None:
+        _schedule_drawing_ml_capture(existing, stage="deleted")
     removed = 1 if store.delete(manual_line_id) else 0
     if removed == 0:
         raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
@@ -219,8 +225,9 @@ def _cancel_conditionals_for_lines(line_ids: list[str], *, reason_prefix: str) -
 
 
 def _schedule_drawing_ml_capture(drawing: ManualTrendline, *, stage: str) -> None:
+    reason = {"deleted": "user_delete", "updated": "user_update"}.get(stage)
     try:
-        asyncio.create_task(_capture_drawing_for_ml(drawing, stage=stage))
+        asyncio.create_task(_capture_drawing_for_ml(drawing, stage=stage, reason=reason))
     except RuntimeError:
         # No running loop in unusual test contexts; fall back to the basic
         # record so the drawing action is still captured.
@@ -236,12 +243,13 @@ def _schedule_drawing_ml_capture(drawing: ManualTrendline, *, stage: str) -> Non
                 t_start=drawing.t_start,
                 t_end=drawing.t_end,
                 capture_stage=f"{stage}_basic",
+                reason=reason,
             )
         except Exception as exc:
             print(f"[drawing_learner] fallback capture err: {exc}", flush=True)
 
 
-async def _capture_drawing_for_ml(drawing: ManualTrendline, *, stage: str) -> None:
+async def _capture_drawing_for_ml(drawing: ManualTrendline, *, stage: str, reason: str | None = None) -> None:
     try:
         from ..strategy.drawing_learner import capture_user_drawing
 
@@ -290,6 +298,7 @@ async def _capture_drawing_for_ml(drawing: ManualTrendline, *, stage: str) -> No
             df=df,
             htf_df=htf_df,
             capture_stage=stage if df is not None else f"{stage}_basic",
+            reason=reason,
         )
         feature_count = len((rec or {}).get("features") or {})
         print(

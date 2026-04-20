@@ -4,7 +4,7 @@ import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, toggleWycko
 import { initManualTrendlineController } from './workbench/drawings/manual_trendline_controller.js';
 import { initChartDrawing, startTrendlineTool } from './workbench/drawings/chart_drawing.js';
 import { initDrawToolbar } from './workbench/drawings/draw_toolbar.js';
-import { initTicker } from './workbench/ticker.js';
+import { initSymbolPicker } from './workbench/symbol_picker.js';
 import { initTimeframe } from './workbench/timeframe.js';
 import { initConditionalPanel } from './workbench/conditional_panel.js';
 import { initExecutionPanel, togglePanel as toggleExec } from './execution/panel.js';
@@ -72,9 +72,9 @@ function boot() {
   wireHeaderButtons();
   subscribe('chart.load.succeeded', afterChartLoad);
 
-  initTicker('v2-symbol-combo')
+  initSymbolPicker('v2-symbol-combo')
     .then(() => markBoot('symbols', 'ok', 'loaded'))
-    .catch((err) => console.error('[boot] ticker:', err));
+    .catch((err) => console.error('[boot] symbol_picker:', err));
 
   loadCurrent(true).catch((err) => {
     markBoot('chart', 'error', err.message);

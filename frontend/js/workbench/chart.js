@@ -25,7 +25,11 @@ let chartModePanel = null;
 let chartLoadSeq = 0;
 let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
 let _lastFullReloadTs = 0;
-const FUTURE_DRAW_BARS = 48;
+// Right-side empty area shown BEYOND the last candle so trendlines that
+// extend into the future have canvas room. 48 bars was the old default;
+// user on 2026-04-20 asked for more future time-axis visibility → 120 bars
+// = ~10h on 5m, ~30h on 15m, ~5 days on 1h.
+const FUTURE_DRAW_BARS = 120;
 
 // Lazy backfill state. Kept at module level so the visible-range
 // subscriber can see the current candle buffer without a closure over
@@ -72,6 +76,25 @@ export function initChart(containerId = 'chart-container') {
       timeVisible: true,
       secondsVisible: false,
       rightOffset: FUTURE_DRAW_BARS,
+      // Reserve space for future-time labels in the axis. Without this,
+      // the axis only renders labels for existing candles, leaving the
+      // rightOffset area visually blank ("没有未来的日期时间" 2026-04-20).
+      fixLeftEdge: false,
+      fixRightEdge: false,
+    },
+    // Pan/zoom: explicit so a freezeChart() during draw mode that failed
+    // to thaw can't leave the chart undraggable across a reload. Defaults
+    // are all `true` but we name them so the intent is unambiguous.
+    handleScroll: {
+      mouseWheel: true,
+      pressedMouseMove: true,
+      horzTouchDrag: true,
+      vertTouchDrag: true,
+    },
+    handleScale: {
+      axisPressedMouseMove: true,
+      mouseWheel: true,
+      pinch: true,
     },
   });
 
@@ -88,6 +111,14 @@ export function initChart(containerId = 'chart-container') {
     priceFormat: { type: 'volume' },
     priceScaleId: 'volume',
     scaleMargins: { top: 0.8, bottom: 0 },
+    // Without these, the volume bar's last value (e.g. "199.44K") shows
+    // up as a highlighted price-line label on the MAIN price axis between
+    // two adjacent price ticks — because lightweight-charts treats
+    // histogram's current value the same as a candle's close price. User
+    // caught it 2026-04-20 on RAVEUSDT where "199.44K" appeared between
+    // 0.50 and 0.49 on the Y-axis.
+    lastValueVisible: false,
+    priceLineVisible: false,
   });
 
   // Resize chart on window resize AND container resize (fixes zoom disappear bug)
@@ -342,7 +373,25 @@ export async function loadCurrent(forcePatterns = false) {
       truncationReason: data.truncationReason || '',
     });
     const lastPrice = candles[candles.length - 1].close;
-    setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
+    const precision = data.pricePrecision ?? inferPrecision(lastPrice);
+    setPrecision(precision);
+    // Apply exchange-provided tick precision to the candle series so Y-axis
+    // labels and crosshair readouts match Bitget exactly (e.g. 0.50234 not
+    // 0.50 for RAVEUSDT where tickSz=1e-5). Default lightweight-charts
+    // precision is 2 decimals, which hides sub-cent detail for sub-$1 coins.
+    if (candleSeries && typeof precision === 'number' && precision >= 0 && precision <= 10) {
+      try {
+        candleSeries.applyOptions({
+          priceFormat: {
+            type: 'price',
+            precision,
+            minMove: Math.pow(10, -precision),
+          },
+        });
+      } catch (err) {
+        console.warn('[chart] applyOptions priceFormat failed:', err);
+      }
+    }
 
     // Prefer client-computed overlays — saves a round of backend CPU
     // and shrinks the /api/ohlcv payload by ~40%. Falls back to server

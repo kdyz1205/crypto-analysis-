@@ -60,23 +60,36 @@ function saveDefaults(values) {
 }
 
 let _modal = null;
-let _equityCache = { ts: 0, equity: 0, mode: '' };
-const EQUITY_CACHE_MS = 60_000;
+let _equityCache = { ts: 0, equity: 0, mode: '', error: '' };
+const EQUITY_CACHE_MS = 10_000;  // header uses same data, 10s is fine here
 
 async function fetchEquity(mode) {
-  // Cache 10s — account endpoint hits Bitget.
   const now = Date.now();
-  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS) {
+  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS && !_equityCache.error) {
     return _equityCache.equity;
   }
   try {
     const resp = await getLiveAccount(mode, 5000);
+    // Backend returns snake_case: total_equity / usdt_available.
+    // Legacy camelCase fallbacks kept for defensive compatibility, but
+    // total_equity is the source of truth (matches views.js, runner_view.js,
+    // execution/panel.js, conditional_panel.js).
     const equity = Number(
-      resp?.equity ?? resp?.account?.equity ?? resp?.usdtEquity ?? resp?.totalEquity ?? 0,
+      resp?.total_equity
+        ?? resp?.usdt_available
+        ?? resp?.account?.total_equity
+        ?? resp?.equity
+        ?? resp?.account?.equity
+        ?? 0,
     );
-    _equityCache = { ts: now, equity, mode };
+    _equityCache = { ts: now, equity, mode, error: '' };
     return equity;
-  } catch {
+  } catch (err) {
+    const msg = err?.message || String(err);
+    console.warn('[trade_plan_modal] fetchEquity failed:', msg);
+    // P10: errors must be visible. Surface the failure via _equityCache.error
+    // so refreshLivePreview can render "—" with an explanation.
+    _equityCache = { ts: now, equity: 0, mode, error: msg };
     return 0;
   }
 }
@@ -134,7 +147,10 @@ export function openTradePlanModal(line) {
       const v = readForm();
       const mode = v.exchange_mode;
       const equity = await fetchEquity(mode);
-      const accountDisplay = equity > 0 ? `$${equity.toFixed(2)}` : '—';
+      const accountErr = _equityCache.error;
+      const accountDisplay = equity > 0
+        ? `$${equity.toFixed(2)}`
+        : (accountErr ? `— 账户数据加载失败: ${accountErr}` : '— (账户余额为 0)');
 
       let notional, riskUsd, rewardUsd, riskPctAccount, rewardPctAccount;
       if (v.leverage > 0) {
@@ -151,7 +167,9 @@ export function openTradePlanModal(line) {
         rewardPctAccount = equity > 0 ? (rewardUsd / equity) * 100 : 0;
       }
 
-      $('#tp-preview-equity').textContent = accountDisplay;
+      const eqEl = $('#tp-preview-equity');
+      eqEl.textContent = accountDisplay;
+      eqEl.style.color = equity > 0 ? '' : '#ff9800';
       $('#tp-preview-notional').textContent = `$${notional.toFixed(2)}`;
       $('#tp-preview-risk').textContent =
         `$${riskUsd.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`;

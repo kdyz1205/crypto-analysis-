@@ -45,6 +45,7 @@ from research.trendline_strategy import (
 _task: asyncio.Task | None = None
 _maintenance_task: asyncio.Task | None = None
 _running = False
+_runner_started_ts: float = 0.0  # set by start_runner; used to skip replay-feeding the circuit breaker with historical closes
 _state_lock = asyncio.Lock()
 _trendline_maintenance_lock = asyncio.Lock()
 
@@ -67,14 +68,16 @@ DEFAULT_RUNNER_CFG = {
         "1h":  0.015,   # 1.5%
         "4h":  0.030,   # 3.0%
     },
-    # Stop is placed just beyond the trendline, not exactly on it. Values are
-    # documented percentages: 0.01 means 0.01% beyond the line.
-    "stop_offset_pct": 0.01,
+    # Stop is placed just beyond the trendline, not exactly on it.
+    # Updated 2026-04-20 per user spec: typical buffer 0.03-0.05% beyond line.
+    # Old 0.01% was too tight — a single tick of noise closed positions before
+    # the line actually broke. Values are documented percentages: 0.04 = 0.04%.
+    "stop_offset_pct": 0.04,
     "tf_stop_offset": {
-        "5m": 0.01,
-        "15m": 0.01,
-        "1h": 0.01,
-        "4h": 0.01,
+        "5m": 0.03,    # smaller TFs → tighter (noise is already smaller)
+        "15m": 0.04,
+        "1h": 0.04,
+        "4h": 0.05,    # bigger TF → larger wicks, more tolerance
     },
     "trendline_cooldown_bars_after_close": 4,
     # ── Position sizing ──
@@ -145,6 +148,20 @@ def _daily_risk_file() -> Path:
     return _state_file().with_name("mar_bb_daily_risk.json")
 
 
+def _trendline_params_file() -> Path:
+    """Disk home for the in-memory `_trendline_params` dict.
+
+    uvicorn reload (watchfiles on server/ + frontend/) wipes module-level
+    state. Without persistence, every code edit deletes trailing-SL
+    registration mid-trade and the SL never moves → stop stays at the
+    price the line had at fill time (see incident 2026-04-20 RAVEUSDT,
+    user report: "挂单没有移动"). Write-through on every mutation; load
+    once at module import so the maintenance loop can pick up where it
+    left off regardless of whether the user hit 'start runner'.
+    """
+    return _state_file().with_name("trendline_params.json")
+
+
 @dataclass
 class OpenPosition:
     symbol: str
@@ -203,10 +220,16 @@ def _load_state() -> None:
         if not f.exists():
             return
         data = json.loads(f.read_text(encoding="utf-8"))
-        # Only restore open_position + counters + config; let status start
-        # fresh so boot doesn't resume "running" if the process crashed.
-        if data.get("open_position"):
-            _state.open_position = data["open_position"]
+        # Restore counters/config only. Do NOT restore open_position —
+        # if the process died while the exchange closed the position, the
+        # persisted dict would re-poison runner belief (ghost position).
+        # The next scan re-adopts the real state from Bitget via
+        # get_open_position_symbols() / _has_open_position().
+        _state.open_position = None
+        # Also clear recent_close_outcomes so a past losing streak can't
+        # re-trigger the circuit breaker on boot. record_close_outcome()
+        # already skips historical replay, but this is belt-and-suspenders.
+        _state.recent_close_outcomes = []
         _state.scans_completed = int(data.get("scans_completed") or 0)
         _state.signals_detected = int(data.get("signals_detected") or 0)
         _state.orders_submitted = int(data.get("orders_submitted") or 0)
@@ -216,7 +239,16 @@ def _load_state() -> None:
 
 
 def get_state() -> dict:
-    return asdict(_state)
+    state_dict = asdict(_state)
+    # Observability (P11): expose trailing-SL state so the UI / user can
+    # confirm trendline_params actually persisted across uvicorn reloads,
+    # and that the always-on maintenance loop is alive.
+    state_dict["trendline_params_count"] = len(_trendline_params)
+    state_dict["trendline_params_symbols"] = sorted(_trendline_params.keys())
+    state_dict["maintenance_only_running"] = (
+        _maintenance_only_task is not None and not _maintenance_only_task.done()
+    )
+    return state_dict
 
 
 # ─────────────────────────────────────────────────────────────
@@ -357,14 +389,90 @@ async def _check_and_fire_reversals(cfg: dict, equity: float) -> int:
 _trendline_params: dict[str, dict] = {}
 
 
+def _save_trendline_params() -> None:
+    """Atomic write-through of `_trendline_params` to disk.
+
+    Called after every mutation so SL trailing state survives uvicorn
+    auto-reload, server restart, and crash.
+    """
+    try:
+        f = _trendline_params_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        tmp = f.with_suffix(f.suffix + ".tmp")
+        tmp.write_text(json.dumps(_trendline_params, default=str), encoding="utf-8")
+        tmp.replace(f)
+    except Exception as exc:
+        print(f"[trendline_params] save err: {exc}", flush=True)
+
+
+def _load_trendline_params() -> None:
+    """Restore `_trendline_params` from disk. Called at module import.
+
+    Validates each entry has the minimum fields needed by
+    `_calc_trendline_trailing_sl` and `_update_trailing_stops`. Corrupt
+    or incomplete entries are dropped and the file is rewritten.
+    """
+    global _trendline_params
+    try:
+        f = _trendline_params_file()
+        if not f.exists():
+            return
+        raw = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        cleaned: dict[str, dict] = {}
+        required = {"slope", "side", "tf", "entry_price", "opened_ts"}
+        for sym, params in raw.items():
+            if not isinstance(params, dict):
+                continue
+            if not required.issubset(params.keys()):
+                continue
+            # Normalize numeric fields — JSON may have parsed these as
+            # strings if they were written with default=str fallback.
+            try:
+                params["slope"] = float(params["slope"])
+                params["intercept"] = float(params.get("intercept") or 0)
+                params["entry_price"] = float(params["entry_price"])
+                params["last_sl_set"] = float(params.get("last_sl_set") or 0)
+                params["tp_price"] = float(params.get("tp_price") or 0)
+                params["stop_offset_pct"] = float(params.get("stop_offset_pct") or 0)
+                params["opened_ts"] = int(float(params["opened_ts"]))
+                params["entry_bar"] = int(params.get("entry_bar") or 0)
+                if params.get("line_ref_ts"):
+                    params["line_ref_ts"] = int(float(params["line_ref_ts"]))
+                if params.get("line_ref_price"):
+                    params["line_ref_price"] = float(params["line_ref_price"])
+            except Exception:
+                continue
+            cleaned[sym.upper()] = params
+        _trendline_params = cleaned
+        print(
+            f"[trendline_params] loaded {len(cleaned)} entries from disk: "
+            f"{list(cleaned.keys())}",
+            flush=True,
+        )
+    except Exception as exc:
+        print(f"[trendline_params] load err: {exc}", flush=True)
+
+
 def register_trendline_params(symbol: str, slope: float, intercept: float,
                                entry_bar: int, entry_price: float, side: str,
                                tf: str, created_ts: float = 0, tp_price: float = 0,
                                last_sl_set: float = 0,
                                line_ref_ts: float = 0,
                                line_ref_price: float = 0,
-                               stop_offset_pct: float = 0):
-    """Called when opening a trendline trade — stores line params for SL trailing."""
+                               stop_offset_pct: float = 0,
+                               manual_line_id: str = "",
+                               conditional_id: str = ""):
+    """Called when opening a trendline trade — stores line params for SL trailing.
+
+    `manual_line_id` / `conditional_id` are optional but important for the
+    ML close-out hook: on position close we need to write back to the
+    drawing that caused this trade so `user_drawings_ml.jsonl` gets a
+    `closed` stage row with final PnL. Without these, the close-capture
+    path has to match by Bitget order ID which fails if the exchange
+    history row is missing the order ID (observed 2026-04-20 on RAVE).
+    """
     key = symbol.upper()
     if key in _trendline_params:
         return
@@ -380,7 +488,12 @@ def register_trendline_params(symbol: str, slope: float, intercept: float,
     if line_ref_ts > 0 and line_ref_price > 0:
         params["line_ref_ts"] = int(line_ref_ts)
         params["line_ref_price"] = float(line_ref_price)
+    if manual_line_id:
+        params["manual_line_id"] = str(manual_line_id)
+    if conditional_id:
+        params["conditional_id"] = str(conditional_id)
     _trendline_params[key] = params
+    _save_trendline_params()
 
 
 def _select_active_order_for_position(active_orders: list, symbol: str):
@@ -485,6 +598,8 @@ def _register_manual_conditional_trailing(symbol: str, cond, pos: dict) -> bool:
         line_ref_ts=opened_ts,
         line_ref_price=line_ref_price,
         stop_offset_pct=stop_offset_pct,
+        manual_line_id=getattr(cond, "manual_line_id", "") or "",
+        conditional_id=getattr(cond, "conditional_id", "") or "",
     )
     try:
         from server.conditionals.store import ConditionalOrderStore
@@ -541,11 +656,11 @@ def _round_price(price: float) -> float:
         return round(price, 6)
 
 
-def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int | None = None) -> float | None:
+def _project_line_at(symbol: str, now_ts: int | None = None, bars_since_entry: int = 0) -> float | None:
+    """Project the line price at `now_ts`. Shared by SL + TP trailing."""
     params = _trendline_params.get(symbol.upper())
     if not params:
         return None
-
     if params.get("line_ref_ts") and params.get("line_ref_price"):
         ts = int(now_ts or time.time())
         elapsed_bars = _tf_boundaries_elapsed(params["line_ref_ts"], params.get("tf", "1h"), ts)
@@ -553,7 +668,15 @@ def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int 
     else:
         current_bar = params["entry_bar"] + bars_since_entry
         projected_line = params["slope"] * current_bar + params["intercept"]
-    if projected_line <= 0:
+    return projected_line if projected_line > 0 else None
+
+
+def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int | None = None) -> float | None:
+    params = _trendline_params.get(symbol.upper())
+    if not params:
+        return None
+    projected_line = _project_line_at(symbol, now_ts=now_ts, bars_since_entry=bars_since_entry)
+    if projected_line is None:
         return None
 
     offset = max(0.0, float(params.get("stop_offset_pct") or 0.0)) / 100.0
@@ -566,6 +689,32 @@ def _calc_trendline_trailing_sl(symbol: str, bars_since_entry: int, now_ts: int 
         projected_stop = projected_line
 
     return _round_price(projected_stop)
+
+
+def _calc_trendline_trailing_tp(symbol: str, bars_since_entry: int, now_ts: int | None = None) -> float | None:
+    """Compute the line-trailed TP.
+
+    Preserves the *relative* TP-to-line distance from fill time. If the
+    user originally placed TP at 12% above the line (rr × (buffer+stop)),
+    the TP stays at line × 1.12 as the line moves. This way TP scales
+    with the line just like SL does — which is what the user asked for
+    on 2026-04-20 after noticing RAVE's SL was trailing but TP wasn't.
+
+    Returns None if there's no stored TP baseline (we refuse to invent a
+    TP in thin air — the caller skips the TP update in that case).
+    """
+    params = _trendline_params.get(symbol.upper())
+    if not params:
+        return None
+    baseline_tp = float(params.get("tp_price") or 0)
+    baseline_line = float(params.get("line_ref_price") or 0)
+    if baseline_tp <= 0 or baseline_line <= 0:
+        return None
+    projected_line = _project_line_at(symbol, now_ts=now_ts, bars_since_entry=bars_since_entry)
+    if projected_line is None:
+        return None
+    multiplier = baseline_tp / baseline_line
+    return _round_price(projected_line * multiplier)
 
 
 def _tf_boundaries_elapsed(previous_ts: float, tf: str, now_ts: int | None = None) -> int:
@@ -643,6 +792,35 @@ async def _update_trailing_stops(cfg: dict) -> int:
             print(f"[trailing] skip {symbol}: unknown holdSide={side}", flush=True)
             continue
 
+        # Mark-price guard (Bitget 45122 defense). If the trailed line has
+        # moved so far in our favor that the new SL would land on the wrong
+        # side of mark, Bitget rejects with "Short SL price please > mark"
+        # (or the LONG analogue). Even if Bitget accepted, placing SL past
+        # mark would close the position instantly at the CURRENT price,
+        # throwing away realised profit. Incident 2026-04-20 RAVE.
+        #
+        # Policy: refuse to set SL past mark. Line is meant to "hug" price;
+        # if the line has run ahead of price, wait for price to catch up.
+        # A future refinement can LOCK PROFIT (pull SL to entry or past-
+        # entry) but for now just skip.
+        mark_price = float(pos.get("markPrice") or pos.get("mark_price") or 0)
+        if mark_price > 0:
+            breach = (side == "long" and new_sl >= mark_price) or (side == "short" and new_sl <= mark_price)
+            if breach:
+                print(
+                    f"[trailing] skip {symbol}: {side} new_sl={new_sl:.6f} breaches mark={mark_price:.6f} "
+                    f"— would instant-fire at current price; line ran ahead of price, waiting",
+                    flush=True,
+                )
+                # Bump last_update_bar so we don't retry every 10s until
+                # the next TF boundary. If price catches up before then,
+                # the stale SL from the previous bar is already tighter
+                # than this one would have been, so we're not leaving
+                # money on the table.
+                params["last_update_bar"] = bars_since
+                _save_trendline_params()
+                continue
+
         # Same value as last time → skip
         try:
             from server.execution.live_adapter import LiveExecutionAdapter
@@ -660,14 +838,29 @@ async def _update_trailing_stops(cfg: dict) -> int:
             if current_sl > 0 and abs(new_sl - current_sl) <= 1e-12:
                 print(f"[trailing] skip {symbol}: projected SL unchanged {current_sl:.6f}->{new_sl:.6f}", flush=True)
                 continue
-            # TP never touched — only cancel+replace SL, preset TP stays
-            tp = None
+
+            # TP trailing: keep the TP-to-line multiplier constant from
+            # fill time. LONG → TP up only; SHORT → TP down only. If the
+            # computed TP wouldn't improve on the current TP, leave it
+            # alone so we don't churn Bitget cancels for nothing.
+            # (User reported 2026-04-20 that RAVE's SL trailed but TP
+            # was frozen — that was `tp = None` hardcoded below.)
+            new_tp: float | None = _calc_trendline_trailing_tp(symbol, bars_since, now_ts=now_ts)
+            current_tp = float(params.get("last_tp_set") or 0)
+            if new_tp is not None and new_tp > 0:
+                if side == "long":
+                    if current_tp > 0 and new_tp <= current_tp:
+                        new_tp = None  # would shrink target — skip
+                elif side == "short":
+                    if current_tp > 0 and new_tp >= current_tp:
+                        new_tp = None
             resp = await adapter.update_position_sl_tp(
-                symbol, side, new_sl=new_sl, new_tp=tp,
+                symbol, side, new_sl=new_sl, new_tp=new_tp,
                 mode=cfg.get("mode", "live"),
             )
             if resp.get("ok"):
                 placed_sl = float(resp.get("actual_sl_after") or resp.get("new_sl") or new_sl)
+                placed_tp = float(resp.get("actual_tp_after") or resp.get("new_tp") or (new_tp or 0))
                 from server.strategy.trade_log import log_sl_move
                 log_sl_move(symbol, side, current_sl, placed_sl, tf=tf, bars=bars_since)
                 try:
@@ -681,10 +874,14 @@ async def _update_trailing_stops(cfg: dict) -> int:
                 except Exception as exc:
                     print(f"[trailing] ml sl log err {symbol}: {exc}", flush=True)
                 params["last_sl_set"] = placed_sl
+                if placed_tp > 0:
+                    params["last_tp_set"] = placed_tp
                 params["last_update_bar"] = bars_since
+                _save_trendline_params()
                 updates += 1
+                tp_msg = f"  TP {current_tp:.6f} -> {placed_tp:.6f}" if placed_tp > 0 else ""
                 print(
-                    f"[trailing] MOVED SL {symbol} {current_sl:.6f} -> {placed_sl:.6f} "
+                    f"[trailing] MOVED SL {symbol} {current_sl:.6f} -> {placed_sl:.6f}{tp_msg} "
                     f"bars={bars_since} tf={tf} verified={resp.get('sl_verified')}",
                     flush=True,
                 )
@@ -860,6 +1057,69 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                                 )
                             except Exception as exc:
                                 print(f"[trailing] ml close log err {sym}: {exc}", flush=True)
+                            # Close the learning loop for manual-line orders:
+                            # map Bitget clientOid -> conditional -> source drawing.
+                            # Prefixes line_/replan_/cond_/rev_ all derive from
+                            # a manual drawing (see mar_bb_history._tag_strategy).
+                            try:
+                                _coid = str(last.get("clientOid") or last.get("clientOId") or "").strip()
+                                _coid_l = _coid.lower()
+                                # Primary: the manual_line_id we stored in
+                                # _trendline_params at register time. This is
+                                # the ground truth — we KNOW this position
+                                # came from that drawing. Falls through to
+                                # the lookup-by-orderId path only if params
+                                # didn't carry it (older rows pre-2026-04-20).
+                                _mlid = str(params.get("manual_line_id") or "").strip()
+                                _matched_cond = None
+                                if not _mlid and _coid_l.startswith(("line_", "replan_", "cond_", "rev_")):
+                                    from server.conditionals import ConditionalOrderStore
+                                    _order_id_s = str(last.get("orderId") or "")
+                                    _cstore = ConditionalOrderStore()
+                                    for _c in _cstore.list_all(symbol=sym):
+                                        if _order_id_s and str(_c.exchange_order_id or "") == _order_id_s:
+                                            _matched_cond = _c
+                                            break
+                                    if _matched_cond is None and _coid_l.startswith("replan_"):
+                                        # replan_{conditional_id}_{ts}
+                                        _cid = _coid.split("_", 2)[1] if _coid.count("_") >= 2 else ""
+                                        if _cid:
+                                            _matched_cond = _cstore.get(_cid)
+                                    if _matched_cond is not None:
+                                        _mlid = _matched_cond.manual_line_id
+                                if _mlid:
+                                        from server.strategy.drawing_learner import capture_position_closed_from_drawing
+                                        _tf = str(params.get("tf", ""))
+                                        _tf_sec = {"1m":60,"5m":300,"15m":900,"1h":3600,"4h":14400,"1d":86400}.get(_tf, 3600)
+                                        _open_ts = int(params.get("opened_ts", 0) or 0)
+                                        _held_s = max(0, int(time.time()) - _open_ts) if _open_ts else 0
+                                        _bars_held = int(_held_s // _tf_sec) if _tf_sec else None
+                                        _feat = {
+                                            "close_price": float(close_price or 0),
+                                            "entry_price": float(open_price or 0),
+                                            "margin_used": float(_m or 0),
+                                        }
+                                        capture_position_closed_from_drawing(
+                                            manual_line_id=_mlid,
+                                            symbol=sym,
+                                            timeframe=_tf,
+                                            side=str(params.get("side", "")),
+                                            pnl_usd=float(pnl),
+                                            pnl_pct=float(pnl_pct),
+                                            close_reason="sl_or_tp",
+                                            bars_to_fill=None,
+                                            bars_held=_bars_held,
+                                            features_at_close=_feat,
+                                            clientOid=_coid,
+                                            exchange_order_id=_order_id_s,
+                                        )
+                                        print(
+                                            f"[drawing_learner] position_closed_from_drawing "
+                                            f"{sym} manual_line_id={_mlid} pnl=${pnl:+.4f}",
+                                            flush=True,
+                                        )
+                            except Exception as exc:
+                                print(f"[drawing_learner] close-link err {sym}: {exc}", flush=True)
                             print(f"[trailing] RESOLVED {sym} {params.get('side','')} PnL=${pnl:+.4f} ({pnl_pct*100:+.2f}%)", flush=True)
                             try:
                                 from server.strategy.trendline_order_manager import mark_trendline_cooldown
@@ -878,6 +1138,7 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                         print(f"[trailing] PnL fetch {sym}: {e}", flush=True)
                     print(f"[trailing] cleaned up {sym} (no longer in positions)", flush=True)
                     del _trendline_params[sym]
+                    _save_trendline_params()
     except Exception as exc:
         print(f"[trailing] cleanup err: {exc}", flush=True)
     return sl_updates
@@ -980,23 +1241,59 @@ def _save_daily_risk(*, equity: float, dd_pct: float, limit: float, halted: bool
         print(f"[mar_bb] daily risk save err: {exc}", flush=True)
 
 
-def record_close_outcome(pnl: float, *, cfg: dict | None = None) -> dict:
-    """Call this at every position close to feed the consecutive-loss breaker.
-    Returns {triggered, streak, breaker_until_ts}. Breaker is:
-      - cleared on any win (resets streak to 0)
-      - triggered when streak >= threshold (default 3 consecutive losses)
-      - stays active until breaker_until_ts (default now + 1h)
+def record_close_outcome(
+    pnl: float,
+    *,
+    cfg: dict | None = None,
+    close_ts: float | None = None,
+) -> dict:
+    """Feed the consecutive-loss circuit breaker with the outcome of a single
+    real-time close. Returns {triggered, streak, breaker_until_ts, outcome}.
+
+    Two guards prevent the breaker from firing on stale data:
+
+    1. If `close_ts` is older than when the runner was last started
+       (_runner_started_ts), the event is a historical replay (from
+       `_sync_trendline_fills_and_update_trailing` catching up at startup)
+       and MUST NOT count toward the streak. Otherwise yesterday's 59 fills
+       wipe out today's budget the moment we reboot.
+    2. Ditto if `close_ts` is > 30 min in the past — same intent.
+
+    Breaker semantics (changed 2026-04-19 after user feedback):
+      - Trigger: 3 consecutive real-time losses → breaker set to
+        `breaker_until_ts = +inf` (indefinite).
+      - Clear: ONLY via an explicit call to `resume_breaker_after_optimize()`
+        (i.e. operator reviewed the losses, adjusted the model gate, and
+        affirmed the algorithm has been improved). A plain time-based
+        expiry is NOT the right abstraction — "6 losses" is a signal the
+        algorithm is wrong, not that it needs a nap.
+      - A win still auto-clears streak count (so an eventual winning trade
+        resets without manual intervention), but the breaker_until_ts only
+        clears via the explicit resume path.
     """
     global _state
     cfg = cfg or {}
     threshold = int(cfg.get("consecutive_loss_threshold", 3))
-    pause_s = int(cfg.get("consecutive_loss_pause_s", 3600))  # 1h default
+
+    now = time.time()
+    close_ts = float(close_ts or now)
+    started = float(_runner_started_ts or 0.0)
+    # Historical replay guard — do NOT count events that predate the
+    # current runner-start window, or older than 30 min regardless.
+    if started > 0 and close_ts < started:
+        print(f"[mar_bb] breaker skip: close_ts={close_ts:.0f} < started={started:.0f} (historical replay)", flush=True)
+        return {"triggered": False, "streak": -1, "skipped": "historical_pre_start",
+                "breaker_until_ts": _state.breaker_until_ts, "outcome": None}
+    if close_ts < now - 1800:
+        print(f"[mar_bb] breaker skip: close_ts is {int(now-close_ts)}s old (>30min)", flush=True)
+        return {"triggered": False, "streak": -1, "skipped": "too_stale",
+                "breaker_until_ts": _state.breaker_until_ts, "outcome": None}
+
     outcome = "win" if float(pnl or 0) > 0 else "loss"
     outcomes = list(_state.recent_close_outcomes or [])
     outcomes.append(outcome)
-    outcomes = outcomes[-10:]  # keep last 10
+    outcomes = outcomes[-10:]
     _state.recent_close_outcomes = outcomes
-    # Count current trailing losses
     streak = 0
     for o in reversed(outcomes):
         if o == "loss":
@@ -1005,15 +1302,20 @@ def record_close_outcome(pnl: float, *, cfg: dict | None = None) -> dict:
             break
     triggered = False
     if streak >= threshold:
-        _state.breaker_until_ts = time.time() + pause_s
-        _state.breaker_reason = f"{streak} consecutive losses; paused {pause_s}s"
+        # Indefinite hold — cleared only via resume_breaker_after_optimize.
+        _state.breaker_until_ts = float("inf")
+        _state.breaker_reason = (
+            f"{streak} consecutive losses — algorithm needs review. "
+            "Call /api/mar-bb/breaker-resume after verifying thresholds "
+            "have been tightened."
+        )
         triggered = True
-        print(f"[mar_bb] CIRCUIT BREAKER: {_state.breaker_reason}", flush=True)
+        print(f"[mar_bb] CIRCUIT BREAKER (indefinite): {_state.breaker_reason}", flush=True)
     elif outcome == "win":
-        # A win clears the breaker even if still within cooldown — explicit
-        # user intent can be encoded later; for now a win is a "reset".
-        _state.breaker_until_ts = 0.0
-        _state.breaker_reason = ""
+        # A win resets the streak. It does NOT clear an already-triggered
+        # indefinite breaker — operator still needs to explicitly resume.
+        # (This prevents "one lucky bounce" from un-breaking a broken loop.)
+        pass
     try:
         _save_state()
     except Exception:
@@ -1027,12 +1329,59 @@ def record_close_outcome(pnl: float, *, cfg: dict | None = None) -> dict:
 
 
 def breaker_active(now_ts: float | None = None) -> tuple[bool, float]:
-    """Returns (active, seconds_remaining)."""
+    """Returns (active, seconds_remaining). Indefinite breakers (until_ts=inf)
+    report (True, inf) — caller should treat that as "never naturally
+    recovers" and surface it as a manual-review required state."""
     now = float(now_ts if now_ts is not None else time.time())
     until = float(_state.breaker_until_ts or 0)
+    if until == float("inf"):
+        return True, float("inf")
     if until > now:
         return True, until - now
     return False, 0.0
+
+
+def resume_breaker_after_optimize(*, confirm_code: str, model_gate_tighten: float = 0.05) -> dict:
+    """Operator endpoint — clears an indefinite breaker after affirming the
+    algorithm was reviewed/tightened. Auto-bumps both model-gate thresholds
+    up by `model_gate_tighten` (default +0.05) as a concrete "optimized"
+    delta; operator can override via explicit update-config later.
+
+    Requires confirm_code='RESUME' to prevent accidental clears.
+    """
+    if (confirm_code or "").strip().upper() != "RESUME":
+        return {"ok": False, "reason": "confirm_code_mismatch — send {'confirm_code': 'RESUME'}"}
+    if not _state.breaker_until_ts:
+        return {"ok": False, "reason": "breaker not active"}
+    cfg = dict(_state.config or {})
+    gate = dict(cfg.get("model_gate") or {})
+    old_trade = float(gate.get("min_trade_win_prob") or 0.55)
+    old_line = float(gate.get("min_line_quality_prob") or 0.55)
+    new_trade = min(0.95, round(old_trade + model_gate_tighten, 3))
+    new_line = min(0.95, round(old_line + model_gate_tighten, 3))
+    gate["min_trade_win_prob"] = new_trade
+    gate["min_line_quality_prob"] = new_line
+    cfg["model_gate"] = gate
+    _state.config = cfg
+    before_reason = _state.breaker_reason
+    _state.breaker_until_ts = 0.0
+    _state.breaker_reason = ""
+    _state.recent_close_outcomes = []  # fresh streak counter
+    try:
+        _save_state()
+    except Exception:
+        pass
+    print(
+        f"[mar_bb] breaker resumed — model_gate tightened "
+        f"trade:{old_trade}->{new_trade} line:{old_line}->{new_line}",
+        flush=True,
+    )
+    return {
+        "ok": True,
+        "before_reason": before_reason,
+        "model_gate_before": {"trade": old_trade, "line": old_line},
+        "model_gate_after": {"trade": new_trade, "line": new_line},
+    }
 
 
 def reset_daily_halt(*, confirm_code: str) -> dict:
@@ -1316,10 +1665,17 @@ def _check_trendline_signal(
     """Trendline Bounce → OrderIntent. Runs generate_signals and picks
     the SIGNAL AT THE LAST BAR (if any).
     """
+    # TF-aware post-anchor penetration tolerance. The default is 0 = ANY wick
+    # after anchor2 invalidates the line. On 4h, candles are so large that
+    # nearly every line has a wick pokethrough → 0 signals across 500 bars on
+    # 10 coins (empirically verified 2026-04-19, see debug_4h_detector_v3.py).
+    # Loosen to 1 for 1h/4h while keeping the strict 0 for 5m/15m.
+    tf_post_pen = {"5m": 0, "15m": 0, "1h": 1, "4h": 1}.get(tf, 0)
+    tl_cfg = {**TRENDLINE_DEFAULT_CONFIG, "max_post_penetrations": tf_post_pen}
     try:
         sigs, entries, sls, tps, lines = trendline_generate_signals(
             bars["o"], bars["h"], bars["l"], bars["c"], bars["v"],
-            TRENDLINE_DEFAULT_CONFIG,
+            tl_cfg,
         )
     except Exception as e:
         print(f"[mar_bb] trendline_signals {symbol} err: {e}", flush=True)
@@ -1346,6 +1702,11 @@ def _check_trendline_signal(
     line_slope = float(line_info["slope"]) if line_info and "slope" in line_info else 0.0
     line_intercept = float(line_info["intercept"]) if line_info and "intercept" in line_info else 0.0
     line_entry_bar = i  # the bar index where signal fired
+    # True anchor bar indices i1/i2 from the trendline enumeration — needed
+    # so `_persist_auto_line` draws the line FROM pivot1 TO pivot2, not from
+    # bar 0 to signal-bar (which stretches the line across the whole window).
+    line_i1 = int(line_info["i1"]) if line_info and "i1" in line_info else 0
+    line_i2 = int(line_info["i2"]) if line_info and "i2" in line_info else i
 
     plan = {
         "strategy": "trendline",
@@ -1362,6 +1723,8 @@ def _check_trendline_signal(
         "line_slope": line_slope,
         "line_intercept": line_intercept,
         "line_entry_bar": line_entry_bar,
+        "line_i1": line_i1,
+        "line_i2": line_i2,
     }
 
     try:
@@ -1746,8 +2109,14 @@ async def _do_scan() -> None:
                         # Don't set `plan` — trendline goes through limit order path
                         _slope = tl_plan.get("line_slope", 0) or 0.0
                         _intercept = tl_plan.get("line_intercept", 0) or 0.0
-                        _a1_bar = 0
-                        _a2_bar = int(tl_plan.get("line_entry_bar", 0) or 0)
+                        # Use the TRUE anchor bar indices from the trendline
+                        # enumeration (i1=first pivot, i2=second pivot).
+                        # Falling back to 0 / line_entry_bar is wrong: it draws
+                        # the line from the start of the data window to the
+                        # signal bar, which can span hundreds of bars even if
+                        # the real line spans only a few.
+                        _a1_bar = int(tl_plan.get("line_i1", 0) or 0)
+                        _a2_bar = int(tl_plan.get("line_i2") or tl_plan.get("line_entry_bar", 0) or 0)
                         _ts_arr = bars.get("t")
                         _n = len(bars["c"])
                         # Bounds-safe lookup into the bar timestamp array (ms).
@@ -2055,9 +2424,80 @@ def update_config(partial: dict) -> dict:
     }
 
 
+_maintenance_only_task: asyncio.Task | None = None
+
+
+async def _maintenance_only_loop() -> None:
+    """Standalone trailing-SL loop.
+
+    Runs whenever the server is up, REGARDLESS of whether the main scan
+    runner is started. Only touches existing positions (trailing SL) and
+    existing line orders; never opens new trades. Yields to the main
+    runner's `_maintenance_loop` while the runner is active to avoid
+    racing Bitget API calls.
+
+    Why this exists: user-placed manual line orders (via Trade Plan modal)
+    depend on trailing to move SL along the drawn line. Before this loop,
+    trailing only ran when the auto-scanner was on — so if the user had
+    `MAR_BB_AUTOSTART=0` and drew a line manually, the SL would never
+    move. See incident 2026-04-20 RAVEUSDT: stop stuck at fill-time line
+    price because `_trendline_params` was wiped on uvicorn reload and
+    nobody was re-registering it.
+    """
+    print("[trendline_maintenance_only] started", flush=True)
+    try:
+        while True:
+            try:
+                if _running:
+                    # Main runner's `_maintenance_loop` is handling this —
+                    # yield to avoid racing on Bitget calls.
+                    pass
+                else:
+                    cfg = {**DEFAULT_RUNNER_CFG, **(_state.config or {})}
+                    await _run_trendline_fast_maintenance(cfg)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[trendline_maintenance_only] err: {exc}", flush=True)
+                traceback.print_exc()
+            await asyncio.sleep(
+                int((_state.config or DEFAULT_RUNNER_CFG).get("maintenance_interval_s", 10))
+            )
+    except asyncio.CancelledError:
+        print("[trendline_maintenance_only] cancelled", flush=True)
+
+
+def start_maintenance_only() -> dict:
+    """Boot the always-on trailing-SL loop. Idempotent.
+
+    Called from the FastAPI startup hook in `server/app.py` so trailing
+    works for any live position even when the user hasn't started the
+    scanner. Loads persisted `_trendline_params` from disk first.
+    """
+    global _maintenance_only_task
+    if _maintenance_only_task is not None and not _maintenance_only_task.done():
+        return {"ok": True, "already_running": True}
+    _load_trendline_params()
+    _maintenance_only_task = asyncio.create_task(
+        _maintenance_only_loop(),
+        name="trendline_maintenance_only",
+    )
+    return {"ok": True, "started": True}
+
+
+# Preload persisted params at import time so any code that reads
+# `_trendline_params` immediately (e.g., `/api/mar-bb/state`) sees the
+# saved entries before the maintenance loop starts.
+try:
+    _load_trendline_params()
+except Exception as _exc:
+    print(f"[trendline_params] preload err: {_exc}", flush=True)
+
+
 __all__ = [
     "start_runner",
     "stop_runner",
+    "start_maintenance_only",
     "get_state",
     "manual_kick",
     "update_config",
@@ -2066,3 +2506,4 @@ __all__ = [
     "breaker_active",
     "DEFAULT_RUNNER_CFG",
 ]
+

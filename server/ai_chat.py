@@ -54,7 +54,7 @@ User asks you to change or debug the crypto web app.
 Rules:
 - Only modify files within this project root.
 - Prefer small, safe patches; then verify by running the app or checking outputs.
-- Allowed areas: server/*.py, frontend/app.js, frontend/index.html, frontend/style.css.
+- Allowed areas: server/*.py, frontend/v2.html, frontend/v2.css, frontend/style.css, frontend/js/ (ES modules).
 - Do not touch .env or any API keys.
 Return: what you changed + what to verify next.
 If you are unsure, explain why briefly and propose a minimal next experiment.
@@ -109,9 +109,9 @@ SYSTEM_PROMPT = """你是 Crypto TA 内置的 AI 工程师 + 分析师，直接�
 
 可修改的文件范围（白名单）：
 - server/*.py — 后端 Python
-- frontend/app.js — 前端 JS
-- frontend/index.html — 前端 HTML
-- frontend/style.css — 前端 CSS
+- frontend/v2.html — 前端 HTML 入口
+- frontend/v2.css + frontend/style.css — 前端 CSS
+- frontend/js/ — 前端 ES modules（v2 入口是 js/main.js）
 
 ⚠️ 代码修改安全规则：
 - 修改前必须先 git_snapshot 保存
@@ -882,12 +882,15 @@ class AIChatEngine:
 
     # ── Code evolution tools ──
 
-    # Whitelist of editable file patterns
+    # Whitelist of editable file patterns. v1 (app.js, index.html) deleted
+    # 2026-04-19 — project is pure v2 now.
     EDITABLE_PATTERNS = [
         "server/*.py",
-        "frontend/app.js",
-        "frontend/index.html",
+        "frontend/v2.html",
+        "frontend/v2.css",
         "frontend/style.css",
+        "frontend/js/*.js",
+        "frontend/js/**/*.js",
     ]
 
     def _is_editable(self, rel_path: str) -> bool:
