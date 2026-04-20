@@ -27,7 +27,7 @@ import { marketState } from '../../state/market.js';
 import { publish, subscribe } from '../../util/events.js';
 import { fetchJson } from '../../util/fetch.js';
 import * as drawingsSvc from '../../services/drawings.js';
-import { openTradePlanModal } from './trade_plan_modal.js';
+import { openTradePlanModal, openSetupPickerPopup } from './trade_plan_modal.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_R = 6;        // visible handle radius
@@ -962,8 +962,12 @@ function openContextMenu(ev, lineId) {
     } else if (act === 'create_trade_plan') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
       if (line) {
-        try { await openTradePlanModal(line); }
-        catch (err) { console.warn('[chart_drawing] trade plan modal', err); }
+        // 2026-04-20: open a lightweight setup picker first; picker
+        // decides whether to drop straight into the full Trade Plan
+        // modal pre-filled with the chosen setup.
+        try {
+          await openSetupPickerPopup(line, ev.clientX, ev.clientY);
+        } catch (err) { console.warn('[chart_drawing] setup picker', err); }
       }
     } else if (act === 'add_alert') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);

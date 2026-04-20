@@ -79,11 +79,13 @@ const DEFAULTS = {
   stop_pct: 0.1,                // line-break stop (%)
   rr_target: 5.0,
   leverage: 10,                 // sent to Bitget via set-leverage API
-  // Notional USDT — this is the SOURCE OF TRUTH for position size.
-  // Previously the modal ignored this field when leverage>0 and used
-  // equity × leverage instead. User found that surprising: "我只想把
-  // USDT 30 设好就够了". Now we always honor this value.
-  notional_usd: 30,
+  // Two sizing modes (user spec 2026-04-20 part 2):
+  //   'notional_usd' : fixed USDT value, `notional_usd` is the size
+  //   'equity_pct'   : percentage of account equity, notional =
+  //                    equity * (equity_pct / 100) * leverage
+  size_mode: 'notional_usd',
+  notional_usd: 30,             // used when size_mode='notional_usd'
+  equity_pct: 10,               // used when size_mode='equity_pct' (% of equity)
   exchange_mode: 'live',        // paper | live
   submit_to_exchange: true,
   // Auto-reverse: trigger IMMEDIATELY at the stop price (no entry buffer),
@@ -158,7 +160,12 @@ function getCachedEquity(mode) {
  * @param {object} line  Manual line object with side, symbol, timeframe, manual_line_id
  * @returns {Promise<object|null>}  The created conditional, or null on cancel
  */
-export function openTradePlanModal(line) {
+/**
+ * @param {object} line
+ * @param {object} [options]
+ * @param {string} [options.activeSetupId]  Open with this setup pre-selected.
+ */
+export function openTradePlanModal(line, options = {}) {
   return new Promise((resolve) => {
     closeExisting();
     // Load the ACTIVE setup's config (not the legacy LS_KEY defaults).
@@ -166,6 +173,11 @@ export function openTradePlanModal(line) {
     // picks from named bundles instead of carrying whatever they last
     // typed into the next line.
     let setupsState = loadSetups();
+    if (options.activeSetupId
+        && setupsState.setups.some((s) => s.id === options.activeSetupId)) {
+      setupsState.active_id = options.activeSetupId;
+      saveSetups(setupsState);
+    }
     const activeSetup = getActiveSetup(setupsState);
     const defaults = { ...DEFAULTS, ...(activeSetup.config || {}) };
 
@@ -187,20 +199,22 @@ export function openTradePlanModal(line) {
     // ─── Setup preset management ──────────────────────────────
     const applySetupToForm = (config) => {
       if (!config) return;
-      const fieldMap = {
-        buffer_pct: 'buffer_pct', stop_pct: 'stop_pct', rr_target: 'rr_target',
-        leverage: 'leverage', notional_usd: 'notional_usd',
-        reverse_stop_pct: 'reverse_stop_pct', reverse_rr_target: 'reverse_rr_target',
-      };
-      Object.entries(fieldMap).forEach(([k, name]) => {
-        const el = $(`[name=${name}]`);
+      const numericFields = [
+        'buffer_pct', 'stop_pct', 'rr_target', 'leverage',
+        'notional_usd', 'equity_pct',
+        'reverse_stop_pct', 'reverse_rr_target',
+      ];
+      numericFields.forEach((k) => {
+        const el = $(`[name=${k}]`);
         if (el != null && config[k] != null) el.value = config[k];
       });
       if (config.order_kind != null) $('[name=order_kind]').value = config.order_kind;
       if (config.exchange_mode != null) $('[name=exchange_mode]').value = config.exchange_mode;
+      if (config.size_mode != null) $('[name=size_mode]').value = config.size_mode;
       if (config.submit_to_exchange != null) $('[name=submit_to_exchange]').checked = !!config.submit_to_exchange;
       if (config.reverse_enabled != null) $('[name=reverse_enabled]').checked = !!config.reverse_enabled;
       // Don't override direction — that came from the line side.
+      applySizeModeVisibility();
       refreshLivePreview();
     };
 
@@ -272,7 +286,9 @@ export function openTradePlanModal(line) {
       stop_pct: Number($('[name=stop_pct]').value) || 0,
       rr_target: Number($('[name=rr_target]').value) || 0,
       leverage: Number($('[name=leverage]').value) || 0,
+      size_mode: $('[name=size_mode]').value,
       notional_usd: Number($('[name=notional_usd]').value) || 0,
+      equity_pct: Number($('[name=equity_pct]').value) || 0,
       exchange_mode: $('[name=exchange_mode]').value,
       submit_to_exchange: $('[name=submit_to_exchange]').checked,
       reverse_enabled: $('[name=reverse_enabled]').checked,
@@ -284,6 +300,15 @@ export function openTradePlanModal(line) {
       reverse_rr_target: Number($('[name=reverse_rr_target]').value) || 0,
     });
 
+    // Toggle visibility of the notional_usd vs equity_pct input row
+    const applySizeModeVisibility = () => {
+      const mode = $('[name=size_mode]')?.value || 'notional_usd';
+      const usdRow = $('#tp-size-usd-group');
+      const pctRow = $('#tp-size-pct-group');
+      if (usdRow) usdRow.style.display = mode === 'notional_usd' ? '' : 'none';
+      if (pctRow) pctRow.style.display = mode === 'equity_pct' ? '' : 'none';
+    };
+
     const refreshLivePreview = async () => {
       const v = readForm();
       const mode = v.exchange_mode;
@@ -293,14 +318,22 @@ export function openTradePlanModal(line) {
         ? `$${equity.toFixed(2)}`
         : (accountErr ? `— 账户数据加载失败: ${accountErr}` : '— (账户余额为 0)');
 
-      // Source of truth for position size: notional_usd. Leverage is
-      // sent to Bitget via set-leverage so the margin side is handled
-      // correctly — we do NOT override notional based on equity.
-      // Pre-2026-04-20 the formula `equity * leverage` hijacked the
-      // field, which confused the user when they set $30 and saw $43.55.
-      const notional = v.notional_usd > 0
-        ? v.notional_usd
-        : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
+      // Size calculation respects size_mode:
+      //   'notional_usd' — fixed USDT value (user's specified position size)
+      //   'equity_pct'   — % of equity * leverage (scales with account)
+      // Both interpretations yield a "notional" number in USDT;
+      // margin on Bitget = notional / leverage.
+      let notional = 0;
+      if (v.size_mode === 'equity_pct') {
+        notional = equity > 0 && v.leverage > 0 && v.equity_pct > 0
+          ? equity * (v.equity_pct / 100) * v.leverage
+          : 0;
+      } else {
+        // Default: fixed USDT notional
+        notional = v.notional_usd > 0
+          ? v.notional_usd
+          : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
+      }
       const riskUsd = notional * (v.stop_pct / 100);
       const rewardUsd = riskUsd * v.rr_target;
       const riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
@@ -317,10 +350,14 @@ export function openTradePlanModal(line) {
         `$${rewardUsd.toFixed(2)}  (${rewardPctAccount.toFixed(2)}% of account)`;
     };
 
+    applySizeModeVisibility();
     refreshLivePreview();
 
     root.addEventListener('input', refreshLivePreview);
-    root.addEventListener('change', refreshLivePreview);
+    root.addEventListener('change', (ev) => {
+      if (ev.target?.name === 'size_mode') applySizeModeVisibility();
+      refreshLivePreview();
+    });
 
     $('#tp-cancel').addEventListener('click', () => {
       closeExisting();
@@ -341,24 +378,34 @@ export function openTradePlanModal(line) {
         const v = readForm();
         saveDefaults(v);
 
-        // Position size = user-entered notional_usd. Leverage only affects
-        // how much MARGIN Bitget locks (set via the set-leverage API before
-        // order placement). Pre-2026-04-20 this path overrode notional with
-        // equity × leverage, which surprised the user.
-        let size_usdt = v.notional_usd;
-        if (!size_usdt || size_usdt <= 0) {
-          // Last-resort fallback: full equity × leverage (the old behaviour)
-          // so very-small accounts with notional=0 still get SOME order.
+        // Resolve size_usdt from the active size_mode.
+        let size_usdt = 0;
+        if (v.size_mode === 'equity_pct') {
           const cachedEquity = getCachedEquity(v.exchange_mode);
           const equity = cachedEquity > 0
             ? cachedEquity
             : await fetchEquity(v.exchange_mode).catch(() => 0);
-          if (equity > 0 && v.leverage > 0) {
-            size_usdt = equity * v.leverage;
+          if (!equity || equity <= 0) {
+            throw new Error('账户余额无法读取,无法用百分比计算仓位。改用 USDT 模式或检查 API key。');
           }
-        }
-        if (!size_usdt || size_usdt <= 0) {
-          throw new Error('notional_usd 为空且账户余额未读到 — 在"名义 USDT"里填一个数额');
+          if (!v.equity_pct || v.equity_pct <= 0) {
+            throw new Error('账户百分比必须 > 0');
+          }
+          size_usdt = equity * (v.equity_pct / 100) * (v.leverage || 1);
+        } else {
+          size_usdt = v.notional_usd;
+          if (!size_usdt || size_usdt <= 0) {
+            // Fallback: try full equity × leverage so very-small accounts
+            // with notional=0 still get SOME order.
+            const cachedEquity = getCachedEquity(v.exchange_mode);
+            const equity = cachedEquity > 0
+              ? cachedEquity
+              : await fetchEquity(v.exchange_mode).catch(() => 0);
+            if (equity > 0 && v.leverage > 0) size_usdt = equity * v.leverage;
+          }
+          if (!size_usdt || size_usdt <= 0) {
+            throw new Error('notional_usd 为空且账户余额未读到 — 填一个数额或切换到百分比模式');
+          }
         }
 
         // Place a real Bitget plan order. The backend stores it as a
@@ -489,13 +536,32 @@ function renderShell(line, v, setupsState) {
         <div class="tp-row">
           <label class="tp-label" title="通过 set-leverage API 设到 Bitget 账户,无需手动开">Bitget 杠杆</label>
           <input type="number" name="leverage" value="${v.leverage}" step="1" min="1" max="125"/>
-          <label class="tp-label" title="仓位名义金额(USDT)。保证金 = 名义 ÷ 杠杆">名义 USDT</label>
-          <input type="number" name="notional_usd" value="${v.notional_usd}" step="5" min="0"/>
+          <label class="tp-label">仓位大小</label>
+          <select name="size_mode" style="min-width:110px">
+            <option value="notional_usd" ${v.size_mode === 'notional_usd' ? 'selected' : ''}>USDT 固定值</option>
+            <option value="equity_pct" ${v.size_mode === 'equity_pct' ? 'selected' : ''}>账户 %</option>
+          </select>
           <label class="tp-label">账户</label>
           <select name="exchange_mode">
             <option value="live" ${v.exchange_mode === 'live' ? 'selected' : ''}>Live</option>
             <option value="paper" ${v.exchange_mode === 'paper' ? 'selected' : ''}>Paper</option>
           </select>
+        </div>
+
+        <div class="tp-row" id="tp-size-usd-group">
+          <label class="tp-label" title="固定 USDT 名义(仓位大小)。保证金 = 名义 ÷ 杠杆">名义 USDT</label>
+          <input type="number" name="notional_usd" value="${v.notional_usd}" step="5" min="0"/>
+          <span class="tp-hint" style="color:#6b7889;font-size:11px;grid-column:span 4">
+            例: 30 USDT × 10x 杠杆 = 仓位 300U / 保证金 30U
+          </span>
+        </div>
+
+        <div class="tp-row" id="tp-size-pct-group" style="display:none">
+          <label class="tp-label" title="equity × pct% × leverage 得到名义">账户 %</label>
+          <input type="number" name="equity_pct" value="${v.equity_pct}" step="0.5" min="0" max="100"/>
+          <span class="tp-hint" style="color:#6b7889;font-size:11px;grid-column:span 4">
+            名义 = 权益 × 百分比 × 杠杆;按账户规模自动缩放
+          </span>
         </div>
 
         <div class="tp-row tp-row-check">
@@ -634,3 +700,129 @@ function injectStyles() {
   `;
   document.head.appendChild(style);
 }
+
+
+// ────────────────────────────────────────────────────────────────
+// Setup picker popup — small floating menu shown before full modal
+// ────────────────────────────────────────────────────────────────
+// User flow (2026-04-20 spec): right-click line → "创建交易计划" →
+// this lightweight picker appears at the click point with a vertical
+// list of setups and "+ 新建 setup" at the bottom. Clicking a setup
+// opens the full modal PRE-FILLED with that setup's values — 1-2
+// clicks to place an order for the common case.
+
+let _picker = null;
+
+export function openSetupPickerPopup(line, clickX = null, clickY = null) {
+  return new Promise((resolve) => {
+    closePicker();
+    const setupsState = loadSetups();
+    const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
+    const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
+
+    _picker = document.createElement('div');
+    _picker.className = 'tp-picker';
+    Object.assign(_picker.style, {
+      position: 'fixed',
+      left: `${x}px`,
+      top: `${y}px`,
+      background: '#0e141f',
+      border: '1px solid #2a3548',
+      borderRadius: '6px',
+      padding: '4px 0',
+      minWidth: '220px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+      zIndex: '10000',
+      fontSize: '12px',
+      color: '#d8dde8',
+    });
+
+    const setupRows = setupsState.setups.map((s) => {
+      const isActive = s.id === setupsState.active_id;
+      const star = isActive ? '★ ' : '  ';
+      return `<div class="tp-pick-row" data-id="${esc(s.id)}" style="padding:8px 14px;cursor:pointer;${isActive ? 'color:#38bdf8;font-weight:600' : ''}">
+        ${star}${esc(s.name)}
+      </div>`;
+    }).join('');
+
+    _picker.innerHTML = `
+      <div style="padding:6px 14px;color:#8a95a6;font-size:11px;font-weight:600;border-bottom:1px solid #1d2537">选一个 setup</div>
+      ${setupRows}
+      <div style="height:1px;background:#1d2537;margin:4px 0"></div>
+      <div class="tp-pick-row" data-action="new" style="padding:8px 14px;cursor:pointer;color:#00e676">+ 新建 setup / 配置...</div>
+      <div class="tp-pick-row" data-action="manage" style="padding:6px 14px;cursor:pointer;color:#8a95a6;font-size:11px">⚙ 管理现有 setup (打开完整编辑器)</div>
+    `;
+
+    // Hover highlight
+    _picker.querySelectorAll('.tp-pick-row').forEach((el) => {
+      el.addEventListener('mouseenter', () => { el.style.background = '#1d2537'; });
+      el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
+    });
+
+    document.body.appendChild(_picker);
+
+    // Viewport clamp so it doesn't get cut off at bottom/right
+    try {
+      const rect = _picker.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const pad = 8;
+      let nx = x, ny = y;
+      if (nx + rect.width + pad > vw) nx = vw - rect.width - pad;
+      if (ny + rect.height + pad > vh) ny = vh - rect.height - pad;
+      if (nx < pad) nx = pad;
+      if (ny < pad) ny = pad;
+      _picker.style.left = `${nx}px`;
+      _picker.style.top = `${ny}px`;
+    } catch {}
+
+    _picker.addEventListener('click', async (ev) => {
+      const row = ev.target.closest('.tp-pick-row');
+      if (!row) return;
+      const action = row.dataset.action;
+      const id = row.dataset.id;
+      closePicker();
+      if (action === 'new') {
+        // Open modal; inside, user hits "+ 新建 setup..." in the
+        // dropdown or just tweaks and saves. We pre-fill from DEFAULTS
+        // by temporarily making the active setup be DEFAULTS — actually,
+        // simpler: just open the modal on the current active setup,
+        // user can then create-new from the dropdown.
+        const result = await openTradePlanModal(line);
+        resolve(result);
+      } else if (action === 'manage') {
+        const result = await openTradePlanModal(line);
+        resolve(result);
+      } else if (id) {
+        const result = await openTradePlanModal(line, { activeSetupId: id });
+        resolve(result);
+      }
+    });
+
+    // Dismiss on outside click / Esc
+    const onDocClick = (ev) => {
+      if (_picker && !_picker.contains(ev.target)) {
+        closePicker();
+        resolve(null);
+      }
+    };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') {
+        closePicker();
+        resolve(null);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocClick, { once: false });
+    }, 0);
+    document.addEventListener('keydown', onKey);
+
+    function closePicker() {
+      if (_picker && _picker.parentNode) _picker.parentNode.removeChild(_picker);
+      _picker = null;
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    }
+  });
+}
+
