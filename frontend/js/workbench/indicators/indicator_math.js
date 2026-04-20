@@ -91,6 +91,48 @@ export function computeVolumeMA(candles, period = 20) {
   return computeSMA(vols, period);
 }
 
+// ─── Factor signals (boolean per bar) ──────────────────────────
+// These are binary conditions (e.g. "RSI < 30") used for markers on
+// the chart. Each returns an array of booleans aligned with candles.
+
+export function factorRSIOversold(candles, period = 14, threshold = 30) {
+  const rsi = computeRSI(candles.map((c) => c.close), period);
+  return rsi.map((v) => v != null && v < threshold);
+}
+
+export function factorRSIOverbought(candles, period = 14, threshold = 70) {
+  const rsi = computeRSI(candles.map((c) => c.close), period);
+  return rsi.map((v) => v != null && v > threshold);
+}
+
+export function factorVolumeSurge(candles, period = 20, multiple = 2.0) {
+  const vols = candles.map((c) => Number(c.volume) || 0);
+  const avg = computeSMA(vols, period);
+  return vols.map((v, i) => avg[i] != null && avg[i] > 0 && v > avg[i] * multiple);
+}
+
+export function factorMACDBullCross(candles, fast = 12, slow = 26, signal = 9) {
+  const closes = candles.map((c) => c.close);
+  const { macd, signal: sig } = computeMACD(closes, fast, slow, signal);
+  const out = new Array(candles.length).fill(false);
+  for (let i = 1; i < candles.length; i++) {
+    if (macd[i] == null || sig[i] == null || macd[i - 1] == null || sig[i - 1] == null) continue;
+    if (macd[i - 1] <= sig[i - 1] && macd[i] > sig[i]) out[i] = true;
+  }
+  return out;
+}
+
+export function factorMACDBearCross(candles, fast = 12, slow = 26, signal = 9) {
+  const closes = candles.map((c) => c.close);
+  const { macd, signal: sig } = computeMACD(closes, fast, slow, signal);
+  const out = new Array(candles.length).fill(false);
+  for (let i = 1; i < candles.length; i++) {
+    if (macd[i] == null || sig[i] == null || macd[i - 1] == null || sig[i - 1] == null) continue;
+    if (macd[i - 1] >= sig[i - 1] && macd[i] < sig[i]) out[i] = true;
+  }
+  return out;
+}
+
 // ATR (Wilder). Returns the volatility envelope — useful for eyeballing
 // whether a candle is "big" or "small" for its regime.
 export function computeATR(candles, period = 14) {
