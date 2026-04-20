@@ -25,6 +25,14 @@ PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("PORT", 8001))
 # Open v2 (Execution Center) by default; override with LAUNCH_PATH=/ for legacy UI
 _LAUNCH_PATH = os.environ.get("LAUNCH_PATH", "/v2").strip() or "/v2"
+# Git Bash / MSYS auto-converts POSIX paths like "/v2" into Windows absolute
+# paths like "C:/Program Files/Git/v2" before env vars reach Python. Detect
+# that + strip. Keeps the browser from landing on the 404 page 2026-04-20.
+import re as _re
+_msys = _re.match(r"^[A-Za-z]:[/\\].*?[/\\]([^/\\]+)$", _LAUNCH_PATH)
+if _msys:
+    _LAUNCH_PATH = "/" + _msys.group(1)
+    print(f"[env] LAUNCH_PATH was MSYS-mangled ({os.environ.get('LAUNCH_PATH')!r}); recovered to {_LAUNCH_PATH!r}")
 if not _LAUNCH_PATH.startswith("/"):
     _LAUNCH_PATH = "/" + _LAUNCH_PATH
 

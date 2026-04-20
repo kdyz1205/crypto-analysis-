@@ -33,11 +33,10 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_R = 6;        // visible handle radius
 const ANCHOR_HIT = 12;     // hit test radius for anchors
 const BODY_HIT = 8;        // hit test distance for line body
-// Thinner than the 1.8 default — user report 2026-04-20: the drawn
-// line was visually too thick, especially when entries/stops are
-// only 0.1% away, making it hard to see exactly where price is
-// relative to the line.
-const DEFAULT_LINE_WIDTH = 1.0;
+// Thinner than the 1.8 original. Iterated 2026-04-20:
+//   1.8 → 1.0 → 0.3 (final). User asked for "base = thinnest".
+// Presets now: 0.3 (default/base) / 1.0 (medium) / 2.0 (bold).
+const DEFAULT_LINE_WIDTH = 0.3;
 
 // ─────────────────────────────────────────────────────────────
 // Module deps (set by init)
@@ -948,12 +947,9 @@ function openContextMenu(ev, lineId) {
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
-    <div data-act="set_width" data-width="0.2" style="padding:6px 14px;cursor:pointer">0.2 px (极细)</div>
-    <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">0.3 px</div>
-    <div data-act="set_width" data-width="0.5" style="padding:6px 14px;cursor:pointer">0.5 px</div>
-    <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px (默认)</div>
-    <div data-act="set_width" data-width="1.5" style="padding:6px 14px;cursor:pointer">1.5 px</div>
-    <div data-act="set_width" data-width="2" style="padding:6px 14px;cursor:pointer">2 px</div>
+    <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">细 (默认)</div>
+    <div data-act="set_width" data-width="1.0" style="padding:6px 14px;cursor:pointer">中</div>
+    <div data-act="set_width" data-width="2.0" style="padding:6px 14px;cursor:pointer">粗</div>
     <div data-act="delete" style="padding:6px 14px;cursor:pointer;color:#ff5252">删除此线</div>
   `;
   _menu.addEventListener('click', async (e) => {

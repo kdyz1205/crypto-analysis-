@@ -30,7 +30,7 @@ class ManualTrendlineModel(BaseModel):
     overlap_ratio: float | None = None
     created_at: int
     updated_at: int
-    line_width: float = 1.8
+    line_width: float = 0.3
 
 
 class ManualTrendlineCreateRequest(BaseModel):
@@ -47,7 +47,7 @@ class ManualTrendlineCreateRequest(BaseModel):
     label: str = ""
     notes: str = ""
     override_mode: str = "display_only"
-    line_width: float = Field(default=1.8, ge=0.5, le=8.0)
+    line_width: float = Field(default=0.3, ge=0.2, le=8.0)
 
 
 class ManualTrendlineUpdateRequest(BaseModel):
@@ -61,7 +61,7 @@ class ManualTrendlineUpdateRequest(BaseModel):
     label: str | None = None
     notes: str | None = None
     override_mode: str | None = None
-    line_width: float | None = Field(default=None, ge=0.5, le=8.0)
+    line_width: float | None = Field(default=None, ge=0.2, le=8.0)
 
 
 class ManualTrendlineListResponse(BaseModel):
