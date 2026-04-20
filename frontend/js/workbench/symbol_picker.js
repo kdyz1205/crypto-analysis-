@@ -171,9 +171,11 @@ function positionDropdown() {
   if (!_dropdown || !_input) return;
   const r = _input.getBoundingClientRect();
   _dropdown.style.position = 'fixed';
-  _dropdown.style.top = `${r.bottom}px`;
+  _dropdown.style.top = `${r.bottom + 2}px`;
   _dropdown.style.left = `${r.left}px`;
-  _dropdown.style.width = `${Math.max(r.width, 520)}px`;
+  // Narrower — 420 instead of 520. Four columns still readable because
+  // volume / price are K-formatted and change24h is compact (+x.xx%).
+  _dropdown.style.width = `${Math.max(r.width, 420)}px`;
 }
 
 function sortIndicator(key) {
@@ -258,8 +260,22 @@ function render() {
 
 function wireHeader() {
   _dropdown.querySelectorAll('.sp-h[data-sort]').forEach((el) => {
+    // Bug 2026-04-20: mousedown → cycleSort → render() replaces
+    // innerHTML synchronously, so the element the user clicked is
+    // DETACHED from the DOM before the document-level outside-click
+    // handler runs. That handler then sees a target no longer inside
+    // _dropdown and closes the picker. Fixed by:
+    //  (a) stopping propagation so the document handler never fires
+    //  (b) using `click` (fires after mouseup) instead of mousedown,
+    //      so the input's 150ms blur timeout is already waiting and
+    //      close() from blur is benign
     el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();  // don't steal focus from the input
+      ev.stopPropagation();
+    });
+    el.addEventListener('click', (ev) => {
       ev.preventDefault();
+      ev.stopPropagation();
       cycleSort(el.dataset.sort);
     });
   });
@@ -348,57 +364,59 @@ function injectStyles() {
     #v2-symbol-dropdown {
       background: #0e141f;
       border: 1px solid #2a3548;
-      border-radius: 6px;
-      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.55);
       color: #d8dde8;
-      font-size: 12px;
-      max-height: 520px;
+      font-size: 11.5px;
+      max-height: 440px;
       overflow: hidden;
       z-index: 10000;
     }
     .sp-head {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
-      background: #161e2f;
-      border-bottom: 1px solid #2a3548;
-      font-size: 11px;
+      grid-template-columns: 1.3fr 1fr 1fr 0.9fr;
+      background: #11182a;
+      border-bottom: 1px solid #1e2638;
+      font-size: 10.5px;
       font-weight: 600;
-      color: #8a95a6;
+      color: #7a8599;
+      letter-spacing: 0.02em;
       position: sticky; top: 0; z-index: 1;
     }
-    .sp-head .sp-col { padding: 8px 10px; user-select: none; }
-    .sp-head .sp-h { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .sp-head .sp-col { padding: 6px 10px; user-select: none; }
+    .sp-head .sp-h { cursor: pointer; display: flex; align-items: center; gap: 4px; transition: color 0.12s; }
     .sp-head .sp-h:hover { color: #d8dde8; }
-    .sp-sort { font-size: 9px; line-height: 1; }
-    .sp-sort-idle { opacity: 0.35; }
+    .sp-sort { font-size: 8.5px; line-height: 1; }
+    .sp-sort-idle { opacity: 0.3; }
     .sp-sort-active { color: #38bdf8; opacity: 1; }
     .sp-body {
-      max-height: 460px;
+      max-height: 390px;
       overflow-y: auto;
     }
     .sp-row {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
-      border-bottom: 1px solid #141a26;
+      grid-template-columns: 1.3fr 1fr 1fr 0.9fr;
+      border-bottom: 1px solid #121827;
       cursor: pointer;
+      transition: background 0.08s;
     }
     .sp-row:hover, .sp-row.is-active {
-      background: #1d2537;
+      background: #1a2335;
     }
     .sp-row .sp-col {
-      padding: 6px 10px;
+      padding: 4.5px 10px;
       font-variant-numeric: tabular-nums;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .sp-col-sym { font-weight: 600; color: #e8edf5; }
-    .sp-col-vol { color: #a3b0c4; text-align: right; }
+    .sp-col-vol { color: #94a1b7; text-align: right; }
     .sp-col-price { color: #e8edf5; text-align: right; }
-    .sp-col-chg { text-align: right; font-weight: 600; }
+    .sp-col-chg { text-align: right; font-weight: 600; font-size: 11px; }
     .sp-up { color: #26a69a; }
     .sp-dn { color: #ef5350; }
-    .sp-empty { padding: 12px; text-align: center; color: #6b7889; }
+    .sp-empty { padding: 12px; text-align: center; color: #6b7889; font-size: 11px; }
   `;
   document.head.appendChild(el);
 }
