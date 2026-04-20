@@ -64,6 +64,11 @@ const tx = {
 };
 
 let _rafPending = false;
+// True while the T key is physically held down. Prevents the OS keyboard
+// auto-repeat (firing keydown every ~50ms) from re-entering draw mode the
+// instant a line is committed — the symptom was "I need to draw two
+// consecutive lines before draw mode exits" (reported 2026-04-20).
+let _tKeyHeld = false;
 
 // ─────────────────────────────────────────────────────────────
 // Public API
@@ -96,6 +101,7 @@ export function initChartDrawing(chart, candleSeries, container) {
   document.addEventListener('mousemove', onDocMouseMove);
   document.addEventListener('mouseup',   onDocMouseUp);
   document.addEventListener('keydown',   onKeyDown);
+  document.addEventListener('keyup',     onKeyUp);
 
   // Re-render whenever chart pan/zoom or data changes
   chart.timeScale().subscribeVisibleTimeRangeChange(scheduleRender);
@@ -551,8 +557,21 @@ function onKeyDown(ev) {
     transition('idle', 'esc');
     return;
   }
-  if ((ev.key === 't' || ev.key === 'T') && tx.state === 'idle') {
-    startTrendlineTool();
+  if (ev.key === 't' || ev.key === 'T') {
+    // Honor only the FIRST keydown in a press — subsequent auto-repeat
+    // keydowns are ignored so that committing a line (state → idle) does
+    // not immediately re-arm another draw from the still-held-down key.
+    if (ev.repeat || _tKeyHeld) return;
+    _tKeyHeld = true;
+    if (tx.state === 'idle') {
+      startTrendlineTool();
+    }
+  }
+}
+
+function onKeyUp(ev) {
+  if (ev.key === 't' || ev.key === 'T') {
+    _tKeyHeld = false;
   }
 }
 
@@ -929,12 +948,12 @@ function openContextMenu(ev, lineId) {
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
+    <div data-act="set_width" data-width="0.2" style="padding:6px 14px;cursor:pointer">0.2 px (极细)</div>
+    <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">0.3 px</div>
     <div data-act="set_width" data-width="0.5" style="padding:6px 14px;cursor:pointer">0.5 px</div>
-    <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px</div>
+    <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px (默认)</div>
+    <div data-act="set_width" data-width="1.5" style="padding:6px 14px;cursor:pointer">1.5 px</div>
     <div data-act="set_width" data-width="2" style="padding:6px 14px;cursor:pointer">2 px</div>
-    <div data-act="set_width" data-width="3" style="padding:6px 14px;cursor:pointer">3 px</div>
-    <div data-act="set_width" data-width="4" style="padding:6px 14px;cursor:pointer">4 px</div>
-    <div data-act="set_width" data-width="5" style="padding:6px 14px;cursor:pointer">5 px</div>
     <div data-act="delete" style="padding:6px 14px;cursor:pointer;color:#ff5252">删除此线</div>
   `;
   _menu.addEventListener('click', async (e) => {
@@ -964,6 +983,26 @@ function openContextMenu(ev, lineId) {
     el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
   });
   document.body.appendChild(_menu);
+
+  // Clamp to viewport so the menu never gets clipped by the chart's
+  // overflow:hidden or the browser bottom edge. Lines drawn near the
+  // bottom of the chart used to open menus that extended below the
+  // visible area — user had to zoom out to get access (2026-04-20).
+  try {
+    const rect = _menu.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pad = 8;
+    let newLeft = ev.clientX;
+    let newTop = ev.clientY;
+    if (newLeft + rect.width + pad > vw) newLeft = vw - rect.width - pad;
+    if (newTop + rect.height + pad > vh) newTop = vh - rect.height - pad;
+    if (newLeft < pad) newLeft = pad;
+    if (newTop < pad) newTop = pad;
+    _menu.style.left = `${newLeft}px`;
+    _menu.style.top = `${newTop}px`;
+  } catch {}
+
   setTimeout(() => {
     document.addEventListener('mousedown', onOutsideMenu, { once: true });
   }, 0);
@@ -1055,7 +1094,8 @@ async function deleteLine(lineId) {
 }
 
 async function setLineWidth(lineId, width) {
-  const lineWidth = Math.max(0.5, Math.min(Number(width) || DEFAULT_LINE_WIDTH, 8));
+  // Min 0.2 (hair-thin, for 0.1% buffer scales). Cap 8 px.
+  const lineWidth = Math.max(0.2, Math.min(Number(width) || DEFAULT_LINE_WIDTH, 8));
   const lines = drawingsState.lines || [];
   const idx = lines.findIndex((l) => l.manual_line_id === lineId);
   if (idx < 0) return;
