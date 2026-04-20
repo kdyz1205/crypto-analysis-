@@ -21,6 +21,21 @@ from typing import Any
 
 ACTIVE_LINES_FILE = Path("data/trendline_active_orders.json")
 COOLDOWN_FILE = Path("data/trendline_cooldowns.json")
+RUNTIME_LOG_FILE = Path("data/logs/trendline_runtime.log")
+
+
+def _runtime_log(msg: str) -> None:
+    """Append a human-readable log line so the user can reason about why
+    the runner rejected / skipped / placed without needing uvicorn stdout
+    (which isn't captured to disk in the current deployment). Tail this
+    file during debugging: `tail -f data/logs/trendline_runtime.log`.
+    """
+    try:
+        RUNTIME_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(RUNTIME_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
 
 _broken_cooldowns: dict[str, float] = {}
 
@@ -199,13 +214,31 @@ def _auto_line_id(order: "ActiveLineOrder") -> str:
     )
 
 
-def _persist_auto_line(order: "ActiveLineOrder", stage: str) -> bool:
+TF_SECONDS_MAP = {"5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400}
+
+
+def _persist_auto_line(order: "ActiveLineOrder", stage: str, *, close_reason: str | None = None,
+                       fill_ts: float | None = None, close_ts: float | None = None) -> bool:
     """Write an auto-triggered trendline into manual_trendlines.json so the user
     sees why the order fired. Idempotent: if the id is already there, update
     label/updated_at instead of duplicating. Honors P4 — user can still delete
     by clicking × in the UI; we never auto-expire or revive deleted lines.
 
-    stage ∈ {'filled','closed'} — reflected in the label.
+    stage ∈ {'placed','filled','closed'}:
+      placed  — plan landed on Bitget, not yet triggered
+      filled  — plan triggered, position open
+      closed  — position closed (SL/TP/line break)
+
+    Optional kwargs let the caller surface the 3 numbers the user asked for:
+      close_reason — "sl_or_tp" / "line_broken" / "manual_close" / None
+      fill_ts      — epoch seconds when the plan triggered
+      close_ts     — epoch seconds when the position closed
+
+    Stored on the line for user visibility:
+      bars_to_fill   = (fill_ts - placed_ts) / TF_seconds   (how many bars before trigger)
+      bars_held      = (close_ts - fill_ts) / TF_seconds    (how long the position was open)
+      close_reason   — mirrored into label so the chart hover shows it
+
     Returns True if the line was newly inserted this call.
     """
     if not order.anchor1_ts or not order.anchor2_ts:
@@ -214,7 +247,10 @@ def _persist_auto_line(order: "ActiveLineOrder", stage: str) -> bool:
     if order.anchor1_price <= 0 or order.anchor2_price <= 0:
         return False
     line_id = _auto_line_id(order)
-    now_ms = int(time.time() * 1000)
+    # Stored as UNIX SECONDS to match the convention used everywhere else in
+    # manual_trendlines.json (the frontend's fmtDateShort does `new Date(ts *
+    # 1000)`, so feeding it milliseconds blows up the year label).
+    now_ts = int(time.time())
     lines = _load_manual_trendlines()
     # Bound anchors so t_start <= t_end in storage (chart code assumes this).
     t1, p1 = int(order.anchor1_ts), float(order.anchor1_price)
@@ -222,22 +258,77 @@ def _persist_auto_line(order: "ActiveLineOrder", stage: str) -> bool:
     if t2 < t1:
         t1, t2 = t2, t1
         p1, p2 = p2, p1
-    label = (
-        f"Auto · {order.kind[:3]} · filled"
-        if stage == "filled"
-        else f"Auto · {order.kind[:3]} · closed"
-    )
-    notes = (
-        f"order_id={order.exchange_order_id} "
-        f"entry={order.limit_price:.6f} stop={order.stop_price:.6f} tp={order.tp_price:.6f} "
-        f"stage={stage}"
-    )
+    # Compute bar counts for the "how many TFs did it take" labels.
+    tf_secs = TF_SECONDS_MAP.get(order.timeframe) or 3600
+    placed_ts = float(order.created_ts or 0)
+    bars_to_fill: int | None = None
+    bars_held: int | None = None
+    if fill_ts and placed_ts and fill_ts > placed_ts:
+        bars_to_fill = max(0, int((fill_ts - placed_ts) / tf_secs))
+    if close_ts and fill_ts and close_ts > fill_ts:
+        bars_held = max(0, int((close_ts - fill_ts) / tf_secs))
+    # Build a label that tells the user what/when/why at a glance.
+    stage_tag = {
+        "placed": "placed",
+        "filled": "filled",
+        "closed": "closed",
+    }.get(stage, stage)
+    extras = []
+    if bars_to_fill is not None:
+        extras.append(f"+{bars_to_fill}bar→fill")
+    if bars_held is not None:
+        extras.append(f"{bars_held}bar held")
+    if close_reason:
+        # Short, human-readable close reason for the label.
+        reason_short = {
+            "sl_or_tp": "SL/TP",
+            "line_broken": "line-break",
+            "manual_close": "manual",
+            "plan_triggered_and_closed": "SL/TP",
+        }.get(close_reason, close_reason)
+        extras.append(reason_short)
+    extra_str = (" · " + " · ".join(extras)) if extras else ""
+    label = f"Auto · {order.kind[:3]} · {stage_tag}{extra_str}"
+    # Build a structured notes block. Each field on its own line so hover /
+    # side-panel can parse if needed.
+    notes_lines = [
+        f"order_id={order.exchange_order_id}",
+        f"entry={order.limit_price:.6f}",
+        f"stop={order.stop_price:.6f}",
+        f"tp={order.tp_price:.6f}",
+        f"stage={stage}",
+    ]
+    if placed_ts:
+        notes_lines.append(f"placed_ts={int(placed_ts)}")
+    if fill_ts:
+        notes_lines.append(f"fill_ts={int(fill_ts)}")
+    if close_ts:
+        notes_lines.append(f"close_ts={int(close_ts)}")
+    if bars_to_fill is not None:
+        notes_lines.append(f"bars_to_fill={bars_to_fill}")
+    if bars_held is not None:
+        notes_lines.append(f"bars_held={bars_held}")
+    if close_reason:
+        notes_lines.append(f"close_reason={close_reason}")
+    notes = " ".join(notes_lines)
     for i, existing in enumerate(lines):
         if existing.get("manual_line_id") == line_id:
             # Update stage label + updated_at, keep user-edited fields intact.
-            lines[i]["updated_at"] = now_ms
+            lines[i]["updated_at"] = now_ts
             lines[i]["label"] = label
             lines[i]["notes"] = notes
+            # Carry structured metadata into the row so the panel + ML pipeline
+            # can read them without string parsing.
+            if fill_ts:
+                lines[i]["auto_fill_ts"] = int(fill_ts)
+            if close_ts:
+                lines[i]["auto_close_ts"] = int(close_ts)
+            if bars_to_fill is not None:
+                lines[i]["auto_bars_to_fill"] = bars_to_fill
+            if bars_held is not None:
+                lines[i]["auto_bars_held"] = bars_held
+            if close_reason:
+                lines[i]["auto_close_reason"] = close_reason
             _save_manual_trendlines(lines)
             return False
     new_entry = {
@@ -261,9 +352,16 @@ def _persist_auto_line(order: "ActiveLineOrder", stage: str) -> bool:
         "slope_diff": None,
         "projected_price_diff": None,
         "overlap_ratio": None,
-        "created_at": now_ms,
-        "updated_at": now_ms,
+        "created_at": now_ts,
+        "updated_at": now_ts,
         "line_width": 1.8,
+        # Trade-telemetry: how many bars to fill / how long held / why closed
+        "auto_placed_ts": int(placed_ts) if placed_ts else None,
+        "auto_fill_ts": int(fill_ts) if fill_ts else None,
+        "auto_close_ts": int(close_ts) if close_ts else None,
+        "auto_bars_to_fill": bars_to_fill,
+        "auto_bars_held": bars_held,
+        "auto_close_reason": close_reason,
     }
     lines.append(new_entry)
     _save_manual_trendlines(lines)
@@ -690,15 +788,15 @@ async def update_trendline_orders(
         sym, tf, kind = key
         sym_upper = sym.upper()
         if sym_upper in tracked_symbols:
-            print(f"[trendline_orders] SKIP {sym} {tf}: symbol already has active/order position", flush=True)
+            _msg = f"SKIP {sym} {tf}: symbol already has active/order position"
+            print(f"[trendline_orders] {_msg}", flush=True)
+            _runtime_log(_msg)
             continue
         cooldown_left = _cooldown_remaining(sym_upper, tf, kind, now)
         if cooldown_left > 0:
-            print(
-                f"[trendline_orders] SKIP {sym} {tf}: cooldown active "
-                f"{int(cooldown_left)}s after recent close/stop",
-                flush=True,
-            )
+            _msg = f"SKIP {sym} {tf} {kind}: cooldown active {int(cooldown_left)}s after recent close/stop"
+            print(f"[trendline_orders] {_msg}", flush=True)
+            _runtime_log(_msg)
             continue
 
         slope = sig["slope"]
@@ -717,11 +815,9 @@ async def update_trendline_orders(
 
         current_close = _price_from_cfg(sym_upper, cfg) or float(sig.get("entry_price", 0) or 0)
         if _is_through_stop(kind, float(current_close or 0), stop_px):
-            print(
-                f"[trendline_orders] SKIP {sym} {tf}: current={float(current_close):.8f} "
-                f"already through stop={stop_px:.8f}",
-                flush=True,
-            )
+            _msg = f"SKIP {sym} {tf} {kind}: current={float(current_close):.8f} already through stop={stop_px:.8f}"
+            print(f"[trendline_orders] {_msg}", flush=True)
+            _runtime_log(_msg)
             continue
 
         per_tf_risk = float((cfg.get("tf_risk") or {}).get(tf, risk_pct))
@@ -789,10 +885,18 @@ async def update_trendline_orders(
                 new_keys.add(key)
                 tracked_symbols.add(sym_upper)
                 placed += 1
-                print(f"[trendline_orders] NEW {direction} {sym} {tf} @ {limit_px:.6f} "
-                      f"SL={stop_px:.6f} TP={tp_px:.6f} risk=${risk_usd:.4f}"
-                      f"{' capped' if capped else ''}", flush=True)
+                _msg = (f"NEW {direction} {sym} {tf} {kind} @ {limit_px:.6f} "
+                        f"SL={stop_px:.6f} TP={tp_px:.6f} risk=${risk_usd:.4f}"
+                        f"{' capped' if capped else ''}")
+                print(f"[trendline_orders] {_msg}", flush=True)
+                _runtime_log(_msg)
                 try:
+                    # Extract ML gate scores (computed upstream in mar_bb_runner
+                    # when this signal was constructed) so every plan row lands
+                    # in the jsonl with its predicted line/trade win probs.
+                    _gate = sig.get("model_gate") or {}
+                    _line_q = _gate.get("line_quality_prob")
+                    _trade_w = _gate.get("trade_win_prob")
                     from server.strategy.trade_log import log_trade
                     log_trade(
                         symbol=sym, timeframe=tf, strategy="trendline",
@@ -801,6 +905,7 @@ async def update_trendline_orders(
                         size_usd=qty * limit_px, leverage=leverage,
                         order_id=order_id, status="plan_market_placed",
                         buffer_pct=buffer_pct, risk_usd=risk_usd,
+                        line_quality_prob=_line_q, trade_win_prob=_trade_w,
                     )
                     from server.strategy.ml_trade_db import log_plan_placed
                     log_plan_placed(
@@ -813,13 +918,18 @@ async def update_trendline_orders(
                         pivot2_bar=sig.get("anchor2_bar", 0),
                         risk_usd=risk_usd, capped=capped,
                         stop_offset_pct=stop_offset_pct,
+                        line_quality_prob=_line_q, trade_win_prob=_trade_w,
                     )
                 except Exception as exc:
                     print(f"[trendline_orders] plan log err {sym}: {exc}", flush=True)
             else:
-                print(f"[trendline_orders] REJECTED {sym}: {resp.get('reason')}", flush=True)
+                _msg = f"REJECTED {sym} {tf} {kind}: {resp.get('reason')}"
+                print(f"[trendline_orders] {_msg}", flush=True)
+                _runtime_log(_msg)
         except Exception as e:
-            print(f"[trendline_orders] place {sym} err: {e}", flush=True)
+            _msg = f"PLACE-ERR {sym} {tf} {kind}: {type(e).__name__}: {e}"
+            print(f"[trendline_orders] {_msg}", flush=True)
+            _runtime_log(_msg)
 
     # --- B. Update existing lines at bar boundaries / remove broken ---
     surviving = list(inactive_orders)
@@ -834,7 +944,12 @@ async def update_trendline_orders(
         if order.symbol.upper() in held_symbols:
             order.status = "filled"
             try:
-                if _persist_auto_line(order, stage="filled"):
+                # Best estimate for fill time: "now" if we have no better source.
+                # The adapter's position row likely has an `openTime` / `cTime`;
+                # the sync loop below sources it for closed rows; for first
+                # detection as filled, approximate with the current tick.
+                _fill_ts = now
+                if _persist_auto_line(order, stage="filled", fill_ts=_fill_ts):
                     order.persisted_as_drawing = True
             except Exception as _exc:
                 print(f"[trendline_orders] persist-auto-line err (filled) {order.symbol}: {_exc}", flush=True)
@@ -850,10 +965,22 @@ async def update_trendline_orders(
                 if closed_row is not None:
                     order.status = "closed"
                     try:
-                        # Keep the user-visible line around with an updated
-                        # "closed" label. If it was never filled before (very
-                        # fast trigger+close), this is the first insert.
-                        _persist_auto_line(order, stage="closed")
+                        # Pull timing + reason from the Bitget history-position
+                        # row so the drawn line carries the full trade story.
+                        _fill_ts = _row_ts(closed_row, "openTime", "ctime", "cTime", "createdTime")
+                        _close_ts = _row_ts(closed_row, "closeTime", "utime", "uTime", "updateTime")
+                        _reason = "plan_triggered_and_closed"
+                        # If the exchange tags it differently, prefer that.
+                        _raw_reason = str(closed_row.get("closeReason") or "").strip().lower()
+                        if _raw_reason:
+                            _reason = _raw_reason
+                        _persist_auto_line(
+                            order,
+                            stage="closed",
+                            fill_ts=_fill_ts or None,
+                            close_ts=_close_ts or None,
+                            close_reason=_reason,
+                        )
                     except Exception as _exc:
                         print(f"[trendline_orders] persist-auto-line err (closed) {order.symbol}: {_exc}", flush=True)
                     surviving.append(order)

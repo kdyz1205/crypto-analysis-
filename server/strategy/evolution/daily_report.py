@@ -22,6 +22,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+from server.execution import _bitget_fields as bgf
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -65,8 +67,36 @@ def _load_all_trades() -> list[dict]:
 
 
 def _trades_for_date(date_str: str) -> list[dict]:
-    """Filter trades whose ``dt`` field starts with ``date_str`` (YYYY-MM-DD)."""
-    return [t for t in _load_all_trades() if str(t.get("dt", "")).startswith(date_str)]
+    """Filter trades belonging to the UTC day ``date_str`` (YYYY-MM-DD).
+
+    Uses numeric epoch range ``[t0, t1)`` on ``t["ts"]`` so trades logged in
+    the 1-second window around UTC midnight are classified correctly. Falls
+    back to ``dt.startswith(date_str)`` only when ``ts`` is missing.
+    """
+    try:
+        y, m, d = (int(x) for x in date_str.split("-", 2))
+        t0 = datetime(y, m, d, tzinfo=timezone.utc).timestamp()
+        t1 = t0 + 86400
+    except Exception:
+        # Malformed date_str — fall back to the lossy string path
+        return [t for t in _load_all_trades() if str(t.get("dt", "")).startswith(date_str)]
+
+    out: list[dict] = []
+    for t in _load_all_trades():
+        ts = t.get("ts")
+        if ts not in (None, ""):
+            try:
+                ts_f = float(ts)
+            except (TypeError, ValueError):
+                ts_f = None
+            if ts_f is not None:
+                if t0 <= ts_f < t1:
+                    out.append(t)
+                continue
+        # No usable ts — fall back to the dt-string prefix
+        if str(t.get("dt", "")).startswith(date_str):
+            out.append(t)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -138,10 +168,19 @@ def _match_outcomes(trades: list[dict], bitget_rows: list[dict]) -> list[dict]:
                     break
 
         if matched:
-            pnl = float(matched.get("netProfit") or matched.get("pnl") or 0)
-            entry = float(matched.get("openAvgPrice") or 0)
+            pnl = bgf.realized_pnl_usd(matched)
+            entry = bgf.open_price(matched)
             size = float(matched.get("closeTotalPos") or 0)
-            notional = entry * size if entry > 0 and size > 0 else float(trade.get("size_usd", 1))
+            # Prefer margin_used for pnl% denominator when available (matches
+            # exchange's own pnl% view); fall back to entry*size notional,
+            # then to the plan's size_usd.
+            margin = bgf.margin_used(matched)
+            if margin > 0:
+                notional = margin
+            elif entry > 0 and size > 0:
+                notional = entry * size
+            else:
+                notional = float(trade.get("size_usd", 1))
             pnl_pct = (pnl / max(notional, 1.0)) * 100.0
             if pnl > 0:
                 outcome = "win"

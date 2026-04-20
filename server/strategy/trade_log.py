@@ -147,10 +147,40 @@ def get_trades(last_n: int = 100) -> list[dict]:
 
 
 def get_daily_summary(date_str: str | None = None) -> dict:
-    """Summary for a given date (default today UTC)."""
+    """Summary for a given UTC date (default today UTC).
+
+    Uses numeric epoch range filtering on ``t["ts"]`` so trades logged in
+    the 1-second window around UTC midnight are classified correctly.
+    Falls back to ``dt.startswith(date_str)`` only when ``ts`` is missing.
+    """
     if date_str is None:
         date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    trades = [t for t in get_trades(10000) if t.get("dt", "").startswith(date_str)]
+
+    raw = get_trades(10000)
+    try:
+        y, m, d = (int(x) for x in date_str.split("-", 2))
+        t0 = datetime(y, m, d, tzinfo=timezone.utc).timestamp()
+        t1 = t0 + 86400
+    except Exception:
+        # Malformed date_str — fall back to the lossy string path
+        trades = [t for t in raw if t.get("dt", "").startswith(date_str)]
+    else:
+        trades = []
+        for t in raw:
+            ts = t.get("ts")
+            if ts not in (None, ""):
+                try:
+                    ts_f = float(ts)
+                except (TypeError, ValueError):
+                    ts_f = None
+                if ts_f is not None:
+                    if t0 <= ts_f < t1:
+                        trades.append(t)
+                    continue
+            # No usable ts — fall back to the dt-string prefix
+            if t.get("dt", "").startswith(date_str):
+                trades.append(t)
+
     return {
         "date": date_str,
         "total_trades": len(trades),

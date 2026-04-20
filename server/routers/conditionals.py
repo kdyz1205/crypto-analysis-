@@ -336,7 +336,10 @@ class PlaceLineOrderReq(BaseModel):
     # Stop sits just beyond the line so a wick has to cross it by a tiny
     # amount before the trade is invalidated.
     tolerance_pct: float = 0.1
-    stop_offset_pct: float = 0.01
+    # Updated 2026-04-20 per user spec: SL sits at trendline + small buffer
+    # (0.03-0.05%). 0.01% was too tight — a single tick crossed it before the
+    # line itself was actually broken, producing instant-stop losses.
+    stop_offset_pct: float = 0.04
     size_usdt: float = Field(..., gt=0, description="Notional to commit, in USDT")
     leverage: int = Field(5, ge=1, le=100)
     mode: Literal["demo", "live"] = "live"

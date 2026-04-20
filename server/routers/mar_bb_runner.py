@@ -9,6 +9,7 @@ from ..strategy.mar_bb_runner import (
     get_state,
     manual_kick,
     reset_daily_halt,
+    resume_breaker_after_optimize,
     start_runner,
     stop_runner,
     update_config,
@@ -98,6 +99,25 @@ async def api_reset_halt(req: ResetHaltReq):
     Requires `{"confirm_code":"RESET"}` — a deliberate act because it
     bypasses the loss-protection guardrail."""
     return reset_daily_halt(confirm_code=req.confirm_code)
+
+
+class BreakerResumeReq(BaseModel):
+    confirm_code: str = ""
+    model_gate_tighten: float = 0.05
+
+
+@router.post("/breaker-resume")
+async def api_breaker_resume(req: BreakerResumeReq):
+    """Clear an indefinite consecutive-loss circuit breaker AFTER confirming
+    the algorithm has been optimized. Automatically tightens model_gate
+    thresholds by `model_gate_tighten` (default +0.05) so the resume
+    actually changes something.
+    Requires `{"confirm_code":"RESUME"}`.
+    """
+    return resume_breaker_after_optimize(
+        confirm_code=req.confirm_code,
+        model_gate_tighten=req.model_gate_tighten,
+    )
 
 
 @router.get("/history")

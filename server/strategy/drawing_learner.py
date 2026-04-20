@@ -291,10 +291,15 @@ def capture_user_drawing(
     htf_df: pd.DataFrame | None = None,
     manual_line_id: str | None = None,
     capture_stage: str = "created",
+    reason: str | None = None,
 ) -> dict | None:
     """Capture a user drawing with market features for ML training.
 
     Called when a user creates a manual trendline on the chart.
+
+    capture_stage: 'created' | 'updated' | 'deleted' | 'triggered' | 'closed'
+    (+ '_basic' suffix when OHLCV features couldn't be loaded)
+    reason: optional free-form tag, e.g. 'user_delete' / 'user_update'.
     """
     if t_end <= t_start or price_start <= 0 or price_end <= 0:
         return None
@@ -336,6 +341,8 @@ def capture_user_drawing(
         "anchor_distance_pct": round(anchor_distance_pct, 6),
         "slope_per_bar": round(slope, 10),
     }
+    if reason:
+        record["reason"] = reason
 
     # Add market features if we have OHLCV data
     if df is not None and len(df) > 0:
@@ -385,6 +392,48 @@ def capture_user_drawing(
     with open(ML_DRAWINGS_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, default=str) + "\n")
 
+    return record
+
+
+def capture_position_closed_from_drawing(
+    *,
+    manual_line_id: str,
+    symbol: str,
+    timeframe: str,
+    side: str,
+    pnl_usd: float,
+    pnl_pct: float,
+    close_reason: str,
+    bars_to_fill: int | None = None,
+    bars_held: int | None = None,
+    features_at_close: dict | None = None,
+    **extra,
+) -> dict:
+    """Close the learning loop on a user-drawn (or conditional-derived) line.
+
+    Called when a position that originated from a manual_line_id closes.
+    Writes a 'position_closed_from_drawing' event so the user_drawings_ml.jsonl
+    file has: user drew line → triggered → closed → outcome + features.
+    """
+    record = {
+        "event": "position_closed_from_drawing",
+        "ts": time.time(),
+        "dt": datetime.now(timezone.utc).isoformat(),
+        "manual_line_id": manual_line_id,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "side": side,
+        "pnl_usd": pnl_usd,
+        "pnl_pct": pnl_pct,
+        "close_reason": close_reason,
+        "bars_to_fill": bars_to_fill,
+        "bars_held": bars_held,
+        "features_at_close": features_at_close or {},
+        **extra,
+    }
+    ML_DRAWINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(ML_DRAWINGS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, default=str) + "\n")
     return record
 
 

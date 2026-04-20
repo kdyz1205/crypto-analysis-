@@ -86,6 +86,17 @@ async def _startup():
         except Exception as _e:
             print(f"[mar_bb] auto-start failed: {_e}")
 
+    # Always-on trailing-SL maintenance. Runs REGARDLESS of MAR_BB_AUTOSTART
+    # so manually-placed line orders (via Trade Plan modal) keep their SL
+    # moving with the drawn line even when the scanner is off. The loop
+    # only touches existing positions — never opens new trades.
+    try:
+        from .strategy.mar_bb_runner import start_maintenance_only as _start_trendline_maint
+        _start_trendline_maint()
+        print("[trendline_maintenance] always-on trailing loop started")
+    except Exception as _e:
+        print(f"[trendline_maintenance] start failed: {_e}")
+
     # Auto-start orderbook websocket service for real-time L2 features.
     # Tracks top symbols for microstructure signals (imbalance, cancel pressure, etc.)
     try:
@@ -228,3 +239,4 @@ app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB
 app.include_router(orderbook.router)    # /api/orderbook/* — real-time L2 features
 app.include_router(line_alerts.router)  # /api/alerts/* — trendline price alerts → Telegram
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
+# reload trigger 1776668707
