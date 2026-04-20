@@ -24,6 +24,7 @@ venv/
 .claude/
 
 # Project-specific
+server_pid.txt
 autoresearch/
 agent_state.json
 evolution_log.tsv

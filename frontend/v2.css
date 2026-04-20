@@ -2192,19 +2192,19 @@ body.combat-mode .boot-status { display: none; }
   border-color: #38bdf8;
 }
 .v2-symbol-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  min-width: 160px;
-  max-height: 380px;
+  /* position is set inline by JS (fixed, pinned to the input) so the
+     dropdown escapes the header's overflow:hidden clip. */
+  min-width: 200px;
+  max-height: 400px;
   overflow-y: auto;
-  background: #0f1420;
+  background: rgba(15, 20, 32, 0.96);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border: 1px solid #2a3548;
   border-top: none;
   border-radius: 0 0 4px 4px;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-  z-index: 1000;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.65);
+  z-index: 2000;
   font-family: 'JetBrains Mono', 'Consolas', monospace;
   font-size: 12px;
 }
@@ -2218,15 +2218,34 @@ body.combat-mode .boot-status { display: none; }
   text-transform: uppercase;
   border-bottom: 1px dashed #2a3548;
   background: rgba(0,0,0,0.3);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .v2-symbol-row {
   padding: 5px 12px;
   cursor: pointer;
   color: #d8dde8;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.v2-symbol-rank {
+  color: #5d6b80;
+  font-size: 10px;
+  min-width: 22px;
+  text-align: right;
+}
+.v2-symbol-name {
+  flex: 1;
 }
 .v2-symbol-row.is-active,
 .v2-symbol-row:hover {
   background: #1e2738;
+  color: #fbbf24;
+}
+.v2-symbol-row.is-active .v2-symbol-rank,
+.v2-symbol-row:hover .v2-symbol-rank {
   color: #fbbf24;
 }
 .v2-symbol-empty {

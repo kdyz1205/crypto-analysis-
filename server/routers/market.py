@@ -112,6 +112,66 @@ async def get_symbols_route(include_extended: bool = Query(False, description="[
     return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'HYPEUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT']
 
 
+# 10-minute cache. Bitget ticker API returns ~540 symbols in one call —
+# the user's dropdown re-opens many times per session, no reason to hit
+# Bitget each time. TTL matches `get_top_volume_symbols` so both views
+# stay consistent.
+_extended_cache: tuple[float, list[dict]] | None = None
+_EXTENDED_CACHE_TTL = 600
+
+
+@router.get("/symbols/extended")
+async def get_symbols_extended(top_n: int = Query(200, ge=1, le=500)):
+    """Bitget USDT-M crypto perps with ticker columns for a sortable picker.
+
+    Each row: `{symbol, last_price, change24h, volume_usdt}`. change24h is
+    a fraction (e.g. -0.0028 = -0.28%); the frontend formats it. volume_usdt
+    is the 24h quote-volume in USDT, matching the existing rank order.
+    """
+    global _extended_cache
+    import time as _time
+    if _extended_cache is not None:
+        cached_ts, cached_rows = _extended_cache
+        if _time.time() - cached_ts < _EXTENDED_CACHE_TTL:
+            return cached_rows[:top_n]
+
+    try:
+        from ..data_service import _get_http_client, BITGET_PRODUCT_TYPE
+        from ..market.bitget_client import BitgetPublicClient
+        client = BitgetPublicClient(
+            http_client=_get_http_client(),
+            product_type=BITGET_PRODUCT_TYPE,
+        )
+        rows = await client.get_tickers()
+    except Exception as exc:
+        print(f"[symbols/extended] Bitget ticker fetch failed: {exc}")
+        return []
+
+    enriched: list[dict] = []
+    for r in rows:
+        sym = str(r.get("symbol") or "").upper()
+        if not _is_crypto_symbol(sym):
+            continue
+        try:
+            vol = float(r.get("usdtVolume") or r.get("quoteVolume") or 0.0)
+            last = float(r.get("lastPr") or r.get("markPrice") or 0.0)
+            chg = float(r.get("change24h") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if last <= 0:
+            continue
+        enriched.append({
+            "symbol": sym,
+            "last_price": last,
+            "change24h": chg,
+            "volume_usdt": vol,
+        })
+
+    enriched.sort(key=lambda x: x["volume_usdt"], reverse=True)
+    _extended_cache = (_time.time(), enriched)
+    return enriched[:top_n]
+
+
 @router.get("/symbol-info")
 async def get_symbol_info(symbol: str = Query(...)):
     """Return metadata for a specific symbol (e.g., price precision)."""

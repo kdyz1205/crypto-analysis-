@@ -88,6 +88,14 @@ export function initChart(containerId = 'chart-container') {
     priceFormat: { type: 'volume' },
     priceScaleId: 'volume',
     scaleMargins: { top: 0.8, bottom: 0 },
+    // Without these, the volume bar's last value (e.g. "199.44K") shows
+    // up as a highlighted price-line label on the MAIN price axis between
+    // two adjacent price ticks — because lightweight-charts treats
+    // histogram's current value the same as a candle's close price. User
+    // caught it 2026-04-20 on RAVEUSDT where "199.44K" appeared between
+    // 0.50 and 0.49 on the Y-axis.
+    lastValueVisible: false,
+    priceLineVisible: false,
   });
 
   // Resize chart on window resize AND container resize (fixes zoom disappear bug)
@@ -342,7 +350,25 @@ export async function loadCurrent(forcePatterns = false) {
       truncationReason: data.truncationReason || '',
     });
     const lastPrice = candles[candles.length - 1].close;
-    setPrecision(data.pricePrecision ?? inferPrecision(lastPrice));
+    const precision = data.pricePrecision ?? inferPrecision(lastPrice);
+    setPrecision(precision);
+    // Apply exchange-provided tick precision to the candle series so Y-axis
+    // labels and crosshair readouts match Bitget exactly (e.g. 0.50234 not
+    // 0.50 for RAVEUSDT where tickSz=1e-5). Default lightweight-charts
+    // precision is 2 decimals, which hides sub-cent detail for sub-$1 coins.
+    if (candleSeries && typeof precision === 'number' && precision >= 0 && precision <= 10) {
+      try {
+        candleSeries.applyOptions({
+          priceFormat: {
+            type: 'price',
+            precision,
+            minMove: Math.pow(10, -precision),
+          },
+        });
+      } catch (err) {
+        console.warn('[chart] applyOptions priceFormat failed:', err);
+      }
+    }
 
     // Prefer client-computed overlays — saves a round of backend CPU
     // and shrinks the /api/ohlcv payload by ~40%. Falls back to server

@@ -33,7 +33,11 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_R = 6;        // visible handle radius
 const ANCHOR_HIT = 12;     // hit test radius for anchors
 const BODY_HIT = 8;        // hit test distance for line body
-const DEFAULT_LINE_WIDTH = 1.8;
+// Thinner than the 1.8 default — user report 2026-04-20: the drawn
+// line was visually too thick, especially when entries/stops are
+// only 0.1% away, making it hard to see exactly where price is
+// relative to the line.
+const DEFAULT_LINE_WIDTH = 1.0;
 
 // ─────────────────────────────────────────────────────────────
 // Module deps (set by init)
@@ -571,11 +575,34 @@ async function commitDraft() {
   tx.draftLine = null;
   transition('idle', 'commit_done');
 
-  // Derive role from slope (just a label; server doesn't use it for direction).
-  const slopeEps = Math.max(Math.abs(a.price), Math.abs(b.price)) * 0.001;
-  const delta = b.price - a.price;
-  const lineSide = delta > slopeEps ? 'support'
-    : (delta < -slopeEps ? 'resistance' : 'support');
+  // Derive role: look at where the CURRENT PRICE sits relative to the line,
+  // not the slope direction. A rising line CONNECTING TWO HIGHS is a
+  // RESISTANCE (price below, user shorts). A rising line connecting two
+  // lows is a SUPPORT (price above, user longs). Slope alone can't tell.
+  //
+  // Old slope-only rule mislabeled ascending resistance as support, which
+  // flipped the trade_plan_modal default direction from short→long and
+  // caused user to submit buys when they intended sells (2026-04-20 bug).
+  let lineSide;
+  try {
+    const data = _candleSeries?.data?.() || [];
+    const latest = data.length > 0 ? data[data.length - 1] : null;
+    const lastClose = latest?.close ?? latest?.value ?? null;
+    // Line price projected at the later-in-time anchor; that's the freshest
+    // "meaning" of the line relative to current price.
+    const linePriceNow = Number(b.price);
+    if (lastClose != null && isFinite(lastClose) && linePriceNow > 0) {
+      lineSide = lastClose < linePriceNow ? 'resistance' : 'support';
+    } else {
+      // Fallback: slope-based (old behavior) when we can't read close.
+      const slopeEps = Math.max(Math.abs(a.price), Math.abs(b.price)) * 0.001;
+      const delta = b.price - a.price;
+      lineSide = delta > slopeEps ? 'support'
+        : (delta < -slopeEps ? 'resistance' : 'support');
+    }
+  } catch {
+    lineSide = 'support';
+  }
 
   // OPTIMISTIC INSERT — show the line on the chart IMMEDIATELY with a
   // temporary client-side ID. Otherwise commit→POST→render has a 1-8s
