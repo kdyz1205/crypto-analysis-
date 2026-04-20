@@ -155,10 +155,29 @@ export function initChart(containerId = 'chart-container') {
     });
   } catch {}
 
+  // 2026-04-20: symbol/TF switch must clear old series data BEFORE the
+  // async fetch starts. Otherwise the live WS ticker (which switches
+  // subscriptions synchronously) can push prices for the NEW symbol
+  // into the OLD candle history, blowing up the chart's y-axis. Seen
+  // when flipping HYPE → ETH: ETH's $2317 live tick got pasted onto
+  // HYPE's $30-$45 historical candles → giant green spike.
+  const clearForSymbolSwitch = () => {
+    try {
+      candleSeries?.setData([]);
+      volumeSeries?.setData([]);
+    } catch {}
+    // Also zero out lastCandles so onTickerTick doesn't compute
+    // high/low vs a stale bar from the previous symbol. Without this
+    // the first WS tick for the NEW symbol would take the MAX of its
+    // price and the old symbol's last bar → massive spike.
+    try { setCandles([]); } catch {}
+  };
   subscribe('market.symbol.changed', () => {
+    clearForSymbolSwitch();
     void loadCurrent(true).catch((err) => console.warn('[chart] symbol refresh failed:', err));
   });
   subscribe('market.interval.changed', () => {
+    clearForSymbolSwitch();
     void loadCurrent(true).catch((err) => console.warn('[chart] interval refresh failed:', err));
   });
   subscribe('market.history_mode.changed', () => {
