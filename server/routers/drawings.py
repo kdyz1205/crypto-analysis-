@@ -467,11 +467,13 @@ def _higher_timeframe(timeframe: str) -> str | None:
 
 
 def _clamp_line_width(value: float | int | None) -> float:
+    # Floor 0.2 so hair-thin lines (0.2 / 0.3) survive round-tripping.
+    # Must match the Pydantic validator in schemas/drawings.py.
     try:
         width = float(value)
     except (TypeError, ValueError):
-        width = 1.8
-    return max(0.5, min(width, 8.0))
+        width = 0.3
+    return max(0.2, min(width, 8.0))
 
 
 __all__ = ["router", "store"]

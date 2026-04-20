@@ -37,7 +37,7 @@ class ManualTrendline:
     overlap_ratio: float | None
     created_at: int
     updated_at: int
-    line_width: float = 1.8
+    line_width: float = 0.3
 
     def to_dict(self) -> dict:
         return asdict(self)
