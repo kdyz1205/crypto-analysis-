@@ -18,7 +18,11 @@
 //   'volume_ma'  — SMA(20) line over the volume series
 //   'atr'        — ATR(14) subpanel
 
-import { computeRSI, computeMACD, computeVolumeMA, computeATR } from './indicator_math.js';
+import {
+  computeRSI, computeMACD, computeVolumeMA, computeATR,
+  factorRSIOversold, factorRSIOverbought, factorVolumeSurge,
+  factorMACDBullCross, factorMACDBearCross,
+} from './indicator_math.js';
 
 const LS_KEY = 'v2.indicators.v1';
 
@@ -68,6 +72,21 @@ export const INDICATOR_CATALOG = [
     category: '结构 Structure',
     items: [
       { type: 'wyckoff', name: 'Wyckoff (vol-ratio)' },
+    ],
+  },
+  // ─── Factor library — binary signals rendered as candle markers ───
+  // Mirrors the server-side factors in data/factors/core/. These are
+  // boolean per-bar conditions ("RSI < 30", "volume > 2× 20SMA", ...).
+  // Each factor added by the user places triangles on candles where the
+  // condition fires.
+  {
+    category: '因子 Factor',
+    items: [
+      { type: 'factor_rsi_oversold',   name: 'RSI Oversold (<30)',    defaultConfig: { period: 14, threshold: 30 } },
+      { type: 'factor_rsi_overbought', name: 'RSI Overbought (>70)',  defaultConfig: { period: 14, threshold: 70 } },
+      { type: 'factor_volume_surge',   name: 'Volume Surge (>2×SMA20)', defaultConfig: { period: 20, multiple: 2.0 } },
+      { type: 'factor_macd_bull',      name: 'MACD Bull Cross',       defaultConfig: { fast: 12, slow: 26, signal: 9 } },
+      { type: 'factor_macd_bear',      name: 'MACD Bear Cross',       defaultConfig: { fast: 12, slow: 26, signal: 9 } },
     ],
   },
 ];
@@ -200,6 +219,11 @@ export async function applyIndicators(chart, candleSeries, candles, overlays) {
 
   // Volume MA — overlays the existing volume series on 'volume' scale
   renderSubplot(chart, candles, 'volume_ma', renderVolumeMA);
+
+  // Factor markers — triangles on candles where the factor fires.
+  // All factor markers get MERGED into one setMarkers() call so
+  // lightweight-charts doesn't fight over marker ownership.
+  renderFactorMarkers(chart, candleSeries, candles);
 }
 
 function renderSubplot(chart, candles, type, fn) {
@@ -358,6 +382,71 @@ function renderATR(chart, candles, ind) {
     candles.map((c, i) => ({ time: c.time, value: values[i] })).filter((p) => p.value != null),
   );
   trackSeries(ind.id, series);
+}
+
+// ─── Factor markers ─────────────────────────────────────────────
+// Each factor returns a boolean[] aligned to candles. We build a
+// marker per true bar (position: below for oversold / bull, above
+// for overbought / bear) and set them all in one call.
+
+const FACTOR_STYLES = {
+  factor_rsi_oversold:   { fn: factorRSIOversold,   label: 'RSI<30', color: '#26a69a', position: 'belowBar', shape: 'arrowUp' },
+  factor_rsi_overbought: { fn: factorRSIOverbought, label: 'RSI>70', color: '#ef5350', position: 'aboveBar', shape: 'arrowDown' },
+  factor_volume_surge:   { fn: factorVolumeSurge,   label: 'VolSurge', color: '#38bdf8', position: 'aboveBar', shape: 'circle' },
+  factor_macd_bull:      { fn: factorMACDBullCross, label: 'MACD↑', color: '#26a69a', position: 'belowBar', shape: 'arrowUp' },
+  factor_macd_bear:      { fn: factorMACDBearCross, label: 'MACD↓', color: '#ef5350', position: 'aboveBar', shape: 'arrowDown' },
+};
+
+function renderFactorMarkers(chart, candleSeries, candles) {
+  const active = _indicators.filter((x) => x.visible && x.type.startsWith('factor_'));
+  // Always rewrite the whole marker set so removing a factor cleans up.
+  const markers = [];
+  for (const ind of active) {
+    const style = FACTOR_STYLES[ind.type];
+    if (!style) continue;
+    try {
+      const args = [candles];
+      // Feed optional config values into the math fn in a predictable
+      // positional order (period, threshold/multiple/slow/signal). The
+      // math fns use defaults if args are missing.
+      if (ind.config) {
+        if (ind.type === 'factor_rsi_oversold' || ind.type === 'factor_rsi_overbought') {
+          args.push(ind.config.period ?? 14, ind.config.threshold);
+        } else if (ind.type === 'factor_volume_surge') {
+          args.push(ind.config.period ?? 20, ind.config.multiple ?? 2.0);
+        } else {
+          args.push(ind.config.fast ?? 12, ind.config.slow ?? 26, ind.config.signal ?? 9);
+        }
+      }
+      const flags = style.fn(...args);
+      for (let i = 0; i < flags.length; i++) {
+        if (!flags[i]) continue;
+        markers.push({
+          time: candles[i].time,
+          position: style.position,
+          color: style.color,
+          shape: style.shape,
+          text: style.label,
+          size: 0.7,
+        });
+      }
+    } catch (err) { console.warn(`[factor] ${ind.type} render err:`, err); }
+  }
+  // Merge with any existing candle markers (execution arrows, Wyckoff
+  // spring/utad), dedup by (time, shape, color, position) so a re-apply
+  // doesn't stack.
+  try {
+    const existing = candleSeries.markers ? candleSeries.markers() : [];
+    // Drop any previous factor markers — we identify them by our unique
+    // text prefixes to avoid nuking execution markers. (执行侧用中文"买"
+    // "卖"; Wyckoff 用 "S"/"UT"; factor markers use the labels above.)
+    const factorLabels = new Set(Object.values(FACTOR_STYLES).map((s) => s.label));
+    const kept = (existing || []).filter((m) => !factorLabels.has(m.text));
+    const merged = [...kept, ...markers].sort((a, b) => a.time - b.time);
+    candleSeries.setMarkers(merged);
+  } catch (err) {
+    console.warn('[factor] setMarkers failed:', err);
+  }
 }
 
 function renderVolumeMA(chart, candles, ind) {
