@@ -26,10 +26,10 @@ let chartLoadSeq = 0;
 let _lastFitKey = null;  // tracks last symbol/interval we fitContent'd for
 let _lastFullReloadTs = 0;
 // Right-side empty area shown BEYOND the last candle so trendlines that
-// extend into the future have canvas room. 48 bars was the old default;
-// user on 2026-04-20 asked for more future time-axis visibility → 120 bars
-// = ~10h on 5m, ~30h on 15m, ~5 days on 1h.
-const FUTURE_DRAW_BARS = 120;
+// extend into the future have canvas room. 2026-04-20 iterations:
+//   48  → 120 (too much; user said chart stretched weird)
+//   120 → 60  (balance — ~5h on 5m, ~15h on 15m, ~60h on 1h).
+const FUTURE_DRAW_BARS = 60;
 
 // Lazy backfill state. Kept at module level so the visible-range
 // subscriber can see the current candle buffer without a closure over
