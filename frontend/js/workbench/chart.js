@@ -8,6 +8,7 @@ import * as marketSvc from '../services/market.js';
 import { inferPrecision, formatPrice } from '../util/format.js';
 import { markBoot } from '../ui/boot_status.js';
 import { drawMAOverlays, toggleMAOverlays as toggleMA, computeOverlaysFromCandles } from './ma_overlay.js';
+import { applyIndicators } from './indicators/indicator_controller.js';
 import { drawWyckoffOverlay, clearWyckoffOverlay, toggleWyckoff, getWyckoffMarkers } from './wyckoff_overlay.js';
 import { startTickerWS, setTickerSymbol, stopTickerWS } from './ws_ticker.js';
 import { clearHorizontalSRZones } from './patterns.js';
@@ -398,25 +399,31 @@ export async function loadCurrent(forcePatterns = false) {
     // overlays if candles are too short to compute MA55.
     const overlays = computeOverlaysFromCandles(candles);
     const useOverlays = Object.keys(overlays).length > 0 ? overlays : data.overlays;
-    if (useOverlays) {
-      const candleTimes = candles.map((c) => c.time);
-      drawMAOverlays(chart, useOverlays, candleTimes);
-    }
 
-    // Wyckoff overlay (accumulation/distribution + vol-ratio indicator).
-    // Only drawn when user explicitly turns it on via the WYC button.
-    // 2026-04-20: previously unconditional → drew an orange volBaseline
-    // line at ratio=1.0 that visually sat near the bottom of the chart,
-    // which users mistook for a stuck manual line they couldn't delete.
+    // Unified indicator dispatch (2026-04-20). Replaces the direct
+    // drawMAOverlays + drawWyckoffOverlay calls; applyIndicators reads
+    // the user's visibility preferences from the indicator panel's
+    // localStorage and draws only what's turned on.
+    try {
+      window.__chartRef = chart;
+      await applyIndicators(chart, candleSeries, candles, useOverlays);
+    } catch (err) {
+      console.warn('[chart] applyIndicators failed:', err);
+      // Last-resort: still draw MA so chart isn't empty.
+      if (useOverlays) {
+        const candleTimes = candles.map((c) => c.time);
+        drawMAOverlays(chart, useOverlays, candleTimes);
+      }
+    }
+    // Wyckoff markers (Spring/UTAD shapes on candles) if Wyckoff on
     if (window.__wyckoffEnabled) {
       try {
-        drawWyckoffOverlay(chart, candles);
         const wMarkers = getWyckoffMarkers();
         if (wMarkers.length > 0 && candleSeries) {
           const existing = candleSeries.markers ? candleSeries.markers() : [];
           candleSeries.setMarkers([...existing, ...wMarkers].sort((a, b) => a.time - b.time));
         }
-      } catch (e) { console.warn('[wyckoff]', e); }
+      } catch {}
     }
 
     updateHeader(currentSymbol, currentInterval, lastPrice);
