@@ -712,10 +712,14 @@ function injectStyles() {
 // clicks to place an order for the common case.
 
 let _picker = null;
+let _pickerCleanup = null;
 
 export function openSetupPickerPopup(line, clickX = null, clickY = null) {
   return new Promise((resolve) => {
-    closePicker();
+    // If a previous picker is still open, tear it down first.
+    // IMPORTANT: don't reference inner handlers here (TDZ trap) — use
+    // the previously-captured cleanup closure instead.
+    if (_pickerCleanup) { try { _pickerCleanup(); } catch {} _pickerCleanup = null; }
     const setupsState = loadSetups();
     const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
     const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
@@ -776,53 +780,54 @@ export function openSetupPickerPopup(line, clickX = null, clickY = null) {
       _picker.style.top = `${ny}px`;
     } catch {}
 
-    _picker.addEventListener('click', async (ev) => {
-      const row = ev.target.closest('.tp-pick-row');
-      if (!row) return;
-      const action = row.dataset.action;
-      const id = row.dataset.id;
-      closePicker();
-      if (action === 'new') {
-        // Open modal; inside, user hits "+ 新建 setup..." in the
-        // dropdown or just tweaks and saves. We pre-fill from DEFAULTS
-        // by temporarily making the active setup be DEFAULTS — actually,
-        // simpler: just open the modal on the current active setup,
-        // user can then create-new from the dropdown.
-        const result = await openTradePlanModal(line);
-        resolve(result);
-      } else if (action === 'manage') {
-        const result = await openTradePlanModal(line);
-        resolve(result);
-      } else if (id) {
-        const result = await openTradePlanModal(line, { activeSetupId: id });
-        resolve(result);
-      }
-    });
-
-    // Dismiss on outside click / Esc
+    // Define cleanup BEFORE handlers so the handlers can reference it
+    // via closure without hitting a TDZ. `_pickerCleanup` is the
+    // module-level handle used by a subsequent openSetupPickerPopup
+    // call to tear this picker down cleanly.
     const onDocClick = (ev) => {
       if (_picker && !_picker.contains(ev.target)) {
-        closePicker();
+        cleanup();
         resolve(null);
       }
     };
     const onKey = (ev) => {
       if (ev.key === 'Escape') {
-        closePicker();
+        cleanup();
         resolve(null);
       }
     };
-    setTimeout(() => {
-      document.addEventListener('mousedown', onDocClick, { once: false });
-    }, 0);
-    document.addEventListener('keydown', onKey);
-
-    function closePicker() {
+    const cleanup = () => {
       if (_picker && _picker.parentNode) _picker.parentNode.removeChild(_picker);
       _picker = null;
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
-    }
+      _pickerCleanup = null;
+    };
+    _pickerCleanup = cleanup;
+
+    _picker.addEventListener('click', async (ev) => {
+      const row = ev.target.closest('.tp-pick-row');
+      if (!row) return;
+      const action = row.dataset.action;
+      const id = row.dataset.id;
+      cleanup();
+      if (action === 'new' || action === 'manage') {
+        const result = await openTradePlanModal(line);
+        resolve(result);
+      } else if (id) {
+        const result = await openTradePlanModal(line, { activeSetupId: id });
+        resolve(result);
+      } else {
+        resolve(null);
+      }
+    });
+
+    // Defer attachment so the current click's mousedown (which opened
+    // this picker) doesn't immediately close it.
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocClick);
+    }, 0);
+    document.addEventListener('keydown', onKey);
   });
 }
 
