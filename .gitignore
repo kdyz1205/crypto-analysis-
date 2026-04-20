@@ -27,6 +27,37 @@ venv/
 server_pid.txt
 autoresearch/
 agent_state.json
+
+# Live trading runtime state — contains personal trade history / positions.
+# Files stay on disk, just not tracked by git. See privacy discussion
+# 2026-04-20: keeps future commits from leaking new trades while preserving
+# local records for ML training.
+data/trade_log.jsonl
+data/trade_log_quarantine.jsonl
+data/conditional_orders.json
+data/conditional_orders.json.bak*
+data/manual_trendlines.json
+data/ml_trades.jsonl
+data/user_drawings_ml.jsonl
+data/mar_bb_state.json
+data/mar_bb_daily_risk.json
+data/trendline_active_orders.json
+data/trendline_params.json
+data/trendline_cooldowns.json
+data/subaccount_runtime_events.jsonl
+data/subaccount_runtime_instances.json
+data/daily_reports/
+data/live_outcomes/
+data/strategies/live_drafts/
+data/logs/audit/
+data/logs/browser_audit/
+data/logs/browser_review/
+data/logs/ui_tests/
+data/logs/draw_verify/
+data/line_alerts.json
+data/patterns/_recompute_flags.json
+data/patterns/_batch_progress.json
+data/rule_effectiveness/
 evolution_log.tsv
 trade_audit.jsonl
 lessons_ledger.json
