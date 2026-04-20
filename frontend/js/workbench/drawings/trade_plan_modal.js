@@ -181,9 +181,16 @@ export function openTradePlanModal(line, options = {}) {
     const activeSetup = getActiveSetup(setupsState);
     const defaults = { ...DEFAULTS, ...(activeSetup.config || {}) };
 
-    // Auto-direction: support→long, resistance→short (user can flip)
+    // Direction resolution priority (2026-04-20 fix):
+    //   1. If the active setup has an explicit `direction`, use it.
+    //      This respects the user's saved preference even if it goes
+    //      against the line's natural side (e.g. user saves "做空"
+    //      on a support line for a breakdown setup).
+    //   2. Else derive from line side: support→long, resistance→short.
     const autoDir = line?.side === 'support' ? 'long' : 'short';
-    const values = { ...defaults, direction: autoDir };
+    const savedDir = activeSetup?.config?.direction;
+    const initialDir = (savedDir === 'long' || savedDir === 'short') ? savedDir : autoDir;
+    const values = { ...defaults, direction: initialDir };
 
     _modal = document.createElement('div');
     _modal.className = 'tp-modal-backdrop';
@@ -213,7 +220,12 @@ export function openTradePlanModal(line, options = {}) {
       if (config.size_mode != null) $('[name=size_mode]').value = config.size_mode;
       if (config.submit_to_exchange != null) $('[name=submit_to_exchange]').checked = !!config.submit_to_exchange;
       if (config.reverse_enabled != null) $('[name=reverse_enabled]').checked = !!config.reverse_enabled;
-      // Don't override direction — that came from the line side.
+      // Direction: honor the setup's saved value. Switching to a setup
+      // whose name says "做空" shouldn't flip back to long just because
+      // the line is a support. User can still override via the dropdown.
+      if (config.direction === 'long' || config.direction === 'short') {
+        $('[name=direction]').value = config.direction;
+      }
       applySizeModeVisibility();
       refreshLivePreview();
     };
