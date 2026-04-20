@@ -452,8 +452,12 @@ function render(opts = {}) {
     ${renderBitgetSection()}
     ${renderLineListSection(lines)}
     ${currentLine ? renderSelectedSection(opts.loading) : ''}
-    ${renderPendingSection(true)}
   `;
+  // Conditionals-list section (renderPendingSection) intentionally
+  // omitted 2026-04-20 per user: cumulative cancelled rows piled up to
+  // dozens, making the useful sections (手画线 + selected) hard to scan.
+  // The data + API still exists for programmatic use; only the sidebar
+  // list is hidden.
 }
 
 function renderBitgetSection() {

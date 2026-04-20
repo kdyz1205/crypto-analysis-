@@ -24,6 +24,51 @@ import { createConditional, placeLineOrder } from '../../services/conditionals.j
 import { esc } from '../../util/dom.js';
 
 const LS_KEY = 'v2.tradeplan.defaults.v1';
+const SETUPS_KEY = 'v2.tradeplan.setups.v1';
+
+// ────────────────────────────────────────────────────────────────
+// Setup presets (reusable parameter bundles)
+// ────────────────────────────────────────────────────────────────
+// Schema in localStorage:
+//   { active_id: string, setups: [{ id, name, config: {...} }] }
+// Each setup.config carries the same shape as DEFAULTS (minus `direction`
+// because that's derived from the line side at open time).
+// First use: seeds one "默认 Default" setup from DEFAULTS.
+
+function loadSetups() {
+  try {
+    const raw = localStorage.getItem(SETUPS_KEY);
+    if (!raw) return _seedSetups();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.setups) || parsed.setups.length === 0) return _seedSetups();
+    return parsed;
+  } catch {
+    return _seedSetups();
+  }
+}
+
+function _seedSetups() {
+  const seed = {
+    active_id: 'default',
+    setups: [
+      { id: 'default', name: '默认 Default', config: { ...DEFAULTS } },
+    ],
+  };
+  try { localStorage.setItem(SETUPS_KEY, JSON.stringify(seed)); } catch {}
+  return seed;
+}
+
+function saveSetups(state) {
+  try { localStorage.setItem(SETUPS_KEY, JSON.stringify(state)); } catch {}
+}
+
+function getActiveSetup(state) {
+  return state.setups.find((s) => s.id === state.active_id) || state.setups[0];
+}
+
+function _genId() {
+  return 'setup_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+}
 
 const DEFAULTS = {
   direction: 'short',           // support→long, resistance→short — auto-set on open
@@ -116,7 +161,13 @@ function getCachedEquity(mode) {
 export function openTradePlanModal(line) {
   return new Promise((resolve) => {
     closeExisting();
-    const defaults = loadDefaults();
+    // Load the ACTIVE setup's config (not the legacy LS_KEY defaults).
+    // Setups system supersedes "last used" persistence: now the user
+    // picks from named bundles instead of carrying whatever they last
+    // typed into the next line.
+    let setupsState = loadSetups();
+    const activeSetup = getActiveSetup(setupsState);
+    const defaults = { ...DEFAULTS, ...(activeSetup.config || {}) };
 
     // Auto-direction: support→long, resistance→short (user can flip)
     const autoDir = line?.side === 'support' ? 'long' : 'short';
@@ -124,7 +175,7 @@ export function openTradePlanModal(line) {
 
     _modal = document.createElement('div');
     _modal.className = 'tp-modal-backdrop';
-    _modal.innerHTML = renderShell(line, values);
+    _modal.innerHTML = renderShell(line, values, setupsState);
     document.body.appendChild(_modal);
     injectStyles();
 
@@ -132,6 +183,87 @@ export function openTradePlanModal(line) {
     const root = _modal;
     const $ = (sel) => root.querySelector(sel);
     const $$ = (sel) => Array.from(root.querySelectorAll(sel));
+
+    // ─── Setup preset management ──────────────────────────────
+    const applySetupToForm = (config) => {
+      if (!config) return;
+      const fieldMap = {
+        buffer_pct: 'buffer_pct', stop_pct: 'stop_pct', rr_target: 'rr_target',
+        leverage: 'leverage', notional_usd: 'notional_usd',
+        reverse_stop_pct: 'reverse_stop_pct', reverse_rr_target: 'reverse_rr_target',
+      };
+      Object.entries(fieldMap).forEach(([k, name]) => {
+        const el = $(`[name=${name}]`);
+        if (el != null && config[k] != null) el.value = config[k];
+      });
+      if (config.order_kind != null) $('[name=order_kind]').value = config.order_kind;
+      if (config.exchange_mode != null) $('[name=exchange_mode]').value = config.exchange_mode;
+      if (config.submit_to_exchange != null) $('[name=submit_to_exchange]').checked = !!config.submit_to_exchange;
+      if (config.reverse_enabled != null) $('[name=reverse_enabled]').checked = !!config.reverse_enabled;
+      // Don't override direction — that came from the line side.
+      refreshLivePreview();
+    };
+
+    const refreshSetupDropdown = () => {
+      const sel = $('#tp-setup-select');
+      if (!sel) return;
+      sel.innerHTML = setupsState.setups
+        .map((s) => `<option value="${esc(s.id)}" ${s.id === setupsState.active_id ? 'selected' : ''}>${esc(s.name)}</option>`)
+        .join('') + `<option value="__new__">+ 新建 setup...</option>`;
+    };
+
+    $('#tp-setup-select')?.addEventListener('change', (ev) => {
+      const v = ev.target.value;
+      if (v === '__new__') {
+        const name = prompt('新 setup 名字:', `Setup ${setupsState.setups.length + 1}`);
+        if (!name) { ev.target.value = setupsState.active_id; return; }
+        const id = _genId();
+        setupsState.setups.push({ id, name, config: readForm() });
+        setupsState.active_id = id;
+        saveSetups(setupsState);
+        refreshSetupDropdown();
+      } else {
+        setupsState.active_id = v;
+        const s = getActiveSetup(setupsState);
+        applySetupToForm(s.config);
+        saveSetups(setupsState);
+      }
+    });
+
+    $('#tp-setup-save')?.addEventListener('click', () => {
+      const s = getActiveSetup(setupsState);
+      s.config = readForm();
+      saveSetups(setupsState);
+      flashToast('已保存到当前 setup');
+    });
+
+    $('#tp-setup-rename')?.addEventListener('click', () => {
+      const s = getActiveSetup(setupsState);
+      const name = prompt('重命名 setup:', s.name);
+      if (!name) return;
+      s.name = name;
+      saveSetups(setupsState);
+      refreshSetupDropdown();
+    });
+
+    $('#tp-setup-delete')?.addEventListener('click', () => {
+      if (setupsState.setups.length <= 1) { flashToast('至少保留 1 个 setup'); return; }
+      const s = getActiveSetup(setupsState);
+      if (!confirm(`删除 setup "${s.name}"?`)) return;
+      setupsState.setups = setupsState.setups.filter((x) => x.id !== s.id);
+      setupsState.active_id = setupsState.setups[0].id;
+      saveSetups(setupsState);
+      applySetupToForm(setupsState.setups[0].config);
+      refreshSetupDropdown();
+    });
+
+    function flashToast(msg) {
+      const el = $('#tp-setup-toast');
+      if (!el) return;
+      el.textContent = msg;
+      el.style.opacity = '1';
+      setTimeout(() => { el.style.opacity = '0'; }, 1400);
+    }
 
     const readForm = () => ({
       direction: $('[name=direction]').value,
@@ -308,16 +440,27 @@ function closeExisting() {
   _modal = null;
 }
 
-function renderShell(line, v) {
+function renderShell(line, v, setupsState) {
   const sym = esc(line?.symbol || '');
   const tf = esc(line?.timeframe || '');
   const side = esc(line?.side || '');
   const id = esc(line?.manual_line_id || '');
+  const setupsOpts = (setupsState?.setups || [])
+    .map((s) => `<option value="${esc(s.id)}" ${s.id === setupsState.active_id ? 'selected' : ''}>${esc(s.name)}</option>`)
+    .join('') + `<option value="__new__">+ 新建 setup...</option>`;
   return `
     <div class="tp-modal">
       <div class="tp-head">
         <div class="tp-title">Trade Plan — <span class="tp-sym">${sym}</span> ${tf}</div>
         <div class="tp-sub">line: ${side} · ${id}</div>
+        <div class="tp-setup-bar">
+          <label class="tp-setup-label">Setup:</label>
+          <select id="tp-setup-select" class="tp-setup-select">${setupsOpts}</select>
+          <button type="button" id="tp-setup-save" class="tp-setup-btn" title="把当前表单值保存到选中的 setup">保存</button>
+          <button type="button" id="tp-setup-rename" class="tp-setup-btn" title="重命名当前 setup">重命名</button>
+          <button type="button" id="tp-setup-delete" class="tp-setup-btn tp-setup-btn-danger" title="删除当前 setup">删除</button>
+          <span id="tp-setup-toast" class="tp-setup-toast"></span>
+        </div>
       </div>
 
       <div class="tp-body">
@@ -408,7 +551,32 @@ function injectStyles() {
       color: #d8dde8; font-size: 13px;
       box-shadow: 0 12px 48px rgba(0,0,0,0.7);
     }
-    .tp-head { padding: 16px 20px; border-bottom: 1px solid #1d2537; }
+    .tp-head { padding: 14px 20px 12px; border-bottom: 1px solid #1d2537; }
+    .tp-setup-bar {
+      display: flex; align-items: center; gap: 6px;
+      margin-top: 10px; flex-wrap: wrap;
+    }
+    .tp-setup-label {
+      font-size: 11px; color: #8a95a6; font-weight: 600;
+    }
+    .tp-setup-select {
+      background: #141a26; border: 1px solid #2a3548; color: #e8edf5;
+      padding: 5px 8px; border-radius: 4px; font-size: 12px;
+      min-width: 160px; cursor: pointer;
+    }
+    .tp-setup-select:focus { outline: none; border-color: #38bdf8; }
+    .tp-setup-btn {
+      background: #1d2537; border: 1px solid #2a3548; color: #d8dde8;
+      padding: 4px 10px; border-radius: 4px; font-size: 11px;
+      cursor: pointer;
+    }
+    .tp-setup-btn:hover { background: #24304a; }
+    .tp-setup-btn-danger { color: #ff9090; }
+    .tp-setup-btn-danger:hover { background: #3a1e22; }
+    .tp-setup-toast {
+      margin-left: 6px; font-size: 11px; color: #00e676;
+      opacity: 0; transition: opacity 0.2s;
+    }
     .tp-title { font-size: 15px; font-weight: 700; color: #e8edf5; }
     .tp-title .tp-sym { color: #38bdf8; }
     .tp-sub { font-size: 11px; color: #6b7889; margin-top: 4px; }

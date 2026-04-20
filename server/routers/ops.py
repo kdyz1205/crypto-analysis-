@@ -85,6 +85,16 @@ async def serve_css(request: Request):
     return _conditional_file_response(FRONTEND_DIR / "style.css", "text/css", request)
 
 
+@router.get("/v2-theme-enhanced.css")
+async def serve_v2_theme_enhanced(request: Request):
+    """Optional theme override loaded after v2.css — higher-contrast palette."""
+    return _conditional_file_response(
+        FRONTEND_DIR / "v2-theme-enhanced.css",
+        "text/css",
+        request,
+    )
+
+
 @router.get("/js/{subpath:path}")
 async def serve_js_module(subpath: str, request: Request):
     """Serve Phase 2 ES modules from frontend/js/.

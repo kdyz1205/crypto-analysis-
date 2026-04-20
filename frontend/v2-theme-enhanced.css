@@ -1,0 +1,136 @@
+/*
+  Theme override for Trading OS v2
+
+  This stylesheet introduces a fresher, more legible palette based on 2026 UI design
+  trends such as elevated neutrals and hyper‑saturated accents【615646527641362†L64-L89】.
+  It is intended to be loaded **after** the existing v2.css to override the
+  variables and a handful of component styles without rewriting the entire
+  stylesheet. To apply, include this file after v2.css in your HTML.
+
+  Highlights:
+  - Softer dark backgrounds and borders for reduced eye strain and improved
+    readability in extended trading sessions【615646527641362†L125-L163】.
+  - A vibrant primary accent colour used sparingly to draw attention to
+    important actions and statuses【615646527641362†L165-L186】.
+  - Slightly larger border radii and gentle gradients to give panels a
+    modern, premium feel.
+
+  Feel free to tweak the values below to align with your brand colours.
+*/
+
+/* Override the root colour variables with a calmer neutral base and a bold
+   accent. Colours are chosen to maintain high contrast while feeling
+   contemporary. */
+:root {
+  /* backgrounds */
+  --v2-bg: #0e1321;
+  --v2-bg-alt: #18203b;
+  /* card/panel backgrounds use additional variables defined here */
+  --v2-card: rgba(255, 255, 255, 0.04);
+  --v2-panel: #131e34;
+  /* border */
+  --v2-border: #2c3753;
+  /* text colours */
+  --v2-text: #e4e9f1;
+  --v2-muted: #9fa8b7;
+  /* accent palette */
+  --v2-primary: #4c8bf5;
+  --v2-green: #00c474;
+  --v2-red: #e64868;
+  --v2-yellow: #f5c06b;
+}
+
+/* Give the header a subtle gradient for depth. */
+.v2-header {
+  background: linear-gradient(135deg, #111c33 0%, #0e1630 100%);
+}
+
+/* Buttons: ensure the primary and danger buttons use the updated palette. */
+.btn.btn-primary,
+.v2-tf-btn.active,
+.v2-scale-btn.active {
+  background: var(--v2-primary) !important;
+  border-color: var(--v2-primary) !important;
+  color: #ffffff !important;
+}
+
+.btn.btn-danger,
+.exec-btn-danger,
+.cond-btn-danger {
+  background: rgba(230, 72, 104, 0.15) !important;
+  border-color: rgba(230, 72, 104, 0.45) !important;
+  color: var(--v2-red) !important;
+}
+
+/* Cards and panels: use the new card and panel colours. */
+.view-section,
+.factory-card,
+.fcard,
+.lb-card,
+.deploy-card,
+.exec-strategy-card,
+.cond-section,
+.cond-row,
+.cond-modal {
+  background: var(--v2-card) !important;
+  border-color: var(--v2-border) !important;
+}
+
+/* Increase border radius slightly to soften edges. */
+.view-section,
+.factory-card,
+.fcard,
+.lb-card,
+.deploy-card,
+.exec-strategy-card,
+.cond-section,
+.cond-row,
+.cond-modal,
+.btn,
+.v2-tf-btn,
+.v2-scale-btn,
+.v2-symbol-input,
+.cmdk-modal,
+.research-drawer,
+.chat-dock {
+  border-radius: 8px !important;
+}
+
+/* Use a soft shadow on floating panels to create depth. */
+.chat-dock,
+.research-drawer,
+.v2-execution-panel,
+.cmdk-modal {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Muted text colour for secondary information. */
+.view-desc,
+.view-stat-label,
+.lb-card-factors,
+.factory-card-desc,
+.fcard-desc,
+.cond-modal-desc,
+.cond-line-selector label {
+  color: var(--v2-muted) !important;
+}
+
+/* Apply gradient accent to the primary CTAs to reflect Soft Gradients 2.0
+   trends【615646527641362†L217-L229】. */
+.btn.btn-primary, .exec-btn-primary, .cond-btn-primary {
+  background: linear-gradient(135deg, rgba(76, 139, 245, 0.85), rgba(76, 139, 245, 0.65)) !important;
+  border-color: rgba(76, 139, 245, 0.8) !important;
+  color: #ffffff !important;
+}
+
+/* Fine-tune focus state for inputs. */
+.v2-symbol-input:focus,
+.composer-group input:focus,
+.composer-group select:focus,
+.builder-row input:focus,
+.builder-row select:focus,
+.cond-modal-row input:focus,
+.cond-modal-row select:focus {
+  border-color: var(--v2-primary) !important;
+  outline: none;
+}
