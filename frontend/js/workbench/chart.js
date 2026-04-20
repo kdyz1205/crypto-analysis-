@@ -466,6 +466,16 @@ export async function loadCurrent(forcePatterns = false) {
     if (!isChartLoadCurrent(loadSeq, currentSymbol, currentInterval)) {
       return { ok: false, stale: true };
     }
+    // AbortError is an expected side-effect of rapid symbol/TF
+    // switching — we abort an in-flight fetch when the user selects
+    // a new symbol before the previous fetch resolves. Don't spam
+    // console.error for the normal cancel path; just warn + return.
+    const isAbort = err?.name === 'AbortError'
+      || /abort/i.test(err?.message || '');
+    if (isAbort) {
+      console.warn('[chart] previous load aborted (user switched symbol/TF)');
+      return { ok: false, aborted: true };
+    }
     setHistoryMeta(null);
     renderStrategyOverlays();
     console.error('[chart] load failed:', err);
