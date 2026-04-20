@@ -334,7 +334,15 @@ export function openTradePlanModal(line, options = {}) {
           ? v.notional_usd
           : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
       }
-      const riskUsd = notional * (v.stop_pct / 100);
+      // Total stop distance = entry-buffer + line-break confirmation.
+      // User spec 2026-04-20: the line is the stop reference; the
+      // `stop_pct` is just the tiny wick-through-line distance. The
+      // FULL risk is (buffer + stop) because entry is placed at
+      // line × (1 ± buffer) and stop at line × (1 ∓ stop). Backend
+      // already does this correctly at order-place time; this is the
+      // preview display catching up.
+      const totalStopPct = (v.buffer_pct || 0) + (v.stop_pct || 0);
+      const riskUsd = notional * (totalStopPct / 100);
       const rewardUsd = riskUsd * v.rr_target;
       const riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
       const rewardPctAccount = equity > 0 ? (rewardUsd / equity) * 100 : 0;
