@@ -54,6 +54,10 @@ data/logs/browser_audit/
 data/logs/browser_review/
 data/logs/ui_tests/
 data/logs/draw_verify/
+# Analysis reports can reference specific symbols + PnL of real trades
+data/logs/*.md
+data/logs/*.log
+data/logs/*.json
 data/line_alerts.json
 data/patterns/_recompute_flags.json
 data/patterns/_batch_progress.json
