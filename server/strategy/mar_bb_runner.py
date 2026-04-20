@@ -1064,6 +1064,15 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                             try:
                                 _coid = str(last.get("clientOid") or last.get("clientOId") or "").strip()
                                 _coid_l = _coid.lower()
+                                # Always grab the Bitget order id up front so
+                                # capture_position_closed_from_drawing's
+                                # exchange_order_id kwarg is defined on BOTH
+                                # paths (with mlid from params OR looked up
+                                # via the store). Previously only the lookup
+                                # path set it, so the primary-path call raised
+                                # UnboundLocalError and the event was silently
+                                # dropped. Caught by Codex review 2026-04-20.
+                                _order_id_s = str(last.get("orderId") or "")
                                 # Primary: the manual_line_id we stored in
                                 # _trendline_params at register time. This is
                                 # the ground truth — we KNOW this position
@@ -1074,7 +1083,6 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                                 _matched_cond = None
                                 if not _mlid and _coid_l.startswith(("line_", "replan_", "cond_", "rev_")):
                                     from server.conditionals import ConditionalOrderStore
-                                    _order_id_s = str(last.get("orderId") or "")
                                     _cstore = ConditionalOrderStore()
                                     for _c in _cstore.list_all(symbol=sym):
                                         if _order_id_s and str(_c.exchange_order_id or "") == _order_id_s:
@@ -2361,7 +2369,7 @@ async def _maintenance_loop() -> None:
 def start_runner(config: dict | None = None) -> dict:
     """Start the runner loop. Idempotent — returns current state if
     already running."""
-    global _task, _maintenance_task, _running
+    global _task, _maintenance_task, _running, _runner_started_ts
     if _task is not None and not _task.done():
         return {"ok": True, "already_running": True, "state": get_state()}
     merged = {**DEFAULT_RUNNER_CFG, **(config or {})}
@@ -2369,6 +2377,14 @@ def start_runner(config: dict | None = None) -> dict:
     _state.last_error = ""
     _load_state()
     _running = True
+    # Stamp start time BEFORE spawning the loop so the replay-guard in
+    # record_close_outcome() can filter out historical close events that
+    # were fired during the pre-start window. Missing this assignment
+    # was found by Codex review 2026-04-20: started stayed 0.0 forever,
+    # so the 30-minute stale-event skip was the only protection and
+    # replayed losses could trip the indefinite consecutive-loss breaker
+    # during startup sync.
+    _runner_started_ts = time.time()
     _task = asyncio.create_task(_loop(), name="mar_bb_runner")
     _maintenance_task = asyncio.create_task(_maintenance_loop(), name="trendline_maintenance")
     return {"ok": True, "started": True, "state": get_state()}
@@ -2474,10 +2490,15 @@ def start_maintenance_only() -> dict:
     works for any live position even when the user hasn't started the
     scanner. Loads persisted `_trendline_params` from disk first.
     """
-    global _maintenance_only_task
+    global _maintenance_only_task, _runner_started_ts
     if _maintenance_only_task is not None and not _maintenance_only_task.done():
         return {"ok": True, "already_running": True}
     _load_trendline_params()
+    # Mirror the stamp that start_runner() sets, so the replay-loss guard
+    # in record_close_outcome() works when the user never calls
+    # start_runner() (auto_start=False path).
+    if _runner_started_ts == 0:
+        _runner_started_ts = time.time()
     _maintenance_only_task = asyncio.create_task(
         _maintenance_only_loop(),
         name="trendline_maintenance_only",

@@ -40,23 +40,37 @@ let _sortKey = 'volume_usdt';    // current sort column
 let _sortDir = 'desc';           // 'asc' | 'desc'
 
 export async function initSymbolPicker(comboId = 'v2-symbol-combo') {
-  try {
-    const data = await marketSvc.getSymbolsExtended(TOP_N_DEFAULT);
-    _rows = Array.isArray(data) ? data : [];
-    _allSymbols = _rows.map((r) => r.symbol);
-    setAllSymbols(_allSymbols);
-  } catch (err) {
-    console.error('[symbol_picker] extended load failed, falling back to /api/symbols:', err);
+  const loadLegacyFallback = async (reason) => {
+    console.warn(`[symbol_picker] using /api/symbols fallback (${reason})`);
     try {
       const syms = await marketSvc.getSymbols();
       _allSymbols = Array.isArray(syms) ? syms : [];
       _rows = _allSymbols.map((s) => ({ symbol: s, last_price: 0, change24h: 0, volume_usdt: 0 }));
       setAllSymbols(_allSymbols);
     } catch (err2) {
-      console.error('[symbol_picker] fallback also failed:', err2);
+      console.error('[symbol_picker] legacy fallback also failed:', err2);
       _rows = [];
       _allSymbols = [];
     }
+  };
+
+  try {
+    const data = await marketSvc.getSymbolsExtended(TOP_N_DEFAULT);
+    const rows = Array.isArray(data) ? data : [];
+    // /api/symbols/extended returns [] with HTTP 200 when Bitget's ticker
+    // fetch hiccups (see server/routers/market.py). Treat empty-but-ok
+    // the same as thrown — user's picker must never render zero symbols.
+    // Caught by Codex review 2026-04-20.
+    if (rows.length === 0) {
+      await loadLegacyFallback('extended returned empty');
+    } else {
+      _rows = rows;
+      _allSymbols = _rows.map((r) => r.symbol);
+      setAllSymbols(_allSymbols);
+    }
+  } catch (err) {
+    console.error('[symbol_picker] extended load threw:', err);
+    await loadLegacyFallback('extended threw');
   }
 
   _combo = $('#' + comboId);
