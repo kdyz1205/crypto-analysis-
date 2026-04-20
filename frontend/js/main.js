@@ -180,9 +180,29 @@ function wireHeaderButtons() {
     $('#v2-ma-toggle')?.classList.toggle('active', visible);
   });
 
-  on('#v2-wyckoff-toggle', 'click', () => {
-    toggleWyckoffOverlay();
-    $('#v2-wyckoff-toggle')?.classList.toggle('active');
+  on('#v2-wyckoff-toggle', 'click', async () => {
+    // 2026-04-20: Wyckoff is OPT-IN. First click draws + shows; second
+    // click hides. The flag drives the chart-load redraw path so that
+    // switching symbol/TF doesn't resurrect a hidden overlay.
+    const next = !window.__wyckoffEnabled;
+    window.__wyckoffEnabled = next;
+    $('#v2-wyckoff-toggle')?.classList.toggle('active', next);
+    if (next) {
+      // Draw now using the current chart's candles.
+      try {
+        await loadCurrent(false);
+      } catch {}
+    } else {
+      // Clear the existing series data so the orange volBaseline line
+      // disappears immediately without waiting for a reload.
+      try {
+        const mod = await import('./workbench/wyckoff_overlay.js');
+        if (typeof mod.clearWyckoffOverlay === 'function') {
+          const chart = getChart();
+          if (chart) mod.clearWyckoffOverlay(chart);
+        }
+      } catch {}
+    }
   });
 
   const scaleToggle = $('#v2-scale-toggle');
