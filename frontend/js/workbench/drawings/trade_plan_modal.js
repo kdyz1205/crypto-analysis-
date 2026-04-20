@@ -28,16 +28,22 @@ const LS_KEY = 'v2.tradeplan.defaults.v1';
 const DEFAULTS = {
   direction: 'short',           // support→long, resistance→short — auto-set on open
   order_kind: 'bounce',         // bounce | breakout
-  buffer_pct: 0.05,             // entry offset; also full line-stop risk
-  stop_pct: 0.05,               // line-break confirmation beyond the line
-  rr_target: 2.0,
-  leverage: 10,
-  notional_usd: 100,            // only used if leverage=0
+  // User guidance 2026-04-20: "I want 0.01 / 0.02 / 0.03 so it fully
+  // crosses the line before firing". 0.03% = confirmed break, not noise.
+  buffer_pct: 0.03,             // entry buffer beyond the line (%)
+  stop_pct: 0.1,                // line-break stop (%)
+  rr_target: 5.0,
+  leverage: 10,                 // sent to Bitget via set-leverage API
+  // Notional USDT — this is the SOURCE OF TRUTH for position size.
+  // Previously the modal ignored this field when leverage>0 and used
+  // equity × leverage instead. User found that surprising: "我只想把
+  // USDT 30 设好就够了". Now we always honor this value.
+  notional_usd: 30,
   exchange_mode: 'live',        // paper | live
   submit_to_exchange: true,
-  // auto-reverse
+  // Auto-reverse: trigger IMMEDIATELY at the stop price (no entry buffer),
+  // then a tight reverse stop in case price oscillates back.
   reverse_enabled: true,
-  reverse_buffer_pct: 0.05,
   reverse_stop_pct: 0.05,
   reverse_rr_target: 2.0,
 };
@@ -138,7 +144,10 @@ export function openTradePlanModal(line) {
       exchange_mode: $('[name=exchange_mode]').value,
       submit_to_exchange: $('[name=submit_to_exchange]').checked,
       reverse_enabled: $('[name=reverse_enabled]').checked,
-      reverse_buffer_pct: Number($('[name=reverse_buffer_pct]').value) || 0,
+      // Auto-reverse has NO buffer — it triggers at the stop price. See
+      // user spec 2026-04-20: "止损了你马上就做" = fire immediately, no
+      // distance-based entry offset.
+      reverse_buffer_pct: 0,
       reverse_stop_pct: Number($('[name=reverse_stop_pct]').value) || 0,
       reverse_rr_target: Number($('[name=reverse_rr_target]').value) || 0,
     });
@@ -152,25 +161,24 @@ export function openTradePlanModal(line) {
         ? `$${equity.toFixed(2)}`
         : (accountErr ? `— 账户数据加载失败: ${accountErr}` : '— (账户余额为 0)');
 
-      let notional, riskUsd, rewardUsd, riskPctAccount, rewardPctAccount;
-      if (v.leverage > 0) {
-        notional = equity * v.leverage;
-        riskPctAccount = v.stop_pct * v.leverage;
-        rewardPctAccount = riskPctAccount * v.rr_target;
-        riskUsd = equity * (riskPctAccount / 100);
-        rewardUsd = equity * (rewardPctAccount / 100);
-      } else {
-        notional = v.notional_usd;
-        riskUsd = notional * (v.stop_pct / 100);
-        rewardUsd = riskUsd * v.rr_target;
-        riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
-        rewardPctAccount = equity > 0 ? (rewardUsd / equity) * 100 : 0;
-      }
+      // Source of truth for position size: notional_usd. Leverage is
+      // sent to Bitget via set-leverage so the margin side is handled
+      // correctly — we do NOT override notional based on equity.
+      // Pre-2026-04-20 the formula `equity * leverage` hijacked the
+      // field, which confused the user when they set $30 and saw $43.55.
+      const notional = v.notional_usd > 0
+        ? v.notional_usd
+        : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
+      const riskUsd = notional * (v.stop_pct / 100);
+      const rewardUsd = riskUsd * v.rr_target;
+      const riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
+      const rewardPctAccount = equity > 0 ? (rewardUsd / equity) * 100 : 0;
+      const marginUsd = v.leverage > 0 ? notional / v.leverage : notional;
 
       const eqEl = $('#tp-preview-equity');
       eqEl.textContent = accountDisplay;
       eqEl.style.color = equity > 0 ? '' : '#ff9800';
-      $('#tp-preview-notional').textContent = `$${notional.toFixed(2)}`;
+      $('#tp-preview-notional').textContent = `$${notional.toFixed(2)} (保证金 $${marginUsd.toFixed(2)})`;
       $('#tp-preview-risk').textContent =
         `$${riskUsd.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`;
       $('#tp-preview-reward').textContent =
@@ -201,22 +209,24 @@ export function openTradePlanModal(line) {
         const v = readForm();
         saveDefaults(v);
 
-        // Compute size_usdt. If user set a leverage, we derive notional
-        // from (equity × leverage); otherwise use the raw notional_usd.
+        // Position size = user-entered notional_usd. Leverage only affects
+        // how much MARGIN Bitget locks (set via the set-leverage API before
+        // order placement). Pre-2026-04-20 this path overrode notional with
+        // equity × leverage, which surprised the user.
         let size_usdt = v.notional_usd;
-        if (v.leverage > 0) {
+        if (!size_usdt || size_usdt <= 0) {
+          // Last-resort fallback: full equity × leverage (the old behaviour)
+          // so very-small accounts with notional=0 still get SOME order.
           const cachedEquity = getCachedEquity(v.exchange_mode);
-          if (cachedEquity > 0) {
-            size_usdt = cachedEquity * v.leverage;
-          } else {
-            try {
-              const equity = await fetchEquity(v.exchange_mode);
-              if (equity > 0) size_usdt = equity * v.leverage;
-            } catch {}
+          const equity = cachedEquity > 0
+            ? cachedEquity
+            : await fetchEquity(v.exchange_mode).catch(() => 0);
+          if (equity > 0 && v.leverage > 0) {
+            size_usdt = equity * v.leverage;
           }
         }
         if (!size_usdt || size_usdt <= 0) {
-          throw new Error('size_usdt 计算失败 — 填一个 notional 或确保账户有余额');
+          throw new Error('notional_usd 为空且账户余额未读到 — 在"名义 USDT"里填一个数额');
         }
 
         // Place a real Bitget plan order. The backend stores it as a
@@ -325,19 +335,19 @@ function renderShell(line, v) {
         </div>
 
         <div class="tp-row">
-          <label class="tp-label">入场 Buffer %</label>
+          <label class="tp-label" title="触发价离线的距离(%)。typical: 0.01-0.1">入场 Buffer %</label>
           <input type="number" name="buffer_pct" value="${v.buffer_pct}" step="0.01" min="0"/>
-          <label class="tp-label">止损</label>
+          <label class="tp-label" title="止损离线的距离(%)">止损 %</label>
           <input type="number" name="stop_pct" value="${v.stop_pct}" step="0.01" min="0"/>
           <label class="tp-label">RR</label>
           <input type="number" name="rr_target" value="${v.rr_target}" step="0.1" min="0"/>
         </div>
 
         <div class="tp-row">
-          <label class="tp-label">杠杆</label>
-          <input type="number" name="leverage" value="${v.leverage}" step="1" min="0"/>
-          <label class="tp-label">名义 USDT (leverage=0 时)</label>
-          <input type="number" name="notional_usd" value="${v.notional_usd}" step="10" min="0"/>
+          <label class="tp-label" title="通过 set-leverage API 设到 Bitget 账户,无需手动开">Bitget 杠杆</label>
+          <input type="number" name="leverage" value="${v.leverage}" step="1" min="1" max="125"/>
+          <label class="tp-label" title="仓位名义金额(USDT)。保证金 = 名义 ÷ 杠杆">名义 USDT</label>
+          <input type="number" name="notional_usd" value="${v.notional_usd}" step="5" min="0"/>
           <label class="tp-label">账户</label>
           <select name="exchange_mode">
             <option value="live" ${v.exchange_mode === 'live' ? 'selected' : ''}>Live</option>
@@ -356,14 +366,15 @@ function renderShell(line, v) {
           <div class="tp-preview-row tp-reward"><span>止盈目标</span><span id="tp-preview-reward">—</span></div>
         </div>
 
-        <div class="tp-section-head">自动反手 (止损后同一条线反向挂单)</div>
+        <div class="tp-section-head">自动反手 (止损触发后立即反向挂单)</div>
         <div class="tp-row tp-row-check">
           <label><input type="checkbox" name="reverse_enabled" ${v.reverse_enabled ? 'checked' : ''}/> 启用自动反手</label>
+          <span class="tp-hint" style="margin-left:12px;color:#6b7889;font-size:11px">
+            反手在止损价直接触发(无 buffer),反手 stop 一般 0.03-0.1%。
+          </span>
         </div>
         <div class="tp-row">
-          <label class="tp-label">反手 Buffer %</label>
-          <input type="number" name="reverse_buffer_pct" value="${v.reverse_buffer_pct}" step="0.01" min="0"/>
-          <label class="tp-label">反手止损</label>
+          <label class="tp-label" title="反手止损距新入场的距离(%)。一般很小:0.03-0.1">反手止损 %</label>
           <input type="number" name="reverse_stop_pct" value="${v.reverse_stop_pct}" step="0.01" min="0"/>
           <label class="tp-label">反手 RR</label>
           <input type="number" name="reverse_rr_target" value="${v.reverse_rr_target}" step="0.1" min="0"/>
