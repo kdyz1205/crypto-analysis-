@@ -403,16 +403,21 @@ export async function loadCurrent(forcePatterns = false) {
       drawMAOverlays(chart, useOverlays, candleTimes);
     }
 
-    // Wyckoff accumulation/distribution overlay
-    try {
-      drawWyckoffOverlay(chart, candles);
-      // Attach Spring/UTAD markers to candlestick series
-      const wMarkers = getWyckoffMarkers();
-      if (wMarkers.length > 0 && candleSeries) {
-        const existing = candleSeries.markers ? candleSeries.markers() : [];
-        candleSeries.setMarkers([...existing, ...wMarkers].sort((a, b) => a.time - b.time));
-      }
-    } catch (e) { console.warn('[wyckoff]', e); }
+    // Wyckoff overlay (accumulation/distribution + vol-ratio indicator).
+    // Only drawn when user explicitly turns it on via the WYC button.
+    // 2026-04-20: previously unconditional → drew an orange volBaseline
+    // line at ratio=1.0 that visually sat near the bottom of the chart,
+    // which users mistook for a stuck manual line they couldn't delete.
+    if (window.__wyckoffEnabled) {
+      try {
+        drawWyckoffOverlay(chart, candles);
+        const wMarkers = getWyckoffMarkers();
+        if (wMarkers.length > 0 && candleSeries) {
+          const existing = candleSeries.markers ? candleSeries.markers() : [];
+          candleSeries.setMarkers([...existing, ...wMarkers].sort((a, b) => a.time - b.time));
+        }
+      } catch (e) { console.warn('[wyckoff]', e); }
+    }
 
     updateHeader(currentSymbol, currentInterval, lastPrice);
     // Loaded silently — no console spam
