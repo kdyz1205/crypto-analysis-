@@ -359,14 +359,15 @@ export function openTradePlanModal(line, options = {}) {
           ? v.notional_usd
           : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
       }
-      // Total stop distance = entry-buffer + line-break confirmation.
-      // User spec 2026-04-20: the line is the stop reference; the
-      // `stop_pct` is just the tiny wick-through-line distance. The
-      // FULL risk is (buffer + stop) because entry is placed at
-      // line × (1 ± buffer) and stop at line × (1 ∓ stop). Backend
-      // already does this correctly at order-place time; this is the
-      // preview display catching up.
-      const totalStopPct = (v.buffer_pct || 0) + (v.stop_pct || 0);
+      // Risk = entry-to-stop distance = buffer% + stop% (always).
+      // Entry sits on one side of the line, stop on the opposite side,
+      // so total distance is the sum. This is mode-agnostic for both
+      // "bounce" (mark drifts DOWN to trigger) and "breakout" (mark
+      // drifts UP to trigger) — Bitget's trigger-market plan handles
+      // both via the trigger price's position vs current mark.
+      const buffer = Math.abs(v.buffer_pct || 0);
+      const stop = Math.abs(v.stop_pct || 0);
+      const totalStopPct = buffer + stop;
       const riskUsd = notional * (totalStopPct / 100);
       const rewardUsd = riskUsd * v.rr_target;
       const riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
@@ -385,9 +386,10 @@ export function openTradePlanModal(line, options = {}) {
       // entry-to-line distance. Total = sum.
       const stopEl = $('#tp-preview-stop-dist');
       if (stopEl) {
+        stopEl.style.color = '';
         stopEl.textContent =
           `${totalStopPct.toFixed(2)}% `
-          + `(${(v.buffer_pct || 0).toFixed(2)}% buffer + ${(v.stop_pct || 0).toFixed(2)}% 过线)`;
+          + `(${buffer.toFixed(2)}% buffer + ${stop.toFixed(2)}% 过线)`;
       }
       $('#tp-preview-risk').textContent =
         `$${riskUsd.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`;
