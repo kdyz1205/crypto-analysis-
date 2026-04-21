@@ -364,6 +364,18 @@ export function openTradePlanModal(line, options = {}) {
       eqEl.textContent = accountDisplay;
       eqEl.style.color = equity > 0 ? '' : '#ff9800';
       $('#tp-preview-notional').textContent = `$${notional.toFixed(2)} (保证金 $${marginUsd.toFixed(2)})`;
+
+      // Show the stop-distance breakdown so the user can see at a glance
+      // WHY the risk is what it is. Their mental model (2026-04-20):
+      // "stop = trendline + small wick-through confirmation". The 止损 %
+      // input field alone covers only the wick part; buffer % is the
+      // entry-to-line distance. Total = sum.
+      const stopEl = $('#tp-preview-stop-dist');
+      if (stopEl) {
+        stopEl.textContent =
+          `${totalStopPct.toFixed(2)}% `
+          + `(${(v.buffer_pct || 0).toFixed(2)}% buffer + ${(v.stop_pct || 0).toFixed(2)}% 过线)`;
+      }
       $('#tp-preview-risk').textContent =
         `$${riskUsd.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`;
       $('#tp-preview-reward').textContent =
@@ -591,6 +603,7 @@ function renderShell(line, v, setupsState) {
         <div class="tp-preview">
           <div class="tp-preview-row"><span>账户余额</span><span id="tp-preview-equity">—</span></div>
           <div class="tp-preview-row"><span>仓位名义</span><span id="tp-preview-notional">—</span></div>
+          <div class="tp-preview-row tp-breakdown"><span>止损距离</span><span id="tp-preview-stop-dist">—</span></div>
           <div class="tp-preview-row tp-risk"><span>止损风险</span><span id="tp-preview-risk">—</span></div>
           <div class="tp-preview-row tp-reward"><span>止盈目标</span><span id="tp-preview-reward">—</span></div>
         </div>
