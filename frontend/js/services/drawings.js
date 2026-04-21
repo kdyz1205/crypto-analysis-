@@ -6,6 +6,12 @@ export function getManualDrawings(symbol, timeframe) {
   return fetchJson(`/api/drawings?${params}`, { noCache: true });
 }
 
+export function getAllManualDrawings() {
+  // All drawings across every symbol / TF. Used by the sidebar's
+  // "我的手画线 (全部币种)" grouped view.
+  return fetchJson('/api/drawings/all', { noCache: true });
+}
+
 export function createManualDrawing(payload) {
   return fetchJson('/api/drawings', {
     method: 'POST',

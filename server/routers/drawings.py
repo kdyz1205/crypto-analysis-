@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import math
+import time as _time
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -44,6 +48,19 @@ async def api_list_drawings(
     drawings = store.list(symbol=normalized_symbol, timeframe=timeframe)
     if enrich:
         drawings = await _enrich_drawings(drawings, normalized_symbol, timeframe)
+    return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in drawings]}
+
+
+@router.get("/all", response_model=ManualTrendlineListResponse)
+async def api_list_all_drawings():
+    """List ALL manual drawings across every symbol/TF.
+
+    Used by the sidebar "我的手画线" panel to show a grouped view: user
+    picks a coin, expands it, sees all their drawings on that coin,
+    clicks one to jump the chart to that symbol+tf. Never enriches —
+    the grouped view doesn't use comparison data.
+    """
+    drawings = store.list()
     return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in drawings]}
 
 
@@ -125,15 +142,23 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
     # If the anchors moved (drag), kick any triggered conditionals on
     # this line to replan immediately against the new geometry instead
     # of waiting the usual 15m/1h bar interval.
-    if (
+    anchors_moved = (
         req.t_start is not None or req.t_end is not None
         or req.price_start is not None or req.price_end is not None
-    ):
+    )
+    if anchors_moved:
         try:
             from ..conditionals.watcher import force_replan_line
             force_replan_line(drawing.manual_line_id)
         except Exception as exc:
             print(f"[drawings.patch] force_replan err: {exc}", flush=True)
+        # Log the adjustment with before/after + affected orders so we
+        # can later answer "why did I move the line and what changed?"
+        # User 2026-04-21: "记录下为什么调整, 调整后发生了什么变化".
+        try:
+            asyncio.create_task(_log_line_adjustment(existing, drawing, req))
+        except Exception as exc:
+            print(f"[drawings.patch] adjustment log err: {exc}", flush=True)
     _schedule_drawing_ml_capture(drawing, stage="updated")
 
     return {"drawing": ManualTrendlineModel.model_validate(drawing.to_dict())}
@@ -222,6 +247,120 @@ def _cancel_conditionals_for_lines(line_ids: list[str], *, reason_prefix: str) -
         # Do not block drawing deletion on cascade bookkeeping errors.
         print(f"[drawings.clear] cascade cancel failed: {exc}", flush=True)
     return cancelled
+
+
+_LINE_ADJUSTMENT_LOG = Path("data") / "line_adjustments.jsonl"
+
+
+def _log_slope_pct_per_hour(p_start: float, p_end: float, t_start: int, t_end: int) -> float:
+    """% per hour (CAGR) along the line in log space."""
+    span = t_end - t_start
+    if span <= 0 or p_start <= 0 or p_end <= 0:
+        return 0.0
+    total = math.log(p_end) - math.log(p_start)
+    hours = span / 3600.0
+    return (math.exp(total / hours) - 1.0) * 100.0
+
+
+async def _log_line_adjustment(before: ManualTrendline, after: ManualTrendline,
+                               req: ManualTrendlineUpdateRequest) -> None:
+    """Append a rich record of each line adjustment.
+
+    Captures everything needed to later answer:
+      - What moved (before → after, deltas)
+      - Which conditionals were affected
+      - Market context (current price, ATR, MA state)
+      - Whether force_replan succeeded (watcher logs the replan event
+        separately — we link by conditional_id)
+
+    Output: data/line_adjustments.jsonl (append-only)
+    Each line = 1 JSON record per PATCH with anchor changes.
+    """
+    from ..conditionals.store import ConditionalOrderStore
+    try:
+        cond_store = ConditionalOrderStore()
+        # Related conditionals: any active (pending / triggered / filled)
+        affected: list[dict] = []
+        for c in cond_store.list_all(manual_line_id=after.manual_line_id):
+            if c.status not in ("pending", "triggered", "filled"):
+                continue
+            affected.append({
+                "conditional_id": c.conditional_id,
+                "status": c.status,
+                "direction": (c.order.direction if c.order else None),
+                "exchange_order_id": c.exchange_order_id,
+                "fill_price_at_adjust": c.fill_price,
+                "tolerance_pct": c.order.tolerance_pct_of_line if c.order else None,
+                "stop_offset_pct": c.order.stop_offset_pct_of_line if c.order else None,
+            })
+
+        # Market context
+        mark_price = None
+        atr_pct = None
+        try:
+            from ..conditionals.watcher import _fetch_market_price, _fetch_current_atr
+            mark_price = await _fetch_market_price(after.symbol)
+            atr_raw = await _fetch_current_atr(after.symbol, after.timeframe)
+            if mark_price and atr_raw:
+                atr_pct = (atr_raw / mark_price) * 100.0
+        except Exception:
+            pass
+
+        # Deltas
+        dt_start = int(after.t_start) - int(before.t_start)
+        dt_end = int(after.t_end) - int(before.t_end)
+        dp_start = float(after.price_start) - float(before.price_start)
+        dp_end = float(after.price_end) - float(before.price_end)
+        old_slope = _log_slope_pct_per_hour(before.price_start, before.price_end,
+                                            before.t_start, before.t_end)
+        new_slope = _log_slope_pct_per_hour(after.price_start, after.price_end,
+                                            after.t_start, after.t_end)
+
+        record = {
+            "event": "line_adjusted",
+            "ts": int(_time.time()),
+            "ts_iso": pd.Timestamp.utcnow().isoformat(),
+            "manual_line_id": after.manual_line_id,
+            "symbol": after.symbol,
+            "timeframe": after.timeframe,
+            "side": after.side,
+            "before": {
+                "t_start": before.t_start, "t_end": before.t_end,
+                "price_start": before.price_start, "price_end": before.price_end,
+                "extend_left": before.extend_left, "extend_right": before.extend_right,
+                "slope_pct_per_hour_log": round(old_slope, 4),
+            },
+            "after": {
+                "t_start": after.t_start, "t_end": after.t_end,
+                "price_start": after.price_start, "price_end": after.price_end,
+                "extend_left": after.extend_left, "extend_right": after.extend_right,
+                "slope_pct_per_hour_log": round(new_slope, 4),
+            },
+            "delta": {
+                "t_start_sec": dt_start,
+                "t_end_sec": dt_end,
+                "price_start_abs": dp_start,
+                "price_end_abs": dp_end,
+                "price_start_pct": (dp_start / before.price_start * 100) if before.price_start else 0,
+                "price_end_pct": (dp_end / before.price_end * 100) if before.price_end else 0,
+                "slope_pct_per_hour_delta": round(new_slope - old_slope, 4),
+            },
+            "market_context": {
+                "mark_price": mark_price,
+                "atr_pct": round(atr_pct, 3) if atr_pct else None,
+            },
+            "affected_conditionals": affected,
+            "affected_count": len(affected),
+            # User optional reason — they can later tag adjustments via
+            # a note field. For now, accept what's on the request body
+            # (notes) so the user can pass "reason: MA structure broke".
+            "user_reason": req.notes if (req.notes and req.notes.strip()) else None,
+        }
+        _LINE_ADJUSTMENT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(_LINE_ADJUSTMENT_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        print(f"[line_adjustment_log] err: {exc}", flush=True)
 
 
 def _schedule_drawing_ml_capture(drawing: ManualTrendline, *, stage: str) -> None:
