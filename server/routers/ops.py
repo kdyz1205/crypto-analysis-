@@ -134,7 +134,13 @@ async def serve_js_module(subpath: str, request: Request):
             pass
 
     common_headers = {
-        "Cache-Control": "max-age=30, must-revalidate",
+        # max-age=0: always revalidate, but 304 (no body) is fast.
+        # Previous 30s window was caching stale JS across multiple
+        # rapid edits during active development. User 2026-04-21:
+        # "刷新之后还是旧的 JS, 看不到 fee 行". With max-age=0 the
+        # browser always asks the server; server returns 304 when
+        # unchanged (cheap) or 200 with new body when mtime changed.
+        "Cache-Control": "max-age=0, must-revalidate",
         "ETag": etag,
         "Last-Modified": last_modified,
     }
