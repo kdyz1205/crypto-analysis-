@@ -70,6 +70,42 @@ function _genId() {
   return 'setup_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
 }
 
+// Build a descriptive name from a config so the dropdown label
+// always reflects the latest saved values. User report 2026-04-21:
+// "为什么 setup 永远无法保存" — actual cause was the name wasn't
+// regenerated after save, so even though config WAS persisted, the
+// dropdown showed stale text and user assumed save had failed.
+//
+// Examples:
+//   "1%损 0.1%buffer RR5 做多 $30U 10x"
+//   "0.5%损 0.3%buffer RR3 做空 3%仓 5x"
+//   "0.5%损 0.05%buffer RR5 做多 $50U 20x 反手"
+function _summarizeConfig(cfg) {
+  if (!cfg) return '';
+  const parts = [];
+  if (cfg.stop_pct != null) parts.push(`${cfg.stop_pct}%损`);
+  if (cfg.buffer_pct != null) parts.push(`${cfg.buffer_pct}%buffer`);
+  if (cfg.rr_target != null) parts.push(`RR${cfg.rr_target}`);
+  // 2026-04-21 user spec: direction + reverse are per-trade decisions,
+  // NOT part of the saved setup. Setup = strategy parameters only.
+  if (cfg.size_mode === 'equity_pct' && cfg.equity_pct != null) {
+    parts.push(`${cfg.equity_pct}%仓`);
+  } else if (cfg.notional_usd != null) {
+    parts.push(`$${cfg.notional_usd}U`);
+  }
+  if (cfg.leverage != null) parts.push(`${cfg.leverage}x`);
+  return parts.join(' ');
+}
+
+// When persisting a setup, strip out the per-trade fields (direction,
+// reverse_enabled) so they don't become sticky. User 2026-04-21:
+// "config的多空它并不会保存, 是直接用这个[快捷popup]上面去多空".
+function _stripPerTradeFields(config) {
+  if (!config) return config;
+  const { direction, reverse_enabled, ...rest } = config;
+  return rest;
+}
+
 const DEFAULTS = {
   direction: 'short',           // support→long, resistance→short — auto-set on open
   order_kind: 'bounce',         // bounce | breakout
@@ -186,16 +222,16 @@ export function openTradePlanModal(line, options = {}) {
     const activeSetup = getActiveSetup(setupsState);
     const defaults = { ...DEFAULTS, ...(activeSetup.config || {}) };
 
-    // Direction resolution priority (2026-04-20 fix):
-    //   1. If the active setup has an explicit `direction`, use it.
-    //      This respects the user's saved preference even if it goes
-    //      against the line's natural side (e.g. user saves "做空"
-    //      on a support line for a breakdown setup).
-    //   2. Else derive from line side: support→long, resistance→short.
-    const autoDir = line?.side === 'support' ? 'long' : 'short';
-    const savedDir = activeSetup?.config?.direction;
-    const initialDir = (savedDir === 'long' || savedDir === 'short') ? savedDir : autoDir;
-    const values = { ...defaults, direction: initialDir };
+    // Direction resolution (2026-04-21 rewrite): direction is a PER-TRADE
+    // decision, NOT a setup field. Always derive from line side initially;
+    // user can flip in the modal but that choice doesn't persist to setup.
+    //   support → long   (bounce long)
+    //   resistance → short (bounce short)
+    // Quick-trade popup is the primary direction picker for setup-based
+    // flows. Full modal still shows a Direction selector for one-off
+    // orders, but its value is stripped before saving to setup.
+    const initialDir = line?.side === 'support' ? 'long' : 'short';
+    const values = { ...defaults, direction: initialDir, reverse_enabled: false };
 
     _modal = document.createElement('div');
     _modal.className = 'tp-modal-backdrop';
@@ -224,13 +260,9 @@ export function openTradePlanModal(line, options = {}) {
       if (config.exchange_mode != null) $('[name=exchange_mode]').value = config.exchange_mode;
       if (config.size_mode != null) $('[name=size_mode]').value = config.size_mode;
       if (config.submit_to_exchange != null) $('[name=submit_to_exchange]').checked = !!config.submit_to_exchange;
-      if (config.reverse_enabled != null) $('[name=reverse_enabled]').checked = !!config.reverse_enabled;
-      // Direction: honor the setup's saved value. Switching to a setup
-      // whose name says "做空" shouldn't flip back to long just because
-      // the line is a support. User can still override via the dropdown.
-      if (config.direction === 'long' || config.direction === 'short') {
-        $('[name=direction]').value = config.direction;
-      }
+      // 2026-04-21: direction + reverse_enabled are per-trade, NOT part
+      // of the setup. Switching setups in the modal does NOT reset these
+      // — the user's choice in the Direction/Reverse fields is preserved.
       applySizeModeVisibility();
       refreshLivePreview();
     };
@@ -246,13 +278,21 @@ export function openTradePlanModal(line, options = {}) {
     $('#tp-setup-select')?.addEventListener('change', (ev) => {
       const v = ev.target.value;
       if (v === '__new__') {
-        const name = prompt('新 setup 名字:', `Setup ${setupsState.setups.length + 1}`);
-        if (!name) { ev.target.value = setupsState.active_id; return; }
+        const formSnap = _stripPerTradeFields(readForm());
+        const autoName = _summarizeConfig(formSnap);
+        const name = prompt('新 setup 名字 (留空用自动命名):', autoName || `Setup ${setupsState.setups.length + 1}`);
+        if (name === null) { ev.target.value = setupsState.active_id; return; }
         const id = _genId();
-        setupsState.setups.push({ id, name, config: readForm() });
+        const finalName = name.trim() || autoName || `Setup ${setupsState.setups.length + 1}`;
+        setupsState.setups.push({
+          id, name: finalName,
+          custom_name: !!name.trim(),   // if user typed a name, lock it
+          config: formSnap,
+        });
         setupsState.active_id = id;
         saveSetups(setupsState);
         refreshSetupDropdown();
+        flashToast(`✓ 新 setup "${finalName}"`);
       } else {
         setupsState.active_id = v;
         const s = getActiveSetup(setupsState);
@@ -263,16 +303,36 @@ export function openTradePlanModal(line, options = {}) {
 
     $('#tp-setup-save')?.addEventListener('click', () => {
       const s = getActiveSetup(setupsState);
-      s.config = readForm();
+      if (!s) { flashToast('❌ 未找到活动 setup'); return; }
+      // Strip direction + reverse_enabled — those are per-trade, not setup.
+      const newConfig = _stripPerTradeFields(readForm());
+      s.config = newConfig;
+      // Auto-regenerate the name to reflect the saved values — unless
+      // the user has explicitly locked it via rename (custom_name=true).
+      // Without this, the dropdown kept showing the OLD name after save,
+      // making it look like save never worked. User report 2026-04-21.
+      if (!s.custom_name) {
+        const autoName = _summarizeConfig(newConfig);
+        if (autoName) s.name = autoName;
+      }
       saveSetups(setupsState);
-      flashToast('已保存到当前 setup');
+      refreshSetupDropdown();
+      flashToast(`✓ 已保存 "${s.name}"`);
     });
 
     $('#tp-setup-rename')?.addEventListener('click', () => {
       const s = getActiveSetup(setupsState);
-      const name = prompt('重命名 setup:', s.name);
-      if (!name) return;
-      s.name = name;
+      if (!s) return;
+      const name = prompt('重命名 setup (留空恢复自动命名):', s.name);
+      if (name === null) return;   // cancelled
+      if (name.trim() === '') {
+        // Empty = re-enable auto-naming from config
+        s.name = _summarizeConfig(s.config) || '默认 Default';
+        s.custom_name = false;
+      } else {
+        s.name = name;
+        s.custom_name = true;
+      }
       saveSetups(setupsState);
       refreshSetupDropdown();
     });
@@ -344,19 +404,25 @@ export function openTradePlanModal(line, options = {}) {
               : '— (账户余额为 0)');
 
       // Size calculation respects size_mode:
-      //   'notional_usd' — fixed USDT value (user's specified position size)
-      //   'equity_pct'   — % of equity * leverage (scales with account)
-      // Both interpretations yield a "notional" number in USDT;
-      // margin on Bitget = notional / leverage.
+      //   'notional_usd' — the USDT number the user stakes = MARGIN,
+      //                    position = stake × leverage. Matches the UI
+      //                    hint "30 USDT × 10x = 仓位 300U / 保证金 30U".
+      //   'equity_pct'   — % of equity × leverage (scales with account)
+      //
+      // User 2026-04-21: placed $30 USDT 10x and got 2849 BAS qty ($30
+      // notional) instead of expected $300 notional. Root cause: code
+      // was treating the USDT input as raw notional instead of margin,
+      // contradicting the UI hint. Fixed 2026-04-21.
       let notional = 0;
       if (v.size_mode === 'equity_pct') {
         notional = equity > 0 && v.leverage > 0 && v.equity_pct > 0
           ? equity * (v.equity_pct / 100) * v.leverage
           : 0;
       } else {
-        // Default: fixed USDT notional
+        // User enters STAKE (margin), actual position = stake × leverage
+        const lev = v.leverage > 0 ? v.leverage : 1;
         notional = v.notional_usd > 0
-          ? v.notional_usd
+          ? v.notional_usd * lev
           : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
       }
       // Risk = entry-to-stop distance = buffer% + stop% (always).
@@ -419,16 +485,51 @@ export function openTradePlanModal(line, options = {}) {
       refreshLivePreview();
     });
 
-    $('#tp-cancel').addEventListener('click', () => {
+    // 2026-04-21 user spec: 取消 = "don't place order" but AUTO-SAVE
+    // the current form to the active setup first, so reopening the
+    // modal restores exactly what the user was configuring. No lost
+    // work. User: "点取消, 它只是说取消这个挂单, 那保存的细节已经保存好了".
+    const _autoSaveAndClose = () => {
+      try {
+        const s = getActiveSetup(setupsState);
+        if (s) {
+          // Strip direction + reverse_enabled — per-trade, not setup.
+          const newConfig = _stripPerTradeFields(readForm());
+          s.config = newConfig;
+          if (!s.custom_name) {
+            const autoName = _summarizeConfig(newConfig);
+            if (autoName) s.name = autoName;
+          }
+          saveSetups(setupsState);
+        }
+      } catch (err) {
+        console.warn('[trade_plan_modal] auto-save on cancel failed', err);
+      }
       closeExisting();
       resolve(null);
-    });
-    _modal.addEventListener('click', (e) => {
-      if (e.target === _modal) {
-        closeExisting();
-        resolve(null);
+    };
+    $('#tp-cancel').addEventListener('click', _autoSaveAndClose);
+
+    // Also hook the × (close) button if it exists.
+    const closeBtn = $('#tp-close');
+    if (closeBtn) closeBtn.addEventListener('click', _autoSaveAndClose);
+
+    // 2026-04-21 user request: modal should NOT close when clicking
+    // outside the box. Only × or 取消 closes it. This prevents the
+    // classic "I was configuring and accidentally lost my progress"
+    // when switching browser tabs / clicking empty space.
+    // Backdrop click handler intentionally REMOVED.
+    // ESC still closes (keyboard shortcut, intentional). ESC also
+    // auto-saves so the form state isn't lost.
+    const _escHandler = (e) => {
+      if (e.key === 'Escape') {
+        _autoSaveAndClose();
       }
-    });
+    };
+    document.addEventListener('keydown', _escHandler);
+    // Clean up ESC listener when modal closes (store on _modal so
+    // closeExisting can pick it up).
+    _modal._escHandler = _escHandler;
 
     $('#tp-confirm').addEventListener('click', async () => {
       const btn = $('#tp-confirm');
@@ -438,8 +539,12 @@ export function openTradePlanModal(line, options = {}) {
         const v = readForm();
         saveDefaults(v);
 
-        // Resolve size_usdt from the active size_mode.
+        // Resolve size_usdt from the active size_mode. NOTE:
+        // notional_usd input = MARGIN/stake, backend expects actual
+        // NOTIONAL (= stake × leverage). Matches the UI preview +
+        // hint "30 USDT × 10x = 仓位 300U / 保证金 30U".
         let size_usdt = 0;
+        const lev = v.leverage > 0 ? v.leverage : 1;
         if (v.size_mode === 'equity_pct') {
           const cachedEquity = getCachedEquity(v.exchange_mode);
           const equity = cachedEquity > 0
@@ -451,9 +556,10 @@ export function openTradePlanModal(line, options = {}) {
           if (!v.equity_pct || v.equity_pct <= 0) {
             throw new Error('账户百分比必须 > 0');
           }
-          size_usdt = equity * (v.equity_pct / 100) * (v.leverage || 1);
+          size_usdt = equity * (v.equity_pct / 100) * lev;
         } else {
-          size_usdt = v.notional_usd;
+          // v.notional_usd is the STAKE; multiply by leverage for actual position
+          size_usdt = (Number(v.notional_usd) || 0) * lev;
           if (!size_usdt || size_usdt <= 0) {
             // Fallback: try full equity × leverage so very-small accounts
             // with notional=0 still get SOME order.
@@ -461,7 +567,7 @@ export function openTradePlanModal(line, options = {}) {
             const equity = cachedEquity > 0
               ? cachedEquity
               : await fetchEquity(v.exchange_mode).catch(() => 0);
-            if (equity > 0 && v.leverage > 0) size_usdt = equity * v.leverage;
+            if (equity > 0 && v.leverage > 0) size_usdt = equity * lev;
           }
           if (!size_usdt || size_usdt <= 0) {
             throw new Error('notional_usd 为空且账户余额未读到 — 填一个数额或切换到百分比模式');
@@ -546,12 +652,11 @@ export function openTradePlanModal(line, options = {}) {
       }
     });
 
-    // Esc closes
+    // Esc closes (auto-saves current form first, same as 取消)
     const onKey = (e) => {
       if (e.key === 'Escape') {
         document.removeEventListener('keydown', onKey);
-        closeExisting();
-        resolve(null);
+        _autoSaveAndClose();
       }
     };
     document.addEventListener('keydown', onKey);
@@ -559,7 +664,12 @@ export function openTradePlanModal(line, options = {}) {
 }
 
 function closeExisting() {
-  if (_modal && _modal.parentNode) _modal.parentNode.removeChild(_modal);
+  if (_modal) {
+    if (_modal._escHandler) {
+      try { document.removeEventListener('keydown', _modal._escHandler); } catch {}
+    }
+    if (_modal.parentNode) _modal.parentNode.removeChild(_modal);
+  }
   _modal = null;
 }
 
@@ -904,6 +1014,216 @@ export function openSetupPickerPopup(line, clickX = null, clickY = null) {
     setTimeout(() => {
       document.addEventListener('mousedown', onDocClick);
     }, 0);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// Quick-trade popup (⚡ 交易)
+// ─────────────────────────────────────────────────────────────
+// User 2026-04-21 spec: after drawing a line, clicking "交易" in the
+// context menu opens this small popup RIGHT NEXT TO the menu. It has:
+//   - Direction toggle: 做多 / 做空 (pill)
+//   - Reverse toggle:   自动反手 on/off
+//   - Setup dropdown:   vertical list of saved setups
+//   Click a setup row = PLACE ORDER IMMEDIATELY with that setup's
+//   config + the user's chosen direction + reverse flag.
+//
+// Goal: line → Bitget order in ≤3 clicks (right-click line, hit 交易,
+// click a setup). No full modal. "完整配置" escape link to open the
+// normal editor if a setup isn't pre-saved.
+
+let _quickPopup = null;
+let _quickPopupCleanup = null;
+
+export function openQuickTradePopup(line, clickX = null, clickY = null) {
+  return new Promise((resolve) => {
+    if (_quickPopupCleanup) { try { _quickPopupCleanup(); } catch {} _quickPopupCleanup = null; }
+
+    const setupsState = loadSetups();
+    const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
+    const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
+
+    // Direction + reverse are per-trade only (not in setup). Start
+    // from line side; user picks fresh in this popup.
+    let direction = line?.side === 'support' ? 'long' : 'short';
+    let reverseEnabled = false;
+
+    _quickPopup = document.createElement('div');
+    _quickPopup.className = 'tp-quick-popup';
+    Object.assign(_quickPopup.style, {
+      position: 'fixed',
+      left: `${x}px`,
+      top: `${y}px`,
+      background: '#0e141f',
+      border: '1px solid #2a3548',
+      borderRadius: '8px',
+      padding: '10px',
+      minWidth: '280px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+      zIndex: '10001',
+      fontSize: '12px',
+      color: '#d8dde8',
+    });
+
+    function renderBody() {
+      const longCls = direction === 'long' ? 'background:#0b4d1f;color:#00e676;font-weight:600' : 'background:#1a2133;color:#8a95a6';
+      const shortCls = direction === 'short' ? 'background:#4d0b0b;color:#ff5252;font-weight:600' : 'background:#1a2133;color:#8a95a6';
+      const revCls = reverseEnabled ? 'background:#3b2a0b;color:#fbbf24;font-weight:600' : 'background:#1a2133;color:#8a95a6';
+      const setupRows = setupsState.setups.map((s) => `
+        <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;">
+          <div style="color:#d8dde8;font-size:12px">${esc(s.name)}</div>
+        </div>
+      `).join('');
+      _quickPopup.innerHTML = `
+        <div style="color:#8a95a6;font-size:11px;font-weight:600;margin-bottom:8px">
+          ⚡ 快捷挂单 · ${esc(line.symbol)} ${esc(line.timeframe)}
+        </div>
+
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <div class="qt-dir-btn" data-dir="long" style="${longCls};flex:1;text-align:center;padding:6px;border-radius:5px;cursor:pointer">做多 LONG</div>
+          <div class="qt-dir-btn" data-dir="short" style="${shortCls};flex:1;text-align:center;padding:6px;border-radius:5px;cursor:pointer">做空 SHORT</div>
+        </div>
+
+        <div class="qt-rev-btn" style="${revCls};text-align:center;padding:6px;border-radius:5px;cursor:pointer;margin-bottom:10px">
+          ${reverseEnabled ? '✓ 自动反手 ON' : '自动反手 OFF'}
+        </div>
+
+        <div style="color:#8a95a6;font-size:10px;padding:0 2px 4px 2px;text-transform:uppercase;letter-spacing:0.5px">Setup (点击立即挂单)</div>
+        <div style="max-height:220px;overflow-y:auto;">${setupRows || '<div style="color:#8a95a6;padding:10px;font-size:11px">没有 setup，请先在完整配置里创建</div>'}</div>
+
+        <div style="height:1px;background:#1d2537;margin:8px 0 6px 0"></div>
+        <div class="qt-full-cfg" style="padding:6px 4px;cursor:pointer;color:#38bdf8;font-size:11px">⚙ 需要改参数? → 打开完整配置</div>
+        <div id="qt-status" style="color:#8a95a6;font-size:11px;margin-top:6px;min-height:14px"></div>
+      `;
+
+      // Hover highlight for setup rows
+      _quickPopup.querySelectorAll('.qt-setup-row').forEach((el) => {
+        el.addEventListener('mouseenter', () => { el.style.background = '#223049'; });
+        el.addEventListener('mouseleave', () => { el.style.background = '#16202f'; });
+      });
+    }
+
+    renderBody();
+    document.body.appendChild(_quickPopup);
+
+    // Viewport clamp
+    try {
+      const rect = _quickPopup.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight, pad = 8;
+      let nx = x, ny = y;
+      if (nx + rect.width + pad > vw) nx = vw - rect.width - pad;
+      if (ny + rect.height + pad > vh) ny = vh - rect.height - pad;
+      if (nx < pad) nx = pad;
+      if (ny < pad) ny = pad;
+      _quickPopup.style.left = `${nx}px`;
+      _quickPopup.style.top = `${ny}px`;
+    } catch {}
+
+    const onDocClick = (ev) => {
+      if (_quickPopup && !_quickPopup.contains(ev.target)) {
+        cleanup();
+        resolve(null);
+      }
+    };
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') { cleanup(); resolve(null); }
+    };
+    const cleanup = () => {
+      if (_quickPopup && _quickPopup.parentNode) _quickPopup.parentNode.removeChild(_quickPopup);
+      _quickPopup = null;
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+      _quickPopupCleanup = null;
+    };
+    _quickPopupCleanup = cleanup;
+
+    const setStatus = (msg, color = '#8a95a6') => {
+      const s = _quickPopup?.querySelector('#qt-status');
+      if (s) { s.textContent = msg; s.style.color = color; }
+    };
+
+    // Click handler
+    _quickPopup.addEventListener('click', async (ev) => {
+      const dirBtn = ev.target.closest('.qt-dir-btn');
+      const revBtn = ev.target.closest('.qt-rev-btn');
+      const setupRow = ev.target.closest('.qt-setup-row');
+      const fullCfg = ev.target.closest('.qt-full-cfg');
+
+      if (dirBtn) {
+        direction = dirBtn.dataset.dir;
+        renderBody();
+        return;
+      }
+      if (revBtn) {
+        reverseEnabled = !reverseEnabled;
+        renderBody();
+        return;
+      }
+      if (fullCfg) {
+        cleanup();
+        const result = await openTradePlanModal(line);
+        resolve(result);
+        return;
+      }
+      if (setupRow) {
+        const id = setupRow.dataset.setupId;
+        const s = setupsState.setups.find((x) => x.id === id);
+        if (!s) { setStatus('setup 找不到', '#ff5252'); return; }
+        const cfg = s.config || {};
+        setStatus(`挂单中 "${s.name}"…`, '#38bdf8');
+        // Compute size_usdt. Same convention as full modal:
+        //   notional_usd = STAKE (margin), actual notional = stake × leverage
+        //   equity_pct mode = equity × pct × leverage
+        const lev = Number(cfg.leverage) > 0 ? Number(cfg.leverage) : 1;
+        let size_usdt = 0;
+        try {
+          const { getLiveAccount } = await import('../../services/live_execution.js');
+          if (cfg.size_mode === 'equity_pct' && cfg.equity_pct > 0) {
+            const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
+            const acct = await getLiveAccount(mode);
+            const equity = Number(acct?.total_equity || acct?.equity || 0);
+            if (equity > 0) size_usdt = equity * (cfg.equity_pct / 100) * lev;
+          } else {
+            size_usdt = (Number(cfg.notional_usd) || 0) * lev;
+          }
+        } catch (e) {
+          size_usdt = (Number(cfg.notional_usd) || 0) * lev;
+        }
+        if (!(size_usdt > 0)) { setStatus('仓位必须 > 0 USDT', '#ff5252'); return; }
+
+        const payload = {
+          manual_line_id: line.manual_line_id,
+          direction,                                // user override
+          kind: cfg.order_kind === 'breakout' ? 'break' : 'bounce',
+          tolerance_pct: Number(cfg.buffer_pct) || 0.1,
+          stop_offset_pct: Number(cfg.stop_pct) || 0.1,
+          size_usdt,
+          leverage: cfg.leverage > 0 ? Math.round(cfg.leverage) : 1,
+          mode: cfg.exchange_mode === 'paper' ? 'demo' : 'live',
+          rr_target: Number(cfg.rr_target) || 2,
+          reverse_enabled: reverseEnabled,          // user override
+          reverse_entry_offset_pct: 0,              // reverse has no buffer (same spec as full modal)
+          reverse_stop_offset_pct: Number(cfg.reverse_stop_pct) || 0,
+          reverse_rr_target: Number(cfg.reverse_rr_target) || null,
+          reverse_leverage: cfg.leverage > 0 ? Math.round(cfg.leverage) : null,
+        };
+        try {
+          const resp = await placeLineOrder(payload);
+          if (resp?.ok) {
+            setStatus(`✓ 已挂单: ${resp.message || ''}`, '#00e676');  // SAFE: setStatus uses textContent
+            setTimeout(() => { cleanup(); resolve(resp); }, 1200);
+          } else {
+            setStatus(`✗ 失败: ${resp?.reason || '未知错误'}`, '#ff5252');  // SAFE: setStatus uses textContent
+          }
+        } catch (err) {
+          setStatus(`✗ 错误: ${err?.message || err}`, '#ff5252');  // SAFE: setStatus uses textContent
+        }
+      }
+    });
+
+    setTimeout(() => { document.addEventListener('mousedown', onDocClick); }, 0);
     document.addEventListener('keydown', onKey);
   });
 }
