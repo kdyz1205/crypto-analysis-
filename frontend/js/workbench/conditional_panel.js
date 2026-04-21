@@ -52,6 +52,10 @@ let allDrawings = [];
 let allDrawingsTimer = null;
 // UI state: which symbol group is expanded (null = none).
 let _expandedSymbol = null;
+// Race-guard for jump-line click: latest requested lineId. If user
+// rapid-clicks another line before the 350ms defer fires, the earlier
+// selection is discarded. Code-reviewer S4 2026-04-21.
+let _pendingJumpLineId = null;
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -314,8 +318,16 @@ async function onPanelClick(e) {
       if (tf && tf !== marketState.currentInterval) setIntervalTF(tf);
       // Selecting immediately works ONLY if the target symbol's drawings
       // are already loaded. Since setSymbol triggers an async reload,
-      // defer the selection to when drawings refresh.
-      setTimeout(() => setSelectedManualLine(lineId), 350);
+      // defer the selection to when drawings refresh. Track the latest
+      // requested lineId so rapid clicks across different symbols don't
+      // end up selecting a stale lineId on the wrong symbol's chart.
+      _pendingJumpLineId = lineId;
+      setTimeout(() => {
+        if (_pendingJumpLineId === lineId) {
+          setSelectedManualLine(lineId);
+          _pendingJumpLineId = null;
+        }
+      }, 350);
     } catch (err) {
       console.warn('[cond_panel] jump-line failed', err);
     }

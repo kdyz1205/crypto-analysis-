@@ -85,6 +85,16 @@ _PENDING_OIDS_CACHE_TTL = 3.0   # seconds
 _pending_oids_cache: dict[str, tuple[float, set[str]]] = {}
 
 async def _get_cached_pending_oids(mode: str) -> set[str]:
+    """Return set of Bitget pending oids for this mode. 3s TTL cache.
+
+    CRITICAL: on total fetch failure (both regular+plan endpoints raised),
+    we RAISE instead of caching an empty set. Code-reviewer 2026-04-21:
+    caching-on-fail poisoned every replan check for 3s on any transient
+    Bitget outage — watcher silently skipped replans thinking "our plan
+    is gone". Caller at _maybe_replan already has except-fallthrough
+    that does the right thing on raise (attempt replan anyway, safer
+    than stalling the whole line-tracking system).
+    """
     import time as _t
     entry = _pending_oids_cache.get(mode)
     if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
@@ -92,29 +102,40 @@ async def _get_cached_pending_oids(mode: str) -> set[str]:
     from server.execution.live_adapter import LiveExecutionAdapter
     adapter = LiveExecutionAdapter()
     oids: set[str] = set()
+    err_regular: Exception | None = None
+    err_plan: Exception | None = None
+    ok_regular = False
+    ok_plan = False
     try:
         for row in await adapter.get_pending_orders(mode):  # type: ignore
             oid = str(row.get("orderId") or row.get("order_id") or "")
             if oid:
                 oids.add(oid)
-    except Exception:
-        pass
+        ok_regular = True
+    except Exception as e:
+        err_regular = e
     try:
         for row in await adapter.get_pending_plan_orders(mode, plan_type="normal_plan"):  # type: ignore
             oid = str(row.get("orderId") or row.get("order_id") or "")
             if oid:
                 oids.add(oid)
-    except Exception:
-        pass
+        ok_plan = True
+    except Exception as e:
+        err_plan = e
+    if not (ok_regular or ok_plan):
+        # Total failure — do NOT cache; let caller fall through to attempt
+        # replan. Bitget outage will also cause replan itself to fail, but
+        # we won't silently skip EVERY cond for 3 seconds.
+        raise RuntimeError(
+            f"pending-oids fetch failed for mode={mode}: "
+            f"regular={err_regular!r} plan={err_plan!r}"
+        )
     _pending_oids_cache[mode] = (_t.time(), oids)
     return oids
 
 
 def _invalidate_pending_oids_cache(mode: str | None = None) -> None:
-    """Drop the cache so the next check refetches fresh.
-    Called after our own replan/place so the new oid is visible even
-    within the 3s TTL window (prevents false "my plan is gone" early-
-    return on a force-replan firing immediately after a natural one)."""
+    """Drop the cache so the next check refetches fresh."""
     if mode is None:
         _pending_oids_cache.clear()
     else:
@@ -123,16 +144,27 @@ def _invalidate_pending_oids_cache(mode: str | None = None) -> None:
 
 def _add_pending_oid_to_cache(mode: str, oid: str) -> None:
     """Eagerly add a just-placed oid to the cache so the next check
-    sees it as pending. Complements _invalidate in cases where a full
-    refetch would be wasteful (e.g. right after submit_live_plan_entry
-    succeeds and we already know the new oid)."""
+    sees it as pending.
+
+    CRITICAL fix 2026-04-21 per reviewer: if cache is empty/expired,
+    SEED a fresh cache with just this oid (short-lived, will be
+    replaced by the next real refetch). Old behavior dropped the oid
+    silently, which defeated the purpose — _invalidate_pending_oids_
+    cache clears the dict, then _add was a no-op, and a subsequent
+    tick could fetch Bitget's eventually-consistent list BEFORE the
+    new plan was visible -> false "my plan is gone" early-return.
+    """
     if not oid:
         return
     import time as _t
     entry = _pending_oids_cache.get(mode)
     if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
         entry[1].add(str(oid))
-    # If cache is missing or expired, next check will refetch; nothing to do here.
+        return
+    # Empty or expired: seed a fresh single-oid cache. Other pending
+    # oids on this mode will be picked up on the next real refetch
+    # when this TTL expires.
+    _pending_oids_cache[mode] = (_t.time(), {str(oid)})
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1432,10 +1464,12 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         cond.exchange_order_id = new_oid
         cond.fill_price = float(new_trigger)
         cond.last_poll_ts = now
-        # Cache bookkeeping: the old oid is gone (we cancelled it) and
-        # the new oid is pending. Update the cache so a force-replan
-        # firing within 3s (TTL) doesn't falsely see "our plan is gone".
-        _invalidate_pending_oids_cache(cond.order.exchange_mode)
+        # Seed the cache with new_oid so a force-replan firing within
+        # 3s (TTL) sees our plan as pending. We do NOT invalidate the
+        # whole cache — other conds' oids on the same mode would be
+        # lost until next refetch, causing false "plan gone" skips for
+        # them. Old oid may linger 3s but it's harmless: cond.exchange
+        # _order_id is now new_oid, so the check targets new_oid only.
         _add_pending_oid_to_cache(cond.order.exchange_mode, new_oid)
         try:
             latest = _store.get(cond.conditional_id)

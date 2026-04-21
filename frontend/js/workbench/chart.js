@@ -650,12 +650,30 @@ function _saveChartTz(tz) {
   try { localStorage.setItem(TZ_LS_KEY, tz); } catch {}
 }
 function _tzOffsetHours(tz) {
-  // PDT (Los Angeles) varies by DST; for simplicity use UTC-7 (user's
-  // current PDT). Backing this off to UTC-8 PST is unnecessary at this
-  // session. Could be made DST-aware with Intl.DateTimeFormat.
   if (tz === 'utc') return 0;
   if (tz === 'bj' || tz === 'cn') return 8;
-  if (tz === 'la') return -7;
+  if (tz === 'la') {
+    // DST-aware per reviewer S3. Nov-Mar = PST (-8), Mar-Nov = PDT (-7).
+    // Use Intl to ask what LA's UTC offset is at RIGHT NOW. This still
+    // isn't perfect for historical candles that crossed a DST boundary
+    // (we apply ONE offset to the whole chart) but is correct for
+    // the current moment's labels — which is what the user reads.
+    try {
+      const now = new Date();
+      const laStr = now.toLocaleString('en-US', {
+        timeZone: 'America/Los_Angeles',
+        hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      });
+      const m = laStr.match(/(\d+)\/(\d+)\/(\d+),?\s+(\d+):(\d+):(\d+)/);
+      if (m) {
+        const laLocal = Date.UTC(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +m[6]);
+        const offsetMs = laLocal - now.getTime();
+        return Math.round(offsetMs / 3600000);   // -7 in PDT, -8 in PST
+      }
+    } catch {}
+    return -7;   // fallback
+  }
   return 0;
 }
 function _tzLabel(tz) {

@@ -112,7 +112,11 @@ class LiveExecutionAdapter:
 
         normalized_size = self._normalize_size(intent.quantity, contract)
         if normalized_size is None:
-            return self._error_result("size_below_min_trade", mode=mode, intent=intent)
+            req_str, min_str = self._min_trade_info(intent.quantity, contract)
+            return self._error_result(
+                f"size_below_min_trade (qty {req_str} < min {min_str})",
+                mode=mode, intent=intent,
+            )
 
         reference_price = float(intent.entry_price or 0.0)
         if reference_price <= 0:
@@ -249,7 +253,11 @@ class LiveExecutionAdapter:
 
         normalized_size = self._normalize_size(intent.quantity, contract)
         if normalized_size is None:
-            return self._error_result("size_below_min_trade", mode=mode, intent=intent)
+            req_str, min_str = self._min_trade_info(intent.quantity, contract)
+            return self._error_result(
+                f"size_below_min_trade (qty {req_str} < min {min_str})",
+                mode=mode, intent=intent,
+            )
 
         normalized_trigger = self._normalize_price(float(trigger_price), contract)
         if normalized_trigger is None:
@@ -1079,6 +1087,16 @@ class LiveExecutionAdapter:
         if normalized <= 0 or normalized < min_trade:
             return None
         return LiveExecutionAdapter._decimal_to_string(normalized)
+
+    @staticmethod
+    def _min_trade_info(quantity: float, contract: dict[str, Any]) -> tuple[str, str]:
+        """Return (requested_qty_str, min_trade_str) for error messages."""
+        try:
+            req = Decimal(str(quantity))
+            mt = Decimal(str(contract.get("minTradeNum") or contract.get("lotSz") or "0.001"))
+            return (str(req), str(mt))
+        except Exception:
+            return (str(quantity), "?")
 
     @staticmethod
     def _normalize_price(price: float, contract: dict[str, Any]) -> str | None:
