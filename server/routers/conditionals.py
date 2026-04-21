@@ -534,11 +534,18 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Project the line to NOW using the drawing extension flags. Most user
-    # lines extend right, so a live plan order must track the extended line
-    # instead of freezing at price_end after the second anchor.
+    # Project the line to the CURRENT TF BAR'S OPEN time (not the exact
+    # click moment) so the ref_price matches what the user visually sees
+    # the line crossing at the current candle. User report 2026-04-21:
+    # "线交叉点应该是 0.010185" (bar-open snapshot) vs system's 0.01037
+    # (exact click moment); 2.5h of slope-drift difference inside a 4h
+    # bar.
     now_ts_ = now_ts()
-    line_now = _project_manual_line_price(drawing, now_ts_)
+    _tf_seconds = {"1m":60,"3m":180,"5m":300,"15m":900,"30m":1800,
+                   "1h":3600,"2h":7200,"4h":14400,"6h":21600,"12h":43200,
+                   "1d":86400,"1w":604800}.get(drawing.timeframe, 3600)
+    bar_open_ts = (int(now_ts_) // _tf_seconds) * _tf_seconds
+    line_now = _project_manual_line_price(drawing, bar_open_ts)
     ref_price = float(line_now)
     if ref_price <= 0:
         raise HTTPException(
@@ -578,9 +585,20 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         f"mark_ms={mark_elapsed_ms}"
     )
 
-    # Compute prices from the projected line:
-    # LONG:  trigger = line * (1 + buffer), stop = line * (1 - stop_offset)
-    # SHORT: trigger = line * (1 - buffer), stop = line * (1 + stop_offset)
+    # Compute prices from the bar-open-projected line:
+    # LONG:  entry just ABOVE the line (waiting for price to pull down
+    #        to the level from above; Bitget plan fires on mark ≤ trigger),
+    #        stop BELOW the line (break-through kill switch).
+    # SHORT: entry just BELOW the line (rejection from above), stop ABOVE.
+    #
+    # NOTE: bounce vs breakout order_kind is stored but does NOT flip these
+    # formulas. The formulas are MODE-AGNOSTIC because Bitget's trigger-
+    # market plan naturally handles both semantics via the trigger price's
+    # position relative to current mark:
+    #   - mark > trigger + a LONG plan → "wait for dip" (bounce long)
+    #   - mark < trigger + a LONG plan → "wait for break up" (breakout long)
+    # Same plan body, different interpretations. The user sets trigger via
+    # (line × buffer), Bitget figures out the rest.
     offset = req.tolerance_pct / 100.0
     stop_offset = max(0.0, req.stop_offset_pct) / 100.0
     if req.direction == "long":
