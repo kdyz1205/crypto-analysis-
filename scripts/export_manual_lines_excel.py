@@ -353,6 +353,72 @@ def build_ml_events_sheet(ml_events: list[dict]) -> pd.DataFrame:
     return df
 
 
+def build_adjustments_sheet(events: list[dict]) -> pd.DataFrame:
+    """Line adjustment events (drag-to-modify). One row per PATCH with
+    anchor change. Captures before/after + deltas + market snapshot +
+    affected orders."""
+    rows = []
+    for e in events:
+        before = e.get("before", {}) or {}
+        after = e.get("after", {}) or {}
+        delta = e.get("delta", {}) or {}
+        mkt = e.get("market_context", {}) or {}
+        affected = e.get("affected_conditionals", []) or []
+        aff_brief = "; ".join(
+            f"{c.get('conditional_id','')[:10]}:{c.get('status','')}"
+            for c in affected
+        )
+        rows.append({
+            "调整时间 (北京)": _bj(e.get("ts")),
+            "线ID": (e.get("manual_line_id") or "")[-20:],
+            "币种": e.get("symbol", ""),
+            "TF": e.get("timeframe", ""),
+            "方向": e.get("side", ""),
+            "改之前 起点价": before.get("price_start"),
+            "改之前 终点价": before.get("price_end"),
+            "改之前 斜率 %/h": before.get("slope_pct_per_hour_log"),
+            "改之后 起点价": after.get("price_start"),
+            "改之后 终点价": after.get("price_end"),
+            "改之后 斜率 %/h": after.get("slope_pct_per_hour_log"),
+            "Δ起点 (%)": delta.get("price_start_pct"),
+            "Δ终点 (%)": delta.get("price_end_pct"),
+            "Δ斜率 (%/h)": delta.get("slope_pct_per_hour_delta"),
+            "调整时 mark 价": mkt.get("mark_price"),
+            "调整时 ATR%": mkt.get("atr_pct"),
+            "受影响挂单数": e.get("affected_count"),
+            "受影响挂单": aff_brief,
+            "用户备注 (为什么改)": e.get("user_reason"),
+        })
+    df = pd.DataFrame(rows)
+    if "调整时间 (北京)" in df.columns and not df.empty:
+        df = df.sort_values("调整时间 (北京)", ascending=False, na_position="last")
+    return df
+
+
+def build_labels_sheet(labels: list[dict]) -> pd.DataFrame:
+    """ML-derived labels per line — best-buffer/RR/exit suggestions
+    computed by the learner after enough outcomes accumulated."""
+    rows = []
+    for l in labels:
+        rows.append({
+            "线ID": (l.get("manual_line_id") or "")[-20:],
+            "币种": l.get("symbol", ""),
+            "TF": l.get("timeframe", ""),
+            "方向": l.get("side", ""),
+            "标签: 交易胜": l.get("label_trade_win"),
+            "预期R倍": l.get("expected_realized_r"),
+            "建议 buffer %": l.get("best_buffer_pct"),
+            "建议 RR": l.get("best_rr"),
+            "建议开启 trailing": l.get("best_trailing_enabled"),
+            "建议退出原因": l.get("best_exit_reason"),
+            "建议 status": l.get("best_status"),
+            "MFE R (最大盈利)": l.get("mfe_r"),
+            "MAE R (最大回撤)": l.get("mae_r"),
+            "walking_stop_updates": l.get("walking_stop_updates"),
+        })
+    return pd.DataFrame(rows)
+
+
 def main():
     print("[*] Loading data…")
     lines = load_lines()
@@ -360,12 +426,14 @@ def main():
     outcomes = load_jsonl("user_drawing_outcomes.jsonl")
     ml_events = load_jsonl("user_drawings_ml.jsonl")
     labels = load_jsonl("user_drawing_labels.jsonl")
+    adjustments = load_jsonl("line_adjustments.jsonl")
 
     print(f"    画线:       {len(lines)} 条")
     print(f"    挂单:       {len(conds)} 条")
     print(f"    成交结果:   {len(outcomes)} 条")
     print(f"    ML 事件:    {len(ml_events)} 条")
     print(f"    学习标签:   {len(labels)} 条")
+    print(f"    调整事件:   {len(adjustments)} 条")
 
     print("[*] Building sheets…")
     df_lines = build_lines_sheet(lines, conds)
@@ -373,6 +441,8 @@ def main():
     df_calendar = build_calendar_sheet(lines, conds)
     df_outcomes = build_outcomes_sheet(outcomes)
     df_ml = build_ml_events_sheet(ml_events)
+    df_adjustments = build_adjustments_sheet(adjustments)
+    df_labels = build_labels_sheet(labels)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     out_dir = DATA / "reports"
@@ -385,6 +455,8 @@ def main():
         df_lines.to_excel(writer, sheet_name="画线明细", index=False)
         df_orders.to_excel(writer, sheet_name="挂单明细", index=False)
         df_outcomes.to_excel(writer, sheet_name="结果", index=False)
+        df_adjustments.to_excel(writer, sheet_name="画线调整", index=False)
+        df_labels.to_excel(writer, sheet_name="ML标签", index=False)
         df_ml.to_excel(writer, sheet_name="画线事件(ML)", index=False)
 
     # Auto-size columns
