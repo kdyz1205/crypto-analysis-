@@ -122,7 +122,12 @@ async function fetchEquity(mode) {
     return _equityCache.equity;
   }
   try {
-    const resp = await getLiveAccount(mode, 5000);
+    // 15s timeout: /account now fans out to 5 sequential Bitget REST
+    // calls (accounts + positions + orders-pending + plan-pending
+    // normal_plan + plan-pending profit_loss), each 1-3s. 5s was too
+    // tight during market-hours load. User report 2026-04-21:
+    // "signal is aborted without reason" in the modal preview.
+    const resp = await getLiveAccount(mode, 15000);
     // Backend returns snake_case: total_equity / usdt_available.
     // Legacy camelCase fallbacks kept for defensive compatibility, but
     // total_equity is the source of truth (matches views.js, runner_view.js,
@@ -326,9 +331,17 @@ export function openTradePlanModal(line, options = {}) {
       const mode = v.exchange_mode;
       const equity = await fetchEquity(mode);
       const accountErr = _equityCache.error;
+      // Friendlier message — user doesn't care about "signal is aborted",
+      // they care whether they can still place the order (YES — notional
+      // is independent of the equity fetch).
+      const isAbort = accountErr && /abort|timeout|signal/i.test(accountErr);
       const accountDisplay = equity > 0
         ? `$${equity.toFixed(2)}`
-        : (accountErr ? `— 账户数据加载失败: ${accountErr}` : '— (账户余额为 0)');
+        : (isAbort
+            ? '— Bitget API 慢,稍后再读(不影响挂单)'
+            : accountErr
+              ? `— 账户数据加载失败: ${accountErr}`
+              : '— (账户余额为 0)');
 
       // Size calculation respects size_mode:
       //   'notional_usd' — fixed USDT value (user's specified position size)
