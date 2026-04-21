@@ -763,6 +763,14 @@ async def api_place_line_order(req: PlaceLineOrderReq):
 
     try:
         _store.create(cond)
+        # Seed watcher's pending-oids cache with the brand-new oid so the
+        # next replan tick doesn't mistakenly skip this cond (within 3s
+        # TTL window) thinking "plan not pending".
+        try:
+            from ..conditionals.watcher import _add_pending_oid_to_cache
+            _add_pending_oid_to_cache(req.mode, str(result.get("exchange_order_id") or ""))
+        except Exception:
+            pass
         _store.append_event(cond.conditional_id, ConditionalEvent(
             ts=now_ts(),
             kind="exchange_submitted",

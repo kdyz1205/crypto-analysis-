@@ -1246,7 +1246,22 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
             // DON'T unlock on success — popup is closing anyway, prevent
             // any last-ms double click.
           } else {
-            setStatus(`✗ 失败: ${resp?.reason || '未知错误'}`, '#ff5252');  // SAFE: setStatus uses textContent
+            // Translate common backend reasons into actionable Chinese
+            // so user knows which setting to change (not just "失败").
+            // 2026-04-21: ETH rejected with size_below_min_trade because
+            // equity × % × leverage produced <$30 notional (ETH min).
+            const raw = String(resp?.reason || '未知错误');
+            let friendly = raw;
+            if (raw.includes('size_below_min_trade') || raw.includes('below_min')) {
+              friendly = `仓位太小 (notional $${(payload.size_usdt || 0).toFixed(2)}) — 低于 ${line.symbol} 最小挂单额。把 setup 的 % 或杠杆调高再试`;
+            } else if (raw.includes('insufficient_balance') || raw.includes('insufficient')) {
+              friendly = `余额不足 — 当前可用 < 需要的保证金 $${((payload.size_usdt || 0) / (payload.leverage || 1)).toFixed(2)}`;
+            } else if (raw.includes('leverage')) {
+              friendly = `杠杆设置被拒: ${raw}`;
+            } else if (raw.includes('price') && raw.includes('distance')) {
+              friendly = `线距离当前价太远,Bitget 拒绝`;
+            }
+            setStatus(`✗ ${friendly}`, '#ff5252');  // SAFE: setStatus uses textContent
             _applyPlacingState(false);     // let user retry or pick another setup
           }
         } catch (err) {

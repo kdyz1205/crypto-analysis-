@@ -110,6 +110,31 @@ async def _get_cached_pending_oids(mode: str) -> set[str]:
     return oids
 
 
+def _invalidate_pending_oids_cache(mode: str | None = None) -> None:
+    """Drop the cache so the next check refetches fresh.
+    Called after our own replan/place so the new oid is visible even
+    within the 3s TTL window (prevents false "my plan is gone" early-
+    return on a force-replan firing immediately after a natural one)."""
+    if mode is None:
+        _pending_oids_cache.clear()
+    else:
+        _pending_oids_cache.pop(mode, None)
+
+
+def _add_pending_oid_to_cache(mode: str, oid: str) -> None:
+    """Eagerly add a just-placed oid to the cache so the next check
+    sees it as pending. Complements _invalidate in cases where a full
+    refetch would be wasteful (e.g. right after submit_live_plan_entry
+    succeeds and we already know the new oid)."""
+    if not oid:
+        return
+    import time as _t
+    entry = _pending_oids_cache.get(mode)
+    if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
+        entry[1].add(str(oid))
+    # If cache is missing or expired, next check will refetch; nothing to do here.
+
+
 # ─────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────
@@ -1403,9 +1428,15 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     )
     place = await adapter.submit_live_plan_entry(intent, mode=cond.order.exchange_mode, trigger_price=float(new_trigger))
     if place.get("ok"):
-        cond.exchange_order_id = place.get("exchange_order_id") or ""
+        new_oid = place.get("exchange_order_id") or ""
+        cond.exchange_order_id = new_oid
         cond.fill_price = float(new_trigger)
         cond.last_poll_ts = now
+        # Cache bookkeeping: the old oid is gone (we cancelled it) and
+        # the new oid is pending. Update the cache so a force-replan
+        # firing within 3s (TTL) doesn't falsely see "our plan is gone".
+        _invalidate_pending_oids_cache(cond.order.exchange_mode)
+        _add_pending_oid_to_cache(cond.order.exchange_mode, new_oid)
         try:
             latest = _store.get(cond.conditional_id)
             if latest is not None:
