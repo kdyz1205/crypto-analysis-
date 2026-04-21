@@ -78,6 +78,37 @@ _outcome_backfill_counter = 0
 # it as entries are processed. See `force_replan(conditional_id)`.
 _force_replan_set: set[str] = set()
 
+# Short-lived cache of Bitget pending-order IDs so many conds in one
+# tick share a single fetch. TTL chosen small enough that a freshly-
+# cancelled plan won't get a stale "still present" result for long.
+_PENDING_OIDS_CACHE_TTL = 3.0   # seconds
+_pending_oids_cache: dict[str, tuple[float, set[str]]] = {}
+
+async def _get_cached_pending_oids(mode: str) -> set[str]:
+    import time as _t
+    entry = _pending_oids_cache.get(mode)
+    if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
+        return entry[1]
+    from server.execution.live_adapter import LiveExecutionAdapter
+    adapter = LiveExecutionAdapter()
+    oids: set[str] = set()
+    try:
+        for row in await adapter.get_pending_orders(mode):  # type: ignore
+            oid = str(row.get("orderId") or row.get("order_id") or "")
+            if oid:
+                oids.add(oid)
+    except Exception:
+        pass
+    try:
+        for row in await adapter.get_pending_plan_orders(mode, plan_type="normal_plan"):  # type: ignore
+            oid = str(row.get("orderId") or row.get("order_id") or "")
+            if oid:
+                oids.add(oid)
+    except Exception:
+        pass
+    _pending_oids_cache[mode] = (_t.time(), oids)
+    return oids
+
 
 # ─────────────────────────────────────────────────────────────
 # Public API
@@ -1236,56 +1267,11 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if cond.price_start == cond.price_end:
         return
 
-    # Safety guard 2026-04-21 (final version, per user directive):
-    # Only skip replan when THIS cond's own exchange_order_id is no
-    # longer a pending plan order on Bitget (i.e., it already filled
-    # or was cancelled manually). Do NOT look at the user's symbol-
-    # level positions — those may be from manual trades on the Bitget
-    # app that we don't manage.
-    #
-    # User 2026-04-21: "同向仓位是我自己买的，而且相当于你就直接管理
-    # 你那部分仓位就完事儿了。不用管我自己手动通过bitget 客户端/网站端
-    # 下的"
-    #
-    # Rationale: double-entry protection is already handled by the
-    # cancel-then-place flow. If cancel fails (order already gone),
-    # the function returns early without placing a new plan. So the
-    # only real failure mode was the old "symbol-level" guard flagging
-    # user's manual positions as "ours" and incorrectly shutting down
-    # replan / status for unrelated plan orders.
-    try:
-        from server.execution.live_adapter import LiveExecutionAdapter
-        adapter = LiveExecutionAdapter()
-        our_oid = str(cond.exchange_order_id or "")
-        if our_oid:
-            # Merge regular + plan pending pools — our plan orders live
-            # in plan-pending but may show in regular-pending briefly.
-            pending_oids: set[str] = set()
-            try:
-                for row in await adapter.get_pending_orders(cond.order.exchange_mode):  # type: ignore
-                    oid = str(row.get("orderId") or row.get("order_id") or "")
-                    if oid: pending_oids.add(oid)
-            except Exception:
-                pass
-            try:
-                for row in await adapter.get_pending_plan_orders(cond.order.exchange_mode, plan_type="normal_plan"):  # type: ignore
-                    oid = str(row.get("orderId") or row.get("order_id") or "")
-                    if oid: pending_oids.add(oid)
-            except Exception:
-                pass
-            if our_oid not in pending_oids:
-                # Our plan is gone — filled or user cancelled. Let the
-                # reconcile path handle the status transition; we do
-                # NOT replan a vanished order (would leave a ghost +
-                # potentially double-enter).
-                return
-    except Exception as exc:
-        print(f"[watcher] plan-existence check failed {cond.symbol}: {exc}", flush=True)
-        # Fall through — better to attempt replan than silently stall.
-
-    # Force-replan flag bypasses the bar-interval gate and the drift
-    # threshold — used when the user drags an anchor and we need the
-    # order to immediately reflect the new geometry.
+    # Bar-gate FIRST (cheap, no API). This cuts the vast majority of
+    # per-tick calls before we ever touch Bitget. Plan-existence check
+    # moved AFTER the gate so it only runs when we're actually about
+    # to replan. Perf 2026-04-21: old ordering hit Bitget 2x/sec per
+    # triggered cond (per user "之前挂单都是几秒就好了 为什么现在需要这么久").
     global _force_replan_set
     forced = cond.conditional_id in _force_replan_set
     if forced:
@@ -1294,6 +1280,21 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         last = cond.last_poll_ts or cond.triggered_at or cond.created_at
         if _bar_open_ts(now, cond.timeframe) <= _bar_open_ts(last, cond.timeframe):
             return
+
+    # NOW (post-gate) check that our plan is still alive on Bitget
+    # before spending effort on cancel+replace. Cached pending list
+    # lets multiple conds in the same tick share one fetch.
+    try:
+        pending_oids = await _get_cached_pending_oids(cond.order.exchange_mode)
+        our_oid = str(cond.exchange_order_id or "")
+        if our_oid and our_oid not in pending_oids:
+            # Our plan is gone — filled or user cancelled. Let the
+            # reconcile path handle the status transition; we do
+            # NOT replan a vanished order.
+            return
+    except Exception as exc:
+        print(f"[watcher] plan-existence check failed {cond.symbol}: {exc}", flush=True)
+        # Fall through — better to attempt replan than silently stall.
 
     # Project the line's price at the CURRENT TF BAR'S OPEN. Same
     # convention as place-line-order (2026-04-21 unification). User
