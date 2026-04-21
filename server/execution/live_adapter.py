@@ -746,11 +746,26 @@ class LiveExecutionAdapter:
             mode=mode,
             params={"productType": self.product_type, "marginCoin": self.margin_coin},
         )
+        # Bitget has TWO "pending" order endpoints we need to merge so the
+        # UI sidebar reflects reality:
+        #   - orders-pending:       regular limit/market orders awaiting match
+        #   - orders-plan-pending:  normal_plan trigger-market plans (what
+        #                           manual line orders use)
+        # Pre-2026-04-21 we only queried the first, so plan orders the user
+        # placed via the Trade Plan modal were invisible in the sidebar
+        # ("挂单 0 无挂单" even though Bitget had live plans). P9 violation
+        # — UI must reflect Bitget-side state.
         pending = await self._bitget_request(
             "GET",
             "/api/v2/mix/order/orders-pending",
             mode=mode,
             params={"productType": self.product_type},
+        )
+        plan_pending = await self._bitget_request(
+            "GET",
+            "/api/v2/mix/order/orders-plan-pending",
+            mode=mode,
+            params={"productType": self.product_type, "planType": "normal_plan"},
         )
 
         if accounts.get("code") != "00000":
@@ -788,25 +803,42 @@ class LiveExecutionAdapter:
             for row in position_rows
             if self._position_size(row) > 0
         ]
-        pending_rows = self._as_rows(pending.get("data"))
-        pending_orders = [
-            {
+        def _map_pending_row(row: dict, plan_type: str | None = None) -> dict:
+            return {
                 "symbol": row.get("symbol"),
-                "orderId": row.get("orderId"),
+                "orderId": row.get("orderId") or row.get("planOrderId"),
                 "clientOid": row.get("clientOid"),
-                "side": row.get("side"),
+                "side": row.get("side") or row.get("tradeSide"),
                 "size": row.get("size"),
-                "orderType": row.get("orderType"),
-                "status": row.get("state") or row.get("status"),
+                "orderType": row.get("orderType") or plan_type,
+                "planType": plan_type or row.get("planType"),
+                "status": row.get("state") or row.get("status") or row.get("planStatus"),
                 # Bitget uses different field names depending on order type:
                 #   regular limit: "price"
                 #   plan / trigger: "triggerPrice" / "executePrice"
                 "price": row.get("price") or row.get("executePrice")
                           or row.get("triggerPrice") or row.get("priceAvg"),
+                "triggerPrice": row.get("triggerPrice"),
+                "leverage": row.get("leverage"),
+                "created_at": row.get("cTime") or row.get("ctime") or row.get("createdTime"),
             }
+
+        pending_rows = self._as_rows(pending.get("data"))
+        plan_rows_data = plan_pending.get("data")
+        # plan-pending data may be nested under `entrustedList`
+        if isinstance(plan_rows_data, dict):
+            plan_rows_data = plan_rows_data.get("entrustedList") or plan_rows_data.get("list") or []
+        plan_rows = self._as_rows(plan_rows_data)
+
+        pending_orders = [
+            _map_pending_row(row)
             for row in pending_rows
             # Filter Bitget's all-null ghost rows
             if row.get("symbol") and row.get("orderId")
+        ] + [
+            _map_pending_row(row, plan_type="normal_plan")
+            for row in plan_rows
+            if row.get("symbol") and (row.get("orderId") or row.get("planOrderId"))
         ]
 
         return {
@@ -1102,3 +1134,4 @@ __all__ = [
     "LiveExecutionAdapter",
     "LiveMode",
 ]
+
