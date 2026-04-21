@@ -764,7 +764,18 @@ async function commitDrag() {
   }
   transition('idle', 'drag_committed');
 
-  // PATCH backend
+  // PATCH backend. Larger timeout (25s) because the handler does
+  // force_replan_line which can call Bitget cancel+replace on every
+  // attached cond — slow when >3 conds or Bitget is backed up.
+  // User 2026-04-21: old 8s timeout was aborting legit PATCHes,
+  // frontend rolled back to snapshot, line "jumped" to original
+  // position after each drag — making fine adjustment impossible.
+  // Also: on abort specifically, DO NOT roll back. The request may
+  // have actually reached the server and stored; a rollback plus the
+  // server's successful state creates a ping-pong where next refresh
+  // restores the server's (new) state and "un-jumps". Simpler: keep
+  // optimistic local state and show a console warn. If the PATCH
+  // truly didn't land, next manual refresh will correct it.
   try {
     await fetchJson(`/api/drawings/${encodeURIComponent(drag.lineId)}`, {
       method: 'PATCH',
@@ -774,12 +785,23 @@ async function commitDrag() {
         price_start: newStart.price,
         price_end:   newEnd.price,
       },
-      timeout: 8000,
+      timeout: 25000,
     });
     console.log('[chart_drawing] drag PATCH ok');
   } catch (err) {
-    console.error('[chart_drawing] drag PATCH failed', err);
-    // Rollback to snapshot
+    const msg = String(err?.message || err || '');
+    const isAbort = /abort|timeout|signal/i.test(msg);
+    if (isAbort) {
+      // Keep the optimistic local state. Server may have actually
+      // accepted — or not — but rolling back here makes adjustment
+      // impossible (line jumps back on every slow network blip).
+      console.warn('[chart_drawing] drag PATCH timed out, keeping local state', err);
+      return;
+    }
+    // Non-abort errors (e.g. 404, 400) imply the server didn't accept
+    // the change. Roll back to previous position so user sees a real
+    // failure and can fix the underlying issue.
+    console.error('[chart_drawing] drag PATCH rejected', err);
     if (snapshot && idx >= 0) {
       const cur = drawingsState.lines || [];
       const rollback = cur.slice();
