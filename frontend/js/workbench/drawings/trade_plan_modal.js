@@ -434,10 +434,35 @@ export function openTradePlanModal(line, options = {}) {
       const buffer = Math.abs(v.buffer_pct || 0);
       const stop = Math.abs(v.stop_pct || 0);
       const totalStopPct = buffer + stop;
-      const riskUsd = notional * (totalStopPct / 100);
-      const rewardUsd = riskUsd * v.rr_target;
-      const riskPctAccount = equity > 0 ? (riskUsd / equity) * 100 : 0;
-      const rewardPctAccount = equity > 0 ? (rewardUsd / equity) * 100 : 0;
+
+      // 2026-04-21 user: "Bitget 收 taker fee,开仓 + 平仓两次。你这
+      // 边没算,所以数字和 Bitget 对不上。加上去让显示一致。"
+      // Bitget USDT-M Futures taker fee = 0.06% (VIP 0 default).
+      // Users with VIP/discount can override via localStorage key
+      // v2.trade.takerFeePct (e.g. set to 0.048 for VIP 1).
+      let takerFeePct = 0.06;
+      try {
+        const override = parseFloat(localStorage.getItem('v2.trade.takerFeePct') || '');
+        if (Number.isFinite(override) && override > 0) takerFeePct = override;
+      } catch {}
+      // We pay taker fee on ENTRY (market trigger fills as taker) and
+      // again on EXIT (stop or TP — both market orders). Both are on
+      // notional at the fill price. Approximation: use the same
+      // notional for both legs (exit notional differs by stop/tp move
+      // but the % difference is <1% — not worth complicating).
+      const feePctTotal = takerFeePct * 2;                 // open + close
+      const feeUsd = notional * (feePctTotal / 100);
+
+      const riskPriceUsd = notional * (totalStopPct / 100);
+      const riskUsdNet = riskPriceUsd + feeUsd;            // lose price move + both fees
+      const rewardPriceUsd = riskPriceUsd * v.rr_target;
+      const rewardUsdNet = rewardPriceUsd - feeUsd;        // gain price move - both fees
+
+      const riskPctAccount = equity > 0 ? (riskUsdNet / equity) * 100 : 0;
+      const rewardPctAccount = equity > 0 ? (rewardUsdNet / equity) * 100 : 0;
+      // Effective RR after fees (the true risk:reward from the user's
+      // perspective, not the theoretical price-distance RR).
+      const effectiveRr = riskUsdNet > 0 ? rewardUsdNet / riskUsdNet : 0;
       const marginUsd = v.leverage > 0 ? notional / v.leverage : notional;
 
       const eqEl = $('#tp-preview-equity');
@@ -446,10 +471,7 @@ export function openTradePlanModal(line, options = {}) {
       $('#tp-preview-notional').textContent = `$${notional.toFixed(2)} (保证金 $${marginUsd.toFixed(2)})`;
 
       // Show the stop-distance breakdown so the user can see at a glance
-      // WHY the risk is what it is. Their mental model (2026-04-20):
-      // "stop = trendline + small wick-through confirmation". The 止损 %
-      // input field alone covers only the wick part; buffer % is the
-      // entry-to-line distance. Total = sum.
+      // WHY the risk is what it is.
       const stopEl = $('#tp-preview-stop-dist');
       if (stopEl) {
         stopEl.style.color = '';
@@ -457,10 +479,27 @@ export function openTradePlanModal(line, options = {}) {
           `${totalStopPct.toFixed(2)}% `
           + `(${buffer.toFixed(2)}% buffer + ${stop.toFixed(2)}% 过线)`;
       }
+      // Fee row — show the pair total so user can sanity-check against Bitget
+      const feeEl = $('#tp-preview-fee');
+      if (feeEl) {
+        feeEl.textContent =
+          `$${feeUsd.toFixed(2)}  (${takerFeePct.toFixed(3)}% × 2, 开+平)`;
+      }
+      // Risk/reward: show NET (after fees) with price-only as secondary
       $('#tp-preview-risk').textContent =
-        `$${riskUsd.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`;
+        `$${riskUsdNet.toFixed(2)}  (${riskPctAccount.toFixed(2)}% of account)`
+        + `  [价差 $${riskPriceUsd.toFixed(2)} + 手续费 $${feeUsd.toFixed(2)}]`;
       $('#tp-preview-reward').textContent =
-        `$${rewardUsd.toFixed(2)}  (${rewardPctAccount.toFixed(2)}% of account)`;
+        `$${rewardUsdNet.toFixed(2)}  (${rewardPctAccount.toFixed(2)}% of account)`
+        + `  [价差 $${rewardPriceUsd.toFixed(2)} - 手续费 $${feeUsd.toFixed(2)}]`;
+      // Effective RR row (real RR after fees eat into both sides)
+      const rrEl = $('#tp-preview-effective-rr');
+      if (rrEl) {
+        const rrColor = effectiveRr >= 2 ? '#00e676' : (effectiveRr >= 1.3 ? '#fbbf24' : '#ff5252');
+        rrEl.style.color = rrColor;
+        rrEl.textContent =
+          `${effectiveRr.toFixed(2)} : 1  (目标 ${(v.rr_target || 0).toFixed(1)}:1 毛)`;
+      }
     };
 
     applySizeModeVisibility();
@@ -753,8 +792,10 @@ function renderShell(line, v, setupsState) {
           <div class="tp-preview-row"><span>账户余额</span><span id="tp-preview-equity">—</span></div>
           <div class="tp-preview-row"><span>仓位名义</span><span id="tp-preview-notional">—</span></div>
           <div class="tp-preview-row tp-breakdown"><span>止损距离</span><span id="tp-preview-stop-dist">—</span></div>
-          <div class="tp-preview-row tp-risk"><span>止损风险</span><span id="tp-preview-risk">—</span></div>
-          <div class="tp-preview-row tp-reward"><span>止盈目标</span><span id="tp-preview-reward">—</span></div>
+          <div class="tp-preview-row tp-fee" title="Bitget taker fee 0.06% × 2 (开仓 + 平仓)"><span>手续费 (开+平)</span><span id="tp-preview-fee">—</span></div>
+          <div class="tp-preview-row tp-risk"><span>止损风险 (含费)</span><span id="tp-preview-risk">—</span></div>
+          <div class="tp-preview-row tp-reward"><span>止盈目标 (扣费)</span><span id="tp-preview-reward">—</span></div>
+          <div class="tp-preview-row tp-effective-rr" title="实际盈亏比 = (目标价差 - 手续费) / (止损价差 + 手续费)"><span>实际 RR</span><span id="tp-preview-effective-rr">—</span></div>
         </div>
 
         <div class="tp-section-head">自动反手 (止损触发后立即反向挂单)</div>
@@ -1045,6 +1086,19 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
     let direction = line?.side === 'support' ? 'long' : 'short';
     let reverseEnabled = false;
 
+    // Warm equity cache in background so each setup row's $ risk /
+    // reward shows real numbers for equity_pct setups. Non-blocking —
+    // the first render shows "—" for amounts and a re-render fires
+    // once the fetch resolves.
+    const _equityModes = new Set();
+    for (const s of setupsState.setups) {
+      const m = s?.config?.exchange_mode === 'paper' ? 'demo' : (s?.config?.exchange_mode || 'live');
+      _equityModes.add(m);
+    }
+    Promise.all([..._equityModes].map((m) => fetchEquity(m).catch(() => 0))).then(() => {
+      if (_quickPopup) renderBody();
+    });
+
     _quickPopup = document.createElement('div');
     _quickPopup.className = 'tp-quick-popup';
     Object.assign(_quickPopup.style, {
@@ -1066,11 +1120,51 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
       const longCls = direction === 'long' ? 'background:#0b4d1f;color:#00e676;font-weight:600' : 'background:#1a2133;color:#8a95a6';
       const shortCls = direction === 'short' ? 'background:#4d0b0b;color:#ff5252;font-weight:600' : 'background:#1a2133;color:#8a95a6';
       const revCls = reverseEnabled ? 'background:#3b2a0b;color:#fbbf24;font-weight:600' : 'background:#1a2133;color:#8a95a6';
-      const setupRows = setupsState.setups.map((s) => `
-        <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;">
-          <div style="color:#d8dde8;font-size:12px">${esc(s.name)}</div>
-        </div>
-      `).join('');
+
+      // Per-setup fee-aware P&L preview. User 2026-04-21: "加上 taker
+      // fee 两次,让这边和 Bitget 的数字一致". Taker fee default 0.06%
+      // (overrideable via localStorage v2.trade.takerFeePct).
+      let takerFeePct = 0.06;
+      try {
+        const ov = parseFloat(localStorage.getItem('v2.trade.takerFeePct') || '');
+        if (Number.isFinite(ov) && ov > 0) takerFeePct = ov;
+      } catch {}
+
+      const setupRows = setupsState.setups.map((s) => {
+        const c = s.config || {};
+        const buffer = Math.abs(Number(c.buffer_pct) || 0);
+        const stop = Math.abs(Number(c.stop_pct) || 0);
+        const totalPct = buffer + stop;
+        const rr = Number(c.rr_target) || 2;
+        const lev = Number(c.leverage) > 0 ? Number(c.leverage) : 1;
+        // Compute notional the same way the real place path does
+        let notional = 0;
+        if (c.size_mode === 'equity_pct' && c.equity_pct > 0) {
+          const mode = c.exchange_mode === 'paper' ? 'demo' : (c.exchange_mode || 'live');
+          const eq = getCachedEquity(mode);
+          notional = eq > 0 ? eq * (c.equity_pct / 100) * lev : 0;
+        } else {
+          notional = (Number(c.notional_usd) || 0) * lev;
+        }
+        const feeUsd = notional * (takerFeePct * 2) / 100;
+        const riskPriceUsd = notional * (totalPct / 100);
+        const riskNet = riskPriceUsd + feeUsd;
+        const rewardNet = riskPriceUsd * rr - feeUsd;
+        const effRr = riskNet > 0 ? (rewardNet / riskNet) : 0;
+        const effColor = effRr >= 2 ? '#00e676' : (effRr >= 1.3 ? '#fbbf24' : '#ff5252');
+        const pnlLine = notional > 0
+          ? `<div style="color:#6b7889;font-size:10px;margin-top:2px">` +
+              `风险 $${riskNet.toFixed(2)} · 目标 $${rewardNet.toFixed(2)} · ` +
+              `<span style="color:${effColor}">RR ${effRr.toFixed(2)}</span> · 费 $${feeUsd.toFixed(2)}` +
+            `</div>`
+          : '';
+        return `
+          <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;">
+            <div style="color:#d8dde8;font-size:12px">${esc(s.name)}</div>
+            ${pnlLine}
+          </div>
+        `;
+      }).join('');
       _quickPopup.innerHTML = `
         <div style="color:#8a95a6;font-size:11px;font-weight:600;margin-bottom:8px">
           ⚡ 快捷挂单 · ${esc(line.symbol)} ${esc(line.timeframe)}
