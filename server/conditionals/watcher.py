@@ -1236,34 +1236,52 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if cond.price_start == cond.price_end:
         return
 
-    # Safety guard 2026-04-21: if this cond's symbol ALREADY has an open
-    # position on Bitget, don't replan. The replan path would cancel the
-    # existing plan + create a new one, which in practice leaves "ghost"
-    # plans hanging and can cause double-entry if the new plan fires.
-    # User incident: BAS long filled, then a stale replan placed a second
-    # buy at 0.010221 that would have doubled the position.
+    # Safety guard 2026-04-21 (final version, per user directive):
+    # Only skip replan when THIS cond's own exchange_order_id is no
+    # longer a pending plan order on Bitget (i.e., it already filled
+    # or was cancelled manually). Do NOT look at the user's symbol-
+    # level positions — those may be from manual trades on the Bitget
+    # app that we don't manage.
+    #
+    # User 2026-04-21: "同向仓位是我自己买的，而且相当于你就直接管理
+    # 你那部分仓位就完事儿了。不用管我自己手动通过bitget 客户端/网站端
+    # 下的"
+    #
+    # Rationale: double-entry protection is already handled by the
+    # cancel-then-place flow. If cancel fails (order already gone),
+    # the function returns early without placing a new plan. So the
+    # only real failure mode was the old "symbol-level" guard flagging
+    # user's manual positions as "ours" and incorrectly shutting down
+    # replan / status for unrelated plan orders.
     try:
         from server.execution.live_adapter import LiveExecutionAdapter
         adapter = LiveExecutionAdapter()
-        held = await adapter.get_open_position_symbols(cond.order.exchange_mode)
-        if cond.symbol.upper() in held:
-            if cond.status != "filled":
-                cond.status = "filled"
-                try:
-                    _store.update(cond)
-                except Exception:
-                    pass
-                _append_event(cond, ConditionalEvent(
-                    ts=now, kind="exchange_acked",
-                    message=(
-                        f"replan skipped + status→filled: "
-                        f"position already open on Bitget for {cond.symbol}"
-                    ),
-                ))
-            return
+        our_oid = str(cond.exchange_order_id or "")
+        if our_oid:
+            # Merge regular + plan pending pools — our plan orders live
+            # in plan-pending but may show in regular-pending briefly.
+            pending_oids: set[str] = set()
+            try:
+                for row in await adapter.get_pending_orders(cond.order.exchange_mode):  # type: ignore
+                    oid = str(row.get("orderId") or row.get("order_id") or "")
+                    if oid: pending_oids.add(oid)
+            except Exception:
+                pass
+            try:
+                for row in await adapter.get_pending_plan_orders(cond.order.exchange_mode, plan_type="normal_plan"):  # type: ignore
+                    oid = str(row.get("orderId") or row.get("order_id") or "")
+                    if oid: pending_oids.add(oid)
+            except Exception:
+                pass
+            if our_oid not in pending_oids:
+                # Our plan is gone — filled or user cancelled. Let the
+                # reconcile path handle the status transition; we do
+                # NOT replan a vanished order (would leave a ghost +
+                # potentially double-enter).
+                return
     except Exception as exc:
-        print(f"[watcher] position-guard check failed {cond.symbol}: {exc}", flush=True)
-        # Fall through — better to replan than silently fail the check.
+        print(f"[watcher] plan-existence check failed {cond.symbol}: {exc}", flush=True)
+        # Fall through — better to attempt replan than silently stall.
 
     # Force-replan flag bypasses the bar-interval gate and the drift
     # threshold — used when the user drags an anchor and we need the
