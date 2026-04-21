@@ -966,6 +966,39 @@ class LiveExecutionAdapter:
                 symbols.add(symbol)
         return symbols
 
+    async def get_open_position_sides(self, mode: LiveMode) -> set[tuple[str, str]]:
+        """Return set of (symbol, direction) tuples for open positions.
+
+        direction is "long" or "short" (normalized from Bitget's holdSide
+        which is "long"/"short" or "buy"/"sell" depending on mode).
+
+        Needed so callers can distinguish "already have SAME-direction
+        position" (replan guard should skip → avoid double-entry) vs
+        "have OPPOSITE-direction position" (hedge — let replan proceed).
+        """
+        response = await self._bitget_request(
+            "GET", "/api/v2/mix/position/all-position",
+            mode=mode,
+            params={"productType": self.product_type, "marginCoin": self.margin_coin},
+        )
+        if response.get("code") != "00000":
+            raise RuntimeError(f"position fetch failed: {self._extract_error_reason(response)}")
+        out: set[tuple[str, str]] = set()
+        for row in self._as_rows(response.get("data")):
+            if self._position_size(row) <= 0:
+                continue
+            symbol = str(row.get("symbol") or "").upper()
+            raw_side = str(row.get("holdSide") or row.get("posSide") or "").lower()
+            if raw_side in ("long", "buy"):
+                direction = "long"
+            elif raw_side in ("short", "sell"):
+                direction = "short"
+            else:
+                continue
+            if symbol:
+                out.add((symbol, direction))
+        return out
+
     async def has_open_position(self, symbol: str, mode: LiveMode) -> bool:
         return symbol.upper().replace("/", "") in await self.get_open_position_symbols(mode)
 
