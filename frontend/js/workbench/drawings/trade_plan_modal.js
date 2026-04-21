@@ -1144,8 +1144,31 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
       if (s) { s.textContent = msg; s.style.color = color; }
     };
 
+    // Hard click lock. User 2026-04-21: clicked setup 3 times when the
+    // first click appeared to do nothing (request was in-flight but no
+    // visible feedback). Result: 3 duplicate orders on Bitget. Fix:
+    // the FIRST setup click flips _placing=true, visually dims the
+    // popup + shows "挂单中", and subsequent clicks are hard-blocked
+    // until the request returns or errors out.
+    let _placing = false;
+    const _applyPlacingState = (on) => {
+      _placing = on;
+      if (_quickPopup) {
+        _quickPopup.style.pointerEvents = on ? 'none' : '';
+        _quickPopup.style.opacity = on ? '0.6' : '';
+      }
+    };
+
     // Click handler
     _quickPopup.addEventListener('click', async (ev) => {
+      if (_placing) {
+        // Defense-in-depth: shouldn't reach here since pointer-events
+        // is disabled, but cover the race window where style hasn't
+        // applied yet.
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
       const dirBtn = ev.target.closest('.qt-dir-btn');
       const revBtn = ev.target.closest('.qt-rev-btn');
       const setupRow = ev.target.closest('.qt-setup-row');
@@ -1172,7 +1195,9 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         const s = setupsState.setups.find((x) => x.id === id);
         if (!s) { setStatus('setup 找不到', '#ff5252'); return; }
         const cfg = s.config || {};
-        setStatus(`挂单中 "${s.name}"…`, '#38bdf8');
+        // LOCK IMMEDIATELY — before any await, before any network call.
+        _applyPlacingState(true);
+        setStatus(`⏳ 挂单中 "${s.name}"… (最多 30s)`, '#38bdf8');  // SAFE: setStatus uses textContent
         // Compute size_usdt. Same convention as full modal:
         //   notional_usd = STAKE (margin), actual notional = stake × leverage
         //   equity_pct mode = equity × pct × leverage
@@ -1191,7 +1216,11 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         } catch (e) {
           size_usdt = (Number(cfg.notional_usd) || 0) * lev;
         }
-        if (!(size_usdt > 0)) { setStatus('仓位必须 > 0 USDT', '#ff5252'); return; }
+        if (!(size_usdt > 0)) {
+          setStatus('仓位必须 > 0 USDT', '#ff5252');
+          _applyPlacingState(false);       // unlock so user can pick a different setup
+          return;
+        }
 
         const payload = {
           manual_line_id: line.manual_line_id,
@@ -1214,11 +1243,29 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
           if (resp?.ok) {
             setStatus(`✓ 已挂单: ${resp.message || ''}`, '#00e676');  // SAFE: setStatus uses textContent
             setTimeout(() => { cleanup(); resolve(resp); }, 1200);
+            // DON'T unlock on success — popup is closing anyway, prevent
+            // any last-ms double click.
           } else {
             setStatus(`✗ 失败: ${resp?.reason || '未知错误'}`, '#ff5252');  // SAFE: setStatus uses textContent
+            _applyPlacingState(false);     // let user retry or pick another setup
           }
         } catch (err) {
-          setStatus(`✗ 错误: ${err?.message || err}`, '#ff5252');  // SAFE: setStatus uses textContent
+          // "signal is aborted without reason" = request exceeded timeout.
+          // Bitget might have RECEIVED the order; we just didn't get ack.
+          // Tell user to check the app, don't pretend it definitely failed.
+          // DO NOT unlock the popup on abort — the in-flight request may
+          // have actually succeeded. User must manually close + reopen
+          // to try again. This prevents the 3-duplicates bug user hit
+          // 2026-04-21.
+          const msg = String(err?.message || err || '');
+          const aborted = /abort|timeout|signal/i.test(msg);
+          if (aborted) {
+            setStatus('⚠ 网络超时 — 去 Bitget app 查是否已挂上。本 popup 锁定防止重复挂单，关掉再开', '#fbbf24');  // SAFE: setStatus uses textContent
+            // popup stays LOCKED; user must explicitly close it
+          } else {
+            setStatus(`✗ 错误: ${msg}`, '#ff5252');  // SAFE: setStatus uses textContent
+            _applyPlacingState(false);     // non-abort errors are safe to retry
+          }
         }
       }
     });
