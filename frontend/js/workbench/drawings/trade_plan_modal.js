@@ -652,14 +652,9 @@ export function openTradePlanModal(line, options = {}) {
       }
     });
 
-    // Esc closes (auto-saves current form first, same as 取消)
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        document.removeEventListener('keydown', onKey);
-        _autoSaveAndClose();
-      }
-    };
-    document.addEventListener('keydown', onKey);
+    // ESC is already wired via _escHandler earlier in this function
+    // (stored on _modal._escHandler for cleanup). Redundant second
+    // listener removed 2026-04-21 per code-reviewer S6.
   });
 }
 
