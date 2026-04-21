@@ -554,21 +554,20 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     timing_start = time.perf_counter()
     mark_price = await _fetch_bitget_mark_price(drawing.symbol)
     mark_elapsed_ms = int((time.perf_counter() - timing_start) * 1000)
-    if mark_price and mark_price > 0:
-        gap_pct = abs(ref_price - mark_price) / mark_price * 100
-        # Keep the live order path fast. Full ATR/BB analysis belongs in the
-        # preview/analyze path; here a fixed stale-line guard is enough.
-        # Raised 10% → 25% 2026-04-21: user hit this on a valid trade
-        # (line 10.5% from mark on a 4h chart after a strong move).
-        # 25% means "only block truly stale lines drawn days ago across
-        # multiple regime changes".
-        threshold = 25.0
-        if gap_pct > threshold:
+    # Distance-from-mark check REMOVED 2026-04-21. User strategy depends on
+    # placing orders at structurally-important levels that can be 20-50%+
+    # away from current price — the whole EDGE is "wait for price to come
+    # to the line". Iterations 10% → 25% → removed. Only keep a minimal
+    # sanity guard against truly broken inputs (price ≤ 0, or > 100×
+    # mark which suggests a UI coordinate-transform bug).
+    if mark_price and mark_price > 0 and ref_price > 0:
+        ratio = ref_price / mark_price
+        if ratio > 100 or ratio < 0.01:
             msg = (
-                f"line_too_far_from_mark: {drawing.symbol} "
+                f"line_price_bug_suspected: {drawing.symbol} "
                 f"line@{ref_price:.4f} vs mark@{mark_price:.4f} "
-                f"({gap_pct:.1f}% away, threshold {threshold:.1f}%). "
-                f"refusing to place obviously stale order."
+                f"(ratio={ratio:.2f}×). This is 100× off — looks like "
+                f"a drawing-coord bug. Redraw the line."
             )
             print(f"[place-line-order] REJECTED: {msg}", flush=True)
             raise HTTPException(400, msg)
