@@ -493,11 +493,27 @@ export function openTradePlanModal(line, options = {}) {
           const err = resp?.error || resp?.detail || resp?.reason || 'create failed';
           throw new Error(err);
         }
-        closeExisting();
-        resolve(resp);
+        // Clear feedback on success so the user doesn't wonder "did it
+        // work?" and re-submit. Previously modal closed silently/instantly
+        // → user on slow network saw nothing → hit confirm again →
+        // double-order. (2026-04-21: HYPE position fill had 2 duplicate
+        // SL + 2 duplicate TP plans from exactly this pattern.)
+        btn.textContent = '✓ 已挂单';
+        btn.style.background = '#00e676';
+        btn.style.color = '#000';
+        const oid = resp.exchange_order_id || resp.conditional_id || '';
+        if (oid) {
+          $('#tp-error').style.color = '#00e676';
+          $('#tp-error').textContent = `✓ 成功: ${String(oid).slice(-10)}`;
+        }
+        setTimeout(() => {
+          closeExisting();
+          resolve(resp);
+        }, 900);
       } catch (err) {
         btn.disabled = false;
         btn.textContent = '确认挂单';
+        $('#tp-error').style.color = '';
         $('#tp-error').textContent = `创建失败: ${err?.message || err}`;
       }
     });

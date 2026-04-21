@@ -471,11 +471,30 @@ function renderBitgetSection() {
     ? positions.map((p) => {
         const dir = p.holdSide || '';
         const dirColor = dir === 'long' ? '#00e676' : '#ff5252';
+        // SL / TP line — shows Bitget-side protection so the user can see
+        // at a glance their short is covered (instead of assuming it's
+        // naked). 2026-04-21: user reported "我不知道这个单有没有 SL/TP"
+        // because sidebar only showed entry + mark.
+        const sl = Number(p.sl_trigger);
+        const tp = Number(p.tp_trigger);
+        const slCount = Number(p.sl_count || 0);
+        const tpCount = Number(p.tp_count || 0);
+        const dupWarn = (slCount > 1 || tpCount > 1)
+          ? `<span title="Bitget 上挂了 ${slCount} 份 SL + ${tpCount} 份 TP,建议到 Bitget app 清理重复" style="color:#fbbf24;margin-left:6px">⚠ 重复</span>`
+          : '';
+        const sltpLine = (sl > 0 || tp > 0)
+          ? `<div style="font-size:10px;color:#94a1b7;padding-left:8px">
+               SL <b style="color:#ef5350">${sl > 0 ? sl.toFixed(4) : '—'}</b>
+               · TP <b style="color:#26a69a">${tp > 0 ? tp.toFixed(4) : '—'}</b>
+               ${dupWarn}
+             </div>`
+          : `<div style="font-size:10px;color:#ff9800;padding-left:8px">⚠ 无 SL/TP 保护</div>`;
         return `<div class="cond-row" style="font-size:10px">
           <b style="color:${dirColor}">${esc(dir.toUpperCase())}</b> ${esc(p.symbol || '')}
           · qty <b>${esc(String(p.total ?? '?'))}</b>
           · entry ${esc(String(p.averageOpenPrice ?? '?'))}
           · mark ${esc(String(p.markPrice ?? '?'))}
+          ${sltpLine}
         </div>`;
       }).join('')
     : '<p class="muted" style="font-size:10px;margin:4px 0">无持仓</p>';
