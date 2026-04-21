@@ -767,6 +767,16 @@ class LiveExecutionAdapter:
             mode=mode,
             params={"productType": self.product_type, "planType": "normal_plan"},
         )
+        # Also fetch SL/TP plans (pos_loss / pos_profit / loss_plan /
+        # profit_plan) under the profit_loss umbrella so we can attach
+        # them to position rows. Without this, the UI has no way to
+        # show "this short is protected at SL=$41.22 TP=$38.50".
+        sltp_plans = await self._bitget_request(
+            "GET",
+            "/api/v2/mix/order/orders-plan-pending",
+            mode=mode,
+            params={"productType": self.product_type, "planType": "profit_loss"},
+        )
 
         if accounts.get("code") != "00000":
             return {
@@ -785,9 +795,56 @@ class LiveExecutionAdapter:
             ),
             account_rows[0] if account_rows else {},
         )
+        # Build a {symbol → {sl: [...], tp: [...]}} map from the SL/TP plan
+        # rows so each position row can carry its protection state.
+        sltp_data = sltp_plans.get("data")
+        if isinstance(sltp_data, dict):
+            sltp_data = sltp_data.get("entrustedList") or sltp_data.get("list") or []
+        sltp_rows = self._as_rows(sltp_data)
+        sltp_by_symbol: dict[str, dict[str, list[dict]]] = {}
+        for r in sltp_rows:
+            sym = str(r.get("symbol") or "").upper()
+            if not sym:
+                continue
+            ptype = str(r.get("planType") or "").lower()
+            bucket = sltp_by_symbol.setdefault(sym, {"sl": [], "tp": []})
+            entry = {
+                "orderId": str(r.get("orderId") or ""),
+                "triggerPrice": r.get("triggerPrice"),
+                "planType": ptype,
+                "size": r.get("size"),
+            }
+            if ptype in ("pos_loss", "loss_plan"):
+                bucket["sl"].append(entry)
+            elif ptype in ("pos_profit", "profit_plan"):
+                bucket["tp"].append(entry)
+
         position_rows = self._as_rows(positions.get("data"))
-        active_positions = [
-            {
+        active_positions = []
+        for row in position_rows:
+            if self._position_size(row) <= 0:
+                continue
+            sym = str(row.get("symbol") or "").upper()
+            sltp = sltp_by_symbol.get(sym, {"sl": [], "tp": []})
+            # Surface the most-relevant single SL + TP trigger for the UI;
+            # also keep the full list so a richer view can show duplicates.
+            def _primary(items: list[dict], prefer_first: bool) -> float | None:
+                if not items:
+                    return None
+                try:
+                    vals = [float(x.get("triggerPrice") or 0) for x in items if x.get("triggerPrice")]
+                    vals = [v for v in vals if v > 0]
+                    if not vals:
+                        return None
+                    return min(vals) if prefer_first else max(vals)
+                except Exception:
+                    return None
+            hold_side = str(row.get("holdSide") or row.get("posSide") or "").lower()
+            # For LONG: SL is BELOW entry (tightest = highest); TP is ABOVE (tightest = lowest)
+            # For SHORT: SL is ABOVE (tightest = lowest); TP is BELOW (tightest = highest)
+            sl_primary = _primary(sltp["sl"], prefer_first=(hold_side == "short"))
+            tp_primary = _primary(sltp["tp"], prefer_first=(hold_side == "long"))
+            active_positions.append({
                 "symbol": row.get("symbol"),
                 "holdSide": row.get("holdSide") or row.get("posSide"),
                 "total": row.get("total") or row.get("available"),
@@ -799,10 +856,11 @@ class LiveExecutionAdapter:
                 "cTime": row.get("cTime") or row.get("ctime"),
                 "createdTime": row.get("createdTime") or row.get("createTime"),
                 "markPrice": row.get("markPrice"),
-            }
-            for row in position_rows
-            if self._position_size(row) > 0
-        ]
+                "sl_trigger": sl_primary,
+                "tp_trigger": tp_primary,
+                "sl_count": len(sltp["sl"]),
+                "tp_count": len(sltp["tp"]),
+            })
         def _map_pending_row(row: dict, plan_type: str | None = None) -> dict:
             return {
                 "symbol": row.get("symbol"),
@@ -1134,4 +1192,5 @@ __all__ = [
     "LiveExecutionAdapter",
     "LiveMode",
 ]
+
 
