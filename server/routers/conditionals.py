@@ -115,6 +115,15 @@ def _auto_poll_seconds(timeframe: str) -> int:
 
 
 def _project_manual_line_price(drawing, ts: int) -> float:
+    """Project a manual drawing's price at timestamp `ts`.
+
+    Uses LOG interpolation to match lightweight-charts' visual rendering
+    when the chart is in Log mode (our default). A straight line drawn
+    between 2 points on a log-scale axis = constant growth rate in price
+    space. Linear-in-price interpolation would be 0.47% off on typical
+    small-cap slopes (user report 2026-04-21 BAS/4h).
+    """
+    import math
     span = int(drawing.t_end) - int(drawing.t_start)
     if span <= 0:
         return float(drawing.price_start)
@@ -122,8 +131,14 @@ def _project_manual_line_price(drawing, ts: int) -> float:
         return float(drawing.price_start)
     if ts >= int(drawing.t_end) and not bool(getattr(drawing, "extend_right", True)):
         return float(drawing.price_end)
-    slope = (float(drawing.price_end) - float(drawing.price_start)) / span
-    return float(drawing.price_start) + slope * (ts - int(drawing.t_start))
+    p_start = float(drawing.price_start)
+    p_end = float(drawing.price_end)
+    if p_start <= 0 or p_end <= 0:
+        # Fallback to linear for degenerate cases
+        slope = (p_end - p_start) / span
+        return p_start + slope * (ts - int(drawing.t_start))
+    ratio = (ts - int(drawing.t_start)) / span
+    return math.exp(math.log(p_start) + ratio * (math.log(p_end) - math.log(p_start)))
 
 
 @router.post("/conditionals")
