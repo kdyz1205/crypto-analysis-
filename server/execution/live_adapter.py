@@ -734,48 +734,43 @@ class LiveExecutionAdapter:
         if not self.has_api_keys():
             return {"ok": False, "mode": mode, "reason": "api_keys_missing"}
 
-        accounts = await self._bitget_request(
-            "GET",
-            "/api/v2/mix/account/accounts",
-            mode=mode,
-            params={"productType": self.product_type},
-        )
-        positions = await self._bitget_request(
-            "GET",
-            "/api/v2/mix/position/all-position",
-            mode=mode,
-            params={"productType": self.product_type, "marginCoin": self.margin_coin},
-        )
-        # Bitget has TWO "pending" order endpoints we need to merge so the
-        # UI sidebar reflects reality:
-        #   - orders-pending:       regular limit/market orders awaiting match
-        #   - orders-plan-pending:  normal_plan trigger-market plans (what
-        #                           manual line orders use)
-        # Pre-2026-04-21 we only queried the first, so plan orders the user
-        # placed via the Trade Plan modal were invisible in the sidebar
-        # ("挂单 0 无挂单" even though Bitget had live plans). P9 violation
-        # — UI must reflect Bitget-side state.
-        pending = await self._bitget_request(
-            "GET",
-            "/api/v2/mix/order/orders-pending",
-            mode=mode,
-            params={"productType": self.product_type},
-        )
-        plan_pending = await self._bitget_request(
-            "GET",
-            "/api/v2/mix/order/orders-plan-pending",
-            mode=mode,
-            params={"productType": self.product_type, "planType": "normal_plan"},
-        )
-        # Also fetch SL/TP plans (pos_loss / pos_profit / loss_plan /
-        # profit_plan) under the profit_loss umbrella so we can attach
-        # them to position rows. Without this, the UI has no way to
-        # show "this short is protected at SL=$41.22 TP=$38.50".
-        sltp_plans = await self._bitget_request(
-            "GET",
-            "/api/v2/mix/order/orders-plan-pending",
-            mode=mode,
-            params={"productType": self.product_type, "planType": "profit_loss"},
+        # Fan out all 5 Bitget calls in parallel. Sequential (pre-2026-04-21)
+        # blew past the 5s frontend timeout because each call is ~500-1500ms
+        # and we had 5 of them. Parallel → total ≈ slowest single call.
+        import asyncio as _asyncio
+        accounts, positions, pending, plan_pending, sltp_plans = await _asyncio.gather(
+            self._bitget_request(
+                "GET", "/api/v2/mix/account/accounts",
+                mode=mode,
+                params={"productType": self.product_type},
+            ),
+            self._bitget_request(
+                "GET", "/api/v2/mix/position/all-position",
+                mode=mode,
+                params={"productType": self.product_type, "marginCoin": self.margin_coin},
+            ),
+            # Regular limit/market pending orders
+            self._bitget_request(
+                "GET", "/api/v2/mix/order/orders-pending",
+                mode=mode,
+                params={"productType": self.product_type},
+            ),
+            # normal_plan trigger-market plans (what Trade Plan modal creates)
+            # P9: the sidebar 挂单 count needs these or user thinks nothing
+            # is live on Bitget.
+            self._bitget_request(
+                "GET", "/api/v2/mix/order/orders-plan-pending",
+                mode=mode,
+                params={"productType": self.product_type, "planType": "normal_plan"},
+            ),
+            # profit_loss plans (SL / TP on open positions) — drives the
+            # "SL 41.22  TP 38.50" sub-line on each position row in the
+            # sidebar so user can see their shorts are protected.
+            self._bitget_request(
+                "GET", "/api/v2/mix/order/orders-plan-pending",
+                mode=mode,
+                params={"productType": self.product_type, "planType": "profit_loss"},
+            ),
         )
 
         if accounts.get("code") != "00000":
