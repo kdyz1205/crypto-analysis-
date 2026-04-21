@@ -182,11 +182,24 @@ class ConditionalOrder:
     def line_price_at(self, ts: int) -> float:
         """Project the line's price at timestamp `ts`.
 
+        Uses LOGARITHMIC interpolation because the chart's price axis is
+        in Log mode (default in chart.js: PriceScaleMode.Logarithmic).
+        lightweight-charts renders a straight line between 2 points in
+        PIXEL space, which — on a log-scale axis — maps to EXPONENTIAL
+        interpolation in price space (constant growth rate per unit time),
+        NOT linear price interpolation.
+
+        User report 2026-04-21 (BAS/4h): backend's linear projection
+        gave 0.010224 at bar_open, but chart visually showed the line at
+        0.010177 at the same X — a 0.47% discrepancy. User circled 0.010173
+        on the chart. Log interpolation resolves the mismatch.
+
         Respects the manual drawing's extension flags. With extend_right=True
         the line keeps projecting after the second anchor; with
         extend_left=True it also projects before the first anchor. Otherwise
         it snaps to the nearest anchor outside the anchor window.
         """
+        import math
         span = self.t_end - self.t_start
         if span <= 0:
             return self.price_start
@@ -194,8 +207,16 @@ class ConditionalOrder:
             return self.price_start
         if ts >= self.t_end and not self.extend_right:
             return self.price_end
-        slope_per_sec = (self.price_end - self.price_start) / span
-        return self.price_start + slope_per_sec * (ts - self.t_start)
+        # Log interpolation: matches visual rendering when chart is Log mode.
+        # Guard against non-positive prices (shouldn't happen for real coins
+        # but keep the fallback safe).
+        if self.price_start <= 0 or self.price_end <= 0:
+            slope_per_sec = (self.price_end - self.price_start) / span
+            return self.price_start + slope_per_sec * (ts - self.t_start)
+        log_start = math.log(self.price_start)
+        log_end = math.log(self.price_end)
+        ratio = (ts - self.t_start) / span
+        return math.exp(log_start + ratio * (log_end - log_start))
 
     def line_price_at_bar_open(self, ts: int) -> float:
         """Same as line_price_at, but snaps `ts` to the CURRENT TF bar's
