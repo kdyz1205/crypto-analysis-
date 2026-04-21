@@ -58,7 +58,22 @@ export async function fetchJson(url, { method = 'GET', body, timeout = DEFAULT_T
       let data;
       try { data = text ? JSON.parse(text) : null; }
       catch(e) { data = text; }
-      if (!res.ok) throw new FetchError(`HTTP ${res.status}`, res.status, data);
+      if (!res.ok) {
+        // Surface FastAPI's `{"detail": "..."}` message so the user sees
+        // the ACTUAL rejection reason in the UI, not just "HTTP 400".
+        // 2026-04-21: user's place-line-order got rejected (line too far
+        // from mark, or missing drawing, etc.) but modal only showed
+        // "创建失败: HTTP 400" with no clue why.
+        let detail = '';
+        if (data && typeof data === 'object') {
+          detail = data.detail || data.message || data.reason || '';
+          if (typeof detail !== 'string') detail = JSON.stringify(detail);
+        } else if (typeof data === 'string') {
+          detail = data;
+        }
+        const msg = detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`;
+        throw new FetchError(msg, res.status, data);
+      }
 
       // Cache GET results
       if (isGet) {
