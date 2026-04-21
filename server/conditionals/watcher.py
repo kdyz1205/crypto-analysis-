@@ -1277,10 +1277,12 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         if _bar_open_ts(now, cond.timeframe) <= _bar_open_ts(last, cond.timeframe):
             return
 
-    # Project the line's price at NOW using the same extension semantics
-    # the chart uses. If extend_right=True, orders keep tracking the line
-    # after the second anchor instead of freezing at price_end.
-    line_now = cond.line_price_at(now)
+    # Project the line's price at the CURRENT TF BAR'S OPEN. Same
+    # convention as place-line-order (2026-04-21 unification). User
+    # visually sees the line crossing the bar at bar-open; replan must
+    # match that snapshot or replanned trigger drifts from visual
+    # expectation every bar. For 4h TF, 22:58 click → bar_open 20:00.
+    line_now = cond.line_price_at_bar_open(now)
 
     # Re-apply the original LINE-RELATIVE percentages so each replan tracks
     # the new line price exactly. pct-only — legacy points path deleted.

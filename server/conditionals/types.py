@@ -197,6 +197,25 @@ class ConditionalOrder:
         slope_per_sec = (self.price_end - self.price_start) / span
         return self.price_start + slope_per_sec * (ts - self.t_start)
 
+    def line_price_at_bar_open(self, ts: int) -> float:
+        """Same as line_price_at, but snaps `ts` to the CURRENT TF bar's
+        OPEN time before projecting. This is what the user sees visually
+        on the chart at the current candle — all code paths that need
+        "the line's price RIGHT NOW for this conditional" should use this
+        instead of line_price_at to stay consistent with the chart view.
+        Unified 2026-04-21 after user report about trigger mismatch.
+        """
+        secs = _TF_SECONDS.get(self.timeframe, 3600)
+        bar_open = (int(ts) // secs) * secs
+        return self.line_price_at(bar_open)
+
+
+_TF_SECONDS: dict[str, int] = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+    "1d": 86400, "1w": 604800,
+}
+
 
 __all__ = [
     "ConditionalStatus",

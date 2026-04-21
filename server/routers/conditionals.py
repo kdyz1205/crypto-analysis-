@@ -540,11 +540,14 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     # "线交叉点应该是 0.010185" (bar-open snapshot) vs system's 0.01037
     # (exact click moment); 2.5h of slope-drift difference inside a 4h
     # bar.
+    # Uses the same helper (_TF_SECONDS in conditionals.types) that
+    # watcher._maybe_replan uses, so placement + replan see identical
+    # line values. Applies to every TF (1m / 3m / 5m / 15m / 30m / 1h
+    # / 2h / 4h / 6h / 12h / 1d / 1w).
+    from server.conditionals.types import _TF_SECONDS
     now_ts_ = now_ts()
-    _tf_seconds = {"1m":60,"3m":180,"5m":300,"15m":900,"30m":1800,
-                   "1h":3600,"2h":7200,"4h":14400,"6h":21600,"12h":43200,
-                   "1d":86400,"1w":604800}.get(drawing.timeframe, 3600)
-    bar_open_ts = (int(now_ts_) // _tf_seconds) * _tf_seconds
+    _tf_sec = _TF_SECONDS.get(drawing.timeframe, 3600)
+    bar_open_ts = (int(now_ts_) // _tf_sec) * _tf_sec
     line_now = _project_manual_line_price(drawing, bar_open_ts)
     ref_price = float(line_now)
     if ref_price <= 0:
