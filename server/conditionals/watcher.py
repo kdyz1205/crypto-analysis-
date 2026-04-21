@@ -1236,6 +1236,35 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if cond.price_start == cond.price_end:
         return
 
+    # Safety guard 2026-04-21: if this cond's symbol ALREADY has an open
+    # position on Bitget, don't replan. The replan path would cancel the
+    # existing plan + create a new one, which in practice leaves "ghost"
+    # plans hanging and can cause double-entry if the new plan fires.
+    # User incident: BAS long filled, then a stale replan placed a second
+    # buy at 0.010221 that would have doubled the position.
+    try:
+        from server.execution.live_adapter import LiveExecutionAdapter
+        adapter = LiveExecutionAdapter()
+        held = await adapter.get_open_position_symbols(cond.order.exchange_mode)
+        if cond.symbol.upper() in held:
+            if cond.status != "filled":
+                cond.status = "filled"
+                try:
+                    _store.update(cond)
+                except Exception:
+                    pass
+                _append_event(cond, ConditionalEvent(
+                    ts=now, kind="exchange_acked",
+                    message=(
+                        f"replan skipped + status→filled: "
+                        f"position already open on Bitget for {cond.symbol}"
+                    ),
+                ))
+            return
+    except Exception as exc:
+        print(f"[watcher] position-guard check failed {cond.symbol}: {exc}", flush=True)
+        # Fall through — better to replan than silently fail the check.
+
     # Force-replan flag bypasses the bar-interval gate and the drift
     # threshold — used when the user drags an anchor and we need the
     # order to immediately reflect the new geometry.
