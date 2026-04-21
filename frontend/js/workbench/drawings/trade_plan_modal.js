@@ -398,7 +398,20 @@ export function openTradePlanModal(line, options = {}) {
     applySizeModeVisibility();
     refreshLivePreview();
 
-    root.addEventListener('input', refreshLivePreview);
+    // Debounce 120ms so typing "0.61" doesn't fire 4 refresh passes with
+    // intermediate render flicker. User report 2026-04-21: "preview 闪来
+    // 闪去". Preview math is pure client-side except for equity (cached
+    // 10s), so the debounce hides transient flashes without hurting UX.
+    let _refreshTimer = null;
+    const debouncedRefresh = () => {
+      if (_refreshTimer) clearTimeout(_refreshTimer);
+      _refreshTimer = setTimeout(() => {
+        _refreshTimer = null;
+        refreshLivePreview();
+      }, 120);
+    };
+
+    root.addEventListener('input', debouncedRefresh);
     root.addEventListener('change', (ev) => {
       if (ev.target?.name === 'size_mode') applySizeModeVisibility();
       refreshLivePreview();
