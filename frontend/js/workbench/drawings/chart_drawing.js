@@ -815,15 +815,28 @@ function render() {
   const dragLineId = tx.dragging?.lineId;
 
   // 1.5 Draw similar historical lines (FIRST so they sit beneath user lines)
+  // User 2026-04-21: add a small ★ marker near each similar line's end so
+  // they're visually identifiable as "相似" and not confused with real lines.
   for (const sim of tx.similarLines) {
     const a = dataToScreen({ time: sim.t_start, price: sim.price_start });
     const b = dataToScreen({ time: sim.t_end, price: sim.price_end });
     if (!a || !b) continue;
     // Color by outcome: green if bounced, red if broke
-    let color = 'rgba(120,120,120,0.35)';
-    if (sim.outcome?.bounced) color = 'rgba(0,230,118,0.4)';
-    else if (sim.outcome?.broke) color = 'rgba(255,82,82,0.4)';
+    let color = 'rgba(120,120,120,0.55)';
+    let label = '★';          // default: unknown outcome
+    let labelColor = 'rgba(200,200,200,0.85)';
+    if (sim.outcome?.bounced) {
+      color = 'rgba(0,230,118,0.55)';
+      label = '★✓';           // bounced = reached RR target
+      labelColor = 'rgba(0,230,118,1)';
+    } else if (sim.outcome?.broke) {
+      color = 'rgba(255,82,82,0.55)';
+      label = '★✗';           // broke
+      labelColor = 'rgba(255,82,82,1)';
+    }
     appendLine(a.x, a.y, b.x, b.y, color, 1.5, '4,3');
+    // Label at the end anchor, slightly offset so it doesn't overlap the line
+    appendText(b.x + 4, b.y, label, labelColor, 10);
   }
 
   // 2. Draw persistent lines
@@ -920,6 +933,21 @@ function appendCircle(cx, cy, r, fill) {
   _svg.appendChild(c);
 }
 
+function appendText(x, y, text, fill = '#fbbf24', fontSize = 10) {
+  const t = document.createElementNS(SVG_NS, 'text');
+  t.setAttribute('x', String(x));
+  t.setAttribute('y', String(y));
+  t.setAttribute('fill', fill);
+  t.setAttribute('font-size', String(fontSize));
+  t.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+  t.setAttribute('font-weight', '600');
+  t.setAttribute('text-anchor', 'start');
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('pointer-events', 'none');
+  t.textContent = text;
+  _svg.appendChild(t);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Right-click context menu
 // ─────────────────────────────────────────────────────────────
@@ -943,7 +971,8 @@ function openContextMenu(ev, lineId) {
   });
   _menu.innerHTML = `
     <div data-act="select" style="padding:6px 14px;cursor:pointer">选中此线</div>
-    <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划</div>
+    <div data-act="quick_trade" style="padding:6px 14px;cursor:pointer;color:#00e676;font-weight:600">⚡ 交易 (快捷挂单)</div>
+    <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划 (完整配置)</div>
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
@@ -959,6 +988,18 @@ function openContextMenu(ev, lineId) {
     closeContextMenu();
     if (act === 'select') {
       setSelectedManualLine(lineId);
+    } else if (act === 'quick_trade') {
+      const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
+      if (line) {
+        // 2026-04-21 user spec: after drawing a line, "交易" button
+        // opens a small popup next to the menu with Direction toggle +
+        // Reverse toggle + setup drop-down. Pick setup → instant place.
+        // No full configure modal. Under 5 clicks from line → Bitget.
+        try {
+          const { openQuickTradePopup } = await import('./trade_plan_modal.js');
+          await openQuickTradePopup(line, ev.clientX, ev.clientY);
+        } catch (err) { console.warn('[chart_drawing] quick-trade popup', err); }
+      }
     } else if (act === 'create_trade_plan') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
       if (line) {

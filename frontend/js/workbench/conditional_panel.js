@@ -16,7 +16,7 @@
 
 import { subscribe } from '../util/events.js';
 import { drawingsState, setSelectedManualLine } from '../state/drawings.js';
-import { marketState } from '../state/market.js';
+import { marketState, setSymbol, setIntervalTF } from '../state/market.js';
 import * as condSvc from '../services/conditionals.js';
 import { fetchJson } from '../util/fetch.js';
 import { setHoveredLineFromPanel, setSimilarLines } from './drawings/chart_drawing.js';
@@ -46,6 +46,12 @@ let pendingRefreshTimer = null;
 let knownConditionals = [];
 let bitgetAccount = null;       // real Bitget account snapshot (positions + pending + balance)
 let bitgetTimer = null;
+// All drawings across every symbol — populated by fetchAllDrawings().
+// Used by the grouped "我的手画线 · 全部币种" section.
+let allDrawings = [];
+let allDrawingsTimer = null;
+// UI state: which symbol group is expanded (null = none).
+let _expandedSymbol = null;
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -153,6 +159,11 @@ export function initConditionalPanel(container) {
   void refreshBitgetAccount();
   bitgetTimer = setInterval(() => void refreshBitgetAccount(), 5000);
 
+  // All-drawings grouped view — refresh every 15s and on PATCH/POST/DELETE.
+  void refreshAllDrawings();
+  allDrawingsTimer = setInterval(() => void refreshAllDrawings(), 15000);
+  subscribe('drawings.updated', () => { void refreshAllDrawings(); });
+
   render();
   return panel;
 }
@@ -196,6 +207,7 @@ async function fetchMarkPriceOnce(symbol) {
 export function destroyConditionalPanel() {
   if (pendingRefreshTimer) { clearInterval(pendingRefreshTimer); pendingRefreshTimer = null; }
   if (bitgetTimer) { clearInterval(bitgetTimer); bitgetTimer = null; }
+  if (allDrawingsTimer) { clearInterval(allDrawingsTimer); allDrawingsTimer = null; }
   if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
   panel = null;
   currentAnalyze = null;
@@ -249,13 +261,98 @@ async function refreshPending() {
   }
 }
 
+async function refreshAllDrawings() {
+  if (!panel) return;
+  try {
+    const { getAllManualDrawings } = await import('../services/drawings.js');
+    const resp = await getAllManualDrawings();
+    allDrawings = (resp && resp.drawings) || [];
+    render();
+  } catch (err) {
+    console.warn('[cond_panel] refreshAllDrawings err', err);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Event handling
 // ─────────────────────────────────────────────────────────────
 async function onPanelClick(e) {
+  // First: check if user clicked a pending order row (not the 撤 button)
+  // → jump chart to that symbol + tf. User 2026-04-21.
+  const pendingRow = e.target.closest('.cond-pending-clickable');
+  if (pendingRow && !e.target.closest('button')) {
+    const sym = pendingRow.dataset.jumpSymbol;
+    const tf = pendingRow.dataset.jumpTf;
+    if (sym) {
+      try {
+        setSymbol(sym);
+        if (tf) setIntervalTF(tf);
+      } catch (err) {
+        console.warn('[cond_panel] jump failed', err);
+      }
+    }
+    return;
+  }
+
+  // MyDrawings grouped list: click symbol header → toggle expand/collapse
+  const symHead = e.target.closest('[data-toggle-symbol]');
+  if (symHead && !e.target.closest('button')) {
+    const sym = symHead.dataset.toggleSymbol;
+    _expandedSymbol = (_expandedSymbol === sym) ? '__none__' : sym;
+    render();
+    return;
+  }
+
+  // MyDrawings line row: click → jump to symbol+tf + select line
+  const jumpLine = e.target.closest('[data-jump-line]');
+  if (jumpLine && !e.target.closest('button')) {
+    const sym = jumpLine.dataset.lineSymbol;
+    const tf = jumpLine.dataset.lineTf;
+    const lineId = jumpLine.dataset.lineId;
+    try {
+      if (sym && sym !== marketState.currentSymbol) setSymbol(sym);
+      if (tf && tf !== marketState.currentInterval) setIntervalTF(tf);
+      // Selecting immediately works ONLY if the target symbol's drawings
+      // are already loaded. Since setSymbol triggers an async reload,
+      // defer the selection to when drawings refresh.
+      setTimeout(() => setSelectedManualLine(lineId), 350);
+    } catch (err) {
+      console.warn('[cond_panel] jump-line failed', err);
+    }
+    return;
+  }
+
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   const action = btn.dataset.action;
+
+  // Delete a line from the grouped list (any symbol, not just current)
+  if (action === 'delete-line-any') {
+    e.stopPropagation();
+    const lineId = btn.dataset.lineId;
+    if (!lineId) return;
+    if (!confirm('删除这条线?')) return;
+    try {
+      const { deleteManualDrawing } = await import('../services/drawings.js');
+      await deleteManualDrawing(lineId);
+      await refreshAllDrawings();
+      // Also refresh current-symbol list if affected
+      const sym = btn.dataset.lineSymbol;
+      const tf = btn.dataset.lineTf;
+      if (sym === marketState.currentSymbol && tf === marketState.currentInterval) {
+        const { refreshManualDrawings } = await import('./drawings/manual_trendline_controller.js');
+        await refreshManualDrawings(sym, tf);
+      }
+    } catch (err) {
+      alert(`删除失败: ${err?.message || err}`);  // SAFE: alert renders text
+    }
+    return;
+  }
+
+  if (action === 'refresh-all-drawings') {
+    void refreshAllDrawings();
+    return;
+  }
 
   if (action === 'select-line') {
     const id = btn.dataset.lineId;
@@ -489,7 +586,7 @@ function renderBitgetSection() {
                ${dupWarn}
              </div>`
           : `<div style="font-size:10px;color:#ff9800;padding-left:8px">⚠ 无 SL/TP 保护</div>`;
-        return `<div class="cond-row" style="font-size:10px">
+        return `<div class="cond-row cond-pending-clickable" style="font-size:10px;cursor:pointer" data-jump-symbol="${esc(p.symbol || '')}" data-jump-tf="" title="点击跳转到 ${esc(p.symbol || '')} 图表">
           <b style="color:${dirColor}">${esc(dir.toUpperCase())}</b> ${esc(p.symbol || '')}
           · qty <b>${esc(String(p.total ?? '?'))}</b>
           · entry ${esc(String(p.averageOpenPrice ?? '?'))}
@@ -499,13 +596,28 @@ function renderBitgetSection() {
       }).join('')
     : '<p class="muted" style="font-size:10px;margin:4px 0">无持仓</p>';
 
+  // For each pending order, find the matching local conditional (by
+  // exchange_order_id) so we can surface its timeframe. Click the row
+  // → jump the chart to that symbol + tf. User 2026-04-21: "这些依然
+  // 无法点击 然后跳转到所属的币的tf".
+  const condsByOid = new Map();
+  for (const c of knownConditionals) {
+    if (c.exchange_order_id) condsByOid.set(String(c.exchange_order_id), c);
+  }
   const orderRows = pending.length
-    ? pending.map((o) => `<div class="cond-row" style="font-size:10px">
-        ${esc(o.symbol || '')} · ${esc(o.side || '')} · ${esc(o.size || '')}
-        · @ ${esc(String(o.price ?? '?'))}
-        · <span class="cond-status">${esc(o.status || '')}</span>
-        <button class="cond-btn-sm cond-btn-warn" data-action="bitget-cancel" data-symbol="${esc(o.symbol)}" data-oid="${esc(o.orderId)}">撤</button>
-      </div>`).join('')
+    ? pending.map((o) => {
+        const sym = o.symbol || '';
+        const oid = String(o.orderId || '');
+        const matchedCond = condsByOid.get(oid);
+        const tf = matchedCond?.timeframe || '';
+        const tfTag = tf ? `<span style="background:#223049;padding:1px 4px;border-radius:3px;margin-left:3px;font-size:9px;color:#8ac4ff">${esc(tf)}</span>` : '';
+        return `<div class="cond-row cond-pending-clickable" style="font-size:10px;cursor:pointer" data-jump-symbol="${esc(sym)}" data-jump-tf="${esc(tf)}" title="点击跳转到 ${esc(sym)} ${esc(tf)} 图表">
+          ${esc(sym)} ${tfTag} · ${esc(o.side || '')} · ${esc(o.size || '')}
+          · @ ${esc(String(o.price ?? '?'))}
+          · <span class="cond-status">${esc(o.status || '')}</span>
+          <button class="cond-btn-sm cond-btn-warn" data-action="bitget-cancel" data-symbol="${esc(sym)}" data-oid="${esc(oid)}" title="撤销挂单">撤</button>
+        </div>`;
+      }).join('')
     : '<p class="muted" style="font-size:10px;margin:4px 0">无挂单</p>';
 
   return `
@@ -524,29 +636,71 @@ function renderBitgetSection() {
 }
 
 function renderLineListSection(lines) {
-  if (!lines.length) {
+  // 2026-04-21 redesign per user: group by symbol across ALL drawings.
+  // Click a symbol → expand to see all that symbol's lines. Click a
+  // line → jump chart to that symbol+tf + select it. Much cleaner than
+  // the old flat "7 lines stacked vertically" look.
+  const all = Array.isArray(allDrawings) ? allDrawings : [];
+  const currentSym = marketState.currentSymbol;
+
+  // Group by symbol
+  const bySymbol = new Map();
+  for (const d of all) {
+    const sym = (d.symbol || '').toUpperCase();
+    if (!sym) continue;
+    if (!bySymbol.has(sym)) bySymbol.set(sym, []);
+    bySymbol.get(sym).push(d);
+  }
+  // Sort symbols: current symbol first, then by most-recent drawing
+  const symbols = [...bySymbol.keys()].sort((a, b) => {
+    if (a === currentSym) return -1;
+    if (b === currentSym) return 1;
+    const la = Math.max(...bySymbol.get(a).map((d) => d.updated_at || d.created_at || 0));
+    const lb = Math.max(...bySymbol.get(b).map((d) => d.updated_at || d.created_at || 0));
+    return lb - la;
+  });
+
+  if (all.length === 0) {
     return `
       <div class="cond-section">
         <div class="cond-header">我的手画线 <span class="cond-count">0</span></div>
-        <p class="muted">按工具栏画一条线开始。<br>T 画线 · Esc 取消</p>
+        <p class="muted">按 T 画一条线开始</p>
       </div>
     `;
   }
 
-  const rows = lines.slice().reverse().map((l) => {
-    const isSel = l.manual_line_id === drawingsState.selectedLineId;
-    const sideZh = '线';
-    const sideColor = '#fbbf24';
+  const groups = symbols.map((sym) => {
+    const items = bySymbol.get(sym).slice().sort((a, b) => (b.updated_at || b.created_at || 0) - (a.updated_at || a.created_at || 0));
+    const tfSet = new Set(items.map((d) => d.timeframe));
+    const tfList = [...tfSet].join(' · ');
+    const isExpanded = _expandedSymbol === sym || (_expandedSymbol === null && sym === currentSym);
+    const isCurrent = sym === currentSym;
+    const arrow = isExpanded ? '▾' : '▸';
+
+    const rows = !isExpanded ? '' : items.map((l) => {
+      const isSel = l.manual_line_id === drawingsState.selectedLineId;
+      const tfTag = `<span class="mydraw-tf">${esc(l.timeframe)}</span>`;
+      const sideColor = l.side === 'support' ? '#2dd4bf' : '#fb923c';
+      return `
+        <div class="mydraw-line-row ${isSel ? 'is-selected' : ''}" data-jump-line="1" data-line-id="${esc(l.manual_line_id)}" data-line-symbol="${esc(l.symbol)}" data-line-tf="${esc(l.timeframe)}" title="点击跳转到 ${esc(l.symbol)} ${esc(l.timeframe)} 并选中此线">
+          <span class="mydraw-dot" style="background:${sideColor}"></span>
+          ${tfTag}
+          <span class="mydraw-prices">${esc(fmtPrice(l.price_start))} → ${esc(fmtPrice(l.price_end))}</span>
+          <span class="mydraw-time">${esc(fmtDateShort(l.updated_at || l.created_at))}</span>
+          <button class="mydraw-del" data-action="delete-line-any" data-line-id="${esc(l.manual_line_id)}" data-line-symbol="${esc(l.symbol)}" data-line-tf="${esc(l.timeframe)}" title="删除此线">×</button>
+        </div>
+      `;
+    }).join('');
+
     return `
-      <div class="cond-line-row ${isSel ? 'is-selected' : ''}"
-           data-hover-line="${esc(l.manual_line_id)}">
-        <button class="cond-line-body" data-action="select-line" data-line-id="${esc(l.manual_line_id)}">
-          <span class="cond-line-dot" style="background:${sideColor}"></span>
-          <span class="cond-line-side">${esc(sideZh)}</span>
-          <span class="cond-line-price">${esc(fmtPrice(l.price_start))} → ${esc(fmtPrice(l.price_end))}</span>
-          <span class="cond-line-time">${esc(fmtDateShort(l.created_at))}</span>
-        </button>
-        <button class="cond-line-del" data-action="delete-line" data-line-id="${esc(l.manual_line_id)}" title="删除这条线">×</button>
+      <div class="mydraw-group ${isCurrent ? 'is-current' : ''}">
+        <div class="mydraw-group-head" data-toggle-symbol="${esc(sym)}">
+          <span class="mydraw-arrow">${arrow}</span>
+          <b class="mydraw-sym">${esc(sym)}</b>
+          <span class="mydraw-group-count">${items.length} 线</span>
+          <span class="mydraw-group-tfs">${esc(tfList)}</span>
+        </div>
+        ${rows ? `<div class="mydraw-lines">${rows}</div>` : ''}
       </div>
     `;
   }).join('');
@@ -554,12 +708,13 @@ function renderLineListSection(lines) {
   return `
     <div class="cond-section">
       <div class="cond-header">
-        我的手画线 <span class="cond-count">${lines.length}</span>
+        我的手画线 <span class="cond-count">${all.length}</span>
         <span class="cond-spacer"></span>
-        <button class="cond-btn-sm cond-btn-danger" data-action="clear-all-lines" title="清空所有画线">清空</button>
+        <button class="cond-btn-sm" data-action="refresh-all-drawings" title="刷新">⟳</button>
+        <button class="cond-btn-sm cond-btn-danger" data-action="clear-all-lines" title="清空当前币种的画线">清空</button>
       </div>
-      <div class="cond-line-list">${rows}</div>
-      <p class="muted" style="font-size:10px;margin-top:4px">悬停高亮 · 点击选中 · × 删除</p>
+      <div class="mydraw-groups">${groups}</div>
+      <p class="muted" style="font-size:10px;margin-top:4px">点币种展开 · 点线跳转并选中 · × 删除</p>
     </div>
   `;
 }

@@ -140,6 +140,12 @@ export function initChart(containerId = 'chart-container') {
   ensureChartModePanel(el.parentElement || el);
   initManualTrendlineController(chart, el.parentElement || el);
   applyScaleMode();
+  // Apply X-axis timezone per user preference (localStorage: v2.chart.tz.v1)
+  _applyTickMarkFormatter();
+
+  // OHLC hover tooltip (Bitget-style info strip). User 2026-04-21:
+  // "滑过去的时候,它并不能显示它到底是赚了还是多少 — 没有 information"
+  _initOhlcHover(el);
 
   // Lazy backfill: when the user scrolls so the visible range's leftmost
   // logical index is within the first ~10 bars of loaded data, fetch
@@ -633,12 +639,209 @@ export function toggleWyckoffOverlay() {
   return toggleWyckoff();
 }
 
+// Chart timezone for X-axis labels. User 2026-04-21: "K线时间基本上无所
+// 谓, 你可以让我选择是 洛杉矶/国内/UTC". Default = 'la' (UTC-7 PDT,
+// which is user's current locale per taskbar screenshot). Persisted.
+const TZ_LS_KEY = 'v2.chart.tz.v1';
+function _loadChartTz() {
+  try { return localStorage.getItem(TZ_LS_KEY) || 'la'; } catch { return 'la'; }
+}
+function _saveChartTz(tz) {
+  try { localStorage.setItem(TZ_LS_KEY, tz); } catch {}
+}
+function _tzOffsetHours(tz) {
+  // PDT (Los Angeles) varies by DST; for simplicity use UTC-7 (user's
+  // current PDT). Backing this off to UTC-8 PST is unnecessary at this
+  // session. Could be made DST-aware with Intl.DateTimeFormat.
+  if (tz === 'utc') return 0;
+  if (tz === 'bj' || tz === 'cn') return 8;
+  if (tz === 'la') return -7;
+  return 0;
+}
+function _tzLabel(tz) {
+  if (tz === 'utc') return 'UTC';
+  if (tz === 'bj') return '国内 UTC+8';
+  if (tz === 'la') return '洛杉矶 UTC-7';
+  return tz;
+}
+let _currentTz = _loadChartTz();
+
+function _applyTickMarkFormatter() {
+  if (!chart || typeof chart.applyOptions !== 'function') return;
+  const offsetSec = _tzOffsetHours(_currentTz) * 3600;
+  chart.applyOptions({
+    localization: {
+      timeFormatter: (time) => {
+        // time is Unix seconds. Shift and format. Show H:mm for intraday,
+        // MMM DD for date boundaries — matches lightweight-charts default style.
+        const d = new Date((Number(time) + offsetSec) * 1000);
+        const Y = d.getUTCFullYear();
+        const M = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const D = String(d.getUTCDate()).padStart(2, '0');
+        const h = String(d.getUTCHours()).padStart(2, '0');
+        const m = String(d.getUTCMinutes()).padStart(2, '0');
+        return `${Y}-${M}-${D} ${h}:${m}`;
+      },
+    },
+    timeScale: {
+      tickMarkFormatter: (time /* seconds */, tickMarkType, locale) => {
+        const d = new Date((Number(time) + offsetSec) * 1000);
+        const hr = d.getUTCHours();
+        const mn = d.getUTCMinutes();
+        // New-day boundary: show date
+        if (hr === 0 && mn === 0) {
+          const day = d.getUTCDate();
+          const mon = d.getUTCMonth();
+          const monStr = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][mon];
+          return `${day} ${monStr} '${String(d.getUTCFullYear()).slice(-2)}`;
+        }
+        return `${String(hr).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
+      },
+    },
+  });
+}
+
+export function setChartTimezone(tz) {
+  if (!['utc', 'bj', 'la'].includes(tz)) return;
+  _currentTz = tz;
+  _saveChartTz(tz);
+  _applyTickMarkFormatter();
+  // Force re-render of current labels
+  try { chart?.timeScale()?.fitContent(); } catch {}
+}
+
+export function getChartTimezone() { return _currentTz; }
+
+// Expose for external UI
+if (typeof window !== 'undefined') {
+  window.setChartTimezone = setChartTimezone;
+  window.getChartTimezone = getChartTimezone;
+}
+
+// ─── UTC-day change calculation ───────────────────────────────
+// % change since UTC 00:00 today (NOT a rolling 24h window). User
+// 2026-04-21: "涨跌幅时间也是 UTC0, 就是 UTC 时间".
+function _utc0TodayMs() {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+}
+function _computeUtcDayChange(candles, currentPrice) {
+  if (!Array.isArray(candles) || candles.length === 0 || !currentPrice) return null;
+  const utc0 = Math.floor(_utc0TodayMs() / 1000);
+  // Find first candle whose time >= utc0 — its OPEN is our baseline.
+  let baseline = null;
+  for (const c of candles) {
+    const t = typeof c.time === 'number' ? c.time : Math.floor(new Date(c.time).getTime() / 1000);
+    if (t >= utc0) {
+      baseline = Number(c.open ?? c.o ?? c.close);
+      break;
+    }
+  }
+  if (baseline == null || !isFinite(baseline) || baseline === 0) return null;
+  return ((currentPrice - baseline) / baseline) * 100;
+}
+
+// ─────────────────────────────────────────────────────────────
+// OHLC hover tooltip — Bitget-style info strip near chart top-left.
+// Subscribes to crosshair move; reads the candle at the hovered X.
+// ─────────────────────────────────────────────────────────────
+let _ohlcHoverEl = null;
+
+function _fmtPriceHover(p) {
+  if (!isFinite(p)) return '—';
+  if (p >= 1000) return p.toFixed(2);
+  if (p >= 100) return p.toFixed(3);
+  if (p >= 1) return p.toFixed(4);
+  if (p >= 0.01) return p.toFixed(5);
+  return p.toFixed(7);
+}
+
+function _initOhlcHover(chartEl) {
+  if (!chart || !chartEl) return;
+  // Host the floating strip INSIDE the chart container so it's clipped
+  // to the chart panel (not overlapping sidebars).
+  _ohlcHoverEl = document.createElement('div');
+  _ohlcHoverEl.className = 'chart-ohlc-hover';
+  _ohlcHoverEl.style.display = 'none';
+  chartEl.appendChild(_ohlcHoverEl);
+
+  try {
+    chart.subscribeCrosshairMove((param) => {
+      if (!_ohlcHoverEl) return;
+      if (!param || !param.time || !param.seriesData) {
+        // Mouse left the chart or no data — hide
+        _ohlcHoverEl.style.display = 'none';
+        return;
+      }
+      const candle = param.seriesData.get(candleSeries);
+      if (!candle) {
+        _ohlcHoverEl.style.display = 'none';
+        return;
+      }
+      const { open, high, low, close } = candle;
+      const delta = close - open;
+      const pct = open > 0 ? (delta / open) * 100 : 0;
+      const clsDelta = delta >= 0 ? 'ohlc-up' : 'ohlc-dn';
+      const sign = delta >= 0 ? '+' : '';
+
+      // Volume — lookup via _backfillCandles for this time
+      let volStr = '';
+      if (Array.isArray(_backfillCandles) && _backfillCandles.length > 0) {
+        const t = Number(param.time);
+        // Binary search for matching candle
+        const match = _backfillCandles.find((c) => Number(c.time) === t);
+        if (match && match.volume != null) {
+          const v = Number(match.volume);
+          if (isFinite(v) && v > 0) {
+            const vs = v >= 1e6 ? (v / 1e6).toFixed(2) + 'M'
+                     : v >= 1e3 ? (v / 1e3).toFixed(2) + 'K'
+                     : v.toFixed(2);
+            volStr = `<span class="ohlc-label">成交量</span><span class="ohlc-val">${vs}</span>`;
+          }
+        }
+      }
+
+      _ohlcHoverEl.innerHTML = `
+        <span class="ohlc-label">开</span><span class="ohlc-val">${_fmtPriceHover(open)}</span>
+        <span class="ohlc-label">高</span><span class="ohlc-val">${_fmtPriceHover(high)}</span>
+        <span class="ohlc-label">低</span><span class="ohlc-val">${_fmtPriceHover(low)}</span>
+        <span class="ohlc-label">收</span><span class="ohlc-val ${clsDelta}">${_fmtPriceHover(close)}</span>
+        <span class="ohlc-val ${clsDelta}">${sign}${delta.toFixed(Math.abs(delta) < 1 ? 5 : 3)}</span>
+        <span class="ohlc-val ${clsDelta}">(${sign}${pct.toFixed(2)}%)</span>
+        ${volStr}
+      `;
+      _ohlcHoverEl.style.display = '';
+    });
+  } catch (err) {
+    console.warn('[chart] ohlc hover init failed', err);
+  }
+}
+
 function updateHeader(symbol, interval, price) {
   const header = $('#chart-header-v2');
-  if (header) {
-    const historyModeLabel = marketState.historyMode === 'full_history' ? 'FULL' : 'FAST';
-    const scaleLabel = marketState.currentScale === 'log' ? 'LOG' : 'LIN';
-    header.textContent = `${symbol} · ${interval} · ${historyModeLabel}/${scaleLabel} · $${formatPrice(price)}`;
+  if (!header) return;
+  const historyModeLabel = marketState.historyMode === 'full_history' ? 'FULL' : 'FAST';
+  const scaleLabel = marketState.currentScale === 'log' ? 'LOG' : 'LIN';
+  // UTC-day change (since UTC 00:00 today)
+  const candles = _backfillCandles.length > 0 ? _backfillCandles : [];
+  const utcChg = _computeUtcDayChange(candles, price);
+  const chgTxt = utcChg != null
+    ? ` · <span style="color:${utcChg >= 0 ? '#00e676' : '#ff5252'}">${utcChg >= 0 ? '+' : ''}${utcChg.toFixed(2)}% UTC</span>`
+    : '';
+  const tzTxt = ` · <span class="chart-tz-picker" style="cursor:pointer;color:#94a3b8;text-decoration:underline" title="点击切换时区">${_tzLabel(_currentTz)}</span>`;
+  header.innerHTML = `${symbol} · ${interval} · ${historyModeLabel}/${scaleLabel} · $${formatPrice(price)}${chgTxt}${tzTxt}`;
+  // Wire timezone picker click once
+  const picker = header.querySelector('.chart-tz-picker');
+  if (picker && !picker._wired) {
+    picker._wired = true;
+    picker.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      // Simple cycle: la → bj → utc → la
+      const next = _currentTz === 'la' ? 'bj' : _currentTz === 'bj' ? 'utc' : 'la';
+      setChartTimezone(next);
+      // Re-render header
+      updateHeader(symbol, interval, price);
+    });
   }
 }
 
