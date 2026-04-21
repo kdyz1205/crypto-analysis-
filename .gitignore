@@ -48,6 +48,9 @@ data/subaccount_runtime_events.jsonl
 data/subaccount_runtime_instances.json
 data/daily_reports/
 data/live_outcomes/
+data/reports/
+data/line_adjustments.jsonl
+data/conditional_orders.json.before_*
 data/strategies/live_drafts/
 data/logs/audit/
 data/logs/browser_audit/
