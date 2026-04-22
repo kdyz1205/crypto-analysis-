@@ -576,8 +576,20 @@ async def api_place_line_order(req: PlaceLineOrderReq):
 
     # Trust the user's direction. Only safety guard: reject obviously stale
     # lines far away from the current mark, using ATR as the scale.
+    # 2026-04-22: wrap in wait_for(1.5s) so a slow Bitget ticker doesn't
+    # stall the whole placement. User reported mark_ms=6842 when Bitget
+    # throttled → popup timed out after 30s → user retried 3 times →
+    # 3 duplicate orders. Mark is only used for a 100× sanity guard;
+    # skipping it is fine if Bitget is slow.
     timing_start = time.perf_counter()
-    mark_price = await _fetch_bitget_mark_price(drawing.symbol)
+    mark_price = None
+    try:
+        mark_price = await asyncio.wait_for(
+            _fetch_bitget_mark_price(drawing.symbol),
+            timeout=1.5,
+        )
+    except asyncio.TimeoutError:
+        print(f"[place-line-order] mark fetch >1.5s, proceeding without sanity guard for {drawing.symbol}", flush=True)
     mark_elapsed_ms = int((time.perf_counter() - timing_start) * 1000)
     # Distance-from-mark check REMOVED 2026-04-21. User strategy depends on
     # placing orders at structurally-important levels that can be 20-50%+

@@ -59,7 +59,12 @@ _REPLAN_DRIFT_PCT = 0.05
 # Reconcile against Bitget every N ticks. Marks any local triggered cond
 # whose exchange_order_id is no longer on Bitget as cancelled, so the UI
 # stops showing zombies and the watcher stops trying to replan ghosts.
-_RECONCILE_EVERY_TICKS = 30   # 30s with 1s tick
+_RECONCILE_EVERY_TICKS = 60   # 60s with 1s tick — halved to reduce
+                               # Bitget API pressure. User 2026-04-22:
+                               # symbol/TF switching was 5-15s because
+                               # Bitget was throttling us. Foreground
+                               # requests (OHLCV, place-line-order) need
+                               # priority over our periodic audit.
 _reconcile_counter = 0
 
 
