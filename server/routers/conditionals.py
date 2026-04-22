@@ -637,27 +637,33 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         entry_price = ref_price * (1.0 - offset)
         stop_price = ref_price * (1.0 + stop_offset)
 
-    # SL hard cap: 1% max distance from entry. User 2026-04-22:
-    # "我希望即便之后的止损也不会超过 1%". Protects against scenarios
-    # where line-based SL is far from entry (e.g., breakout fill blew
-    # past trigger, SL stays at line × 0.999 which is way below fill).
-    # Read override via localStorage/env if needed in future.
-    MAX_SL_FROM_ENTRY = 0.01   # 1%
+    # SL distance cap: use USER's configured total (buffer + stop).
+    # Normal bounce fill: entry ≈ trigger, SL at line - stop, distance
+    # = buffer + stop → cap not triggered (SL already within user's setup).
+    # Breakout fill: market blew past trigger, entry > trigger (long)
+    # or < trigger (short). SL still at line-based but distance from
+    # ACTUAL entry can be 3-5% — WAY over what user set (user report
+    # BAS: setup 1.1%, actual stop 3.5% because breakout fill).
+    # Fix: cap SL at entry × (1 ∓ user's buffer+stop %) so the real
+    # stop distance matches the user's intended risk regardless of
+    # fill quality.
+    max_sl_pct = (req.tolerance_pct + max(0.0, req.stop_offset_pct)) / 100.0
     if req.direction == "long":
-        min_sl_cap = entry_price * (1.0 - MAX_SL_FROM_ENTRY)
-        # SL should be the HIGHER (tighter) of line-based and 1%-cap
+        min_sl_cap = entry_price * (1.0 - max_sl_pct)
         if stop_price < min_sl_cap:
-            print(f"[place-line-order] SL capped: line-based {stop_price:.6f} "
-                  f"→ 1%-cap {min_sl_cap:.6f} (entry {entry_price:.6f})", flush=True)
+            print(f"[place-line-order] SL distance-capped at setup total: "
+                  f"line-based {stop_price:.6f} → {min_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
             stop_price = min_sl_cap
-    else:  # short
-        max_sl_cap = entry_price * (1.0 + MAX_SL_FROM_ENTRY)
+    else:
+        max_sl_cap = entry_price * (1.0 + max_sl_pct)
         if stop_price > max_sl_cap:
-            print(f"[place-line-order] SL capped: line-based {stop_price:.6f} "
-                  f"→ 1%-cap {max_sl_cap:.6f} (entry {entry_price:.6f})", flush=True)
+            print(f"[place-line-order] SL distance-capped at setup total: "
+                  f"line-based {stop_price:.6f} → {max_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
             stop_price = max_sl_cap
 
-    # Recompute TP using capped risk
+    # Recompute TP using capped risk (so TP adjusts too)
     if req.direction == "long":
         risk = entry_price - stop_price
         tp_price = entry_price + risk * req.rr_target
