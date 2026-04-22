@@ -1031,7 +1031,17 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                             open_price = bgf.open_price(last)
                             close_price = bgf.close_price(last)
                             _m = bgf.margin_used(last)
-                            pnl_pct = pnl / _m if _m > 0 else 0
+                            # pnl_pct: prefer pnl/margin (return on margin =
+                            # levered %). Fall back to pnl/notional (raw price
+                            # move %) when margin field absent. User 2026-04-21
+                            # saw all pnl_pct=0.00% because history-position
+                            # rows don't include 'margin' only 'initialMargin'
+                            # which is on /position endpoint.
+                            if _m > 0:
+                                pnl_pct = pnl / _m
+                            else:
+                                _nt = bgf.notional_usd(last)
+                                pnl_pct = pnl / _nt if _nt > 0 else 0
                             from server.strategy.trade_log import log_close
                             log_close("", sym, params.get("side", ""), close_price, pnl, pnl_pct,
                                       reason="sl_or_tp", tf=params.get("tf", ""),
@@ -1126,6 +1136,43 @@ async def _sync_trendline_fills_and_update_trailing(cfg: dict) -> int:
                                             f"{sym} manual_line_id={_mlid} pnl=${pnl:+.4f}",
                                             flush=True,
                                         )
+                                        # Also write a rich outcome record to
+                                        # user_drawing_outcomes.jsonl so the Excel
+                                        # "结果" sheet reflects REAL trades, not
+                                        # just historical sims. User 2026-04-21.
+                                        try:
+                                            from server.strategy.drawing_learner import capture_live_outcome
+                                            _qty = float(params.get("qty", 0) or 0)
+                                            if _qty <= 0:
+                                                from server.execution import _bitget_fields as _bgf2
+                                                _qty = _bgf2.position_size(last)
+                                            _init_stop = float(params.get("last_sl_set", 0) or 0)
+                                            if _init_stop <= 0:
+                                                _init_stop = None
+                                            _init_tp = float(params.get("tp_price", 0) or 0)
+                                            if _init_tp <= 0:
+                                                _init_tp = None
+                                            capture_live_outcome(
+                                                manual_line_id=_mlid,
+                                                symbol=sym,
+                                                timeframe=_tf,
+                                                side=str(params.get("side", "")),
+                                                direction=str(params.get("side", "")),
+                                                entry_ts=int(params.get("opened_ts", 0) or 0),
+                                                entry_price=float(open_price or 0),
+                                                exit_ts=int(time.time()),
+                                                exit_price=float(close_price or 0),
+                                                exit_reason="sl_or_tp",
+                                                qty=_qty,
+                                                leverage=float(params.get("leverage", 0) or 0),
+                                                pnl_usd=float(pnl),
+                                                pnl_pct=float(pnl_pct),
+                                                initial_stop_price=_init_stop,
+                                                initial_tp_price=_init_tp,
+                                                exchange_order_id=_order_id_s,
+                                            )
+                                        except Exception as _exc:
+                                            print(f"[drawing_learner] live outcome err {sym}: {_exc}", flush=True)
                             except Exception as exc:
                                 print(f"[drawing_learner] close-link err {sym}: {exc}", flush=True)
                             print(f"[trailing] RESOLVED {sym} {params.get('side','')} PnL=${pnl:+.4f} ({pnl_pct*100:+.2f}%)", flush=True)

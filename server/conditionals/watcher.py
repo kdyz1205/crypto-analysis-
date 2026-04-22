@@ -1080,13 +1080,26 @@ async def _reconcile_against_bitget() -> None:
         pending_oids_by_mode: dict[str, set[str]] = {}
         positions_by_mode: dict[str, list[dict[str, Any]]] = {}
 
+        # Track whether EITHER pending fetch succeeded. If BOTH fail we
+        # must skip reconcile for this mode entirely — otherwise an empty
+        # pending_oids set would look identical to "all orders cancelled",
+        # and reconcile would nuke every triggered cond. User 2026-04-22:
+        # HYPE trigger 40.495 was working fine, then Bitget API blip at
+        # 06:27 BJ made both pending endpoints time out, reconcile cancelled
+        # the cond + wrote "reconcile: order not on Bitget anymore" even
+        # though the order was still there. Same hazard affected RAVE
+        # earlier in session.
+        skip_modes: set[str] = set()
         for mode in modes:
             pending_oids: set[str] = set()
+            ok_regular = False
+            ok_plan = False
             try:
                 for row in await adapter.get_pending_orders(mode):  # type: ignore[arg-type]
                     oid = str(row.get("orderId") or row.get("order_id") or "")
                     if oid:
                         pending_oids.add(oid)
+                ok_regular = True
             except Exception as e:
                 print(f"[reconcile] regular pending fetch failed mode={mode}: {e}", flush=True)
             try:
@@ -1094,8 +1107,29 @@ async def _reconcile_against_bitget() -> None:
                     oid = str(row.get("orderId") or row.get("order_id") or "")
                     if oid:
                         pending_oids.add(oid)
+                ok_plan = True
             except Exception as e:
                 print(f"[reconcile] plan pending fetch failed mode={mode}: {e}", flush=True)
+
+            if not (ok_regular or ok_plan):
+                # Both fetches failed. Do NOT mark conds cancelled based
+                # on an empty pending set — that would be catastrophic.
+                print(f"[reconcile] SKIP mode={mode} — both pending fetches failed; will retry next cycle", flush=True)
+                skip_modes.add(mode)
+                # Still try position fetch so we can catch fills without
+                # false-cancelling the triggered set.
+                try:
+                    pos_resp = await adapter._bitget_request(
+                        "GET", "/api/v2/mix/position/all-position",
+                        mode=mode,
+                        params={"productType": "USDT-FUTURES", "marginCoin": "USDT"},
+                    )
+                    positions_by_mode[mode] = adapter._as_rows(pos_resp.get("data")) if pos_resp.get("code") == "00000" else []
+                except Exception as e:
+                    print(f"[reconcile] position fetch also failed mode={mode}: {e}", flush=True)
+                    positions_by_mode[mode] = []
+                pending_oids_by_mode[mode] = set()
+                continue
 
             try:
                 pos_resp = await adapter._bitget_request(
@@ -1115,6 +1149,11 @@ async def _reconcile_against_bitget() -> None:
                 continue
             mode = cond.order.exchange_mode
             if mode not in {"demo", "live"}:
+                continue
+            # Skip modes where we couldn't reliably fetch pending oids.
+            # Better to leave a cond as "triggered" an extra 30s than to
+            # nuke it based on a transient Bitget API failure.
+            if mode in skip_modes:
                 continue
             if oid in pending_oids_by_mode.get(mode, set()):
                 continue
