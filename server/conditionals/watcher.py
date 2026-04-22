@@ -1033,6 +1033,89 @@ def _find_position_for_cond(rows: list[dict[str, Any]], cond: ConditionalOrder) 
     return fallback
 
 
+async def _sync_sl_to_line_now(
+    cond: ConditionalOrder,
+    pos: dict[str, Any],
+    target_sl_price: float,
+) -> None:
+    """Immediately cancel Bitget's old preset SL and place a new one at
+    line@fill_time. Runs synchronously on fill detection so we don't wait
+    for mar_bb_runner's 60s trailing loop. Between fill and first trailing
+    scan the old bar_open-based preset SL could be *hundreds* of bps below
+    fill_price (breakout fills blow far past the bar_open trigger), and a
+    wrong-way price wick within 60s hits the stale SL for a huge loss.
+
+    User 2026-04-22: BAS entered at 0.01693 with preset SL at 0.01634
+    (bar_open basis, 3.5% below fill). Stop hit in 3 min 34 sec, before
+    first trailing scan. This function closes that window.
+    """
+    import httpx  # noqa: F401 — ensure imported
+    from server.execution.live_adapter import LiveExecutionAdapter
+    adapter = LiveExecutionAdapter()
+    if not adapter.has_api_keys():
+        return
+    mode = cond.order.exchange_mode
+    if mode not in ("demo", "live"):
+        return
+    sym = cond.symbol.upper()
+    direction = cond.order.direction
+    hold_side = "long" if direction == "long" else "short"
+
+    # 1. Query current position SL plans on Bitget, cancel them all.
+    try:
+        resp = await adapter._bitget_request(
+            "GET", "/api/v2/mix/order/orders-plan-pending",
+            mode=mode,
+            params={"symbol": sym, "productType": "USDT-FUTURES", "planType": "profit_loss"},
+        )
+        if resp.get("code") == "00000":
+            rows = ((resp.get("data") or {}).get("entrustedList") or
+                    (resp.get("data") or {}).get("orderList") or [])
+            for row in rows:
+                oid = str(row.get("orderId") or "")
+                plan_subtype = str(row.get("planType") or "")
+                # Cancel existing SL plans (pos_loss / loss_plan) for this side
+                if oid and "loss" in plan_subtype.lower():
+                    await adapter._bitget_request(
+                        "POST", "/api/v2/mix/order/cancel-plan-order",
+                        mode=mode,
+                        body={
+                            "symbol": sym,
+                            "productType": "USDT-FUTURES",
+                            "marginCoin": "USDT",
+                            "orderId": oid,
+                            "planType": plan_subtype,
+                        },
+                    )
+    except Exception as exc:
+        print(f"[sync_sl] cancel old SL err {sym}: {exc}", flush=True)
+
+    # 2. Place a fresh pos_loss plan at target_sl_price.
+    try:
+        body = {
+            "symbol": sym,
+            "productType": "USDT-FUTURES",
+            "marginCoin": "USDT",
+            "planType": "pos_loss",
+            "triggerPrice": f"{target_sl_price:.8f}".rstrip("0").rstrip("."),
+            "triggerType": "mark_price",
+            "holdSide": hold_side,
+            "executePrice": "0",      # market close
+            "clientOid": f"sync_sl_{cond.conditional_id}_{int(now_ts())}",
+        }
+        r = await adapter._bitget_request(
+            "POST", "/api/v2/mix/order/place-tpsl-order",
+            mode=mode, body=body,
+        )
+        if r.get("code") == "00000":
+            print(f"[sync_sl] {sym} new SL @ {target_sl_price:.6f} "
+                  f"oid={(r.get('data') or {}).get('orderId','')}", flush=True)
+        else:
+            print(f"[sync_sl] {sym} place err: code={r.get('code')} msg={r.get('msg')}", flush=True)
+    except Exception as exc:
+        print(f"[sync_sl] place new SL err {sym}: {exc}", flush=True)
+
+
 def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict[str, Any], now: int) -> None:
     from server.strategy.mar_bb_runner import register_trendline_params
 
@@ -1062,6 +1145,18 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         line_ref_price=line_ref_price,
         stop_offset_pct=stop_offset_pct,
     )
+    # 2026-04-22 fix: don't wait 60s for mar_bb scan to update SL. The
+    # preset SL from the original plan was based on bar_open line, which
+    # may be far below actual fill price. Immediately sync Bitget SL to
+    # line_ref_price ± stop_offset_pct (= what trailing would do on
+    # next scan). User lost $11 on BAS because SL was at 0.01634
+    # (bar_open 12:00 basis) while fill was at 0.01693 — got stopped
+    # in 3.5 minutes before scan caught up.
+    try:
+        import asyncio as _asyncio
+        _asyncio.create_task(_sync_sl_to_line_now(cond, pos, last_sl_set))
+    except Exception as exc:
+        print(f"[reconcile] sync_sl schedule err {cond.symbol}: {exc}", flush=True)
 
 
 async def _reconcile_against_bitget() -> None:
