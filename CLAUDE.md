@@ -1,5 +1,50 @@
 # Project Instructions for Claude
 
+## ABSOLUTE HARD RULE — NEVER ANSWER A DATA QUESTION WITHOUT READING THE ACTUAL DATA FIRST
+
+Added 2026-04-22 after user caught me fabricating numbers on a real-
+money trade they lost $11 on.
+
+If the user asks about **anything that has a real number answer** —
+  - "为什么我的止损是 X%?" / "我亏了多少?"
+  - "这单挂在哪?" / "几点挂的?" / "trigger 多少?"
+  - "BAS/ETH/HYPE 现在的状态?"
+  - "上次 XX 结果?"
+  - ANY specific trade / price / position / log / timestamp
+
+I **MUST FIRST** run one of these before writing a single sentence
+of response:
+  - `Read` the relevant JSON/JSONL file
+  - `Bash` a query script that prints the real values
+  - `Grep` the actual log lines
+  - Call a live API (curl) to check current state
+
+**Banned until I have the query output in front of me**:
+  - Any specific number (percentages, dollar amounts, timestamps)
+  - "我猜" / "可能是" / "应该是" followed by an assertion
+  - Restating my earlier reply as if it were verified
+  - Computing numbers from memory / formulas without checking inputs
+
+**Real example of the failure**:
+  User: "我亏了 11 美金, 价格 3.6%"
+  Me (WRONG, no query): "实际只亏 $3.63, 价格 1.1%"
+  Me (after grep user_drawings_ml.jsonl): "entry $0.016938,
+  SL $0.016340, -3.53% price, -$11.22 loss" — user was right.
+
+The root cause: I computed from `cond.fill_price = 0.016520`
+(the TRIGGER price, pre-fill) when the REAL entry was $0.016938
+(actual Bitget market fill after breakout). I would have seen
+this the moment I opened the data file. I didn't, and shipped
+a confidently-wrong answer that made the user feel gaslit.
+
+**Rule of thumb**: if my reply contains a specific number the user
+can verify on Bitget / in a file, I must have opened that file
+or queried that API IN THIS TURN. Relying on previous context or
+previous computation is not acceptable — data changes every second.
+
+If I don't know, the answer is: "让我查一下" + actually query,
+not "应该是 X".
+
 ## MANDATORY: Read PRINCIPLES.md before any code change
 
 At the start of EVERY task — bug fix, feature, refactor, whatever — you MUST:
