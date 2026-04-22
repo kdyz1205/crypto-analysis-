@@ -164,6 +164,92 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
     return {"drawing": ManualTrendlineModel.model_validate(drawing.to_dict())}
 
 
+_USER_LABELS_FILE = Path("data") / "user_drawing_labels.jsonl"
+
+
+class _LabelReq(BaseModel):
+    quality: str   # "good" | "bad" | "mediocre"
+    pattern_type: str | None = None      # e.g. "ascending_triangle", "head_shoulders"
+    notes: str | None = None             # free-form user note
+    tags: list[str] | None = None
+
+
+@router.post("/{manual_line_id}/label")
+async def api_label_drawing(manual_line_id: str, req: _LabelReq):
+    """Mark a drawing as good/bad pattern, with optional type + notes.
+
+    User 2026-04-22: "这条线形态不错,告诉系统采纳这个特征". Writes a
+    rich label record that ML training can use as positive/negative
+    samples. Also captures the current market state as features so
+    the model learns the CONTEXT where the pattern looked good.
+    """
+    drawing = store.get(manual_line_id)
+    if drawing is None:
+        raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
+
+    quality = (req.quality or "").lower()
+    if quality not in ("good", "bad", "mediocre"):
+        raise HTTPException(400, f"quality must be good/bad/mediocre, got {quality!r}")
+
+    # Capture market context at label time (best-effort, non-fatal)
+    features: dict = {}
+    try:
+        from ..conditionals.watcher import _fetch_market_price, _fetch_current_atr
+        mark = await _fetch_market_price(drawing.symbol) or 0.0
+        atr = await _fetch_current_atr(drawing.symbol, drawing.timeframe) or 0.0
+        if mark > 0:
+            features["mark_price"] = mark
+            features["atr_abs"] = atr
+            features["atr_pct"] = (atr / mark * 100) if mark > 0 else 0
+            # Distance of current price from the drawing's projected line
+            import math
+            span = max(1, drawing.t_end - drawing.t_start)
+            now_ts_ = int(_time.time())
+            ratio = (now_ts_ - drawing.t_start) / span
+            ratio = max(-2.0, min(3.0, ratio))  # clamp absurd extrapolations
+            try:
+                if drawing.price_start > 0 and drawing.price_end > 0:
+                    line_now = math.exp(
+                        math.log(drawing.price_start)
+                        + ratio * (math.log(drawing.price_end) - math.log(drawing.price_start))
+                    )
+                else:
+                    slope = (drawing.price_end - drawing.price_start) / span
+                    line_now = drawing.price_start + slope * (now_ts_ - drawing.t_start)
+                features["line_now"] = line_now
+                features["price_vs_line_pct"] = ((mark - line_now) / line_now * 100) if line_now > 0 else 0
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    record = {
+        "event": "user_labeled_drawing",
+        "ts": int(_time.time()),
+        "ts_iso": pd.Timestamp.utcnow().isoformat(),
+        "manual_line_id": manual_line_id,
+        "symbol": drawing.symbol,
+        "timeframe": drawing.timeframe,
+        "side": drawing.side,
+        "t_start": drawing.t_start,
+        "t_end": drawing.t_end,
+        "price_start": drawing.price_start,
+        "price_end": drawing.price_end,
+        "extend_left": drawing.extend_left,
+        "extend_right": drawing.extend_right,
+        "quality": quality,
+        "pattern_type": req.pattern_type,
+        "user_notes": req.notes,
+        "tags": req.tags or [],
+        "features_at_label": features,
+    }
+    _USER_LABELS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_USER_LABELS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, default=str, ensure_ascii=False) + "\n")
+
+    return {"ok": True, "label": record}
+
+
 @router.delete("/{manual_line_id}", response_model=ManualTrendlineClearResponse)
 async def api_delete_drawing(manual_line_id: str):
     # Capture the line + current market features BEFORE removing it so we

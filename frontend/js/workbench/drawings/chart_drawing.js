@@ -997,6 +997,11 @@ function openContextMenu(ev, lineId) {
     <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划 (完整配置)</div>
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
+    <div style="padding:5px 14px;color:#8a92a5">标记形态质量 (喂给 ML)</div>
+    <div data-act="label_good" style="padding:6px 14px;cursor:pointer;color:#00e676">⭐ 好形态</div>
+    <div data-act="label_mediocre" style="padding:6px 14px;cursor:pointer;color:#94a3b8">〜 一般</div>
+    <div data-act="label_bad" style="padding:6px 14px;cursor:pointer;color:#ff5252">✗ 差形态</div>
+    <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
     <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">细 (默认)</div>
     <div data-act="set_width" data-width="1.0" style="padding:6px 14px;cursor:pointer">中</div>
@@ -1037,6 +1042,39 @@ function openContextMenu(ev, lineId) {
       if (line) openAlertDialog(line);
     } else if (act === 'set_width') {
       await setLineWidth(lineId, Number(item.dataset.width || DEFAULT_LINE_WIDTH));
+    } else if (act === 'label_good' || act === 'label_mediocre' || act === 'label_bad') {
+      // User 2026-04-22: rate pattern quality so ML learns from the
+      // ones the user considers visually valid.
+      const quality = act === 'label_good' ? 'good'
+                    : act === 'label_bad'  ? 'bad'
+                    : 'mediocre';
+      const label = quality === 'good' ? '⭐ 好形态'
+                  : quality === 'bad'  ? '✗ 差形态'
+                  : '〜 一般';
+      const patternType = prompt(
+        `标记为"${label}"。可选: 输入形态类型 (如 双顶/三角/通道/头肩, 留空跳过)`,
+        ''
+      );
+      if (patternType === null) return;  // cancelled
+      const notes = quality === 'good'
+        ? (prompt('为什么觉得这个形态好? (可选, 随便写)', '') || '')
+        : '';
+      try {
+        const { fetchJson } = await import('../../util/fetch.js');
+        await fetchJson(`/api/drawings/${encodeURIComponent(lineId)}/label`, {
+          method: 'POST',
+          body: {
+            quality,
+            pattern_type: patternType.trim() || null,
+            notes: notes.trim() || null,
+          },
+          timeout: 10000,
+        });
+        // Small toast via title flash; no UI noise
+        console.log(`[label] saved: ${lineId} → ${quality} (${patternType || 'no-type'})`);
+      } catch (err) {
+        alert(`标记失败: ${err?.message || err}`);  // SAFE: alert renders text
+      }
     } else if (act === 'delete') {
       await deleteLine(lineId);
     }
