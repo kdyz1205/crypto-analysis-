@@ -64,6 +64,18 @@ export function initChart(containerId = 'chart-container') {
     width: el.clientWidth,
     height: el.clientHeight,
     layout: { background: { color: '#0a0e17' }, textColor: '#e0e6ed' },
+    // Watermark: personal brand in the bottom-left, semi-transparent so
+    // it doesn't fight with candle rendering. User 2026-04-22: 承砚.
+    watermark: {
+      visible: true,
+      text: '承砚',
+      fontSize: 28,
+      fontFamily: "'PingFang SC','Microsoft YaHei','Hiragino Sans GB',system-ui,sans-serif",
+      fontStyle: 'bold',
+      color: 'rgba(255,255,255,0.08)',
+      horzAlign: 'left',
+      vertAlign: 'bottom',
+    },
     grid: { vertLines: { color: '#1a2035' }, horzLines: { color: '#1a2035' } },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
     rightPriceScale: {
