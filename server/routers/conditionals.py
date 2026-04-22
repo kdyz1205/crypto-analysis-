@@ -347,16 +347,15 @@ class PlaceLineOrderReq(BaseModel):
     manual_line_id: str
     direction: Literal["long", "short"]
     kind: Literal["bounce", "break"] = "bounce"
-    # Single line-relative distance. Entry is line +/- tolerance_pct.
-    # Stop sits just beyond the line so a wick has to cross it by a tiny
-    # amount before the trade is invalidated.
     tolerance_pct: float = 0.1
-    # Updated 2026-04-20 per user spec: SL sits at trendline + small buffer
-    # (0.03-0.05%). 0.01% was too tight — a single tick crossed it before the
-    # line itself was actually broken, producing instant-stop losses.
     stop_offset_pct: float = 0.04
     size_usdt: float = Field(..., gt=0, description="Notional to commit, in USDT")
     leverage: int = Field(5, ge=1, le=100)
+    # User 2026-04-22: if equity_pct > 0, store it so replan can
+    # dynamically resize qty as account equity changes. Frontend sends
+    # whichever mode user chose. size_usdt is still authoritative for
+    # the INITIAL placement (computed client-side from current equity).
+    equity_pct: float | None = None
     mode: Literal["demo", "live"] = "live"
     rr_target: float = 2.0
     notify_tg: bool = Field(True, description="Send TG alert on trigger")
@@ -634,11 +633,35 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if req.direction == "long":
         entry_price = ref_price * (1.0 + offset)
         stop_price = ref_price * (1.0 - stop_offset)
-        risk = entry_price - stop_price
-        tp_price = entry_price + risk * req.rr_target
     else:
         entry_price = ref_price * (1.0 - offset)
         stop_price = ref_price * (1.0 + stop_offset)
+
+    # SL hard cap: 1% max distance from entry. User 2026-04-22:
+    # "我希望即便之后的止损也不会超过 1%". Protects against scenarios
+    # where line-based SL is far from entry (e.g., breakout fill blew
+    # past trigger, SL stays at line × 0.999 which is way below fill).
+    # Read override via localStorage/env if needed in future.
+    MAX_SL_FROM_ENTRY = 0.01   # 1%
+    if req.direction == "long":
+        min_sl_cap = entry_price * (1.0 - MAX_SL_FROM_ENTRY)
+        # SL should be the HIGHER (tighter) of line-based and 1%-cap
+        if stop_price < min_sl_cap:
+            print(f"[place-line-order] SL capped: line-based {stop_price:.6f} "
+                  f"→ 1%-cap {min_sl_cap:.6f} (entry {entry_price:.6f})", flush=True)
+            stop_price = min_sl_cap
+    else:  # short
+        max_sl_cap = entry_price * (1.0 + MAX_SL_FROM_ENTRY)
+        if stop_price > max_sl_cap:
+            print(f"[place-line-order] SL capped: line-based {stop_price:.6f} "
+                  f"→ 1%-cap {max_sl_cap:.6f} (entry {entry_price:.6f})", flush=True)
+            stop_price = max_sl_cap
+
+    # Recompute TP using capped risk
+    if req.direction == "long":
+        risk = entry_price - stop_price
+        tp_price = entry_price + risk * req.rr_target
+    else:
         risk = stop_price - entry_price
         tp_price = entry_price - risk * req.rr_target
 
@@ -746,6 +769,10 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             rr_target=req.rr_target,
             tp_price=tp_price,
             notional_usd=req.size_usdt,
+            # equity_pct + leverage stored so replan can dynamically
+            # resize qty as equity changes. User 2026-04-22 spec.
+            equity_pct=req.equity_pct if (req.equity_pct and req.equity_pct > 0) else None,
+            leverage=float(req.leverage) if req.leverage else None,
             submit_to_exchange=True,
             exchange_mode=req.mode,
             reverse_enabled=req.reverse_enabled,
