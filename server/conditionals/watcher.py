@@ -1130,6 +1130,23 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         if cond.order.direction == "long"
         else line_ref_price * (1.0 + stop_offset_pct / 100.0)
     )
+    # SL hard cap: 1% from entry. User 2026-04-22 spec: "即便之后的止损也不会
+    #超过 1%". Protects breakout fills where line-based SL is 3-5% below entry.
+    MAX_SL_FROM_ENTRY = 0.01  # 1%
+    if cond.order.direction == "long":
+        min_sl_cap = entry_price * (1.0 - MAX_SL_FROM_ENTRY)
+        if last_sl_set < min_sl_cap:
+            print(f"[trailing_register] {cond.symbol} SL capped: "
+                  f"line-based {last_sl_set:.6f} → 1%-cap {min_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f})", flush=True)
+            last_sl_set = min_sl_cap
+    else:
+        max_sl_cap = entry_price * (1.0 + MAX_SL_FROM_ENTRY)
+        if last_sl_set > max_sl_cap:
+            print(f"[trailing_register] {cond.symbol} SL capped: "
+                  f"line-based {last_sl_set:.6f} → 1%-cap {max_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f})", flush=True)
+            last_sl_set = max_sl_cap
     register_trendline_params(
         cond.symbol.upper(),
         slope=_manual_slope_per_bar(cond),
@@ -1499,6 +1516,80 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     # expectation every bar. For 4h TF, 22:58 click → bar_open 20:00.
     line_now = cond.line_price_at_bar_open(now)
 
+    # Line-broken invalidation (user 2026-04-22):
+    #   If price has moved FAR to the WRONG side of the line for the
+    #   chosen direction, the setup thesis is dead. The short-on-support-
+    #   breakdown plan shouldn't sit forever waiting for price to come
+    #   back; the 支撑 broke upward and that's now resistance.
+    #
+    #   Check: mark vs line. If mark is > line × (1 + INVALID_PCT) and
+    #   direction=short → thesis dead, cancel + optional auto-reverse.
+    #   Symmetric for long (mark < line × (1 - INVALID_PCT)).
+    #
+    #   Threshold: 2% default (configurable via cond.trigger.break_
+    #   threshold_atr if you treat atr as %). Stays tight to avoid
+    #   whipsaw but wide enough to let normal wick throughs through.
+    LINE_BROKEN_INVALID_PCT = 0.02   # 2%
+    try:
+        mark_for_check = await _fetch_market_price(cond.symbol)
+    except Exception:
+        mark_for_check = None
+    if mark_for_check and mark_for_check > 0 and line_now > 0:
+        if cond.order.direction == "short" and mark_for_check > line_now * (1 + LINE_BROKEN_INVALID_PCT):
+            # Price way above the line → support/resistance broke upward
+            # → short thesis is invalidated.
+            print(f"[watcher] {cond.symbol} short line-broken: mark={mark_for_check:.6f} "
+                  f"> line*1.02={line_now * 1.02:.6f}, cancelling cond", flush=True)
+            try:
+                # Cancel Bitget plan first
+                from server.execution.live_adapter import LiveExecutionAdapter
+                adapter2 = LiveExecutionAdapter()
+                if adapter2.has_api_keys() and cond.exchange_order_id:
+                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+                    if not _cr.get("ok"):
+                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+            except Exception as exc:
+                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
+            _store.set_status(cond.conditional_id, "cancelled",
+                              reason=f"line broken upward, short thesis dead (mark {mark_for_check:.6f} > line {line_now:.6f} × 1.02)")
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="line_broken",
+                price=mark_for_check, line_price=line_now,
+                message=f"SHORT invalidated: mark {mark_for_check:.6f} broke above line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
+            ))
+            # Auto-reverse if configured (flip to LONG at the same line)
+            if cond.order.reverse_enabled:
+                try:
+                    await _spawn_reverse_conditional(cond, reason="line_broken_upward")
+                except Exception as exc:
+                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+            return
+        elif cond.order.direction == "long" and mark_for_check < line_now * (1 - LINE_BROKEN_INVALID_PCT):
+            print(f"[watcher] {cond.symbol} long line-broken: mark={mark_for_check:.6f} "
+                  f"< line*0.98={line_now * 0.98:.6f}, cancelling cond", flush=True)
+            try:
+                from server.execution.live_adapter import LiveExecutionAdapter
+                adapter2 = LiveExecutionAdapter()
+                if adapter2.has_api_keys() and cond.exchange_order_id:
+                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+                    if not _cr.get("ok"):
+                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+            except Exception as exc:
+                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
+            _store.set_status(cond.conditional_id, "cancelled",
+                              reason=f"line broken downward, long thesis dead (mark {mark_for_check:.6f} < line {line_now:.6f} × 0.98)")
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="line_broken",
+                price=mark_for_check, line_price=line_now,
+                message=f"LONG invalidated: mark {mark_for_check:.6f} broke below line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
+            ))
+            if cond.order.reverse_enabled:
+                try:
+                    await _spawn_reverse_conditional(cond, reason="line_broken_downward")
+                except Exception as exc:
+                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+            return
+
     # Re-apply the original LINE-RELATIVE percentages so each replan tracks
     # the new line price exactly. pct-only — legacy points path deleted.
     direction = cond.order.direction
@@ -1558,20 +1649,46 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         risk = new_stop - new_trigger
         new_tp = new_trigger - risk * rr
 
-    # Re-use fill_qty from the original submit. Recomputing would require
-    # an async call (leverage path fetches equity); at replan time we want
-    # to track the SAME position size the trader committed to, not a
-    # fresh one sized against moved equity.
-    if cond.fill_qty and cond.fill_qty > 0:
-        new_qty = cond.fill_qty
-    elif cond.order.notional_usd and cond.order.notional_usd > 0:
-        new_qty = cond.order.notional_usd / new_trigger
-    else:
-        _append_event(cond, ConditionalEvent(
-            ts=now, kind="exchange_error",
-            message="replan aborted: no fill_qty and no notional_usd to re-derive size",
-        ))
-        return
+    # qty logic — user 2026-04-22 spec: "百分比策略的仓位 USD 应该跟着账户
+    # 余额变化. 比如我平仓, 账户余额变了, 挂单的 qty 就应跟着涨/跌."
+    #
+    # - equity_pct mode: recompute qty from CURRENT account equity every
+    #   replan, so size tracks equity as positions close or open elsewhere.
+    # - fixed notional_usd mode: keep original qty (notional/new_trigger).
+    #
+    # Leverage: if set, notional = equity × pct × leverage.
+    new_qty = 0.0
+    equity_pct = float(cond.order.equity_pct or 0)
+    leverage = float(cond.order.leverage or 0)
+    if equity_pct > 0:
+        # Dynamic resize on every replan
+        try:
+            from server.execution.live_adapter import LiveExecutionAdapter
+            adapter = LiveExecutionAdapter()
+            if adapter.has_api_keys():
+                acct = await adapter.get_live_account_status(mode=cond.order.exchange_mode)
+                equity = float(acct.get("total_equity") or acct.get("equity") or 0)
+                if equity > 0:
+                    lev = leverage if leverage > 0 else 1.0
+                    notional = equity * (equity_pct / 100.0) * lev
+                    new_qty = notional / new_trigger
+                    print(f"[replan] {cond.symbol} dynamic resize: equity=${equity:.2f} "
+                          f"× {equity_pct}% × {lev}x = ${notional:.2f} → qty {new_qty:.6f}", flush=True)
+        except Exception as exc:
+            print(f"[replan] equity fetch err {cond.symbol}: {exc}", flush=True)
+
+    if new_qty <= 0:
+        # Fallback: preserve original qty
+        if cond.fill_qty and cond.fill_qty > 0:
+            new_qty = cond.fill_qty
+        elif cond.order.notional_usd and cond.order.notional_usd > 0:
+            new_qty = cond.order.notional_usd / new_trigger
+        else:
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="exchange_error",
+                message="replan aborted: no fill_qty/notional_usd/equity_pct to re-derive size",
+            ))
+            return
 
     # Build a fresh OrderIntent with new prices. Keep it as a Bitget
     # trigger-market plan order so it does not reserve regular order margin

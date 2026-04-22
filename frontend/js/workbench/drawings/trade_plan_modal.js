@@ -626,6 +626,9 @@ export function openTradePlanModal(line, options = {}) {
           leverage: v.leverage > 0 ? Math.round(v.leverage) : 1,
           mode: v.exchange_mode === 'paper' ? 'demo' : 'live',
           rr_target: v.rr_target,
+          // Forward equity_pct so backend can dynamically resize qty
+          // as account equity changes. User 2026-04-22 spec.
+          equity_pct: v.size_mode === 'equity_pct' && v.equity_pct > 0 ? v.equity_pct : null,
           reverse_enabled: v.reverse_enabled,
           reverse_entry_offset_pct: v.reverse_buffer_pct,
           reverse_stop_offset_pct: v.reverse_stop_pct,
@@ -1321,6 +1324,8 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
           leverage: cfg.leverage > 0 ? Math.round(cfg.leverage) : 1,
           mode: cfg.exchange_mode === 'paper' ? 'demo' : 'live',
           rr_target: Number(cfg.rr_target) || 2,
+          // Dynamic qty resize on account equity change.
+          equity_pct: cfg.size_mode === 'equity_pct' && cfg.equity_pct > 0 ? cfg.equity_pct : null,
           reverse_enabled: reverseEnabled,          // user override
           reverse_entry_offset_pct: 0,              // reverse has no buffer (same spec as full modal)
           reverse_stop_offset_pct: Number(cfg.reverse_stop_pct) || 0,
