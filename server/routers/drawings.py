@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from ..data_service import get_ohlcv_with_df
 from ..drawings.store import ManualTrendlineStore, now_ts
