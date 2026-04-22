@@ -1130,23 +1130,28 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         if cond.order.direction == "long"
         else line_ref_price * (1.0 + stop_offset_pct / 100.0)
     )
-    # SL hard cap: 1% from entry. User 2026-04-22 spec: "即便之后的止损也不会
-    #超过 1%". Protects breakout fills where line-based SL is 3-5% below entry.
-    MAX_SL_FROM_ENTRY = 0.01  # 1%
-    if cond.order.direction == "long":
-        min_sl_cap = entry_price * (1.0 - MAX_SL_FROM_ENTRY)
-        if last_sl_set < min_sl_cap:
-            print(f"[trailing_register] {cond.symbol} SL capped: "
-                  f"line-based {last_sl_set:.6f} → 1%-cap {min_sl_cap:.6f} "
-                  f"(entry {entry_price:.6f})", flush=True)
-            last_sl_set = min_sl_cap
-    else:
-        max_sl_cap = entry_price * (1.0 + MAX_SL_FROM_ENTRY)
-        if last_sl_set > max_sl_cap:
-            print(f"[trailing_register] {cond.symbol} SL capped: "
-                  f"line-based {last_sl_set:.6f} → 1%-cap {max_sl_cap:.6f} "
-                  f"(entry {entry_price:.6f})", flush=True)
-            last_sl_set = max_sl_cap
+    # SL distance cap: keep real stop ≤ user's configured (buffer+stop) %.
+    # When breakout fill puts entry far past trigger, line-based SL
+    # becomes far from entry; cap it so risk matches user's intended
+    # setup. Uses cond.order.tolerance_pct_of_line + stop_offset_pct_of_line.
+    tol_pct = max(0.0, float(cond.order.tolerance_pct_of_line or 0.0))
+    stp_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0))
+    max_sl_pct = (tol_pct + stp_pct) / 100.0
+    if max_sl_pct > 0:
+        if cond.order.direction == "long":
+            min_sl_cap = entry_price * (1.0 - max_sl_pct)
+            if last_sl_set < min_sl_cap:
+                print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
+                      f"line-based {last_sl_set:.6f} → {min_sl_cap:.6f} "
+                      f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
+                last_sl_set = min_sl_cap
+        else:
+            max_sl_cap = entry_price * (1.0 + max_sl_pct)
+            if last_sl_set > max_sl_cap:
+                print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
+                      f"line-based {last_sl_set:.6f} → {max_sl_cap:.6f} "
+                      f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
+                last_sl_set = max_sl_cap
     register_trendline_params(
         cond.symbol.upper(),
         slope=_manual_slope_per_bar(cond),
