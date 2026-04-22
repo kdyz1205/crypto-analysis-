@@ -87,8 +87,38 @@ def realized_pnl_usd(row: dict[str, Any] | None) -> float:
 
 
 def margin_used(row: dict[str, Any] | None) -> float:
-    """Margin consumed by a position — used to compute pnl%."""
-    return _first_float(row, ("margin", "initialMargin", "marginSize"))
+    """Margin consumed by a position — used to compute pnl%.
+
+    Falls back to computing from (openSize × openAvgPrice / leverage)
+    when Bitget's history-position row omits the direct margin field.
+    User 2026-04-21: 18 position-close events had pnl_pct=0.00%
+    because Bitget's history rows don't always include 'margin' —
+    only 'initialMargin' shows up for /position endpoints, not /history.
+    """
+    direct = _first_float(row, ("margin", "initialMargin", "marginSize", "openingMargin"))
+    if direct > 0:
+        return direct
+    # Fallback: qty × open_price / leverage
+    if not row:
+        return 0.0
+    qty = _first_float(row, ("openTotalPos", "openTotal", "total", "size"))
+    op = open_price(row)
+    lev = _first_float(row, ("leverage", "openLeverage", "openPositionMode"))
+    if qty > 0 and op > 0 and lev > 0:
+        return (qty * op) / lev
+    return 0.0
+
+
+def notional_usd(row: dict[str, Any] | None) -> float:
+    """Total position size in USD = qty × open_price. Used as a pnl_pct
+    denominator when margin_used comes back 0 (pnl_pct then = raw price
+    move %, unlevered). Complements margin_used by providing a guaranteed
+    non-zero fallback for pnl% display."""
+    qty = _first_float(row, ("openTotalPos", "openTotal", "total", "size"))
+    op = open_price(row)
+    if qty > 0 and op > 0:
+        return qty * op
+    return 0.0
 
 
 __all__ = [
@@ -98,4 +128,5 @@ __all__ = [
     "position_size",
     "realized_pnl_usd",
     "margin_used",
+    "notional_usd",
 ]

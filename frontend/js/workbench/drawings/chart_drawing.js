@@ -27,17 +27,16 @@ import { marketState } from '../../state/market.js';
 import { publish, subscribe } from '../../util/events.js';
 import { fetchJson } from '../../util/fetch.js';
 import * as drawingsSvc from '../../services/drawings.js';
-import { openTradePlanModal } from './trade_plan_modal.js';
+import { openTradePlanModal, openSetupPickerPopup } from './trade_plan_modal.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ANCHOR_R = 6;        // visible handle radius
 const ANCHOR_HIT = 12;     // hit test radius for anchors
 const BODY_HIT = 8;        // hit test distance for line body
-// Thinner than the 1.8 default — user report 2026-04-20: the drawn
-// line was visually too thick, especially when entries/stops are
-// only 0.1% away, making it hard to see exactly where price is
-// relative to the line.
-const DEFAULT_LINE_WIDTH = 1.0;
+// Thinner than the 1.8 original. Iterated 2026-04-20:
+//   1.8 → 1.0 → 0.3 (final). User asked for "base = thinnest".
+// Presets now: 0.3 (default/base) / 1.0 (medium) / 2.0 (bold).
+const DEFAULT_LINE_WIDTH = 0.3;
 
 // ─────────────────────────────────────────────────────────────
 // Module deps (set by init)
@@ -765,7 +764,18 @@ async function commitDrag() {
   }
   transition('idle', 'drag_committed');
 
-  // PATCH backend
+  // PATCH backend. Larger timeout (25s) because the handler does
+  // force_replan_line which can call Bitget cancel+replace on every
+  // attached cond — slow when >3 conds or Bitget is backed up.
+  // User 2026-04-21: old 8s timeout was aborting legit PATCHes,
+  // frontend rolled back to snapshot, line "jumped" to original
+  // position after each drag — making fine adjustment impossible.
+  // Also: on abort specifically, DO NOT roll back. The request may
+  // have actually reached the server and stored; a rollback plus the
+  // server's successful state creates a ping-pong where next refresh
+  // restores the server's (new) state and "un-jumps". Simpler: keep
+  // optimistic local state and show a console warn. If the PATCH
+  // truly didn't land, next manual refresh will correct it.
   try {
     await fetchJson(`/api/drawings/${encodeURIComponent(drag.lineId)}`, {
       method: 'PATCH',
@@ -775,12 +785,23 @@ async function commitDrag() {
         price_start: newStart.price,
         price_end:   newEnd.price,
       },
-      timeout: 8000,
+      timeout: 25000,
     });
     console.log('[chart_drawing] drag PATCH ok');
   } catch (err) {
-    console.error('[chart_drawing] drag PATCH failed', err);
-    // Rollback to snapshot
+    const msg = String(err?.message || err || '');
+    const isAbort = /abort|timeout|signal/i.test(msg);
+    if (isAbort) {
+      // Keep the optimistic local state. Server may have actually
+      // accepted — or not — but rolling back here makes adjustment
+      // impossible (line jumps back on every slow network blip).
+      console.warn('[chart_drawing] drag PATCH timed out, keeping local state', err);
+      return;
+    }
+    // Non-abort errors (e.g. 404, 400) imply the server didn't accept
+    // the change. Roll back to previous position so user sees a real
+    // failure and can fix the underlying issue.
+    console.error('[chart_drawing] drag PATCH rejected', err);
     if (snapshot && idx >= 0) {
       const cur = drawingsState.lines || [];
       const rollback = cur.slice();
@@ -816,15 +837,28 @@ function render() {
   const dragLineId = tx.dragging?.lineId;
 
   // 1.5 Draw similar historical lines (FIRST so they sit beneath user lines)
+  // User 2026-04-21: add a small ★ marker near each similar line's end so
+  // they're visually identifiable as "相似" and not confused with real lines.
   for (const sim of tx.similarLines) {
     const a = dataToScreen({ time: sim.t_start, price: sim.price_start });
     const b = dataToScreen({ time: sim.t_end, price: sim.price_end });
     if (!a || !b) continue;
     // Color by outcome: green if bounced, red if broke
-    let color = 'rgba(120,120,120,0.35)';
-    if (sim.outcome?.bounced) color = 'rgba(0,230,118,0.4)';
-    else if (sim.outcome?.broke) color = 'rgba(255,82,82,0.4)';
+    let color = 'rgba(120,120,120,0.55)';
+    let label = '★';          // default: unknown outcome
+    let labelColor = 'rgba(200,200,200,0.85)';
+    if (sim.outcome?.bounced) {
+      color = 'rgba(0,230,118,0.55)';
+      label = '★✓';           // bounced = reached RR target
+      labelColor = 'rgba(0,230,118,1)';
+    } else if (sim.outcome?.broke) {
+      color = 'rgba(255,82,82,0.55)';
+      label = '★✗';           // broke
+      labelColor = 'rgba(255,82,82,1)';
+    }
     appendLine(a.x, a.y, b.x, b.y, color, 1.5, '4,3');
+    // Label at the end anchor, slightly offset so it doesn't overlap the line
+    appendText(b.x + 4, b.y, label, labelColor, 10);
   }
 
   // 2. Draw persistent lines
@@ -921,6 +955,21 @@ function appendCircle(cx, cy, r, fill) {
   _svg.appendChild(c);
 }
 
+function appendText(x, y, text, fill = '#fbbf24', fontSize = 10) {
+  const t = document.createElementNS(SVG_NS, 'text');
+  t.setAttribute('x', String(x));
+  t.setAttribute('y', String(y));
+  t.setAttribute('fill', fill);
+  t.setAttribute('font-size', String(fontSize));
+  t.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+  t.setAttribute('font-weight', '600');
+  t.setAttribute('text-anchor', 'start');
+  t.setAttribute('dominant-baseline', 'middle');
+  t.setAttribute('pointer-events', 'none');
+  t.textContent = text;
+  _svg.appendChild(t);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Right-click context menu
 // ─────────────────────────────────────────────────────────────
@@ -944,16 +993,19 @@ function openContextMenu(ev, lineId) {
   });
   _menu.innerHTML = `
     <div data-act="select" style="padding:6px 14px;cursor:pointer">选中此线</div>
-    <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划</div>
+    <div data-act="quick_trade" style="padding:6px 14px;cursor:pointer;color:#00e676;font-weight:600">⚡ 交易 (快捷挂单)</div>
+    <div data-act="create_trade_plan" style="padding:6px 14px;cursor:pointer;color:#38bdf8">+ 创建交易计划 (完整配置)</div>
     <div data-act="add_alert" style="padding:6px 14px;cursor:pointer;color:#fbbf24">🔔 添加价格警报</div>
     <div style="height:1px;background:#2a3548;margin:4px 0"></div>
+    <div style="padding:5px 14px;color:#8a92a5">标记形态质量 (喂给 ML)</div>
+    <div data-act="label_good" style="padding:6px 14px;cursor:pointer;color:#00e676">⭐ 好形态</div>
+    <div data-act="label_mediocre" style="padding:6px 14px;cursor:pointer;color:#94a3b8">〜 一般</div>
+    <div data-act="label_bad" style="padding:6px 14px;cursor:pointer;color:#ff5252">✗ 差形态</div>
+    <div style="height:1px;background:#2a3548;margin:4px 0"></div>
     <div style="padding:5px 14px;color:#8a92a5">线宽</div>
-    <div data-act="set_width" data-width="0.2" style="padding:6px 14px;cursor:pointer">0.2 px (极细)</div>
-    <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">0.3 px</div>
-    <div data-act="set_width" data-width="0.5" style="padding:6px 14px;cursor:pointer">0.5 px</div>
-    <div data-act="set_width" data-width="1" style="padding:6px 14px;cursor:pointer">1 px (默认)</div>
-    <div data-act="set_width" data-width="1.5" style="padding:6px 14px;cursor:pointer">1.5 px</div>
-    <div data-act="set_width" data-width="2" style="padding:6px 14px;cursor:pointer">2 px</div>
+    <div data-act="set_width" data-width="0.3" style="padding:6px 14px;cursor:pointer">细 (默认)</div>
+    <div data-act="set_width" data-width="1.0" style="padding:6px 14px;cursor:pointer">中</div>
+    <div data-act="set_width" data-width="2.0" style="padding:6px 14px;cursor:pointer">粗</div>
     <div data-act="delete" style="padding:6px 14px;cursor:pointer;color:#ff5252">删除此线</div>
   `;
   _menu.addEventListener('click', async (e) => {
@@ -963,17 +1015,66 @@ function openContextMenu(ev, lineId) {
     closeContextMenu();
     if (act === 'select') {
       setSelectedManualLine(lineId);
+    } else if (act === 'quick_trade') {
+      const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
+      if (line) {
+        // 2026-04-21 user spec: after drawing a line, "交易" button
+        // opens a small popup next to the menu with Direction toggle +
+        // Reverse toggle + setup drop-down. Pick setup → instant place.
+        // No full configure modal. Under 5 clicks from line → Bitget.
+        try {
+          const { openQuickTradePopup } = await import('./trade_plan_modal.js');
+          await openQuickTradePopup(line, ev.clientX, ev.clientY);
+        } catch (err) { console.warn('[chart_drawing] quick-trade popup', err); }
+      }
     } else if (act === 'create_trade_plan') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
       if (line) {
-        try { await openTradePlanModal(line); }
-        catch (err) { console.warn('[chart_drawing] trade plan modal', err); }
+        // 2026-04-20: open a lightweight setup picker first; picker
+        // decides whether to drop straight into the full Trade Plan
+        // modal pre-filled with the chosen setup.
+        try {
+          await openSetupPickerPopup(line, ev.clientX, ev.clientY);
+        } catch (err) { console.warn('[chart_drawing] setup picker', err); }
       }
     } else if (act === 'add_alert') {
       const line = (drawingsState.lines || []).find((l) => l.manual_line_id === lineId);
       if (line) openAlertDialog(line);
     } else if (act === 'set_width') {
       await setLineWidth(lineId, Number(item.dataset.width || DEFAULT_LINE_WIDTH));
+    } else if (act === 'label_good' || act === 'label_mediocre' || act === 'label_bad') {
+      // User 2026-04-22: rate pattern quality so ML learns from the
+      // ones the user considers visually valid.
+      const quality = act === 'label_good' ? 'good'
+                    : act === 'label_bad'  ? 'bad'
+                    : 'mediocre';
+      const label = quality === 'good' ? '⭐ 好形态'
+                  : quality === 'bad'  ? '✗ 差形态'
+                  : '〜 一般';
+      const patternType = prompt(
+        `标记为"${label}"。可选: 输入形态类型 (如 双顶/三角/通道/头肩, 留空跳过)`,
+        ''
+      );
+      if (patternType === null) return;  // cancelled
+      const notes = quality === 'good'
+        ? (prompt('为什么觉得这个形态好? (可选, 随便写)', '') || '')
+        : '';
+      try {
+        const { fetchJson } = await import('../../util/fetch.js');
+        await fetchJson(`/api/drawings/${encodeURIComponent(lineId)}/label`, {
+          method: 'POST',
+          body: {
+            quality,
+            pattern_type: patternType.trim() || null,
+            notes: notes.trim() || null,
+          },
+          timeout: 10000,
+        });
+        // Small toast via title flash; no UI noise
+        console.log(`[label] saved: ${lineId} → ${quality} (${patternType || 'no-type'})`);
+      } catch (err) {
+        alert(`标记失败: ${err?.message || err}`);  // SAFE: alert renders text
+      }
     } else if (act === 'delete') {
       await deleteLine(lineId);
     }

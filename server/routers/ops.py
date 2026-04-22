@@ -47,37 +47,111 @@ async def index_v2_html():
     )
 
 
+def _conditional_file_response(path, media_type: str, request: Request):
+    """Shared helper: serve static file with ETag + If-Modified-Since 304."""
+    from fastapi import Response
+    import email.utils as _eu
+    stat = path.stat()
+    etag = f'W/"{int(stat.st_mtime)}-{stat.st_size}"'
+    last_modified = _eu.formatdate(stat.st_mtime, usegmt=True)
+    inm = request.headers.get("if-none-match")
+    ims = request.headers.get("if-modified-since")
+    not_modified = False
+    if inm and inm == etag:
+        not_modified = True
+    elif ims:
+        try:
+            if int(_eu.parsedate_to_datetime(ims).timestamp()) >= int(stat.st_mtime):
+                not_modified = True
+        except Exception:
+            pass
+    headers = {
+        "Cache-Control": "max-age=30, must-revalidate",
+        "ETag": etag,
+        "Last-Modified": last_modified,
+    }
+    if not_modified:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(str(path), media_type=media_type, headers=headers)
+
+
 @router.get("/v2.css")
-async def serve_v2_css():
-    return FileResponse(
-        str(FRONTEND_DIR / "v2.css"),
-        media_type="text/css",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
-    )
+async def serve_v2_css(request: Request):
+    return _conditional_file_response(FRONTEND_DIR / "v2.css", "text/css", request)
 
 
 @router.get("/style.css")
-async def serve_css():
-    return FileResponse(
-        str(FRONTEND_DIR / "style.css"),
-        media_type="text/css",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
+async def serve_css(request: Request):
+    return _conditional_file_response(FRONTEND_DIR / "style.css", "text/css", request)
+
+
+@router.get("/v2-theme-enhanced.css")
+async def serve_v2_theme_enhanced(request: Request):
+    """Optional theme override loaded after v2.css — higher-contrast palette."""
+    return _conditional_file_response(
+        FRONTEND_DIR / "v2-theme-enhanced.css",
+        "text/css",
+        request,
     )
 
 
 @router.get("/js/{subpath:path}")
-async def serve_js_module(subpath: str):
-    """Serve Phase 2 ES modules from frontend/js/."""
-    # Prevent directory traversal
+async def serve_js_module(subpath: str, request: Request):
+    """Serve Phase 2 ES modules from frontend/js/.
+
+    Optimizations for page-refresh speed (2026-04-20: user reported slow
+    reloads — 61 modules × per-file round-trip was 2-3s on local dev):
+
+    1. Honor `If-None-Match` / `If-Modified-Since` and return 304 so the
+       browser reuses its cached copy. Previous code always returned
+       200 with full body, so cache headers were useless.
+    2. Short `max-age=30` so rapid repeat refreshes skip the server
+       entirely. Edits propagate after 30s (or Ctrl+Shift+R forces).
+    """
     if ".." in subpath or subpath.startswith("/"):
         return {"error": "invalid path"}
     full_path = FRONTEND_DIR / "js" / subpath
     if not full_path.is_file():
         return {"error": "not found", "path": subpath}
+
+    stat = full_path.stat()
+    # Weak ETag: mtime + size. Enough to detect edits.
+    etag = f'W/"{int(stat.st_mtime)}-{stat.st_size}"'
+    import email.utils as _eu
+    last_modified = _eu.formatdate(stat.st_mtime, usegmt=True)
+
+    inm = request.headers.get("if-none-match")
+    ims = request.headers.get("if-modified-since")
+    not_modified = False
+    if inm and inm == etag:
+        not_modified = True
+    elif ims:
+        try:
+            ims_ts = _eu.parsedate_to_datetime(ims).timestamp()
+            if int(ims_ts) >= int(stat.st_mtime):
+                not_modified = True
+        except Exception:
+            pass
+
+    common_headers = {
+        # max-age=0: always revalidate, but 304 (no body) is fast.
+        # Previous 30s window was caching stale JS across multiple
+        # rapid edits during active development. User 2026-04-21:
+        # "刷新之后还是旧的 JS, 看不到 fee 行". With max-age=0 the
+        # browser always asks the server; server returns 304 when
+        # unchanged (cheap) or 200 with new body when mtime changed.
+        "Cache-Control": "max-age=0, must-revalidate",
+        "ETag": etag,
+        "Last-Modified": last_modified,
+    }
+    if not_modified:
+        from fastapi import Response
+        return Response(status_code=304, headers=common_headers)
+
     return FileResponse(
         str(full_path),
         media_type="application/javascript",
-        headers={"Cache-Control": "no-cache, must-revalidate"},
+        headers=common_headers,
     )
 
 

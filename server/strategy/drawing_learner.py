@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 
 ML_DRAWINGS_FILE = Path("data/user_drawings_ml.jsonl")
+OUTCOMES_FILE = Path("data/user_drawing_outcomes.jsonl")
 TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
 
 
@@ -433,6 +434,116 @@ def capture_position_closed_from_drawing(
     }
     ML_DRAWINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(ML_DRAWINGS_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, default=str) + "\n")
+    return record
+
+
+def capture_live_outcome(
+    *,
+    manual_line_id: str,
+    symbol: str,
+    timeframe: str,
+    side: str,
+    direction: str,
+    entry_ts: int | float,
+    entry_price: float,
+    exit_ts: int | float,
+    exit_price: float,
+    exit_reason: str,
+    qty: float,
+    leverage: float,
+    pnl_usd: float,
+    pnl_pct: float,
+    fee_pct_total: float = 0.12,          # 0.06% × 2 (Bitget taker, roundtrip)
+    initial_stop_price: float | None = None,
+    initial_tp_price: float | None = None,
+    mfe_price: float | None = None,
+    mae_price: float | None = None,
+    exchange_order_id: str | None = None,
+    conditional_id: str | None = None,
+    **extra,
+) -> dict:
+    """Append a real-trade outcome record to user_drawing_outcomes.jsonl.
+
+    Complements the batch-simulation outcomes from label_user_drawings.py —
+    this is REAL fill data from the exchange. Distinguished via
+    `source: "live"` so downstream analysis can filter.
+
+    User 2026-04-21: asked for real-time outcome capture so the Excel
+    "结果" sheet shows what ACTUALLY happened on the exchange, not just
+    historical sims.
+
+    Computes R ratio: R = pnl_usd / initial_risk_usd where initial_risk
+    is |entry - initial_stop| × qty. If initial_stop is missing, R is
+    None and downstream can skip the line.
+    """
+    # Compute initial risk + R-multiple
+    initial_risk_usd = None
+    realized_r = None
+    if initial_stop_price is not None and entry_price > 0 and qty > 0:
+        initial_risk_usd = abs(entry_price - float(initial_stop_price)) * qty
+        if initial_risk_usd > 0:
+            realized_r = pnl_usd / initial_risk_usd
+
+    # Net-of-fee R: subtract roundtrip fee_pct of notional from pnl
+    notional = entry_price * qty
+    fee_usd = notional * (fee_pct_total / 100.0)
+    pnl_net = pnl_usd - fee_usd
+    realized_r_net = (pnl_net / initial_risk_usd) if (initial_risk_usd and initial_risk_usd > 0) else None
+
+    # MFE / MAE as R (if price tracking available)
+    mfe_r = None
+    mae_r = None
+    if initial_risk_usd and initial_risk_usd > 0 and qty > 0:
+        if mfe_price is not None and entry_price > 0:
+            mfe_pnl_raw = (float(mfe_price) - entry_price) * qty
+            if direction == "short": mfe_pnl_raw = -mfe_pnl_raw
+            mfe_r = mfe_pnl_raw / initial_risk_usd
+        if mae_price is not None and entry_price > 0:
+            mae_pnl_raw = (float(mae_price) - entry_price) * qty
+            if direction == "short": mae_pnl_raw = -mae_pnl_raw
+            mae_r = mae_pnl_raw / initial_risk_usd
+
+    record = {
+        "event": "user_drawing_outcome",
+        "source": "live",                    # mark as real, not simulation
+        "manual_line_id": manual_line_id,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "side": side,
+        "direction": direction,
+        "capture_ts": int(time.time()),
+        "config": {
+            "fee_bps": fee_pct_total * 100,   # 0.12% → 12 bps
+            "leverage": leverage,
+        },
+        "status": "closed",
+        "filled": True,
+        "entry_ts": int(_timestamp_seconds(entry_ts)),
+        "entry_price": entry_price,
+        "exit_ts": int(_timestamp_seconds(exit_ts)),
+        "exit_price": exit_price,
+        "exit_reason": exit_reason,
+        "initial_stop_price": initial_stop_price,
+        "initial_tp_price": initial_tp_price,
+        "initial_risk_usd": initial_risk_usd,
+        "qty": qty,
+        "notional_usd": notional,
+        "pnl_usd_gross": pnl_usd,
+        "pnl_usd_net": pnl_net,
+        "pnl_pct": pnl_pct,
+        "realized_r_gross": realized_r,
+        "realized_r": realized_r_net,
+        "mfe_price": mfe_price,
+        "mae_price": mae_price,
+        "mfe_r": mfe_r,
+        "mae_r": mae_r,
+        "exchange_order_id": exchange_order_id,
+        "conditional_id": conditional_id,
+        **extra,
+    }
+    OUTCOMES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTCOMES_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, default=str) + "\n")
     return record
 

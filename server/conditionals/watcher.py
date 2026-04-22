@@ -59,7 +59,12 @@ _REPLAN_DRIFT_PCT = 0.05
 # Reconcile against Bitget every N ticks. Marks any local triggered cond
 # whose exchange_order_id is no longer on Bitget as cancelled, so the UI
 # stops showing zombies and the watcher stops trying to replan ghosts.
-_RECONCILE_EVERY_TICKS = 30   # 30s with 1s tick
+_RECONCILE_EVERY_TICKS = 60   # 60s with 1s tick — halved to reduce
+                               # Bitget API pressure. User 2026-04-22:
+                               # symbol/TF switching was 5-15s because
+                               # Bitget was throttling us. Foreground
+                               # requests (OHLCV, place-line-order) need
+                               # priority over our periodic audit.
 _reconcile_counter = 0
 
 
@@ -77,6 +82,94 @@ _outcome_backfill_counter = 0
 # line's anchor). The watcher checks this set on every tick and clears
 # it as entries are processed. See `force_replan(conditional_id)`.
 _force_replan_set: set[str] = set()
+
+# Short-lived cache of Bitget pending-order IDs so many conds in one
+# tick share a single fetch. TTL chosen small enough that a freshly-
+# cancelled plan won't get a stale "still present" result for long.
+_PENDING_OIDS_CACHE_TTL = 3.0   # seconds
+_pending_oids_cache: dict[str, tuple[float, set[str]]] = {}
+
+async def _get_cached_pending_oids(mode: str) -> set[str]:
+    """Return set of Bitget pending oids for this mode. 3s TTL cache.
+
+    CRITICAL: on total fetch failure (both regular+plan endpoints raised),
+    we RAISE instead of caching an empty set. Code-reviewer 2026-04-21:
+    caching-on-fail poisoned every replan check for 3s on any transient
+    Bitget outage — watcher silently skipped replans thinking "our plan
+    is gone". Caller at _maybe_replan already has except-fallthrough
+    that does the right thing on raise (attempt replan anyway, safer
+    than stalling the whole line-tracking system).
+    """
+    import time as _t
+    entry = _pending_oids_cache.get(mode)
+    if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
+        return entry[1]
+    from server.execution.live_adapter import LiveExecutionAdapter
+    adapter = LiveExecutionAdapter()
+    oids: set[str] = set()
+    err_regular: Exception | None = None
+    err_plan: Exception | None = None
+    ok_regular = False
+    ok_plan = False
+    try:
+        for row in await adapter.get_pending_orders(mode):  # type: ignore
+            oid = str(row.get("orderId") or row.get("order_id") or "")
+            if oid:
+                oids.add(oid)
+        ok_regular = True
+    except Exception as e:
+        err_regular = e
+    try:
+        for row in await adapter.get_pending_plan_orders(mode, plan_type="normal_plan"):  # type: ignore
+            oid = str(row.get("orderId") or row.get("order_id") or "")
+            if oid:
+                oids.add(oid)
+        ok_plan = True
+    except Exception as e:
+        err_plan = e
+    if not (ok_regular or ok_plan):
+        # Total failure — do NOT cache; let caller fall through to attempt
+        # replan. Bitget outage will also cause replan itself to fail, but
+        # we won't silently skip EVERY cond for 3 seconds.
+        raise RuntimeError(
+            f"pending-oids fetch failed for mode={mode}: "
+            f"regular={err_regular!r} plan={err_plan!r}"
+        )
+    _pending_oids_cache[mode] = (_t.time(), oids)
+    return oids
+
+
+def _invalidate_pending_oids_cache(mode: str | None = None) -> None:
+    """Drop the cache so the next check refetches fresh."""
+    if mode is None:
+        _pending_oids_cache.clear()
+    else:
+        _pending_oids_cache.pop(mode, None)
+
+
+def _add_pending_oid_to_cache(mode: str, oid: str) -> None:
+    """Eagerly add a just-placed oid to the cache so the next check
+    sees it as pending.
+
+    CRITICAL fix 2026-04-21 per reviewer: if cache is empty/expired,
+    SEED a fresh cache with just this oid (short-lived, will be
+    replaced by the next real refetch). Old behavior dropped the oid
+    silently, which defeated the purpose — _invalidate_pending_oids_
+    cache clears the dict, then _add was a no-op, and a subsequent
+    tick could fetch Bitget's eventually-consistent list BEFORE the
+    new plan was visible -> false "my plan is gone" early-return.
+    """
+    if not oid:
+        return
+    import time as _t
+    entry = _pending_oids_cache.get(mode)
+    if entry and _t.time() - entry[0] < _PENDING_OIDS_CACHE_TTL:
+        entry[1].add(str(oid))
+        return
+    # Empty or expired: seed a fresh single-oid cache. Other pending
+    # oids on this mode will be picked up on the next real refetch
+    # when this TTL expires.
+    _pending_oids_cache[mode] = (_t.time(), {str(oid)})
 
 
 # ─────────────────────────────────────────────────────────────
@@ -940,6 +1033,89 @@ def _find_position_for_cond(rows: list[dict[str, Any]], cond: ConditionalOrder) 
     return fallback
 
 
+async def _sync_sl_to_line_now(
+    cond: ConditionalOrder,
+    pos: dict[str, Any],
+    target_sl_price: float,
+) -> None:
+    """Immediately cancel Bitget's old preset SL and place a new one at
+    line@fill_time. Runs synchronously on fill detection so we don't wait
+    for mar_bb_runner's 60s trailing loop. Between fill and first trailing
+    scan the old bar_open-based preset SL could be *hundreds* of bps below
+    fill_price (breakout fills blow far past the bar_open trigger), and a
+    wrong-way price wick within 60s hits the stale SL for a huge loss.
+
+    User 2026-04-22: BAS entered at 0.01693 with preset SL at 0.01634
+    (bar_open basis, 3.5% below fill). Stop hit in 3 min 34 sec, before
+    first trailing scan. This function closes that window.
+    """
+    import httpx  # noqa: F401 — ensure imported
+    from server.execution.live_adapter import LiveExecutionAdapter
+    adapter = LiveExecutionAdapter()
+    if not adapter.has_api_keys():
+        return
+    mode = cond.order.exchange_mode
+    if mode not in ("demo", "live"):
+        return
+    sym = cond.symbol.upper()
+    direction = cond.order.direction
+    hold_side = "long" if direction == "long" else "short"
+
+    # 1. Query current position SL plans on Bitget, cancel them all.
+    try:
+        resp = await adapter._bitget_request(
+            "GET", "/api/v2/mix/order/orders-plan-pending",
+            mode=mode,
+            params={"symbol": sym, "productType": "USDT-FUTURES", "planType": "profit_loss"},
+        )
+        if resp.get("code") == "00000":
+            rows = ((resp.get("data") or {}).get("entrustedList") or
+                    (resp.get("data") or {}).get("orderList") or [])
+            for row in rows:
+                oid = str(row.get("orderId") or "")
+                plan_subtype = str(row.get("planType") or "")
+                # Cancel existing SL plans (pos_loss / loss_plan) for this side
+                if oid and "loss" in plan_subtype.lower():
+                    await adapter._bitget_request(
+                        "POST", "/api/v2/mix/order/cancel-plan-order",
+                        mode=mode,
+                        body={
+                            "symbol": sym,
+                            "productType": "USDT-FUTURES",
+                            "marginCoin": "USDT",
+                            "orderId": oid,
+                            "planType": plan_subtype,
+                        },
+                    )
+    except Exception as exc:
+        print(f"[sync_sl] cancel old SL err {sym}: {exc}", flush=True)
+
+    # 2. Place a fresh pos_loss plan at target_sl_price.
+    try:
+        body = {
+            "symbol": sym,
+            "productType": "USDT-FUTURES",
+            "marginCoin": "USDT",
+            "planType": "pos_loss",
+            "triggerPrice": f"{target_sl_price:.8f}".rstrip("0").rstrip("."),
+            "triggerType": "mark_price",
+            "holdSide": hold_side,
+            "executePrice": "0",      # market close
+            "clientOid": f"sync_sl_{cond.conditional_id}_{int(now_ts())}",
+        }
+        r = await adapter._bitget_request(
+            "POST", "/api/v2/mix/order/place-tpsl-order",
+            mode=mode, body=body,
+        )
+        if r.get("code") == "00000":
+            print(f"[sync_sl] {sym} new SL @ {target_sl_price:.6f} "
+                  f"oid={(r.get('data') or {}).get('orderId','')}", flush=True)
+        else:
+            print(f"[sync_sl] {sym} place err: code={r.get('code')} msg={r.get('msg')}", flush=True)
+    except Exception as exc:
+        print(f"[sync_sl] place new SL err {sym}: {exc}", flush=True)
+
+
 def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict[str, Any], now: int) -> None:
     from server.strategy.mar_bb_runner import register_trendline_params
 
@@ -954,6 +1130,28 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         if cond.order.direction == "long"
         else line_ref_price * (1.0 + stop_offset_pct / 100.0)
     )
+    # SL distance cap: keep real stop ≤ user's configured (buffer+stop) %.
+    # When breakout fill puts entry far past trigger, line-based SL
+    # becomes far from entry; cap it so risk matches user's intended
+    # setup. Uses cond.order.tolerance_pct_of_line + stop_offset_pct_of_line.
+    tol_pct = max(0.0, float(cond.order.tolerance_pct_of_line or 0.0))
+    stp_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0))
+    max_sl_pct = (tol_pct + stp_pct) / 100.0
+    if max_sl_pct > 0:
+        if cond.order.direction == "long":
+            min_sl_cap = entry_price * (1.0 - max_sl_pct)
+            if last_sl_set < min_sl_cap:
+                print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
+                      f"line-based {last_sl_set:.6f} → {min_sl_cap:.6f} "
+                      f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
+                last_sl_set = min_sl_cap
+        else:
+            max_sl_cap = entry_price * (1.0 + max_sl_pct)
+            if last_sl_set > max_sl_cap:
+                print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
+                      f"line-based {last_sl_set:.6f} → {max_sl_cap:.6f} "
+                      f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
+                last_sl_set = max_sl_cap
     register_trendline_params(
         cond.symbol.upper(),
         slope=_manual_slope_per_bar(cond),
@@ -969,6 +1167,18 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
         line_ref_price=line_ref_price,
         stop_offset_pct=stop_offset_pct,
     )
+    # 2026-04-22 fix: don't wait 60s for mar_bb scan to update SL. The
+    # preset SL from the original plan was based on bar_open line, which
+    # may be far below actual fill price. Immediately sync Bitget SL to
+    # line_ref_price ± stop_offset_pct (= what trailing would do on
+    # next scan). User lost $11 on BAS because SL was at 0.01634
+    # (bar_open 12:00 basis) while fill was at 0.01693 — got stopped
+    # in 3.5 minutes before scan caught up.
+    try:
+        import asyncio as _asyncio
+        _asyncio.create_task(_sync_sl_to_line_now(cond, pos, last_sl_set))
+    except Exception as exc:
+        print(f"[reconcile] sync_sl schedule err {cond.symbol}: {exc}", flush=True)
 
 
 async def _reconcile_against_bitget() -> None:
@@ -992,13 +1202,26 @@ async def _reconcile_against_bitget() -> None:
         pending_oids_by_mode: dict[str, set[str]] = {}
         positions_by_mode: dict[str, list[dict[str, Any]]] = {}
 
+        # Track whether EITHER pending fetch succeeded. If BOTH fail we
+        # must skip reconcile for this mode entirely — otherwise an empty
+        # pending_oids set would look identical to "all orders cancelled",
+        # and reconcile would nuke every triggered cond. User 2026-04-22:
+        # HYPE trigger 40.495 was working fine, then Bitget API blip at
+        # 06:27 BJ made both pending endpoints time out, reconcile cancelled
+        # the cond + wrote "reconcile: order not on Bitget anymore" even
+        # though the order was still there. Same hazard affected RAVE
+        # earlier in session.
+        skip_modes: set[str] = set()
         for mode in modes:
             pending_oids: set[str] = set()
+            ok_regular = False
+            ok_plan = False
             try:
                 for row in await adapter.get_pending_orders(mode):  # type: ignore[arg-type]
                     oid = str(row.get("orderId") or row.get("order_id") or "")
                     if oid:
                         pending_oids.add(oid)
+                ok_regular = True
             except Exception as e:
                 print(f"[reconcile] regular pending fetch failed mode={mode}: {e}", flush=True)
             try:
@@ -1006,8 +1229,29 @@ async def _reconcile_against_bitget() -> None:
                     oid = str(row.get("orderId") or row.get("order_id") or "")
                     if oid:
                         pending_oids.add(oid)
+                ok_plan = True
             except Exception as e:
                 print(f"[reconcile] plan pending fetch failed mode={mode}: {e}", flush=True)
+
+            if not (ok_regular or ok_plan):
+                # Both fetches failed. Do NOT mark conds cancelled based
+                # on an empty pending set — that would be catastrophic.
+                print(f"[reconcile] SKIP mode={mode} — both pending fetches failed; will retry next cycle", flush=True)
+                skip_modes.add(mode)
+                # Still try position fetch so we can catch fills without
+                # false-cancelling the triggered set.
+                try:
+                    pos_resp = await adapter._bitget_request(
+                        "GET", "/api/v2/mix/position/all-position",
+                        mode=mode,
+                        params={"productType": "USDT-FUTURES", "marginCoin": "USDT"},
+                    )
+                    positions_by_mode[mode] = adapter._as_rows(pos_resp.get("data")) if pos_resp.get("code") == "00000" else []
+                except Exception as e:
+                    print(f"[reconcile] position fetch also failed mode={mode}: {e}", flush=True)
+                    positions_by_mode[mode] = []
+                pending_oids_by_mode[mode] = set()
+                continue
 
             try:
                 pos_resp = await adapter._bitget_request(
@@ -1027,6 +1271,11 @@ async def _reconcile_against_bitget() -> None:
                 continue
             mode = cond.order.exchange_mode
             if mode not in {"demo", "live"}:
+                continue
+            # Skip modes where we couldn't reliably fetch pending oids.
+            # Better to leave a cond as "triggered" an extra 30s than to
+            # nuke it based on a transient Bitget API failure.
+            if mode in skip_modes:
                 continue
             if oid in pending_oids_by_mode.get(mode, set()):
                 continue
@@ -1236,9 +1485,11 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if cond.price_start == cond.price_end:
         return
 
-    # Force-replan flag bypasses the bar-interval gate and the drift
-    # threshold — used when the user drags an anchor and we need the
-    # order to immediately reflect the new geometry.
+    # Bar-gate FIRST (cheap, no API). This cuts the vast majority of
+    # per-tick calls before we ever touch Bitget. Plan-existence check
+    # moved AFTER the gate so it only runs when we're actually about
+    # to replan. Perf 2026-04-21: old ordering hit Bitget 2x/sec per
+    # triggered cond (per user "之前挂单都是几秒就好了 为什么现在需要这么久").
     global _force_replan_set
     forced = cond.conditional_id in _force_replan_set
     if forced:
@@ -1248,10 +1499,101 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         if _bar_open_ts(now, cond.timeframe) <= _bar_open_ts(last, cond.timeframe):
             return
 
-    # Project the line's price at NOW using the same extension semantics
-    # the chart uses. If extend_right=True, orders keep tracking the line
-    # after the second anchor instead of freezing at price_end.
-    line_now = cond.line_price_at(now)
+    # NOW (post-gate) check that our plan is still alive on Bitget
+    # before spending effort on cancel+replace. Cached pending list
+    # lets multiple conds in the same tick share one fetch.
+    try:
+        pending_oids = await _get_cached_pending_oids(cond.order.exchange_mode)
+        our_oid = str(cond.exchange_order_id or "")
+        if our_oid and our_oid not in pending_oids:
+            # Our plan is gone — filled or user cancelled. Let the
+            # reconcile path handle the status transition; we do
+            # NOT replan a vanished order.
+            return
+    except Exception as exc:
+        print(f"[watcher] plan-existence check failed {cond.symbol}: {exc}", flush=True)
+        # Fall through — better to attempt replan than silently stall.
+
+    # Project the line's price at the CURRENT TF BAR'S OPEN. Same
+    # convention as place-line-order (2026-04-21 unification). User
+    # visually sees the line crossing the bar at bar-open; replan must
+    # match that snapshot or replanned trigger drifts from visual
+    # expectation every bar. For 4h TF, 22:58 click → bar_open 20:00.
+    line_now = cond.line_price_at_bar_open(now)
+
+    # Line-broken invalidation (user 2026-04-22):
+    #   If price has moved FAR to the WRONG side of the line for the
+    #   chosen direction, the setup thesis is dead. The short-on-support-
+    #   breakdown plan shouldn't sit forever waiting for price to come
+    #   back; the 支撑 broke upward and that's now resistance.
+    #
+    #   Check: mark vs line. If mark is > line × (1 + INVALID_PCT) and
+    #   direction=short → thesis dead, cancel + optional auto-reverse.
+    #   Symmetric for long (mark < line × (1 - INVALID_PCT)).
+    #
+    #   Threshold: 2% default (configurable via cond.trigger.break_
+    #   threshold_atr if you treat atr as %). Stays tight to avoid
+    #   whipsaw but wide enough to let normal wick throughs through.
+    LINE_BROKEN_INVALID_PCT = 0.02   # 2%
+    try:
+        mark_for_check = await _fetch_market_price(cond.symbol)
+    except Exception:
+        mark_for_check = None
+    if mark_for_check and mark_for_check > 0 and line_now > 0:
+        if cond.order.direction == "short" and mark_for_check > line_now * (1 + LINE_BROKEN_INVALID_PCT):
+            # Price way above the line → support/resistance broke upward
+            # → short thesis is invalidated.
+            print(f"[watcher] {cond.symbol} short line-broken: mark={mark_for_check:.6f} "
+                  f"> line*1.02={line_now * 1.02:.6f}, cancelling cond", flush=True)
+            try:
+                # Cancel Bitget plan first
+                from server.execution.live_adapter import LiveExecutionAdapter
+                adapter2 = LiveExecutionAdapter()
+                if adapter2.has_api_keys() and cond.exchange_order_id:
+                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+                    if not _cr.get("ok"):
+                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+            except Exception as exc:
+                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
+            _store.set_status(cond.conditional_id, "cancelled",
+                              reason=f"line broken upward, short thesis dead (mark {mark_for_check:.6f} > line {line_now:.6f} × 1.02)")
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="line_broken",
+                price=mark_for_check, line_price=line_now,
+                message=f"SHORT invalidated: mark {mark_for_check:.6f} broke above line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
+            ))
+            # Auto-reverse if configured (flip to LONG at the same line)
+            if cond.order.reverse_enabled:
+                try:
+                    await _spawn_reverse_conditional(cond, reason="line_broken_upward")
+                except Exception as exc:
+                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+            return
+        elif cond.order.direction == "long" and mark_for_check < line_now * (1 - LINE_BROKEN_INVALID_PCT):
+            print(f"[watcher] {cond.symbol} long line-broken: mark={mark_for_check:.6f} "
+                  f"< line*0.98={line_now * 0.98:.6f}, cancelling cond", flush=True)
+            try:
+                from server.execution.live_adapter import LiveExecutionAdapter
+                adapter2 = LiveExecutionAdapter()
+                if adapter2.has_api_keys() and cond.exchange_order_id:
+                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+                    if not _cr.get("ok"):
+                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
+            except Exception as exc:
+                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
+            _store.set_status(cond.conditional_id, "cancelled",
+                              reason=f"line broken downward, long thesis dead (mark {mark_for_check:.6f} < line {line_now:.6f} × 0.98)")
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="line_broken",
+                price=mark_for_check, line_price=line_now,
+                message=f"LONG invalidated: mark {mark_for_check:.6f} broke below line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
+            ))
+            if cond.order.reverse_enabled:
+                try:
+                    await _spawn_reverse_conditional(cond, reason="line_broken_downward")
+                except Exception as exc:
+                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+            return
 
     # Re-apply the original LINE-RELATIVE percentages so each replan tracks
     # the new line price exactly. pct-only — legacy points path deleted.
@@ -1312,20 +1654,46 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         risk = new_stop - new_trigger
         new_tp = new_trigger - risk * rr
 
-    # Re-use fill_qty from the original submit. Recomputing would require
-    # an async call (leverage path fetches equity); at replan time we want
-    # to track the SAME position size the trader committed to, not a
-    # fresh one sized against moved equity.
-    if cond.fill_qty and cond.fill_qty > 0:
-        new_qty = cond.fill_qty
-    elif cond.order.notional_usd and cond.order.notional_usd > 0:
-        new_qty = cond.order.notional_usd / new_trigger
-    else:
-        _append_event(cond, ConditionalEvent(
-            ts=now, kind="exchange_error",
-            message="replan aborted: no fill_qty and no notional_usd to re-derive size",
-        ))
-        return
+    # qty logic — user 2026-04-22 spec: "百分比策略的仓位 USD 应该跟着账户
+    # 余额变化. 比如我平仓, 账户余额变了, 挂单的 qty 就应跟着涨/跌."
+    #
+    # - equity_pct mode: recompute qty from CURRENT account equity every
+    #   replan, so size tracks equity as positions close or open elsewhere.
+    # - fixed notional_usd mode: keep original qty (notional/new_trigger).
+    #
+    # Leverage: if set, notional = equity × pct × leverage.
+    new_qty = 0.0
+    equity_pct = float(cond.order.equity_pct or 0)
+    leverage = float(cond.order.leverage or 0)
+    if equity_pct > 0:
+        # Dynamic resize on every replan
+        try:
+            from server.execution.live_adapter import LiveExecutionAdapter
+            adapter = LiveExecutionAdapter()
+            if adapter.has_api_keys():
+                acct = await adapter.get_live_account_status(mode=cond.order.exchange_mode)
+                equity = float(acct.get("total_equity") or acct.get("equity") or 0)
+                if equity > 0:
+                    lev = leverage if leverage > 0 else 1.0
+                    notional = equity * (equity_pct / 100.0) * lev
+                    new_qty = notional / new_trigger
+                    print(f"[replan] {cond.symbol} dynamic resize: equity=${equity:.2f} "
+                          f"× {equity_pct}% × {lev}x = ${notional:.2f} → qty {new_qty:.6f}", flush=True)
+        except Exception as exc:
+            print(f"[replan] equity fetch err {cond.symbol}: {exc}", flush=True)
+
+    if new_qty <= 0:
+        # Fallback: preserve original qty
+        if cond.fill_qty and cond.fill_qty > 0:
+            new_qty = cond.fill_qty
+        elif cond.order.notional_usd and cond.order.notional_usd > 0:
+            new_qty = cond.order.notional_usd / new_trigger
+        else:
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="exchange_error",
+                message="replan aborted: no fill_qty/notional_usd/equity_pct to re-derive size",
+            ))
+            return
 
     # Build a fresh OrderIntent with new prices. Keep it as a Bitget
     # trigger-market plan order so it does not reserve regular order margin
@@ -1353,9 +1721,17 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     )
     place = await adapter.submit_live_plan_entry(intent, mode=cond.order.exchange_mode, trigger_price=float(new_trigger))
     if place.get("ok"):
-        cond.exchange_order_id = place.get("exchange_order_id") or ""
+        new_oid = place.get("exchange_order_id") or ""
+        cond.exchange_order_id = new_oid
         cond.fill_price = float(new_trigger)
         cond.last_poll_ts = now
+        # Seed the cache with new_oid so a force-replan firing within
+        # 3s (TTL) sees our plan as pending. We do NOT invalidate the
+        # whole cache — other conds' oids on the same mode would be
+        # lost until next refetch, causing false "plan gone" skips for
+        # them. Old oid may linger 3s but it's harmless: cond.exchange
+        # _order_id is now new_oid, so the check targets new_oid only.
+        _add_pending_oid_to_cache(cond.order.exchange_mode, new_oid)
         try:
             latest = _store.get(cond.conditional_id)
             if latest is not None:

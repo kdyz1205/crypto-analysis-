@@ -115,6 +115,15 @@ def _auto_poll_seconds(timeframe: str) -> int:
 
 
 def _project_manual_line_price(drawing, ts: int) -> float:
+    """Project a manual drawing's price at timestamp `ts`.
+
+    Uses LOG interpolation to match lightweight-charts' visual rendering
+    when the chart is in Log mode (our default). A straight line drawn
+    between 2 points on a log-scale axis = constant growth rate in price
+    space. Linear-in-price interpolation would be 0.47% off on typical
+    small-cap slopes (user report 2026-04-21 BAS/4h).
+    """
+    import math
     span = int(drawing.t_end) - int(drawing.t_start)
     if span <= 0:
         return float(drawing.price_start)
@@ -122,8 +131,14 @@ def _project_manual_line_price(drawing, ts: int) -> float:
         return float(drawing.price_start)
     if ts >= int(drawing.t_end) and not bool(getattr(drawing, "extend_right", True)):
         return float(drawing.price_end)
-    slope = (float(drawing.price_end) - float(drawing.price_start)) / span
-    return float(drawing.price_start) + slope * (ts - int(drawing.t_start))
+    p_start = float(drawing.price_start)
+    p_end = float(drawing.price_end)
+    if p_start <= 0 or p_end <= 0:
+        # Fallback to linear for degenerate cases
+        slope = (p_end - p_start) / span
+        return p_start + slope * (ts - int(drawing.t_start))
+    ratio = (ts - int(drawing.t_start)) / span
+    return math.exp(math.log(p_start) + ratio * (math.log(p_end) - math.log(p_start)))
 
 
 @router.post("/conditionals")
@@ -332,16 +347,15 @@ class PlaceLineOrderReq(BaseModel):
     manual_line_id: str
     direction: Literal["long", "short"]
     kind: Literal["bounce", "break"] = "bounce"
-    # Single line-relative distance. Entry is line +/- tolerance_pct.
-    # Stop sits just beyond the line so a wick has to cross it by a tiny
-    # amount before the trade is invalidated.
     tolerance_pct: float = 0.1
-    # Updated 2026-04-20 per user spec: SL sits at trendline + small buffer
-    # (0.03-0.05%). 0.01% was too tight — a single tick crossed it before the
-    # line itself was actually broken, producing instant-stop losses.
     stop_offset_pct: float = 0.04
     size_usdt: float = Field(..., gt=0, description="Notional to commit, in USDT")
     leverage: int = Field(5, ge=1, le=100)
+    # User 2026-04-22: if equity_pct > 0, store it so replan can
+    # dynamically resize qty as account equity changes. Frontend sends
+    # whichever mode user chose. size_usdt is still authoritative for
+    # the INITIAL placement (computed client-side from current equity).
+    equity_pct: float | None = None
     mode: Literal["demo", "live"] = "live"
     rr_target: float = 2.0
     notify_tg: bool = Field(True, description="Send TG alert on trigger")
@@ -534,11 +548,21 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Project the line to NOW using the drawing extension flags. Most user
-    # lines extend right, so a live plan order must track the extended line
-    # instead of freezing at price_end after the second anchor.
+    # Project the line to the CURRENT TF BAR'S OPEN time (not the exact
+    # click moment) so the ref_price matches what the user visually sees
+    # the line crossing at the current candle. User report 2026-04-21:
+    # "线交叉点应该是 0.010185" (bar-open snapshot) vs system's 0.01037
+    # (exact click moment); 2.5h of slope-drift difference inside a 4h
+    # bar.
+    # Uses the same helper (_TF_SECONDS in conditionals.types) that
+    # watcher._maybe_replan uses, so placement + replan see identical
+    # line values. Applies to every TF (1m / 3m / 5m / 15m / 30m / 1h
+    # / 2h / 4h / 6h / 12h / 1d / 1w).
+    from server.conditionals.types import _TF_SECONDS
     now_ts_ = now_ts()
-    line_now = _project_manual_line_price(drawing, now_ts_)
+    _tf_sec = _TF_SECONDS.get(drawing.timeframe, 3600)
+    bar_open_ts = (int(now_ts_) // _tf_sec) * _tf_sec
+    line_now = _project_manual_line_price(drawing, bar_open_ts)
     ref_price = float(line_now)
     if ref_price <= 0:
         raise HTTPException(
@@ -551,21 +575,38 @@ async def api_place_line_order(req: PlaceLineOrderReq):
 
     # Trust the user's direction. Only safety guard: reject obviously stale
     # lines far away from the current mark, using ATR as the scale.
+    # 2026-04-22: wrap in wait_for(1.5s) so a slow Bitget ticker doesn't
+    # stall the whole placement. User reported mark_ms=6842 when Bitget
+    # throttled → popup timed out after 30s → user retried 3 times →
+    # 3 duplicate orders. Mark is only used for a 100× sanity guard;
+    # skipping it is fine if Bitget is slow.
     timing_start = time.perf_counter()
-    mark_price = await _fetch_bitget_mark_price(drawing.symbol)
+    mark_price = None
+    try:
+        mark_price = await asyncio.wait_for(
+            _fetch_bitget_mark_price(drawing.symbol),
+            timeout=1.5,
+        )
+    except asyncio.TimeoutError:
+        print(f"[place-line-order] mark fetch >1.5s, proceeding without sanity guard for {drawing.symbol}", flush=True)
     mark_elapsed_ms = int((time.perf_counter() - timing_start) * 1000)
-    if mark_price and mark_price > 0:
-        gap_pct = abs(ref_price - mark_price) / mark_price * 100
-        # Keep the live order path fast. Full ATR/BB analysis belongs in the
-        # preview/analyze path; here a fixed stale-line guard is enough.
-        threshold = 10.0
-        if gap_pct > threshold:
-            raise HTTPException(
-                400,
-                f"line_too_far_from_mark: line@{ref_price:.4f} vs mark@{mark_price:.4f} "
-                f"({gap_pct:.1f}% away, threshold {threshold:.1f}%). "
-                f"refusing to place obviously stale order.",
+    # Distance-from-mark check REMOVED 2026-04-21. User strategy depends on
+    # placing orders at structurally-important levels that can be 20-50%+
+    # away from current price — the whole EDGE is "wait for price to come
+    # to the line". Iterations 10% → 25% → removed. Only keep a minimal
+    # sanity guard against truly broken inputs (price ≤ 0, or > 100×
+    # mark which suggests a UI coordinate-transform bug).
+    if mark_price and mark_price > 0 and ref_price > 0:
+        ratio = ref_price / mark_price
+        if ratio > 100 or ratio < 0.01:
+            msg = (
+                f"line_price_bug_suspected: {drawing.symbol} "
+                f"line@{ref_price:.4f} vs mark@{mark_price:.4f} "
+                f"(ratio={ratio:.2f}×). This is 100× off — looks like "
+                f"a drawing-coord bug. Redraw the line."
             )
+            print(f"[place-line-order] REJECTED: {msg}", flush=True)
+            raise HTTPException(400, msg)
 
     print(
         f"[place-line-order] line={drawing.price_start:.4f}->{drawing.price_end:.4f} "
@@ -573,19 +614,60 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         f"mark_ms={mark_elapsed_ms}"
     )
 
-    # Compute prices from the projected line:
-    # LONG:  trigger = line * (1 + buffer), stop = line * (1 - stop_offset)
-    # SHORT: trigger = line * (1 - buffer), stop = line * (1 + stop_offset)
+    # Compute prices from the bar-open-projected line:
+    # LONG:  entry just ABOVE the line (waiting for price to pull down
+    #        to the level from above; Bitget plan fires on mark ≤ trigger),
+    #        stop BELOW the line (break-through kill switch).
+    # SHORT: entry just BELOW the line (rejection from above), stop ABOVE.
+    #
+    # NOTE: bounce vs breakout order_kind is stored but does NOT flip these
+    # formulas. The formulas are MODE-AGNOSTIC because Bitget's trigger-
+    # market plan naturally handles both semantics via the trigger price's
+    # position relative to current mark:
+    #   - mark > trigger + a LONG plan → "wait for dip" (bounce long)
+    #   - mark < trigger + a LONG plan → "wait for break up" (breakout long)
+    # Same plan body, different interpretations. The user sets trigger via
+    # (line × buffer), Bitget figures out the rest.
     offset = req.tolerance_pct / 100.0
     stop_offset = max(0.0, req.stop_offset_pct) / 100.0
     if req.direction == "long":
         entry_price = ref_price * (1.0 + offset)
         stop_price = ref_price * (1.0 - stop_offset)
-        risk = entry_price - stop_price
-        tp_price = entry_price + risk * req.rr_target
     else:
         entry_price = ref_price * (1.0 - offset)
         stop_price = ref_price * (1.0 + stop_offset)
+
+    # SL distance cap: use USER's configured total (buffer + stop).
+    # Normal bounce fill: entry ≈ trigger, SL at line - stop, distance
+    # = buffer + stop → cap not triggered (SL already within user's setup).
+    # Breakout fill: market blew past trigger, entry > trigger (long)
+    # or < trigger (short). SL still at line-based but distance from
+    # ACTUAL entry can be 3-5% — WAY over what user set (user report
+    # BAS: setup 1.1%, actual stop 3.5% because breakout fill).
+    # Fix: cap SL at entry × (1 ∓ user's buffer+stop %) so the real
+    # stop distance matches the user's intended risk regardless of
+    # fill quality.
+    max_sl_pct = (req.tolerance_pct + max(0.0, req.stop_offset_pct)) / 100.0
+    if req.direction == "long":
+        min_sl_cap = entry_price * (1.0 - max_sl_pct)
+        if stop_price < min_sl_cap:
+            print(f"[place-line-order] SL distance-capped at setup total: "
+                  f"line-based {stop_price:.6f} → {min_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
+            stop_price = min_sl_cap
+    else:
+        max_sl_cap = entry_price * (1.0 + max_sl_pct)
+        if stop_price > max_sl_cap:
+            print(f"[place-line-order] SL distance-capped at setup total: "
+                  f"line-based {stop_price:.6f} → {max_sl_cap:.6f} "
+                  f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
+            stop_price = max_sl_cap
+
+    # Recompute TP using capped risk (so TP adjusts too)
+    if req.direction == "long":
+        risk = entry_price - stop_price
+        tp_price = entry_price + risk * req.rr_target
+    else:
         risk = stop_price - entry_price
         tp_price = entry_price - risk * req.rr_target
 
@@ -693,6 +775,10 @@ async def api_place_line_order(req: PlaceLineOrderReq):
             rr_target=req.rr_target,
             tp_price=tp_price,
             notional_usd=req.size_usdt,
+            # equity_pct + leverage stored so replan can dynamically
+            # resize qty as equity changes. User 2026-04-22 spec.
+            equity_pct=req.equity_pct if (req.equity_pct and req.equity_pct > 0) else None,
+            leverage=float(req.leverage) if req.leverage else None,
             submit_to_exchange=True,
             exchange_mode=req.mode,
             reverse_enabled=req.reverse_enabled,
@@ -722,6 +808,14 @@ async def api_place_line_order(req: PlaceLineOrderReq):
 
     try:
         _store.create(cond)
+        # Seed watcher's pending-oids cache with the brand-new oid so the
+        # next replan tick doesn't mistakenly skip this cond (within 3s
+        # TTL window) thinking "plan not pending".
+        try:
+            from ..conditionals.watcher import _add_pending_oid_to_cache
+            _add_pending_oid_to_cache(req.mode, str(result.get("exchange_order_id") or ""))
+        except Exception:
+            pass
         _store.append_event(cond.conditional_id, ConditionalEvent(
             ts=now_ts(),
             kind="exchange_submitted",

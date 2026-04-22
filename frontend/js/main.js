@@ -1,6 +1,7 @@
 // frontend/js/main.js — clean boot: UI shell first, data async
 
 import { initChart, loadCurrent, startLiveUpdates, toggleMAOverlays, toggleWyckoffOverlay, getChart, getCandleSeries } from './workbench/chart.js';
+import { toggleIndicatorPanel } from './workbench/indicators/indicator_panel.js';
 import { initManualTrendlineController } from './workbench/drawings/manual_trendline_controller.js';
 import { initChartDrawing, startTrendlineTool } from './workbench/drawings/chart_drawing.js';
 import { initDrawToolbar } from './workbench/drawings/draw_toolbar.js';
@@ -175,14 +176,20 @@ function wireHeaderButtons() {
     loadView('factory');
   };
 
-  on('#v2-ma-toggle', 'click', () => {
-    const visible = toggleMAOverlays();
-    $('#v2-ma-toggle')?.classList.toggle('active', visible);
-  });
+  // MA button removed 2026-04-20 — migrated into unified indicator panel.
+  // (Old handler kept out; v2.html no longer has #v2-ma-toggle.)
 
-  on('#v2-wyckoff-toggle', 'click', () => {
-    toggleWyckoffOverlay();
-    $('#v2-wyckoff-toggle')?.classList.toggle('active');
+  // 2026-04-20: Legacy MA / WYC buttons replaced by a unified indicator
+  // panel. Clicking "⚙ 指标" opens a dropdown listing every indicator
+  // (MA Ribbon, Bollinger, Wyckoff, RSI, MACD, Volume MA, ATR) with
+  // per-row visibility + delete + add-new catalog.
+  on('#v2-indicator-btn', 'click', () => {
+    const anchor = $('#v2-indicator-btn');
+    toggleIndicatorPanel(anchor, () => {
+      // Re-render indicators on any panel change — cheap because chart
+      // already has candle data loaded.
+      loadCurrent(false).catch(() => {});
+    });
   });
 
   const scaleToggle = $('#v2-scale-toggle');

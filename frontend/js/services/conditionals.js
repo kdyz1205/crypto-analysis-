@@ -52,9 +52,14 @@ export async function deleteConditional(id) {
  * the exchange-side trigger as the sloped line projection changes.
  */
 export async function placeLineOrder(payload) {
+  // Backend: set-leverage (~2-3s) + submit_live_plan_entry (~3-5s) +
+  // store persist = 5-12s typical, can spike to 20s+ on Bitget slow
+  // periods. Short timeout caused "signal is aborted without reason"
+  // when order WAS placed successfully — user saw error, Bitget had
+  // the order, watcher replanned it. Bump to 30s. User 2026-04-21.
   return fetchJson('/api/drawings/manual/place-line-order', {
     method: 'POST',
     body: payload,
-    timeout: 12000,
+    timeout: 30000,
   });
 }

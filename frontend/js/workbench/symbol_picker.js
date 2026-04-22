@@ -40,23 +40,37 @@ let _sortKey = 'volume_usdt';    // current sort column
 let _sortDir = 'desc';           // 'asc' | 'desc'
 
 export async function initSymbolPicker(comboId = 'v2-symbol-combo') {
-  try {
-    const data = await marketSvc.getSymbolsExtended(TOP_N_DEFAULT);
-    _rows = Array.isArray(data) ? data : [];
-    _allSymbols = _rows.map((r) => r.symbol);
-    setAllSymbols(_allSymbols);
-  } catch (err) {
-    console.error('[symbol_picker] extended load failed, falling back to /api/symbols:', err);
+  const loadLegacyFallback = async (reason) => {
+    console.warn(`[symbol_picker] using /api/symbols fallback (${reason})`);
     try {
       const syms = await marketSvc.getSymbols();
       _allSymbols = Array.isArray(syms) ? syms : [];
       _rows = _allSymbols.map((s) => ({ symbol: s, last_price: 0, change24h: 0, volume_usdt: 0 }));
       setAllSymbols(_allSymbols);
     } catch (err2) {
-      console.error('[symbol_picker] fallback also failed:', err2);
+      console.error('[symbol_picker] legacy fallback also failed:', err2);
       _rows = [];
       _allSymbols = [];
     }
+  };
+
+  try {
+    const data = await marketSvc.getSymbolsExtended(TOP_N_DEFAULT);
+    const rows = Array.isArray(data) ? data : [];
+    // /api/symbols/extended returns [] with HTTP 200 when Bitget's ticker
+    // fetch hiccups (see server/routers/market.py). Treat empty-but-ok
+    // the same as thrown — user's picker must never render zero symbols.
+    // Caught by Codex review 2026-04-20.
+    if (rows.length === 0) {
+      await loadLegacyFallback('extended returned empty');
+    } else {
+      _rows = rows;
+      _allSymbols = _rows.map((r) => r.symbol);
+      setAllSymbols(_allSymbols);
+    }
+  } catch (err) {
+    console.error('[symbol_picker] extended load threw:', err);
+    await loadLegacyFallback('extended threw');
   }
 
   _combo = $('#' + comboId);
@@ -118,6 +132,8 @@ function open(query) {
       : _rows.filter((r) => r.symbol.includes(q));
   }
 
+  // Apply active filter preset (if backend screen endpoint returned matches)
+  filtered = _applyFilterToList(filtered);
   filtered = applySort(filtered);
   _currentList = filtered.slice(0, DROPDOWN_MAX_ROWS);
   _activeIdx = _currentList.length > 0 ? 0 : -1;
@@ -125,6 +141,17 @@ function open(query) {
   positionDropdown();
   _dropdown.hidden = false;
   _isOpen = true;
+
+  // Kick off filter refresh in background so next render has fresh
+  // screener results. Non-blocking.
+  void applyActiveFilter().then(() => {
+    if (_isOpen) {
+      const refilt = applySort(_applyFilterToList(_rows.filter((r) => !q || r.symbol.includes(q))));
+      _currentList = refilt.slice(0, DROPDOWN_MAX_ROWS);
+      _activeIdx = _currentList.length > 0 ? 0 : -1;
+      render();
+    }
+  });
 }
 
 function applySort(list) {
@@ -157,9 +184,11 @@ function positionDropdown() {
   if (!_dropdown || !_input) return;
   const r = _input.getBoundingClientRect();
   _dropdown.style.position = 'fixed';
-  _dropdown.style.top = `${r.bottom}px`;
+  _dropdown.style.top = `${r.bottom + 2}px`;
   _dropdown.style.left = `${r.left}px`;
-  _dropdown.style.width = `${Math.max(r.width, 520)}px`;
+  // Narrower — 420 instead of 520. Four columns still readable because
+  // volume / price are K-formatted and change24h is compact (+x.xx%).
+  _dropdown.style.width = `${Math.max(r.width, 420)}px`;
 }
 
 function sortIndicator(key) {
@@ -194,21 +223,76 @@ function fmtChange(c) {
   return `${sign}${pct.toFixed(2)}%`;
 }
 
+// ──────────────────────────────────────────────────────────────
+// Filter presets (user-defined screener rules — TradingView-like)
+// localStorage key: v2.picker.filters.v1
+//   { active_id, presets: [{ id, name, rules: [...] }] }
+// Each rule matches the symbol's ma/ema/slope/volume state.
+// For now only a small set of scannable rules — backend does the
+// actual evaluation via /api/symbols/screen (to be added next turn).
+// ──────────────────────────────────────────────────────────────
+const FILTERS_LS_KEY = 'v2.picker.filters.v1';
+
+function loadFilterPresets() {
+  try {
+    const raw = localStorage.getItem(FILTERS_LS_KEY);
+    if (!raw) return _seedFilterPresets();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.presets) || parsed.presets.length === 0) return _seedFilterPresets();
+    return parsed;
+  } catch {
+    return _seedFilterPresets();
+  }
+}
+function _seedFilterPresets() {
+  // 3 sensible defaults matching user's TradingView screenshots:
+  const seed = {
+    active_id: 'all',
+    presets: [
+      { id: 'all',        name: '全部',              rules: [] },
+      { id: 'bull_4h',    name: '4h EMA21>MA55 多头', rules: [{ tf: '4h', kind: 'ema_above', fast: 21, slow: 55 }] },
+      { id: 'bull_1h',    name: '1h 多头周期',         rules: [{ tf: '1h', kind: 'ema_above', fast: 8, slow: 21 }] },
+      { id: 'weekly_bull',name: '周线 EMA21>MA55 多头',rules: [{ tf: '1w', kind: 'ema_above', fast: 21, slow: 55 }] },
+    ],
+  };
+  try { localStorage.setItem(FILTERS_LS_KEY, JSON.stringify(seed)); } catch {}
+  return seed;
+}
+function saveFilterPresets(state) {
+  try { localStorage.setItem(FILTERS_LS_KEY, JSON.stringify(state)); } catch {}
+}
+
+function renderFilterBar() {
+  const state = loadFilterPresets();
+  const chips = state.presets.map((p) => {
+    const active = p.id === state.active_id;
+    return `<div class="sp-filter-chip ${active ? 'is-active' : ''}" data-filter-id="${esc(p.id)}">${esc(p.name)}</div>`;
+  }).join('');
+  return `
+    <div class="sp-filter-bar">
+      ${chips}
+      <div class="sp-filter-chip sp-filter-add" data-filter-id="__configure__" title="管理 filter">⚙</div>
+    </div>
+  `;
+}
+
 function render() {
   if (!_dropdown) return;
 
+  const filterBar = renderFilterBar();
   const header = `
     <div class="sp-head">
       <div class="sp-col sp-col-sym sp-h" data-sort="symbol">币种 ${sortIndicator('symbol')}</div>
-      <div class="sp-col sp-col-vol sp-h" data-sort="volume_usdt">交易量 ${sortIndicator('volume_usdt')}</div>
-      <div class="sp-col sp-col-price sp-h" data-sort="last_price">最新价 ${sortIndicator('last_price')}</div>
-      <div class="sp-col sp-col-chg sp-h" data-sort="change24h">24小时涨跌幅 ${sortIndicator('change24h')}</div>
+      <div class="sp-col sp-col-vol sp-h" data-sort="volume_usdt">量 ${sortIndicator('volume_usdt')}</div>
+      <div class="sp-col sp-col-price sp-h" data-sort="last_price">价 ${sortIndicator('last_price')}</div>
+      <div class="sp-col sp-col-chg sp-h" data-sort="change24h">24h ${sortIndicator('change24h')}</div>
     </div>
   `;
 
   if (_currentList.length === 0) {
-    _dropdown.innerHTML = header + `<div class="sp-empty">(no match)</div>`;
+    _dropdown.innerHTML = filterBar + header + `<div class="sp-empty">(no match)</div>`;
     wireHeader();
+    wireFilterBar();
     return;
   }
 
@@ -224,9 +308,10 @@ function render() {
       </div>`;
   }).join('');
 
-  _dropdown.innerHTML = header + `<div class="sp-body">${rows}</div>`;
+  _dropdown.innerHTML = filterBar + header + `<div class="sp-body">${rows}</div>`;
 
   wireHeader();
+  wireFilterBar();
   _dropdown.querySelectorAll('[data-sym]').forEach((el) => {
     el.addEventListener('mousedown', (ev) => {
       ev.preventDefault();
@@ -242,10 +327,108 @@ function render() {
   });
 }
 
-function wireHeader() {
-  _dropdown.querySelectorAll('.sp-h[data-sort]').forEach((el) => {
+function wireFilterBar() {
+  _dropdown.querySelectorAll('[data-filter-id]').forEach((el) => {
     el.addEventListener('mousedown', (ev) => {
       ev.preventDefault();
+      const id = el.dataset.filterId;
+      if (id === '__configure__') {
+        openFilterConfigureModal();
+        return;
+      }
+      const state = loadFilterPresets();
+      state.active_id = id;
+      saveFilterPresets(state);
+      applyActiveFilter();
+      render();
+    });
+  });
+}
+
+let _matchedSymbols = null;   // null = no filter active; Set otherwise
+
+async function applyActiveFilter() {
+  const state = loadFilterPresets();
+  const active = state.presets.find((p) => p.id === state.active_id);
+  if (!active || active.rules.length === 0) {
+    _matchedSymbols = null;    // no filter → all pass
+    return;
+  }
+  try {
+    const { fetchJson } = await import('../util/fetch.js');
+    const resp = await fetchJson('/api/symbols/screen', {
+      method: 'POST',
+      body: { rules: active.rules },
+      timeout: 20000,
+    });
+    _matchedSymbols = new Set((resp.matched || []).map((s) => String(s).toUpperCase()));
+  } catch (err) {
+    console.warn('[picker] filter /screen endpoint not ready', err);
+    _matchedSymbols = null;    // fallback: no filter applied
+  }
+}
+
+function _applyFilterToList(list) {
+  if (!_matchedSymbols) return list;
+  return list.filter((r) => _matchedSymbols.has(String(r.symbol || '').toUpperCase()));
+}
+
+function openFilterConfigureModal() {
+  // Lightweight inline editor — reuses prompt() for now; a full UI
+  // can come later if user wants. Shows filter list + delete + add.
+  const state = loadFilterPresets();
+  const menu = state.presets.map((p, i) => `${i}. ${p.name} (${p.rules.length} 条规则)`).join('\n');
+  const action = prompt(
+    '管理 filter:\n' + menu + '\n\n' +
+    '输入:\n' +
+    '  数字 → 删除该 filter\n' +
+    '  + 名字|TF|kind|fast|slow  → 新建 (例: + 15m_cross|15m|ema_above|5|21)\n' +
+    '  空 → 取消',
+    ''
+  );
+  if (!action) return;
+  if (/^\d+$/.test(action.trim())) {
+    const idx = parseInt(action.trim(), 10);
+    if (idx >= 0 && idx < state.presets.length) {
+      const removed = state.presets.splice(idx, 1)[0];
+      if (state.active_id === removed.id) state.active_id = 'all';
+      saveFilterPresets(state);
+      render();
+    }
+    return;
+  }
+  if (action.startsWith('+')) {
+    const parts = action.slice(1).trim().split('|').map((s) => s.trim());
+    if (parts.length < 5) { alert('格式: + 名字|TF|kind|fast|slow'); return; }
+    const [name, tf, kind, fast, slow] = parts;
+    const id = 'f_' + Date.now().toString(36);
+    state.presets.push({
+      id, name,
+      rules: [{ tf, kind, fast: Number(fast), slow: Number(slow) }],
+    });
+    saveFilterPresets(state);
+    render();
+  }
+}
+
+function wireHeader() {
+  _dropdown.querySelectorAll('.sp-h[data-sort]').forEach((el) => {
+    // Bug 2026-04-20: mousedown → cycleSort → render() replaces
+    // innerHTML synchronously, so the element the user clicked is
+    // DETACHED from the DOM before the document-level outside-click
+    // handler runs. That handler then sees a target no longer inside
+    // _dropdown and closes the picker. Fixed by:
+    //  (a) stopping propagation so the document handler never fires
+    //  (b) using `click` (fires after mouseup) instead of mousedown,
+    //      so the input's 150ms blur timeout is already waiting and
+    //      close() from blur is benign
+    el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();  // don't steal focus from the input
+      ev.stopPropagation();
+    });
+    el.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
       cycleSort(el.dataset.sort);
     });
   });
@@ -334,57 +517,105 @@ function injectStyles() {
     #v2-symbol-dropdown {
       background: #0e141f;
       border: 1px solid #2a3548;
-      border-radius: 6px;
-      box-shadow: 0 12px 32px rgba(0,0,0,0.6);
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.55);
       color: #d8dde8;
-      font-size: 12px;
-      max-height: 520px;
+      font-size: 11.5px;
+      max-height: 440px;
       overflow: hidden;
       z-index: 10000;
     }
     .sp-head {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
-      background: #161e2f;
-      border-bottom: 1px solid #2a3548;
-      font-size: 11px;
+      grid-template-columns: 1.3fr 1fr 1fr 0.9fr;
+      background: #11182a;
+      border-bottom: 1px solid #1e2638;
+      font-size: 10.5px;
       font-weight: 600;
-      color: #8a95a6;
+      color: #7a8599;
+      letter-spacing: 0.02em;
       position: sticky; top: 0; z-index: 1;
     }
-    .sp-head .sp-col { padding: 8px 10px; user-select: none; }
-    .sp-head .sp-h { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+    .sp-head .sp-col { padding: 6px 10px; user-select: none; }
+    .sp-head .sp-h { cursor: pointer; display: flex; align-items: center; gap: 4px; transition: color 0.12s; }
     .sp-head .sp-h:hover { color: #d8dde8; }
-    .sp-sort { font-size: 9px; line-height: 1; }
-    .sp-sort-idle { opacity: 0.35; }
+    .sp-sort { font-size: 8.5px; line-height: 1; }
+    .sp-sort-idle { opacity: 0.3; }
     .sp-sort-active { color: #38bdf8; opacity: 1; }
     .sp-body {
-      max-height: 460px;
+      max-height: 390px;
       overflow-y: auto;
     }
     .sp-row {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
-      border-bottom: 1px solid #141a26;
+      grid-template-columns: 1.3fr 1fr 1fr 0.9fr;
+      border-bottom: 1px solid #121827;
       cursor: pointer;
+      transition: background 0.08s;
     }
     .sp-row:hover, .sp-row.is-active {
-      background: #1d2537;
+      background: #1a2335;
     }
     .sp-row .sp-col {
-      padding: 6px 10px;
+      padding: 4.5px 10px;
       font-variant-numeric: tabular-nums;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .sp-col-sym { font-weight: 600; color: #e8edf5; }
-    .sp-col-vol { color: #a3b0c4; text-align: right; }
+    .sp-col-vol { color: #94a1b7; text-align: right; }
     .sp-col-price { color: #e8edf5; text-align: right; }
-    .sp-col-chg { text-align: right; font-weight: 600; }
+    .sp-col-chg { text-align: right; font-weight: 600; font-size: 11px; }
     .sp-up { color: #26a69a; }
     .sp-dn { color: #ef5350; }
-    .sp-empty { padding: 12px; text-align: center; color: #6b7889; }
+    .sp-empty { padding: 12px; text-align: center; color: #6b7889; font-size: 11px; }
+
+    /* Filter bar — TradingView-like chips above the symbol table.
+       User 2026-04-22: "把交易量/最新价/涨跌幅 做小, 单独挪 filter
+       配置区出来". Chips are compact, click switches filter, ⚙ opens
+       inline configure modal. */
+    .sp-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 6px 8px;
+      background: #0b121f;
+      border-bottom: 1px solid #1e2638;
+    }
+    .sp-filter-chip {
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 500;
+      background: #141c2d;
+      color: #94a1b7;
+      border: 1px solid #1e2638;
+      border-radius: 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.1s;
+      white-space: nowrap;
+    }
+    .sp-filter-chip:hover {
+      background: #1a2335;
+      color: #d8dde8;
+      border-color: #38bdf8;
+    }
+    .sp-filter-chip.is-active {
+      background: #1e3a5c;
+      color: #38bdf8;
+      border-color: #38bdf8;
+      font-weight: 600;
+    }
+    .sp-filter-chip.sp-filter-add {
+      margin-left: auto;
+      color: #6b7889;
+      background: transparent;
+    }
+    .sp-filter-chip.sp-filter-add:hover {
+      color: #38bdf8;
+      background: #141c2d;
+    }
   `;
   document.head.appendChild(el);
 }
