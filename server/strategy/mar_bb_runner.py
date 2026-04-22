@@ -2621,10 +2621,15 @@ async def _maintenance_only_loop() -> None:
 
 def start_maintenance_only() -> dict:
     """Boot the always-on trailing-SL loop. Idempotent."""
-    global _maintenance_only_task, _trailing_scheduler_task, _runner_started_ts
+    global _maintenance_only_task, _trailing_scheduler_task, _runner_started_ts, _running
     if _maintenance_only_task is not None and not _maintenance_only_task.done():
         return {"ok": True, "already_running": True}
     _load_trendline_params()
+    # _running flag gates the trailing_scheduler_loop and maintenance_
+    # only_loop. Without setting it here both loops exit immediately.
+    # Set to True only if not already set by the full runner.
+    if not _running:
+        _running = True
     if _runner_started_ts == 0:
         _runner_started_ts = time.time()
     _maintenance_only_task = asyncio.create_task(
