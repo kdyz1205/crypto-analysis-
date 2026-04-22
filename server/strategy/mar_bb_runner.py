@@ -44,6 +44,7 @@ from research.trendline_strategy import (
 # Module-level state
 _task: asyncio.Task | None = None
 _maintenance_task: asyncio.Task | None = None
+_trailing_scheduler_task: asyncio.Task | None = None
 _running = False
 _runner_started_ts: float = 0.0  # set by start_runner; used to skip replay-feeding the circuit breaker with historical closes
 _state_lock = asyncio.Lock()
@@ -2395,6 +2396,8 @@ async def _loop() -> None:
 
 
 async def _maintenance_loop() -> None:
+    """Fast loop (10s) for plan-order movement + fill detection.
+    Trailing SL actually fires on bar boundary via _trailing_scheduler_loop."""
     print("[maintenance] trendline maintenance loop started", flush=True)
     try:
         while _running:
@@ -2413,10 +2416,98 @@ async def _maintenance_loop() -> None:
         print("[maintenance] trendline maintenance loop exited", flush=True)
 
 
+_TF_SECONDS_MAP = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900,
+    "30m": 1800, "1h": 3600, "2h": 7200, "4h": 14400,
+    "6h": 21600, "12h": 43200, "1d": 86400, "1w": 604800,
+}
+
+
+def _seconds_until_next_bar_for_tfs(tfs: set[str]) -> float | None:
+    """Seconds until the earliest next bar boundary among given TFs.
+    Returns None if no TFs. Settle buffer +1s so Bitget's candle has rolled."""
+    import time as _t
+    if not tfs:
+        return None
+    now = _t.time()
+    deadlines = []
+    for tf in tfs:
+        bar_sec = _TF_SECONDS_MAP.get(tf)
+        if bar_sec:
+            next_boundary = (int(now) // bar_sec + 1) * bar_sec
+            deadlines.append(next_boundary - now + 1.0)  # +1s settle
+    return min(deadlines) if deadlines else None
+
+
+async def _trailing_scheduler_loop() -> None:
+    """Precise bar-boundary scheduler for trailing SL updates.
+
+    User 2026-04-22 spec: "12:30 买的 1h 单, 应该在 12:59:59 等着,
+    然后 13:00:01 更新 SL 跟着线移动". NOT a 10s / 1m polling loop.
+
+    Behavior:
+      1. Find all active trailing positions → get their unique TFs
+      2. Compute min(next_bar_boundary_across_all_tfs) + 1s settle
+      3. Sleep that long
+      4. Run trailing update (cheap — skips positions whose bar
+         didn't roll)
+      5. Repeat
+
+    No positions → sleep 60s and re-check. Cheap idle.
+    Positions on 4h → sleep up to 4h and wake precisely at boundary.
+    Mixed 1h + 4h → wakes at 1h boundaries (wins min), handles 4h
+    too on the hour that coincides.
+    """
+    print("[trailing_sched] bar-boundary scheduler started", flush=True)
+    try:
+        while _running:
+            try:
+                # Collect unique TFs from active positions
+                active_tfs: set[str] = set()
+                for params in _trendline_params.values():
+                    tf = str(params.get("tf", "") or "")
+                    if tf in _TF_SECONDS_MAP:
+                        active_tfs.add(tf)
+
+                if not active_tfs:
+                    # No trailing positions → idle poll every 60s
+                    await asyncio.sleep(60)
+                    continue
+
+                sleep_s = _seconds_until_next_bar_for_tfs(active_tfs)
+                if sleep_s is None or sleep_s <= 0:
+                    sleep_s = 1.0
+                # Cap maximum single sleep at 4h so the scheduler
+                # re-evaluates if new positions on shorter TFs appear.
+                sleep_s = min(sleep_s, 14400.0)
+                print(f"[trailing_sched] sleeping {sleep_s:.1f}s until next bar boundary "
+                      f"(active TFs: {sorted(active_tfs)})", flush=True)
+                await asyncio.sleep(sleep_s)
+
+                # Fire trailing update NOW — bar just opened
+                try:
+                    cfg = {**DEFAULT_RUNNER_CFG, **(_state.config or {})}
+                    n = await _update_trailing_stops(cfg)
+                    print(f"[trailing_sched] bar-boundary update: {n} SL change(s)", flush=True)
+                except Exception as exc:
+                    print(f"[trailing_sched] update err: {exc}", flush=True)
+                    traceback.print_exc()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                print(f"[trailing_sched] loop err: {exc}", flush=True)
+                traceback.print_exc()
+                await asyncio.sleep(10)  # back off on repeated errors
+    except asyncio.CancelledError:
+        print("[trailing_sched] bar-boundary scheduler cancelled", flush=True)
+    finally:
+        print("[trailing_sched] bar-boundary scheduler exited", flush=True)
+
+
 def start_runner(config: dict | None = None) -> dict:
     """Start the runner loop. Idempotent — returns current state if
     already running."""
-    global _task, _maintenance_task, _running, _runner_started_ts
+    global _task, _maintenance_task, _trailing_scheduler_task, _running, _runner_started_ts
     if _task is not None and not _task.done():
         return {"ok": True, "already_running": True, "state": get_state()}
     merged = {**DEFAULT_RUNNER_CFG, **(config or {})}
@@ -2424,26 +2515,24 @@ def start_runner(config: dict | None = None) -> dict:
     _state.last_error = ""
     _load_state()
     _running = True
-    # Stamp start time BEFORE spawning the loop so the replay-guard in
-    # record_close_outcome() can filter out historical close events that
-    # were fired during the pre-start window. Missing this assignment
-    # was found by Codex review 2026-04-20: started stayed 0.0 forever,
-    # so the 30-minute stale-event skip was the only protection and
-    # replayed losses could trip the indefinite consecutive-loss breaker
-    # during startup sync.
     _runner_started_ts = time.time()
     _task = asyncio.create_task(_loop(), name="mar_bb_runner")
     _maintenance_task = asyncio.create_task(_maintenance_loop(), name="trendline_maintenance")
+    # User 2026-04-22: precise bar-boundary trailing scheduler. Wakes
+    # up at each TF bar boundary +1s and fires SL update.
+    _trailing_scheduler_task = asyncio.create_task(_trailing_scheduler_loop(), name="trailing_scheduler")
     return {"ok": True, "started": True, "state": get_state()}
 
 
 def stop_runner() -> dict:
-    global _task, _maintenance_task, _running
+    global _task, _maintenance_task, _trailing_scheduler_task, _running
     _running = False
     if _task and not _task.done():
         _task.cancel()
     if _maintenance_task and not _maintenance_task.done():
         _maintenance_task.cancel()
+    if _trailing_scheduler_task and not _trailing_scheduler_task.done():
+        _trailing_scheduler_task.cancel()
     _state.status = "stopped"
     _save_state()
     return {"ok": True, "state": get_state()}
@@ -2531,25 +2620,24 @@ async def _maintenance_only_loop() -> None:
 
 
 def start_maintenance_only() -> dict:
-    """Boot the always-on trailing-SL loop. Idempotent.
-
-    Called from the FastAPI startup hook in `server/app.py` so trailing
-    works for any live position even when the user hasn't started the
-    scanner. Loads persisted `_trendline_params` from disk first.
-    """
-    global _maintenance_only_task, _runner_started_ts
+    """Boot the always-on trailing-SL loop. Idempotent."""
+    global _maintenance_only_task, _trailing_scheduler_task, _runner_started_ts
     if _maintenance_only_task is not None and not _maintenance_only_task.done():
         return {"ok": True, "already_running": True}
     _load_trendline_params()
-    # Mirror the stamp that start_runner() sets, so the replay-loss guard
-    # in record_close_outcome() works when the user never calls
-    # start_runner() (auto_start=False path).
     if _runner_started_ts == 0:
         _runner_started_ts = time.time()
     _maintenance_only_task = asyncio.create_task(
         _maintenance_only_loop(),
         name="trendline_maintenance_only",
     )
+    # Bar-boundary scheduler also boots here so trailing works when
+    # only the maintenance-only mode is on (not the full runner).
+    if _trailing_scheduler_task is None or _trailing_scheduler_task.done():
+        _trailing_scheduler_task = asyncio.create_task(
+            _trailing_scheduler_loop(),
+            name="trailing_scheduler",
+        )
     return {"ok": True, "started": True}
 
 
