@@ -155,25 +155,29 @@ function saveDefaults(values) {
 }
 
 let _modal = null;
-let _equityCache = { ts: 0, equity: 0, mode: '', error: '' };
-const EQUITY_CACHE_MS = 10_000;  // header uses same data, 10s is fine here
+// Two-level cache: fresh fetch succeeds → freshTs + equity. Fetch fails →
+// we PRESERVE the last good equity so the popup/modal can fall back to it.
+// User 2026-04-22: popup showed "$0 notional (pending...)" because a
+// transient /account abort zeroed out the cache, blocking order placement
+// even though the sidebar was still showing real equity from its own poll.
+let _equityCache = {
+  freshTs: 0,        // last time we GOT a successful fetch
+  staleTs: 0,        // last time we TRIED (success or fail)
+  equity: 0,         // last good value (kept across failures)
+  mode: '',
+  error: '',
+};
+const EQUITY_FRESH_MS = 10_000;   // within this: no re-fetch
+const EQUITY_STALE_MS = 5 * 60_000;  // last good remains usable for 5 min
 
 async function fetchEquity(mode) {
   const now = Date.now();
-  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS && !_equityCache.error) {
+  if (_equityCache.mode === mode && now - _equityCache.freshTs < EQUITY_FRESH_MS && !_equityCache.error) {
     return _equityCache.equity;
   }
   try {
-    // 15s timeout: /account now fans out to 5 sequential Bitget REST
-    // calls (accounts + positions + orders-pending + plan-pending
-    // normal_plan + plan-pending profit_loss), each 1-3s. 5s was too
-    // tight during market-hours load. User report 2026-04-21:
-    // "signal is aborted without reason" in the modal preview.
+    // 15s timeout: /account fans out to 5 sequential Bitget REST calls.
     const resp = await getLiveAccount(mode, 15000);
-    // Backend returns snake_case: total_equity / usdt_available.
-    // Legacy camelCase fallbacks kept for defensive compatibility, but
-    // total_equity is the source of truth (matches views.js, runner_view.js,
-    // execution/panel.js, conditional_panel.js).
     const equity = Number(
       resp?.total_equity
         ?? resp?.usdt_available
@@ -182,21 +186,32 @@ async function fetchEquity(mode) {
         ?? resp?.account?.equity
         ?? 0,
     );
-    _equityCache = { ts: now, equity, mode, error: '' };
+    _equityCache = {
+      freshTs: now, staleTs: now, equity, mode, error: '',
+    };
     return equity;
   } catch (err) {
     const msg = err?.message || String(err);
     console.warn('[trade_plan_modal] fetchEquity failed:', msg);
-    // P10: errors must be visible. Surface the failure via _equityCache.error
-    // so refreshLivePreview can render "—" with an explanation.
-    _equityCache = { ts: now, equity: 0, mode, error: msg };
-    return 0;
+    // CRITICAL: do NOT zero the equity. Keep last good. The popup's
+    // size_usdt calculation falls back to this via getCachedEquity().
+    const prevEquity = (_equityCache.mode === mode) ? _equityCache.equity : 0;
+    const prevFreshTs = (_equityCache.mode === mode) ? _equityCache.freshTs : 0;
+    _equityCache = {
+      freshTs: prevFreshTs,
+      staleTs: now,
+      equity: prevEquity,
+      mode,
+      error: msg,
+    };
+    return prevEquity;  // return last good instead of 0 so caller can proceed
   }
 }
 
 function getCachedEquity(mode) {
   const now = Date.now();
-  if (_equityCache.mode === mode && now - _equityCache.ts < EQUITY_CACHE_MS) {
+  if (_equityCache.mode === mode && _equityCache.equity > 0
+      && now - _equityCache.freshTs < EQUITY_STALE_MS) {
     return Number(_equityCache.equity) || 0;
   }
   return 0;
@@ -1347,9 +1362,8 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
     // Click handler
     _quickPopup.addEventListener('click', async (ev) => {
       if (_placing) {
-        // Defense-in-depth: shouldn't reach here since pointer-events
-        // is disabled, but cover the race window where style hasn't
-        // applied yet.
+        // Defense-in-depth: keep double-clicks from posting duplicate
+        // orders while leaving the popup visually readable.
         ev.preventDefault();
         ev.stopPropagation();
         return;
@@ -1392,19 +1406,39 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         //   equity_pct mode = equity × pct × leverage
         const lev = Number(cfg.leverage) > 0 ? Number(cfg.leverage) : 1;
         let size_usdt = 0;
-        // Size priority: risk_pct > equity_pct > notional_usd.
-        // All equity-based modes fail LOUD if equity fetch fails, rather
-        // than silently falling back to a different (smaller) formula.
+        // User 2026-04-22: popup kept saying "signal is aborted without
+        // reason → 暂停挂单" because a transient /account abort produced
+        // equity=0 AND our cache had been cleared. Fix: try fresh fetch,
+        // fall back to getCachedEquity (now keeps last good for 5 min).
+        // Only fail LOUD if BOTH fresh fetch AND stale cache unusable.
+        const _resolveEquity = async () => {
+          const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
+          try {
+            const { getLiveAccount: _gl } = await import('../../services/live_execution.js');
+            const acct = await _gl(mode);
+            const eq = Number(acct?.total_equity ?? acct?.usdt_available ?? acct?.equity ?? 0);
+            if (eq > 0) {
+              // Populate our module cache so future calls see it.
+              _equityCache = { freshTs: Date.now(), staleTs: Date.now(), equity: eq, mode, error: '' };
+              return { equity: eq, stale: false };
+            }
+          } catch (err) {
+            console.warn('[popup] live equity fetch failed, falling back to cache:', err?.message || err);
+          }
+          const cached = getCachedEquity(mode);
+          return { equity: cached, stale: cached > 0 };
+        };
+
         try {
-          const { getLiveAccount } = await import('../../services/live_execution.js');
           if (cfg.size_mode === 'risk_pct' && Number(cfg.risk_pct) > 0) {
-            const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
-            const acct = await getLiveAccount(mode);
-            const equity = Number(acct?.total_equity || acct?.equity || 0);
+            const { equity, stale } = await _resolveEquity();
             if (!(equity > 0)) {
-              setStatus('⚠ 风险%模式需要 equity,但账户拉取失败,暂停挂单防止下错金额', '#ff5252');
+              setStatus('⚠ 风险%模式需要 equity,实时+缓存都无,暂停挂单', '#ff5252');  // SAFE
               _applyPlacingState(false);
               return;
+            }
+            if (stale) {
+              setStatus(`⏳ 用缓存权益 $${equity.toFixed(2)} 算 (实时 fetch 失败)…`, '#fbbf24');  // SAFE
             }
             const _buffer = Math.abs(Number(cfg.buffer_pct) || 0);
             const _stop = Math.abs(Number(cfg.stop_pct) || 0);
@@ -1415,19 +1449,20 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
             } catch {}
             const _totalCostPct = _buffer + _stop + (_tfee * 2);
             if (_totalCostPct <= 0) {
-              setStatus('⚠ buffer+stop+fee 必须 > 0 才能算风险%仓位', '#ff5252');
+              setStatus('⚠ buffer+stop+fee 必须 > 0 才能算风险%仓位', '#ff5252');  // SAFE
               _applyPlacingState(false);
               return;
             }
             size_usdt = equity * (Number(cfg.risk_pct) / 100) / (_totalCostPct / 100);
           } else if (Number(cfg.equity_pct) > 0) {
-            const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
-            const acct = await getLiveAccount(mode);
-            const equity = Number(acct?.total_equity || acct?.equity || 0);
+            const { equity, stale } = await _resolveEquity();
             if (equity > 0) {
               size_usdt = equity * (Number(cfg.equity_pct) / 100) * lev;
+              if (stale) {
+                setStatus(`⏳ 用缓存权益 $${equity.toFixed(2)} 算 (实时 fetch 失败)…`, '#fbbf24');  // SAFE
+              }
             } else {
-              setStatus('⚠ 账户权益拉取失败 (equity=0), 暂停挂单防止下错金额, 等几秒再点', '#ff5252');
+              setStatus('⚠ 账户权益拉取失败 (实时+缓存都无), 暂停挂单防止下错金额', '#ff5252');  // SAFE
               _applyPlacingState(false);
               return;
             }
