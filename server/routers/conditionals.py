@@ -26,6 +26,7 @@ from ..conditionals import (
     TriggerConfig,
     now_ts,
 )
+from ..conditionals.exchange_cancel import cancel_exchange_order_for_cond
 from ..drawings.store import ManualTrendlineStore
 from .strategy import _normalize_symbol
 
@@ -245,44 +246,37 @@ async def api_cancel_conditional(conditional_id: str, reason: str = Query("manua
     if item.status not in ("pending", "triggered"):
         raise HTTPException(409, f"cannot cancel (status={item.status})")
 
-    bitget_result = None
+    bitget_cancel = None
     if item.exchange_order_id:
-        try:
-            from ..execution.live_adapter import LiveExecutionAdapter
-            adapter = LiveExecutionAdapter()
-            if adapter.has_api_keys():
-                mode = item.order.exchange_mode if item.order else "live"
-                sym = item.symbol.upper()
-                # Try regular order cancel first
-                resp = await adapter._bitget_request(
-                    "POST", "/api/v2/mix/order/cancel-order",
-                    mode=mode,
-                    body={
-                        "symbol": sym,
-                        "productType": "USDT-FUTURES",
-                        "marginCoin": "USDT",
-                        "orderId": item.exchange_order_id,
-                    },
-                )
-                if resp.get("code") == "00000":
-                    bitget_result = True
-                else:
-                    # Fall back to plan-order cancel
-                    plan_resp = await adapter.cancel_plan_order_any_type(sym, item.exchange_order_id, mode)
-                    bitget_result = bool(plan_resp.get("ok"))
-                    if not bitget_result:
-                        print(f"[cancel] both cancel paths failed: order={resp.get('msg')} plan={plan_resp.get('reason')}")
-        except Exception as e:
-            print(f"[cancel] Bitget cancel exception: {e}")
+        bitget_cancel = await cancel_exchange_order_for_cond(item)
+        if not bitget_cancel.get("ok"):
+            _store.append_event(conditional_id, ConditionalEvent(
+                ts=now_ts(),
+                kind="exchange_error",
+                message="manual cancel refused: Bitget cancel not confirmed",
+                extra={"bitget_cancel": bitget_cancel},
+            ))
+            raise HTTPException(
+                409,
+                {
+                    "reason": "bitget_cancel_not_confirmed",
+                    "message": (
+                        "Bitget cancel was not confirmed; local conditional was "
+                        "left active so the UI does not hide a live order."
+                    ),
+                    "bitget_cancel": bitget_cancel,
+                },
+            )
 
     _store.append_event(conditional_id, ConditionalEvent(
         ts=now_ts(), kind="cancelled", message=reason,
-        extra={"bitget_cancelled": bitget_result},
+        extra={"bitget_cancel": bitget_cancel},
     ))
     updated = _store.set_status(conditional_id, "cancelled", reason=reason)
     return {
         "ok": True,
-        "bitget_cancelled": bitget_result,
+        "bitget_cancelled": None if bitget_cancel is None else bool(bitget_cancel.get("ok")),
+        "bitget_cancel": bitget_cancel,
         "conditional": updated.to_dict() if updated else None,
     }
 
@@ -296,45 +290,36 @@ async def api_delete_conditional(
     if item is None:
         raise HTTPException(404, "not found")
 
-    bitget_cancelled = None
+    bitget_cancel = None
     # If there's a live Bitget order, try to cancel it first
     if item.exchange_order_id and item.status == "triggered":
-        try:
-            from ..execution.live_adapter import LiveExecutionAdapter
-            adapter = LiveExecutionAdapter()
-            if adapter.has_api_keys():
-                mode = item.order.exchange_mode if item.order else "live"
-                sym = item.symbol.upper()
-                resp = await adapter._bitget_request(
-                    "POST", "/api/v2/mix/order/cancel-order",
-                    mode=mode,
-                    body={
-                        "symbol": sym,
-                        "productType": "USDT-FUTURES",
-                        "marginCoin": "USDT",
-                        "orderId": item.exchange_order_id,
-                    },
-                )
-                if resp.get("code") == "00000":
-                    bitget_cancelled = True
-                else:
-                    plan_resp = await adapter.cancel_plan_order_any_type(sym, item.exchange_order_id, mode)
-                    bitget_cancelled = bool(plan_resp.get("ok"))
-                if not bitget_cancelled and not force:
-                    raise HTTPException(
-                        409,
-                        f"refusing to delete: Bitget order {item.exchange_order_id} "
-                        f"is still live and cancel failed. Pass ?force=true to delete "
-                        f"local record anyway (will leave a ghost on Bitget)."
-                    )
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"[delete-cond] Bitget cancel err: {e}")
+        bitget_cancel = await cancel_exchange_order_for_cond(item)
+        if not bitget_cancel.get("ok") and not force:
+            _store.append_event(conditional_id, ConditionalEvent(
+                ts=now_ts(),
+                kind="exchange_error",
+                message="delete refused: Bitget cancel not confirmed",
+                extra={"bitget_cancel": bitget_cancel},
+            ))
+            raise HTTPException(
+                409,
+                {
+                    "reason": "bitget_cancel_not_confirmed",
+                    "message": (
+                        f"Refusing to delete local record because Bitget order "
+                        f"{item.exchange_order_id} may still be live."
+                    ),
+                    "bitget_cancel": bitget_cancel,
+                },
+            )
 
     if not _store.delete(conditional_id):
         raise HTTPException(404, "not found (race?)")
-    return {"ok": True, "bitget_cancelled": bitget_cancelled}
+    return {
+        "ok": True,
+        "bitget_cancelled": None if bitget_cancel is None else bool(bitget_cancel.get("ok")),
+        "bitget_cancel": bitget_cancel,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
