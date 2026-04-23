@@ -391,3 +391,283 @@ async def test_line_broken_cas_lost_skips_reverse_spawn(monkeypatch):
     # Reverse spawn MUST NOT have been called.
     assert reverse_spawn_called == [], \
         f"Bug 5: reverse spawned despite losing CAS: {reverse_spawn_called}"
+
+
+# ─── Regression: reconcile must not nuke plan-type conds on 429 ─────
+#
+# Bug observed 2026-04-23 00:48 LA (user real money): Bitget returned
+# 429 "too many requests" on get_pending_plan_orders while
+# get_pending_orders (regular) succeeded. Our reconcile's gate at
+# the time was `if not (ok_regular or ok_plan): skip` — i.e. "skip
+# only if BOTH fail". That let plan-fetch failure + regular success
+# fall through, union yielded only regular (non-plan) oids, and every
+# plan-type cond was judged "not in pending" → CAS-cancelled even
+# though Bitget still held them live (HYPE 275.22 @ 41.446, plus 2 more).
+#
+# The fix strengthens the gate to `if not (ok_regular AND ok_plan)`:
+# any fetch failure now skips the mode, so reconcile retries next cycle.
+@pytest.mark.asyncio
+async def test_reconcile_skips_on_plan_pending_429(monkeypatch):
+    """When Bitget returns 429 on the plan-pending fetch but the regular
+    fetch succeeds, reconcile MUST NOT cancel plan-type conds. The union
+    of an empty plan list and a small regular list looks identical to
+    'order is gone' — a false positive that nukes real money orders."""
+    # Build a triggered plan-type cond matching the real HYPE one.
+    cond = _cond(
+        conditional_id="cond_hype_rate_limit",
+        symbol="HYPEUSDT",
+        timeframe="4h",
+        exchange_order_id="plan_oid_123",
+        status="triggered",
+    )
+
+    class _FakeStoreList:
+        def __init__(self, cond):
+            self.cond = cond
+            self.status_changes: list[tuple[str, str]] = []
+
+        def list_all(self, status=None):
+            if status is None or self.cond.status == status:
+                return [self.cond]
+            return []
+
+        def get(self, cid):
+            return self.cond if cid == self.cond.conditional_id else None
+
+        def update(self, cond):
+            self.cond = cond
+            return cond
+
+        def append_event(self, cid, event):
+            self.cond.events.append(event)
+            return self.cond
+
+        def set_status_if(self, cid, *, from_status, to_status, reason=""):
+            if self.cond.status != from_status:
+                return None
+            self.cond.status = to_status
+            self.status_changes.append((to_status, reason))
+            return self.cond
+
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    class _RateLimitedAdapter:
+        def has_api_keys(self):
+            return True
+
+        async def get_pending_orders(self, mode):
+            # Regular (non-plan) succeeds but returns empty — realistic
+            # when user has no limit orders, only plan-type triggers.
+            return []
+
+        async def get_pending_plan_orders(self, mode, plan_type="normal_plan"):
+            # Plan fetch hits 429 → adapter raises RuntimeError (matches
+            # what live_adapter.get_pending_plan_orders does on non-00000).
+            raise RuntimeError(
+                'plan pending fetch failed: {"code":"429","msg":"too many requests"}'
+            )
+
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            # position/all-position is the only other bitget call reconcile
+            # makes when one fetch fails — respond empty.
+            if "position/all-position" in path:
+                return {"code": "00000", "data": []}
+            return {"code": "00000", "data": []}
+
+        @staticmethod
+        def _as_rows(data):
+            if not data: return []
+            if isinstance(data, list): return data
+            return data.get("list") or data.get("entrustedList") or []
+
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        _RateLimitedAdapter,
+    )
+
+    reverse_calls: list[tuple[str, str]] = []
+    async def _fake_reverse(src, reason):
+        reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    # REGRESSION: the cond MUST still be 'triggered'. The 429 on plan
+    # fetch is a temporary API blip; we'd rather wait 30s and retry
+    # than nuke a live real-money order.
+    assert cond.status == "triggered", \
+        f"429 on plan-pending nuked plan cond: status={cond.status} changes={store.status_changes}"
+    assert store.status_changes == [], \
+        f"CAS-cancel fired on 429: {store.status_changes}"
+    # Reverse spawn must also not have been called.
+    assert reverse_calls == [], \
+        f"reverse spawned on 429 false-positive: {reverse_calls}"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_on_regular_pending_failure(monkeypatch):
+    """Mirror of the 429-on-plan test: if the regular pending fetch
+    fails but plan succeeds, we still skip the mode. Yes, the user
+    currently has no non-plan conds, but the gate must be symmetric —
+    future types (e.g. limit-entry manual orders) would hit the same
+    trap in reverse."""
+    cond = _cond(
+        conditional_id="cond_hype_regular_fail",
+        symbol="HYPEUSDT",
+        exchange_order_id="plan_oid_456",
+        status="triggered",
+    )
+
+    class _FakeStoreList:
+        def __init__(self, cond):
+            self.cond = cond
+            self.status_changes: list[tuple[str, str]] = []
+
+        def list_all(self, status=None):
+            if status is None or self.cond.status == status:
+                return [self.cond]
+            return []
+
+        def get(self, cid):
+            return self.cond if cid == self.cond.conditional_id else None
+
+        def update(self, cond):
+            self.cond = cond
+            return cond
+
+        def append_event(self, cid, event):
+            self.cond.events.append(event)
+            return self.cond
+
+        def set_status_if(self, cid, *, from_status, to_status, reason=""):
+            if self.cond.status != from_status:
+                return None
+            self.cond.status = to_status
+            self.status_changes.append((to_status, reason))
+            return self.cond
+
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    class _AsymFailAdapter:
+        def has_api_keys(self):
+            return True
+
+        async def get_pending_orders(self, mode):
+            raise RuntimeError("regular fetch transient failure")
+
+        async def get_pending_plan_orders(self, mode, plan_type="normal_plan"):
+            # Even though plan fetch returned a list that doesn't contain
+            # our oid, we should NOT cancel — because regular failed and
+            # the order could in theory be a regular one (not our case
+            # today, but the invariant must hold).
+            return [{"orderId": "some_other_plan"}]
+
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            return {"code": "00000", "data": []}
+
+        @staticmethod
+        def _as_rows(data):
+            if not data: return []
+            if isinstance(data, list): return data
+            return data.get("list") or data.get("entrustedList") or []
+
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        _AsymFailAdapter,
+    )
+
+    reverse_calls: list[tuple[str, str]] = []
+    async def _fake_reverse(src, reason):
+        reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "triggered", \
+        f"regular-fetch-failure falsely cancelled cond: status={cond.status} changes={store.status_changes}"
+    assert store.status_changes == []
+    assert reverse_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_nukes_plan_when_BOTH_fetches_ok_and_oid_absent(monkeypatch):
+    """Positive control: the legitimate cancel path still fires when both
+    fetches succeed AND our oid is truly absent. Without this test the
+    strengthened gate could silently refuse to ever cancel."""
+    cond = _cond(
+        conditional_id="cond_truly_gone",
+        symbol="HYPEUSDT",
+        exchange_order_id="gone_oid",
+        status="triggered",
+    )
+
+    class _FakeStoreList:
+        def __init__(self, cond):
+            self.cond = cond
+            self.status_changes: list[tuple[str, str]] = []
+
+        def list_all(self, status=None):
+            if status is None or self.cond.status == status:
+                return [self.cond]
+            return []
+
+        def get(self, cid):
+            return self.cond if cid == self.cond.conditional_id else None
+
+        def update(self, cond):
+            self.cond = cond
+            return cond
+
+        def append_event(self, cid, event):
+            self.cond.events.append(event)
+            return self.cond
+
+        def set_status_if(self, cid, *, from_status, to_status, reason=""):
+            if self.cond.status != from_status:
+                return None
+            self.cond.status = to_status
+            self.status_changes.append((to_status, reason))
+            return self.cond
+
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    class _BothOKAdapter:
+        def has_api_keys(self):
+            return True
+
+        async def get_pending_orders(self, mode):
+            return []
+
+        async def get_pending_plan_orders(self, mode, plan_type="normal_plan"):
+            # Both fetches succeed. Our oid is truly absent → nuke is correct.
+            return [{"orderId": "some_other_plan"}]
+
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            return {"code": "00000", "data": []}
+
+        @staticmethod
+        def _as_rows(data):
+            if not data: return []
+            if isinstance(data, list): return data
+            return data.get("list") or data.get("entrustedList") or []
+
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        _BothOKAdapter,
+    )
+
+    reverse_calls: list[tuple[str, str]] = []
+    async def _fake_reverse(src, reason):
+        reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "cancelled", \
+        f"legitimate cancel missed after gate strengthening: status={cond.status}"
+    assert any(
+        reason.startswith("reconcile:") for _, reason in store.status_changes
+    ), f"expected reconcile cancel reason, got {store.status_changes}"

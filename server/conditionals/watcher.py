@@ -1211,15 +1211,28 @@ async def _reconcile_against_bitget() -> None:
         pending_oids_by_mode: dict[str, set[str]] = {}
         positions_by_mode: dict[str, list[dict[str, Any]]] = {}
 
-        # Track whether EITHER pending fetch succeeded. If BOTH fail we
-        # must skip reconcile for this mode entirely — otherwise an empty
-        # pending_oids set would look identical to "all orders cancelled",
-        # and reconcile would nuke every triggered cond. User 2026-04-22:
-        # HYPE trigger 40.495 was working fine, then Bitget API blip at
-        # 06:27 BJ made both pending endpoints time out, reconcile cancelled
-        # the cond + wrote "reconcile: order not on Bitget anymore" even
-        # though the order was still there. Same hazard affected RAVE
-        # earlier in session.
+        # Track whether BOTH pending fetches succeeded.
+        #
+        # Previous rule (2026-04-22) was "skip only if BOTH fail" — which
+        # left a gap: if the PLAN fetch fails (429 / timeout / 5xx) but
+        # the REGULAR fetch succeeds, the union `pending_oids` contains
+        # only regular (non-plan) orders. All our manual-line conds are
+        # plan-type (normal_plan). None of their oids will be in the
+        # union → every plan-type triggered cond gets falsely judged
+        # "not pending" → CAS-cancel → trades vanish while Bitget still
+        # has them live.
+        #
+        # Observed 2026-04-23 00:48 LA (user real money): Bitget returned
+        # 429 on plan pending only → HYPE/ETH/ORDI conds all nuked in
+        # the same tick while Bitget still held 275.22 HYPE short @ 41.446.
+        # User lost replan coverage and had to place a manual trade.
+        #
+        # Correct rule: we need the SPECIFIC list that covers a cond's
+        # order-type to have succeeded. Since plan-type is where all our
+        # manual-line entries live, we MUST have ok_plan to safely nuke
+        # plan-type conds. Simplest, safest fix: if EITHER fetch fails,
+        # skip the mode entirely — miss one cycle (30s) vs. lose a real
+        # order. Position fetch still runs so fills are still detected.
         skip_modes: set[str] = set()
         for mode in modes:
             pending_oids: set[str] = set()
@@ -1242,12 +1255,13 @@ async def _reconcile_against_bitget() -> None:
             except Exception as e:
                 print(f"[reconcile] plan pending fetch failed mode={mode}: {e}", flush=True)
 
-            if not (ok_regular or ok_plan):
-                # Both fetches failed. Do NOT mark conds cancelled based
-                # on an empty pending set — that would be catastrophic.
-                print(f"[reconcile] SKIP mode={mode} — both pending fetches failed; will retry next cycle", flush=True)
+            # 2026-04-23 hardening: ANY fetch failure means the pending
+            # set is incomplete and we cannot safely decide "gone". Skip.
+            if not (ok_regular and ok_plan):
+                print(f"[reconcile] SKIP mode={mode} — pending fetch incomplete "
+                      f"(ok_regular={ok_regular} ok_plan={ok_plan}); retry next cycle", flush=True)
                 skip_modes.add(mode)
-                # Still try position fetch so we can catch fills without
+                # Still try position fetch so fills get detected without
                 # false-cancelling the triggered set.
                 try:
                     pos_resp = await adapter._bitget_request(
