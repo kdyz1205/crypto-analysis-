@@ -15,6 +15,10 @@ import { clearHorizontalSRZones } from './patterns.js';
 import { clearTrendlineOverlay } from './overlays/trendline_overlay.js';
 import { clearSignalOverlay } from './overlays/signal_overlay.js';
 import { clearOrderOverlay } from './overlays/order_overlay.js';
+import {
+  refreshPlanOverlay, clearPlanOverlay,
+  startPlanOverlayPoll, stopPlanOverlayPoll,
+} from './overlays/plan_order_overlay.js';
 import { initManualTrendlineController, refreshManualDrawings, renderManualLines } from './drawings/manual_trendline_controller.js';
 
 let chart = null;
@@ -168,6 +172,15 @@ export function initChart(containerId = 'chart-container') {
   ensureChartModePanel(el.parentElement || el);
   initManualTrendlineController(chart, el.parentElement || el);
   applyScaleMode();
+
+  // Plan/position overlay refreshes when ANY conditionals state change
+  // ripples through the system (user places / cancels / replan fires,
+  // server pushes 'conditionals.changed'). Poll at 10s catches replan;
+  // event catches user gestures with no perceived delay.
+  subscribe('conditionals.changed', () => {
+    if (!candleSeries) return;
+    refreshPlanOverlay(chart, candleSeries).catch(() => {});
+  });
   // Apply X-axis timezone per user preference (localStorage: v2.chart.tz.v1)
   _applyTickMarkFormatter();
 
@@ -492,6 +505,16 @@ export async function loadCurrent(forcePatterns = false) {
     });
 
     void refreshManualDrawings(currentSymbol, currentInterval).catch((err) => console.warn('[drawings] refresh failed:', err));
+    // Entry / SL / TP price-line markers for every triggered plan +
+    // live position on this symbol+TF. Added 2026-04-23 — user spent
+    // days flying blind without seeing where stop/target actually sit.
+    try {
+      clearPlanOverlay();
+      void refreshPlanOverlay(chart, candleSeries, {
+        symbol: currentSymbol, interval: currentInterval,
+      }).catch(() => {});
+      startPlanOverlayPoll(chart, candleSeries, 10000);
+    } catch (err) { console.warn('[plan_overlay] wire err:', err); }
     markBoot('patterns', 'ok', 'manual-only mode');
 
     return {
