@@ -108,14 +108,18 @@ async def _mark_returns(value):
     return _inner
 
 
-def _patch_mark(monkeypatch, value):
-    """Helper: patch _fetch_mark_price_strict to return a fixed value."""
+def _patch_mark(monkeypatch, value, pending_oids=None):
+    """Helper: patch _fetch_mark_price_strict to return a fixed value.
+
+    pending_oids lets the test control what the classifier's fast path
+    sees. Pass empty set to force classifier to fall through to the
+    history query (useful for mirror-direction cancel-path tests)."""
     async def _fake(symbol):
         return value
     monkeypatch.setattr(watcher, "_fetch_mark_price_strict", _fake)
-    # Also patch the pending-oids cache to bypass real Bitget calls.
+    default_pending = {"old-order-1"} if pending_oids is None else set(pending_oids)
     async def _fake_pending(mode):
-        return {"old-order-1"}
+        return default_pending
     monkeypatch.setattr(watcher, "_get_cached_pending_oids", _fake_pending)
 
 
@@ -819,6 +823,147 @@ async def test_reconcile_history_api_error_stays_triggered(monkeypatch):
 
     assert cond.status == "triggered"
     assert store.status_changes == []
+
+
+# ─── Mirror-direction guards: "should cancel but silently stuck" ────
+#
+# The conservative reconcile design (never cancel on absence) protects
+# against false-cancel bugs but introduces a matching risk: cancel paths
+# that SHOULD fire can get stuck if Bitget's cancel API keeps returning
+# non-ok even after the order is gone. These tests lock the recovery
+# path via classify_cond_state fallback inside _cancel_bitget_plan_safely.
+
+@pytest.mark.asyncio
+async def test_line_broken_cancel_api_fails_but_history_says_cancelled_proceeds_with_reverse(monkeypatch):
+    """Line broken; cancel APIs both return non-ok (Bitget glitch).
+    Classifier says history row shows cancelled. Cond MUST transition
+    to cancelled AND spawn reverse, not get stuck."""
+    import dataclasses
+    cond = _short_descending_cond()
+    cond = dataclasses.replace(
+        cond,
+        order=dataclasses.replace(cond.order, reverse_enabled=True),
+    )
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+
+    # Fake adapter where BOTH cancel APIs return non-ok BUT history has
+    # a row saying state=cancelled. _cancel_bitget_plan_safely should
+    # then return CancelOutcome.CANCELLED, and line-broken should transition.
+    class _CancelFailsButHistoryCancelled(_FakeAdapter):
+        async def cancel_order(self, *a, **kw):
+            self.cancelled_regular.append(a)
+            return {"ok": False, "reason": "not_found"}
+        async def cancel_plan_order_any_type(self, *a, **kw):
+            self.cancelled_plan.append(a)
+            return {"ok": False, "reason": "not_found"}
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            if "orders-plan-history" in path:
+                return {"code": "00000", "data": {"entrustedList": [
+                    {"orderId": "old-order-1", "planStatus": "cancelled", "symbol": "HYPEUSDT"},
+                ]}}
+            return {"code": "00000", "data": []}
+
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _CancelFailsButHistoryCancelled)
+    # Leave pending with oid so _maybe_replan proceeds; _cancel_bitget_plan_safely
+    # skips pending fast-path and goes straight to history for authoritative state.
+    _patch_mark(monkeypatch, 0.016)   # empty pending → classifier falls through to history
+
+    reverse_calls = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    # classifier-via-history recovery path must fire: transition to cancelled
+    # and reverse spawned.
+    assert cond.status == "cancelled", \
+        f"mirror-bug: cancel APIs failed but history confirms cancelled; expected transition, got {cond.status}"
+    assert len(reverse_calls) == 1, \
+        f"reverse must spawn on history-confirmed cancel, got {reverse_calls}"
+
+
+@pytest.mark.asyncio
+async def test_line_broken_cancel_api_fails_classifier_says_FILLED_transitions_to_filled_no_reverse(monkeypatch):
+    """Line broke, but the order actually FILLED before our cancel landed.
+    Classifier returns FILLED. Cond MUST transition to filled (not cancelled)
+    and NOT spawn a reverse against the live position."""
+    import dataclasses
+    cond = _short_descending_cond()
+    cond = dataclasses.replace(
+        cond,
+        order=dataclasses.replace(cond.order, reverse_enabled=True),
+    )
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+
+    class _CancelFailsButHistoryFilled(_FakeAdapter):
+        async def cancel_order(self, *a, **kw): return {"ok": False}
+        async def cancel_plan_order_any_type(self, *a, **kw): return {"ok": False}
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            if "orders-plan-history" in path:
+                return {"code": "00000", "data": {"entrustedList": [
+                    {"orderId": "old-order-1", "planStatus": "triggered", "symbol": "HYPEUSDT"},
+                ]}}
+            return {"code": "00000", "data": []}
+
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _CancelFailsButHistoryFilled)
+    # Leave pending with oid so _maybe_replan proceeds; _cancel_bitget_plan_safely
+    # skips pending fast-path and goes straight to history for authoritative state.
+    _patch_mark(monkeypatch, 0.016)
+
+    reverse_calls = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    # CRITICAL: reverse MUST NOT spawn against a real open position.
+    assert cond.status == "filled", \
+        f"FILLED classification must transition to filled, not cancelled: status={cond.status}"
+    assert reverse_calls == [], \
+        f"reverse spawned against a live fill — this is the mirror-direction bug: {reverse_calls}"
+
+
+@pytest.mark.asyncio
+async def test_line_broken_cancel_api_fails_classifier_UNKNOWN_stays_triggered(monkeypatch):
+    """Line broke, cancel APIs failed, history API also failed.
+    Classifier returns UNKNOWN. Cond must stay triggered for retry;
+    no transition, no reverse, no orphan."""
+    import dataclasses
+    cond = _short_descending_cond()
+    cond = dataclasses.replace(
+        cond,
+        order=dataclasses.replace(cond.order, reverse_enabled=True),
+    )
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+
+    class _AllFail(_FakeAdapter):
+        async def cancel_order(self, *a, **kw): return {"ok": False}
+        async def cancel_plan_order_any_type(self, *a, **kw): return {"ok": False}
+        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+            if "orders-plan-history" in path:
+                raise RuntimeError("history API timeout")
+            return {"code": "00000", "data": []}
+
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _AllFail)
+    # Leave pending with oid so _maybe_replan proceeds; _cancel_bitget_plan_safely
+    # skips pending fast-path and goes straight to history for authoritative state.
+    _patch_mark(monkeypatch, 0.016)
+
+    reverse_calls = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    assert cond.status == "triggered", \
+        f"UNKNOWN must NEVER transition: status={cond.status}"
+    assert reverse_calls == [], f"reverse must not spawn on UNKNOWN: {reverse_calls}"
 
 
 @pytest.mark.asyncio
