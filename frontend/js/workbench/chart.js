@@ -173,6 +173,31 @@ export function initChart(containerId = 'chart-container') {
   initManualTrendlineController(chart, el.parentElement || el);
   applyScaleMode();
 
+  // Measure + prediction tools. Both need the chart + candle series for
+  // data-space anchoring of their overlays.
+  try {
+    import('./drawings/measure_tool.js').then((mod) => {
+      mod.initMeasureTool(chart, candleSeries, el.parentElement || el);
+    }).catch((err) => console.warn('[measure] init err:', err));
+    import('./drawings/prediction_tool.js').then((mod) => {
+      mod.initPredictionTool(chart, candleSeries, el.parentElement || el);
+    }).catch((err) => console.warn('[predict] init err:', err));
+  } catch (err) { console.warn('[chart] tool init err:', err); }
+
+  // Keyboard: M key toggles measure tool (TradingView parity).
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key?.toLowerCase() !== 'm') return;
+    // Ignore when user is typing in any input/textarea.
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    ev.preventDefault();
+    import('./drawings/measure_tool.js').then((mod) => {
+      // Toggle: if we're in measure mode already, exit; else enter.
+      // The module tracks its own _active flag via publish('measure.mode', ...)
+      mod.enterMeasureMode('rect');
+    });
+  });
+
   // Plan/position overlay refreshes when ANY conditionals state change
   // ripples through the system (user places / cancels / replan fires,
   // server pushes 'conditionals.changed'). Poll at 10s catches replan;
