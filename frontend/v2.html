@@ -22,6 +22,7 @@
     <nav class="v2-nav" id="v2-nav">
       <button class="v2-nav-btn active" data-view="market">市场</button>
       <button class="v2-nav-btn" data-view="runner">策略</button>
+      <button class="v2-nav-btn" data-view="trade_history">交易历史</button>
       <!-- Other panels hidden — focus on the line+order workflow.
            Routes still exist if you need them back later. -->
     </nav>
@@ -89,6 +90,11 @@
   <!-- View: Runner (MA Ribbon + Trendline dashboard) -->
   <main class="v2-view" data-view="runner">
     <div class="v2-view-content" id="view-runner"></div>
+  </main>
+
+  <!-- View: Trade History (spreadsheet view of every closed manual-line trade) -->
+  <main class="v2-view" data-view="trade_history">
+    <div class="v2-view-content" id="view-trade-history"></div>
   </main>
 
   <!-- Legacy execution panel (kept for backward compat) -->

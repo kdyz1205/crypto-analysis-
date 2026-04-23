@@ -225,14 +225,17 @@ function wireHeaderButtons() {
 
 import { loadDashboard, loadFactory, loadLeaderboard, loadFactors, loadLive, loadMonitor } from './views.js';
 import { loadRunner, unloadRunner } from './views/runner_view.js';
+import { loadTradeHistory, unloadTradeHistory } from './views/trade_history_view.js';
 
 const _viewLoaders = {
   dashboard: loadDashboard, factory: loadFactory, leaderboard: loadLeaderboard,
   factors: loadFactors, live: loadLive, monitor: loadMonitor,
   runner: loadRunner,
+  trade_history: loadTradeHistory,
 };
 const _viewUnloaders = {
   runner: unloadRunner,
+  trade_history: unloadTradeHistory,
 };
 const _viewLoaded = new Set(); // track which views have been loaded at least once
 
