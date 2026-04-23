@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import time
 from typing import Any, Literal
 
@@ -39,6 +40,41 @@ _MARK_PRICE_CACHE: dict[str, tuple[float, float]] = {}
 _LEVERAGE_SET_CACHE: dict[tuple[str, str, int], float] = {}
 _MARK_PRICE_CACHE_SECONDS = 2.0
 _LEVERAGE_SET_CACHE_SECONDS = 3600.0
+
+
+def _require_manual_exchange_enabled(mode: str, adapter) -> None:
+    """Gate direct manual-line exchange orders with live safety flags."""
+    if not adapter.has_api_keys():
+        raise HTTPException(503, "Bitget API keys not configured")
+
+    enable_live = os.environ.get("ENABLE_LIVE_TRADING", "false").lower() == "true"
+    confirm_live = os.environ.get("CONFIRM_LIVE_TRADING", "false").lower() == "true"
+    dry_run = os.environ.get("DRY_RUN", "true").lower() == "true"
+
+    if not enable_live:
+        raise HTTPException(
+            403,
+            {
+                "reason": "enable_live_trading_disabled",
+                "message": "ENABLE_LIVE_TRADING must be true before placing exchange plan orders.",
+            },
+        )
+
+    if mode == "live":
+        blocked = []
+        if not confirm_live:
+            blocked.append("confirm_live_trading_disabled")
+        if dry_run:
+            blocked.append("dry_run_enabled")
+        if blocked:
+            raise HTTPException(
+                403,
+                {
+                    "reason": "live_trading_not_confirmed",
+                    "blocking_reasons": blocked,
+                    "message": "Real-money manual line orders require CONFIRM_LIVE_TRADING=true and DRY_RUN=false.",
+                },
+            )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -533,21 +569,29 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Project the line to the CURRENT TF BAR'S OPEN time (not the exact
-    # click moment) so the ref_price matches what the user visually sees
-    # the line crossing at the current candle. User report 2026-04-21:
-    # "线交叉点应该是 0.010185" (bar-open snapshot) vs system's 0.01037
-    # (exact click moment); 2.5h of slope-drift difference inside a 4h
-    # bar.
-    # Uses the same helper (_TF_SECONDS in conditionals.types) that
-    # watcher._maybe_replan uses, so placement + replan see identical
-    # line values. Applies to every TF (1m / 3m / 5m / 15m / 30m / 1h
-    # / 2h / 4h / 6h / 12h / 1d / 1w).
-    from server.conditionals.types import _TF_SECONDS
+    # Project the line to NOW (the actual click timestamp).
+    #
+    # History (2026-04-20 → 2026-04-23): original code used the exact ms
+    # of the click, which drifted ~2.5h inside a 4h bar (user BAS report).
+    # That was "fixed" by snapping to bar-open of the current TF. The
+    # bar-open snap worked for 4h (<=4h stale) but introduced a NEW bug
+    # on 1d/1w: bar-open is up to 24h/7d stale, and for any trendline
+    # with non-trivial slope the projection diverges from what the user
+    # visually reads (user's eye is at the RIGHT edge of the current
+    # bar, which is ≈ now, NOT the left edge = bar-open).
+    #
+    # User 2026-04-23 ZEC: drew a +58%/28d trendline on 1d, line value
+    # at now ≈ 317 but snap-to-bar-open (22h ago) projected 312.3 →
+    # entry placed 4.8 points below user's expectation.
+    #
+    # Root principle (PRINCIPLES.md P14 finally abstracted): the line
+    # price the server uses MUST equal the line price the user is
+    # reading off the chart in real-time. The chart's rightmost data
+    # point for the live bar is at ≈ now (the candle is still forming),
+    # so `now` is the correct reference.
+    from server.conditionals.types import _TF_SECONDS  # noqa: F401 — kept for any future guard
     now_ts_ = now_ts()
-    _tf_sec = _TF_SECONDS.get(drawing.timeframe, 3600)
-    bar_open_ts = (int(now_ts_) // _tf_sec) * _tf_sec
-    line_now = _project_manual_line_price(drawing, bar_open_ts)
+    line_now = _project_manual_line_price(drawing, int(now_ts_))
     ref_price = float(line_now)
     if ref_price <= 0:
         raise HTTPException(
@@ -682,8 +726,7 @@ async def api_place_line_order(req: PlaceLineOrderReq):
 
     from ..execution.live_adapter import LiveExecutionAdapter
     adapter = LiveExecutionAdapter()
-    if not adapter.has_api_keys():
-        raise HTTPException(503, "Bitget API keys not configured")
+    _require_manual_exchange_enabled(req.mode, adapter)
     leverage_key = (req.mode, drawing.symbol.upper(), int(req.leverage))
     leverage_cached_at = _LEVERAGE_SET_CACHE.get(leverage_key, 0.0)
     leverage_elapsed_ms = 0

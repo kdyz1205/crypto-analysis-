@@ -1834,12 +1834,12 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
         print(f"[watcher] plan-existence check failed {cond.symbol}: {exc}", flush=True)
         # Fall through — better to attempt replan than silently stall.
 
-    # Project the line's price at the CURRENT TF BAR'S OPEN. Same
-    # convention as place-line-order (2026-04-21 unification). User
-    # visually sees the line crossing the bar at bar-open; replan must
-    # match that snapshot or replanned trigger drifts from visual
-    # expectation every bar. For 4h TF, 22:58 click → bar_open 20:00.
-    line_now = cond.line_price_at_bar_open(now)
+    # Project the line's price at NOW. Was bar-open snap (2026-04-21
+    # unification) — removed 2026-04-23 after ZEC/1d incident where
+    # bar-open was 22h stale and diverged ~1.5% from the user's
+    # visual reading. Same principle as place-line-order: reference
+    # point = user's eye = right edge of live bar ≈ now.
+    line_now = cond.line_price_at(now)
 
     # Line-broken invalidation (user 2026-04-22, threshold fixed 2026-04-22):
     #   If price has moved to the WRONG side of the line for the chosen

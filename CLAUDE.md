@@ -56,6 +56,31 @@ At the start of EVERY task — bug fix, feature, refactor, whatever — you MUST
 
 If you skip this step you will repeat the same class of bugs you just fixed.
 
+## MANDATORY: Read TA_BASICS.md before any trade-logic change
+
+If your task touches ANY of the following areas, you MUST `Read`
+`TA_BASICS.md` in the project root before writing or describing code:
+
+- Entry / SL / TP computation (`api_place_line_order`,
+  `_compute_trade_prices`, `stop_points`, `entry_offset_points`,
+  `tolerance_pct`, `stop_offset_pct`)
+- Line projection (`_project_manual_line_price`, `line_price_at`,
+  `line_price_at_bar_open`)
+- Drawing side/role interpretation (support vs resistance)
+- Direction inference (long vs short, bounce vs breakout)
+- Chart overlay labels (持仓 / 计划 / 止损 / 止盈)
+
+Why this exists: 2026-04-23 — AI produced a wrong entry price on a
+real-money ZEC order because it conflated "line DB side label" with
+"line's effective role at current price", and verbally called a
+bounce-long trade a "breakout long". User paid hours to teach back
+the fundamentals. TA_BASICS.md is the source of truth for these
+definitions + checklists so the AI cannot drift away from them.
+
+When you complete a task in these areas, the final report must
+explicitly confirm: "TA_BASICS.md Section N checklist satisfied".
+If you cannot truthfully say this, the work is not done.
+
 ## How to fix bugs (the rule the user spent hours teaching you)
 
 **Bug fix ≠ patching the symptom.** Bug fix = abstract the principle + grep every violation + fix them all in one pass.

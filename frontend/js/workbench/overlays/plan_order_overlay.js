@@ -173,14 +173,12 @@ function _positionLabels() {
     _labelLayer.innerHTML = '';
     return;
   }
-  const layerRect = _labelLayer.getBoundingClientRect();
-  if (layerRect.width <= 0 || layerRect.height <= 0) return;
-  const axisW = _priceAxisWidthPx();
-  // Labels sit on the chart area, just left of the price axis column.
-  const rightPad = Math.max(4, axisW + 4);
 
-  // Reuse existing nodes to minimise DOM churn — otherwise the RAF loop
-  // keeps re-creating dozens of elements per frame during pan/zoom.
+  // 1. Ensure child count matches labels count. This MUST happen even
+  //    when the layer is currently zero-size (mid symbol-switch reflow)
+  //    — otherwise children never materialise and the RAF loop dies
+  //    with children.length === 0 forever. Bug caught 2026-04-23 on
+  //    RAVEUSDT switch: probe said rec.labels=3 but DOM had 0 children.
   const existing = Array.from(_labelLayer.children);
   while (existing.length < labels.length) {
     const el = document.createElement('div');
@@ -192,6 +190,14 @@ function _positionLabels() {
     const el = existing.pop();
     el.remove();
   }
+
+  // 2. Positioning requires a real layer size + a working priceScale.
+  //    If either is missing (typically: chart just rebuilt), retain
+  //    children and let RAF retry next frame.
+  const layerRect = _labelLayer.getBoundingClientRect();
+  if (layerRect.width <= 0 || layerRect.height <= 0) return;
+  const axisW = _priceAxisWidthPx();
+  const rightPad = Math.max(4, axisW + 4);
 
   for (let i = 0; i < labels.length; i++) {
     const lbl = labels[i];
@@ -216,9 +222,11 @@ function _startRafLoop() {
   const tick = () => {
     _rafHandle = null;
     _positionLabels();
-    // Keep running while we still have labels — stops itself once
-    // _labelLayer is empty.
-    if (_labelLayer && _labelLayer.children.length > 0) {
+    // Keep running while there are labels in the _byKey state. Checking
+    // children.length was wrong: on symbol-switch the layer may briefly
+    // have 0 children during resize, which used to kill the loop and
+    // labels never recovered.
+    if (_collectAllLabels().length > 0) {
       _rafHandle = requestAnimationFrame(tick);
     }
   };
@@ -412,11 +420,23 @@ export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
     const qty = _fmtQty(c.fill_qty);
 
     const entryPrice = Number(c.fill_price);
-    const stopPrice = Number(c.order?.stop_points != null && c.fill_price != null
-      ? (dir === 'long'
-          ? Number(c.fill_price) - Number(c.order.stop_points)
-          : Number(c.fill_price) + Number(c.order.stop_points))
-      : NaN);
+    // SL geometry:
+    //   entry sits `entry_offset_points` AWAY from the line
+    //     (long: above / short: below).
+    //   SL sits `stop_points` further PAST the line (on the same side
+    //     as the direction's loss).
+    //   Total distance from entry to SL = entry_offset + stop_points.
+    // Pre-2026-04-23 this code read only `stop_points`, which gave the
+    // distance from LINE to SL — resulting in chart labels drawn way
+    // too close to entry (313.46 instead of real 312.18 on ZEC). The
+    // real Bitget-submitted SL is at line ± stop_offset, NOT at entry
+    // ± stop_points.
+    const entryOff = Number(c.order?.entry_offset_points || 0);
+    const stopOff = Number(c.order?.stop_points || 0);
+    const slDist = entryOff + stopOff;
+    const stopPrice = Number.isFinite(entryPrice) && entryPrice > 0 && slDist > 0
+      ? (dir === 'long' ? entryPrice - slDist : entryPrice + slDist)
+      : NaN;
     const tpPrice = Number(c.order?.tp_price);
 
     const lines = [];

@@ -219,12 +219,21 @@ class ConditionalOrder:
         return math.exp(log_start + ratio * (log_end - log_start))
 
     def line_price_at_bar_open(self, ts: int) -> float:
-        """Same as line_price_at, but snaps `ts` to the CURRENT TF bar's
-        OPEN time before projecting. This is what the user sees visually
-        on the chart at the current candle — all code paths that need
-        "the line's price RIGHT NOW for this conditional" should use this
-        instead of line_price_at to stay consistent with the chart view.
-        Unified 2026-04-21 after user report about trigger mismatch.
+        """DEPRECATED — do not call for new code. Use `line_price_at(ts)`.
+
+        History: this method was introduced 2026-04-21 to fix a 4h click-
+        moment drift (~2.5h inside a 4h bar). It snaps `ts` to the
+        current TF bar's OPEN time. That worked for intraday TFs
+        (bar-open ≤ a few hours stale) but created a far worse bug on
+        1d/1w: user's eye is at the RIGHT edge of the live bar ≈ now,
+        not at the LEFT edge = bar-open which for 1d is up to 24h old.
+
+        On 2026-04-23 a user's ZEC 1d line placed a trigger 4.8 points
+        below visual expectation due to 22h of slope drift. All callers
+        (place-line-order, watcher.replan) have been switched to
+        `line_price_at(ts)` with `ts = now`. This method is kept only to
+        avoid breaking any external caller and will be removed in a
+        future commit once grep shows zero callers.
         """
         secs = _TF_SECONDS.get(self.timeframe, 3600)
         bar_open = (int(ts) // secs) * secs
