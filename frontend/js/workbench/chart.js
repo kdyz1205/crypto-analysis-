@@ -200,8 +200,9 @@ export function initChart(containerId = 'chart-container') {
 
   // Plan/position overlay refreshes when ANY conditionals state change
   // ripples through the system (user places / cancels / replan fires,
-  // server pushes 'conditionals.changed'). Poll at 10s catches replan;
-  // event catches user gestures with no perceived delay.
+  // server pushes 'conditionals.changed'). Event is the primary refresh
+  // path — instant response to user gestures. Poll (60s, see below) is
+  // a fallback for when events are missed (stream disconnect, etc.).
   subscribe('conditionals.changed', () => {
     if (!candleSeries) return;
     refreshPlanOverlay(chart, candleSeries).catch(() => {});
@@ -538,7 +539,10 @@ export async function loadCurrent(forcePatterns = false) {
       void refreshPlanOverlay(chart, candleSeries, {
         symbol: currentSymbol, interval: currentInterval,
       }).catch(() => {});
-      startPlanOverlayPoll(chart, candleSeries, 10000);
+      // P0 2026-04-23: 10s → 60s fallback. Instant refresh comes from
+      // the 'conditionals.changed' subscription above; the poll is only
+      // a safety net for missed events (stream disconnect, etc.).
+      startPlanOverlayPoll(chart, candleSeries, 60000);
     } catch (err) { console.warn('[plan_overlay] wire err:', err); }
     markBoot('patterns', 'ok', 'manual-only mode');
 

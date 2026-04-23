@@ -1,46 +1,58 @@
 // frontend/js/workbench/overlays/plan_order_overlay.js
 //
-// Horizontal price-line markers on the chart for every TRIGGERED plan
-// order (what Bitget calls 计划委托) and every FILLED position for the
-// currently-viewed symbol + timeframe.
+// Price-level markers on the chart for ACTIVE trades only:
+//   - Pending plan orders (status='triggered' AND Bitget still holds it)
+//   - Open positions (status='filled' AND Bitget still shows the position)
 //
-// Per cond we draw three lines:
-//   - Entry  (触发 / 入场)  blue solid,  label "入场 @ $price"
-//   - Stop   (止损)         red  dashed, label "止损 @ $price"
-//   - Target (止盈)         green dashed, label "止盈 @ $price"
+// Closed / stale conds are hidden. The ground truth is the live account
+// snapshot at /api/live-execution/account — local cond status is used
+// to pick the draw style, but cross-checked against Bitget so a stale
+// `filled` row whose position was closed on the app does NOT pollute
+// the chart. (2026-04-23: user screenshot showed 6 phantom shorts for
+// HYPE while Bitget held 0 positions.)
 //
-// When cond.status is 'triggered' (plan sitting on Bitget waiting for
-// trigger) we prefix labels with "计划" so the user can tell waiting
-// from live at a glance. When status is 'filled' (position open) we
-// prefix with "持仓".
+// Rendering:
+//   - A thin horizontal line per price level (via lightweight-charts
+//     priceLine, but `axisLabelVisible: false` so the chunky price-axis
+//     pill is suppressed).
+//   - A small HTML label overlaid on the chart body at (right-edge -
+//     axis-width - 4px, priceToCoordinate(price)). This keeps labels
+//     inside the candle area per user request — anchored to the exact
+//     price coordinate, not the axis column.
 //
-// Uses lightweight-charts native `candleSeries.createPriceLine()` —
-// these render as horizontal lines with right-edge price tags and
-// follow price-scale zoom/log changes automatically. They are not
-// chart series so they don't show up in the legend, and they auto-
-// position on the right axis rather than tracking candle time.
+// Labels stay pinned to the right price during pan / zoom / resize via
+// a requestAnimationFrame loop that runs only while ≥ 1 label exists.
 //
-// Added 2026-04-23 after user reported flying blind: "挂了单之后没
-// 清楚标注入场/止损/止盈,要像坐标一样跟着."
+// Previously: axis-pill labels with big text per cond, 10 s poll, no
+// closed-position filter. See git log for that iteration.
 
 import { listConditionals } from '../../services/conditionals.js';
 import { marketState } from '../../state/market.js';
+import { fetchJson } from '../../util/fetch.js';
 
 // One map per symbol:interval, so the overlay is still correct when
-// user switches symbols. Each entry: cond_id -> [priceLine refs].
-const _linesByKey = new Map();
+// user switches symbols. Each entry: cond_id -> { lines: [priceLine], labels: [{price, text, color, fg}] }.
+const _byKey = new Map();
 let _candleSeriesRef = null;
+let _chartRef = null;
+let _chartContainerRef = null;
+let _labelLayer = null;
+let _rafHandle = null;
 let _lastPullMs = 0;
 let _pollTimer = null;
 let _visible = true;
 
+// Shared cache so every refresh doesn't re-fetch the account.
+let _accountCache = { ts: 0, data: null };
+const ACCOUNT_TTL_MS = 20000;
+
 const COLORS = {
-  entryPlan:  { color: '#60a5fa', style: 0 }, // blue solid
-  entryFill:  { color: '#3b82f6', style: 0 }, // stronger blue
-  stopPlan:   { color: '#ef4444', style: 2 }, // red dashed
-  stopFill:   { color: '#dc2626', style: 0 }, // red solid when position live
-  tpPlan:     { color: '#22c55e', style: 2 }, // green dashed
-  tpFill:     { color: '#16a34a', style: 0 },
+  entryPlan:  { line: '#60a5fa', bg: '#1e3a8a', fg: '#dbeafe', style: 0 }, // blue
+  entryFill:  { line: '#3b82f6', bg: '#1d4ed8', fg: '#eff6ff', style: 0 },
+  stopPlan:   { line: '#ef4444', bg: '#7f1d1d', fg: '#fee2e2', style: 2 }, // red dashed
+  stopFill:   { line: '#dc2626', bg: '#991b1b', fg: '#fff1f2', style: 0 }, // red solid when live
+  tpPlan:     { line: '#22c55e', bg: '#14532d', fg: '#dcfce7', style: 2 }, // green dashed
+  tpFill:     { line: '#16a34a', bg: '#166534', fg: '#f0fdf4', style: 0 },
 };
 
 function _key(symbol, interval) {
@@ -67,36 +79,241 @@ function _fmtQty(q) {
   return v.toFixed(4);
 }
 
-/** Clear all price-line markers for a given key (or everything if null). */
+// ──────────────────────────────────────────────────────────────
+// Label layer (HTML overlaid on chart body)
+// ──────────────────────────────────────────────────────────────
+
+let _labelStylesInjected = false;
+function _injectLabelStyles() {
+  if (_labelStylesInjected) return;
+  _labelStylesInjected = true;
+  const s = document.createElement('style');
+  s.setAttribute('data-plan-overlay-styles', '1');
+  s.textContent = `
+    .plan-overlay-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 3;
+      overflow: hidden;
+    }
+    .plan-overlay-label {
+      position: absolute;
+      padding: 1px 5px;
+      font-size: 9px;
+      line-height: 12px;
+      letter-spacing: 0.3px;
+      border-radius: 2px;
+      font-family: inherit;
+      pointer-events: none;
+      white-space: nowrap;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+      transform: translateY(-50%);
+      opacity: 0.92;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+function _ensureLabelLayer() {
+  if (_labelLayer && _labelLayer.isConnected) return _labelLayer;
+  // Find the chart container. chart.js initialises LightweightCharts
+  // into #chart-container by default.
+  const container = _chartContainerRef
+    || document.querySelector('#chart-container')
+    || document.querySelector('#v2-chart');
+  if (!container) return null;
+  _chartContainerRef = container;
+  // Ensure the container is positioned for absolute children
+  const posValue = window.getComputedStyle(container).position;
+  if (posValue === 'static') container.style.position = 'relative';
+  _injectLabelStyles();
+  _labelLayer = document.createElement('div');
+  _labelLayer.className = 'plan-overlay-layer';
+  _labelLayer.setAttribute('data-testid', 'plan-overlay-layer');
+  container.appendChild(_labelLayer);
+  return _labelLayer;
+}
+
+function _clearLabelLayer() {
+  if (_labelLayer) _labelLayer.innerHTML = '';
+  if (_rafHandle) {
+    cancelAnimationFrame(_rafHandle);
+    _rafHandle = null;
+  }
+}
+
+function _collectAllLabels() {
+  // Flatten every visible cond's label descriptors
+  const out = [];
+  for (const entry of _byKey.values()) {
+    for (const [cid, rec] of entry) {
+      for (const lbl of rec.labels || []) {
+        out.push({ cid, ...lbl });
+      }
+    }
+  }
+  return out;
+}
+
+function _priceAxisWidthPx() {
+  if (!_chartRef) return 60;
+  try {
+    const ps = _chartRef.priceScale?.('right');
+    const w = ps?.width?.();
+    if (Number.isFinite(w) && w > 0) return w;
+  } catch {}
+  return 60;
+}
+
+function _positionLabels() {
+  if (!_labelLayer || !_candleSeriesRef) return;
+  const labels = _collectAllLabels();
+  if (labels.length === 0) {
+    _labelLayer.innerHTML = '';
+    return;
+  }
+  const layerRect = _labelLayer.getBoundingClientRect();
+  if (layerRect.width <= 0 || layerRect.height <= 0) return;
+  const axisW = _priceAxisWidthPx();
+  // Labels sit on the chart area, just left of the price axis column.
+  const rightPad = Math.max(4, axisW + 4);
+
+  // Reuse existing nodes to minimise DOM churn — otherwise the RAF loop
+  // keeps re-creating dozens of elements per frame during pan/zoom.
+  const existing = Array.from(_labelLayer.children);
+  while (existing.length < labels.length) {
+    const el = document.createElement('div');
+    el.className = 'plan-overlay-label';
+    _labelLayer.appendChild(el);
+    existing.push(el);
+  }
+  while (existing.length > labels.length) {
+    const el = existing.pop();
+    el.remove();
+  }
+
+  for (let i = 0; i < labels.length; i++) {
+    const lbl = labels[i];
+    const el = existing[i];
+    let y;
+    try { y = _candleSeriesRef.priceToCoordinate(lbl.price); } catch { y = null; }
+    if (y == null || y < -12 || y > layerRect.height + 12) {
+      el.style.display = 'none';
+      continue;
+    }
+    el.style.display = '';
+    el.textContent = lbl.text;
+    el.style.background = lbl.bg;
+    el.style.color = lbl.fg;
+    el.style.right = `${rightPad}px`;
+    el.style.top = `${y}px`;
+  }
+}
+
+function _startRafLoop() {
+  if (_rafHandle) return;
+  const tick = () => {
+    _rafHandle = null;
+    _positionLabels();
+    // Keep running while we still have labels — stops itself once
+    // _labelLayer is empty.
+    if (_labelLayer && _labelLayer.children.length > 0) {
+      _rafHandle = requestAnimationFrame(tick);
+    }
+  };
+  _rafHandle = requestAnimationFrame(tick);
+}
+
+// ──────────────────────────────────────────────────────────────
+// Live-account cross-check (ground truth)
+// ──────────────────────────────────────────────────────────────
+
+async function _getLiveAccount() {
+  const now = Date.now();
+  if (_accountCache.data && (now - _accountCache.ts < ACCOUNT_TTL_MS)) {
+    return _accountCache.data;
+  }
+  try {
+    const r = await fetchJson('/api/live-execution/account?mode=live', {
+      timeout: 6000,
+      noCache: true,
+    });
+    if (r && r.ok !== false) {
+      _accountCache = { ts: now, data: r };
+      return r;
+    }
+  } catch (err) {
+    // Fall through to stale cache
+  }
+  return _accountCache.data; // may be null if we've never succeeded
+}
+
+function _buildActiveSets(account) {
+  // Return { haveSnapshot, openPositionKeys, pendingOids } — callers
+  // use `haveSnapshot` to decide whether to trust the filter (fail-safe:
+  // if we never got an account snapshot, show everything rather than
+  // blank the chart).
+  if (!account) return { haveSnapshot: false, openPositionKeys: new Set(), pendingOids: new Set() };
+  const openPositionKeys = new Set();
+  for (const p of account.positions || []) {
+    const sym = String(p.symbol || '').toUpperCase();
+    const size = Number(p.total || p.size || p.available || 0);
+    if (!sym || size <= 0) continue;
+    const hs = String(p.holdSide || p.posSide || p.side || '').toLowerCase();
+    const dir = hs === 'long' || hs === 'buy' ? 'long'
+              : hs === 'short' || hs === 'sell' ? 'short'
+              : '';
+    if (!dir) continue;
+    openPositionKeys.add(`${sym}:${dir}`);
+  }
+  const pendingOids = new Set();
+  for (const o of account.pending_orders || []) {
+    const oid = String(o.orderId || o.order_id || o.planOrderId || o.clientOid || o.client_oid || '');
+    if (oid) pendingOids.add(oid);
+  }
+  return { haveSnapshot: true, openPositionKeys, pendingOids };
+}
+
+// ──────────────────────────────────────────────────────────────
+// Public API
+// ──────────────────────────────────────────────────────────────
+
+/** Clear all price-line markers + labels for a given key (or everything). */
 export function clearPlanOverlay(key = null) {
-  if (!_candleSeriesRef) return;
   if (key == null) {
-    for (const map of _linesByKey.values()) {
-      for (const refs of map.values()) {
-        for (const line of refs) {
-          try { _candleSeriesRef.removePriceLine(line); } catch {}
+    if (_candleSeriesRef) {
+      for (const entry of _byKey.values()) {
+        for (const rec of entry.values()) {
+          for (const line of rec.lines || []) {
+            try { _candleSeriesRef.removePriceLine(line); } catch {}
+          }
         }
       }
     }
-    _linesByKey.clear();
+    _byKey.clear();
+    _clearLabelLayer();
     return;
   }
-  const map = _linesByKey.get(key);
-  if (!map) return;
-  for (const refs of map.values()) {
-    for (const line of refs) {
-      try { _candleSeriesRef.removePriceLine(line); } catch {}
+  const entry = _byKey.get(key);
+  if (!entry) return;
+  if (_candleSeriesRef) {
+    for (const rec of entry.values()) {
+      for (const line of rec.lines || []) {
+        try { _candleSeriesRef.removePriceLine(line); } catch {}
+      }
     }
   }
-  _linesByKey.delete(key);
+  _byKey.delete(key);
+  // Don't nuke the whole layer — other symbols may still have labels
+  if (_labelLayer && _byKey.size === 0) _clearLabelLayer();
 }
 
-/** Draw/refresh plan-order + position markers for the currently-loaded
- *  symbol & interval. Safe to call repeatedly — stale lines are removed
- *  before new ones are added. */
+/** Draw/refresh markers for the currently-loaded symbol & interval. */
 export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
   if (!candleSeries) return;
   _candleSeriesRef = candleSeries;
+  if (chart) _chartRef = chart;
 
   const symbol = (opts.symbol || marketState.currentSymbol || '').toUpperCase();
   const interval = opts.interval || marketState.currentInterval || '';
@@ -107,23 +324,85 @@ export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
   clearPlanOverlay(key);
   if (!_visible) return;
 
+  // Fetch conds + live account in parallel
   let conds = [];
+  let account = null;
   try {
-    const resp = await listConditionals('all', symbol);
-    conds = resp?.conditionals || resp?.data || resp || [];
+    const [condResp, acctResp] = await Promise.allSettled([
+      listConditionals('all', symbol),
+      _getLiveAccount(),
+    ]);
+    if (condResp.status === 'fulfilled') {
+      const r = condResp.value;
+      conds = r?.conditionals || r?.data || r || [];
+    }
+    if (acctResp.status === 'fulfilled') {
+      account = acctResp.value;
+    }
   } catch (err) {
-    console.warn('[plan_overlay] listConditionals failed:', err);
+    console.warn('[plan_overlay] fetch failed:', err);
     return;
   }
+
+  const { haveSnapshot, openPositionKeys, pendingOids } = _buildActiveSets(account);
+
+  // Counts for diagnostics — exposed via probe even when nothing is shown.
+  let counts = { total: conds.length, on_symbol_tf: 0, hidden_filled_stale: 0, hidden_triggered_stale: 0, shown_triggered: 0, shown_filled: 0 };
 
   const active = conds.filter((c) => {
     if (c.symbol?.toUpperCase() !== symbol) return false;
     if (interval && c.timeframe && c.timeframe !== interval) return false;
-    return c.status === 'triggered' || c.status === 'filled';
+    counts.on_symbol_tf += 1;
+    if (c.status === 'triggered') {
+      // Plan order waiting on Bitget. Fail-SAFE: if account API is
+      // unavailable we trust local state (the backend classifier only
+      // transitions to 'triggered' on affirmative Bitget evidence, so
+      // stale 'triggered' is unlikely compared to stale 'filled').
+      if (!haveSnapshot) { counts.shown_triggered += 1; return true; }
+      const oid = String(c.exchange_order_id || '');
+      if (oid && pendingOids.has(oid)) { counts.shown_triggered += 1; return true; }
+      counts.hidden_triggered_stale += 1;
+      return false;
+    }
+    if (c.status === 'filled') {
+      // Position supposedly open. Fail-CLOSED: without a Bitget
+      // snapshot we HIDE the labels, because user's most common stale-
+      // state bug is "position closed on Bitget app but local watcher
+      // never transitioned" — the 2026-04-23 user screenshot showed 6
+      // phantom HYPE shorts with Bitget holding 0. When in doubt, we'd
+      // rather blank the chart than lie about open positions.
+      if (!haveSnapshot) { counts.hidden_filled_stale += 1; return false; }
+      const dir = c.order?.direction || 'long';
+      if (openPositionKeys.has(`${c.symbol.toUpperCase()}:${dir}`)) {
+        counts.shown_filled += 1;
+        return true;
+      }
+      counts.hidden_filled_stale += 1;
+      return false;
+    }
+    return false;
   });
+
+  // Always publish probe (even when we show 0 rows) so UI tests +
+  // the user's "why is my chart empty?" debug can see what was
+  // filtered and why.
+  try {
+    window.__planOverlayProbe = {
+      updated_at: Date.now(),
+      symbol, interval,
+      account_snapshot_ok: haveSnapshot,
+      open_position_keys: Array.from(openPositionKeys),
+      pending_oid_count: pendingOids.size,
+      counts,
+      active_cond_count: active.length,
+      rows: [],
+    };
+  } catch {}
+
   if (active.length === 0) return;
 
-  const map = new Map();
+  _ensureLabelLayer();
+  const byCond = new Map();
 
   for (const c of active) {
     const isFilled = c.status === 'filled';
@@ -140,80 +419,91 @@ export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
       : NaN);
     const tpPrice = Number(c.order?.tp_price);
 
-    const refs = [];
-    // ── Entry ────
+    const lines = [];
+    const labels = [];
+    const draw = (price, kind) => {
+      const style = COLORS[kind];
+      // Horizontal line on chart; axis pill suppressed so the price
+      // axis column stays clean — label goes on the chart body instead.
+      try {
+        const line = candleSeries.createPriceLine({
+          price,
+          color: style.line,
+          lineStyle: style.style,
+          lineWidth: 1,
+          axisLabelVisible: false,
+        });
+        lines.push(line);
+      } catch (err) { console.warn('[plan_overlay] price line err:', err); }
+      return style;
+    };
+
+    // Entry
     if (Number.isFinite(entryPrice) && entryPrice > 0) {
-      const style = isFilled ? COLORS.entryFill : COLORS.entryPlan;
-      const title = `${statusTag} ${dirTag} @ ${_fmtPrice(entryPrice)}${qty ? ` (${qty})` : ''}`;
-      try {
-        const line = candleSeries.createPriceLine({
-          price: entryPrice,
-          color: style.color,
-          lineStyle: style.style,
-          lineWidth: 1.5,
-          axisLabelVisible: true,
-          title,
-        });
-        refs.push(line);
-      } catch (err) { console.warn('[plan_overlay] entry line err:', err); }
+      const style = draw(entryPrice, isFilled ? 'entryFill' : 'entryPlan');
+      const qtyStr = qty ? ` ${qty}` : '';
+      labels.push({
+        price: entryPrice,
+        text: `${statusTag} ${dirTag} ${_fmtPrice(entryPrice)}${qtyStr}`,
+        bg: style.bg, fg: style.fg,
+      });
     }
-    // ── Stop ────
+    // Stop
     if (Number.isFinite(stopPrice) && stopPrice > 0) {
-      const style = isFilled ? COLORS.stopFill : COLORS.stopPlan;
-      const title = `${statusTag}止损 ${_fmtPrice(stopPrice)}`;
-      try {
-        const line = candleSeries.createPriceLine({
-          price: stopPrice,
-          color: style.color,
-          lineStyle: style.style,
-          lineWidth: 1.5,
-          axisLabelVisible: true,
-          title,
-        });
-        refs.push(line);
-      } catch (err) { console.warn('[plan_overlay] stop line err:', err); }
+      const style = draw(stopPrice, isFilled ? 'stopFill' : 'stopPlan');
+      labels.push({
+        price: stopPrice,
+        text: `${statusTag}止损 ${_fmtPrice(stopPrice)}`,
+        bg: style.bg, fg: style.fg,
+      });
     }
-    // ── Target ────
+    // Target
     if (Number.isFinite(tpPrice) && tpPrice > 0) {
-      const style = isFilled ? COLORS.tpFill : COLORS.tpPlan;
-      const title = `${statusTag}止盈 ${_fmtPrice(tpPrice)}`;
-      try {
-        const line = candleSeries.createPriceLine({
-          price: tpPrice,
-          color: style.color,
-          lineStyle: style.style,
-          lineWidth: 1.5,
-          axisLabelVisible: true,
-          title,
-        });
-        refs.push(line);
-      } catch (err) { console.warn('[plan_overlay] tp line err:', err); }
+      const style = draw(tpPrice, isFilled ? 'tpFill' : 'tpPlan');
+      labels.push({
+        price: tpPrice,
+        text: `${statusTag}止盈 ${_fmtPrice(tpPrice)}`,
+        bg: style.bg, fg: style.fg,
+      });
     }
 
-    if (refs.length > 0) map.set(c.conditional_id, refs);
+    if (lines.length > 0 || labels.length > 0) {
+      byCond.set(c.conditional_id, { lines, labels });
+    }
   }
 
-  _linesByKey.set(key, map);
+  _byKey.set(key, byCond);
   _lastPullMs = Date.now();
-  // Test hook: expose line metadata so Playwright can assert without
-  // trying to read lightweight-charts canvas. Only written, never read
-  // by real code.
+
+  _positionLabels();
+  _startRafLoop();
+
+  // Enrich probe with the actually-rendered rows
   try {
     const dump = [];
-    for (const [k, m] of _linesByKey) {
-      for (const [cid, refs] of m) {
-        dump.push({ key: k, cond_id: cid, line_count: refs.length });
+    for (const [k, m] of _byKey) {
+      for (const [cid, rec] of m) {
+        dump.push({ key: k, cond_id: cid, line_count: rec.lines.length, label_count: rec.labels.length });
       }
     }
-    window.__planOverlayProbe = { updated_at: _lastPullMs, rows: dump };
+    if (window.__planOverlayProbe) window.__planOverlayProbe.rows = dump;
   } catch {}
 }
 
-/** Start a polling timer that refreshes markers every N seconds so replan
- *  updates propagate without a full chart reload. */
-export function startPlanOverlayPoll(chart, candleSeries, intervalMs = 10000) {
+/** Start a polling timer that refreshes markers every N seconds.
+ *
+ *  Event-driven refresh (chart.js subscribes to 'conditionals.changed')
+ *  handles the fast path — user places/cancels, watcher replans, server
+ *  pushes an event → overlay redraws within one tick.
+ *
+ *  This poll is just a fallback for edge cases where the event bus
+ *  missed something (stream disconnect, watcher crash, etc.). 60s is
+ *  plenty — previous 10s added ~6 Bitget calls/min per open chart and
+ *  contributed to 429s on 2026-04-23 00:48 LA. */
+export function startPlanOverlayPoll(chart, candleSeries, intervalMs = 60000) {
   if (_pollTimer) clearInterval(_pollTimer);
   _candleSeriesRef = candleSeries;
+  if (chart) _chartRef = chart;
   _pollTimer = setInterval(() => {
     refreshPlanOverlay(chart, candleSeries).catch(() => {});
   }, intervalMs);
@@ -225,6 +515,8 @@ export function stopPlanOverlayPoll() {
 
 /** Force-refresh (e.g. when user just placed/cancelled an order). */
 export function forcePlanOverlayRefresh(chart, candleSeries) {
+  // Invalidate account cache so the next refresh picks up changes fast
+  _accountCache = { ts: 0, data: null };
   return refreshPlanOverlay(chart, candleSeries);
 }
 

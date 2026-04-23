@@ -21,6 +21,7 @@ import {
 } from '../../state/drawings.js';
 import { enterMeasureMode, exitMeasureMode, clearAllMeasurements } from './measure_tool.js';
 import { enterPredictionMode, exitPredictionMode, clearAllPredictions } from './prediction_tool.js';
+import { uiConfirm } from '../../util/ui_confirm.js';
 
 let toolbar = null;
 let statusEl = null;
@@ -65,19 +66,33 @@ export function initDrawToolbar(containerEl) {
       return;
     }
     if (tool === 'clear') {
-      if (!confirm(`清空 ${marketState.currentSymbol} ${marketState.currentInterval} 的所有手画线?`)) return;
-      drawingsSvc
-        .clearManualDrawings(marketState.currentSymbol, marketState.currentInterval)
-        .then(() => {
-          setSelectedManualLine(null);
-          clearMultiSelected();
-          setManualDrawings([]);
-          setDrawingsError(null);
-          import('./manual_trendline_controller.js').then((mod) => {
-            mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
-          });
-        })
-        .catch((err) => alert(`清空失败: ${err?.message || err}`));  // SAFE: alert() renders text, not HTML
+      // P0 2026-04-23: native confirm() replaced with uiConfirm so ESC
+      // (which also exits draw-tool mode) can't interact with the
+      // dismiss flow, and so the destructive action has a red-styled
+      // explicit button rather than a grey OK.
+      const sym = marketState.currentSymbol || '—';
+      const tf = marketState.currentInterval || '—';
+      uiConfirm({
+        title: '清空所有手画线?',
+        message: `${sym} ${tf} 上的所有手画线将被删除。这个操作无法撤销。`,
+        confirmLabel: '清空',
+        cancelLabel: '取消',
+        destructive: true,
+      }).then((ok) => {
+        if (!ok) return;
+        drawingsSvc
+          .clearManualDrawings(marketState.currentSymbol, marketState.currentInterval)
+          .then(() => {
+            setSelectedManualLine(null);
+            clearMultiSelected();
+            setManualDrawings([]);
+            setDrawingsError(null);
+            import('./manual_trendline_controller.js').then((mod) => {
+              mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
+            });
+          })
+          .catch((err) => alert(`清空失败: ${err?.message || err}`));  // SAFE: alert() renders text, not HTML
+      });
       return;
     }
     if (tool === 'trendline') {

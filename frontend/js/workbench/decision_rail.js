@@ -13,10 +13,14 @@ let pollTimer = null;
 const DECISION_RAIL_TIMEOUT_MS = 30000;
 
 async function fetchAll(symbol, interval) {
+  // P0 2026-04-23: noCache:true per PRINCIPLES.md P12. This rail polls
+  // every 30s for user's real-money decision making; the 30s default
+  // fetch cache would show data up to 60s old (30s rail poll + 30s
+  // fetch cache) — user would be looking at stale S/R and risk state.
   const [structure, risk, snapshot] = await Promise.all([
-    fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
-    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=200`, { timeout: DECISION_RAIL_TIMEOUT_MS }).catch(() => null),
+    fetchJson(`/api/market/structure-summary?symbol=${symbol}&interval=${interval}`, { timeout: DECISION_RAIL_TIMEOUT_MS, noCache: true }).catch(() => null),
+    fetchJson('/api/agent/risk-state', { timeout: DECISION_RAIL_TIMEOUT_MS, noCache: true }).catch(() => null),
+    fetchJson(`/api/strategy/snapshot?symbol=${symbol}&interval=${interval}&analysis_bars=200`, { timeout: DECISION_RAIL_TIMEOUT_MS, noCache: true }).catch(() => null),
   ]);
   return { structure, risk, snapshot };
 }

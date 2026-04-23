@@ -90,7 +90,10 @@ export const getOhlcvBackfill = (symbol, interval, beforeTs, bars = 500) => {
 export const getChart = (symbol, interval, days = 365, endTime = null, historyMode = 'fast_window') => {
   const params = new URLSearchParams({ symbol, interval, days: String(days), history_mode: historyMode });
   if (endTime) params.set('end_time', endTime);
-  return fetchJson(`/api/chart?${params}`);
+  // P0 2026-04-23: noCache per P12 — this endpoint includes pattern
+  // detection state that the user reads when deciding to enter; 30s
+  // stale data on a TF switch means looking at outdated structure.
+  return fetchJson(`/api/chart?${params}`, { noCache: true });
 };
 
 export const getTopVolume = (n = 20) => fetchJson(`/api/top-volume?n=${n}`);

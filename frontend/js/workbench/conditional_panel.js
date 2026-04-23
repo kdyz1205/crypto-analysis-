@@ -45,7 +45,10 @@ let marketContext = null;
 let pendingRefreshTimer = null;
 let knownConditionals = [];
 let bitgetAccount = null;       // real Bitget account snapshot (positions + pending + balance)
+let bitgetAccountError = null;  // last non-AbortError so UI can explain $0 vs "Bitget 不可用"
 let bitgetTimer = null;
+let panelUnsubscribers = [];
+let panelWindowListeners = [];
 // All drawings across every symbol — populated by fetchAllDrawings().
 // Used by the grouped "我的手画线 · 全部币种" section.
 let allDrawings = [];
@@ -103,7 +106,7 @@ export function initConditionalPanel(container) {
   // When user draws or loads a line, refresh the list (but don't auto-select).
   // ALSO: if the currently selected line was mutated (e.g. user dragged it),
   // re-load the analyze stats — geometry changed so smart recs are stale.
-  subscribe('drawings.updated', () => {
+  panelUnsubscribers.push(subscribe('drawings.updated', () => {
     if (currentLine) {
       const sel = drawingsState.selectedLineId;
       const lines = drawingsState.lines || [];
@@ -131,41 +134,50 @@ export function initConditionalPanel(container) {
       }
     }
     render();
-  });
+  }));
 
   // When a line is explicitly selected (by user click in our list)
-  subscribe('drawings.selected', () => {
+  panelUnsubscribers.push(subscribe('drawings.selected', () => {
     const sel = drawingsState.selectedLineId;
     const lines = drawingsState.lines || [];
     currentLine = sel ? lines.find((l) => l.manual_line_id === sel) : null;
     // chart_drawing.js highlights selected line via drawings.selected event
     void loadAnalyzeAndContext();
-  });
+  }));
 
   // Bug fix: panel must reset when symbol/timeframe changes, otherwise
   // it shows stale lines for the previous symbol.
-  subscribe('market.symbol.changed', () => {
+  panelUnsubscribers.push(subscribe('market.symbol.changed', () => {
     currentLine = null;
     currentAnalyze = null;
     marketContext = null;
     render();
-  });
-  subscribe('market.interval.changed', () => {
+  }));
+  panelUnsubscribers.push(subscribe('market.interval.changed', () => {
     currentLine = null;
     currentAnalyze = null;
     marketContext = null;
     render();
-  });
+  }));
 
   void refreshPending();
   pendingRefreshTimer = setInterval(() => void refreshPending(), 10000);
-  subscribe('conditionals.changed', () => {
+  panelUnsubscribers.push(subscribe('conditionals.changed', () => {
     void refreshPending();
     void refreshBitgetAccount();
-  });
+  }));
 
   void refreshBitgetAccount();
-  bitgetTimer = setInterval(() => void refreshBitgetAccount(), 5000);
+  // P0 2026-04-23: 5s → 30s. Reason: this panel + execution/panel.js both
+  // poll /api/live-execution/account. 5s here × 3 Bitget sub-calls per
+  // fetch = 36/min on this endpoint alone, which helped push us to 429
+  // and cascade-cancelled live conds on 2026-04-23 00:48 LA.
+  // Event-driven instant refresh is still wired:
+  //   - 'conditionals.changed' → refreshBitgetAccount (line above)
+  //   - 'cond-placed' window event → refresh + 1.5s follow-up
+  // The 30s interval is only for passive changes (e.g. SL/TP hit on
+  // Bitget app) that don't flow through our event bus.
+  bitgetTimer = setInterval(() => void refreshBitgetAccount(), 30000);
 
   // Immediate refresh when trade_plan_modal fires 'cond-placed' — user
   // 2026-04-22 complaint: "挂单后 panel 看不到,必须刷新". Backend
@@ -181,11 +193,12 @@ export function initConditionalPanel(container) {
     setTimeout(() => { void refreshBitgetAccount(); }, 1500);
   };
   window.addEventListener('cond-placed', onCondPlaced);
+  panelWindowListeners.push(['cond-placed', onCondPlaced]);
 
   // All-drawings grouped view — refresh every 15s and on PATCH/POST/DELETE.
   void refreshAllDrawings();
   allDrawingsTimer = setInterval(() => void refreshAllDrawings(), 15000);
-  subscribe('drawings.updated', () => { void refreshAllDrawings(); });
+  panelUnsubscribers.push(subscribe('drawings.updated', () => { void refreshAllDrawings(); }));
 
   render();
   return panel;
@@ -200,15 +213,24 @@ async function refreshBitgetAccount() {
     });
     if (r && r.ok !== false) {
       bitgetAccount = r;
-      const el = panel.querySelector('[data-bitget-section]');
-      if (el) el.outerHTML = renderBitgetSection();
+      bitgetAccountError = null;
+    } else {
+      // Server returned ok:false (e.g. Bitget API timeout) — distinguish
+      // from "never fetched". Keep last-good bitgetAccount so user still
+      // sees their prior balance + positions rather than $0.00.
+      bitgetAccountError = r?.reason || 'unknown';
     }
+    const el = panel.querySelector('[data-bitget-section]');
+    if (el) el.outerHTML = renderBitgetSection();
   } catch (err) {
     // AbortError is expected on panel unmount / slow network — not a bug.
     // Anything else is worth logging at debug level, not warn (the browser
     // review gate treats warn as failure).
     if (err?.name !== 'AbortError') {
       console.debug('[cond_panel] refreshBitgetAccount err', err);
+      bitgetAccountError = err?.message || 'fetch-err';
+      const el = panel.querySelector('[data-bitget-section]');
+      if (el) el.outerHTML = renderBitgetSection();
     }
   }
 }
@@ -231,6 +253,12 @@ export function destroyConditionalPanel() {
   if (pendingRefreshTimer) { clearInterval(pendingRefreshTimer); pendingRefreshTimer = null; }
   if (bitgetTimer) { clearInterval(bitgetTimer); bitgetTimer = null; }
   if (allDrawingsTimer) { clearInterval(allDrawingsTimer); allDrawingsTimer = null; }
+  for (const off of panelUnsubscribers.splice(0)) {
+    try { off(); } catch (err) { console.warn('[cond_panel] unsubscribe failed', err); }
+  }
+  for (const [event, fn] of panelWindowListeners.splice(0)) {
+    try { window.removeEventListener(event, fn); } catch (err) { console.warn('[cond_panel] remove listener failed', err); }
+  }
   if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
   panel = null;
   currentAnalyze = null;
@@ -362,6 +390,10 @@ async function onPanelClick(e) {
     e.stopPropagation();
     const lineId = btn.dataset.lineId;
     if (!lineId) return;
+    if (activeOrderCountForLine(lineId) > 0) {
+      alert('这条线还有活跃订单。先撤掉订单；线会保留作为下单依据。');
+      return;
+    }
     if (!confirm('删除这条线?')) return;
     try {
       const { deleteManualDrawing } = await import('../services/drawings.js');
@@ -507,6 +539,10 @@ async function onPanelClick(e) {
   if (action === 'delete-line') {
     const id = btn.dataset.lineId;
     if (!id) return;
+    if (activeOrderCountForLine(id) > 0) {
+      alert('这条线还有活跃订单。先撤掉订单；线会保留作为下单依据。');
+      return;
+    }
     console.log('[cond_panel] delete-line clicked', id);
     const oldText = btn.textContent;
     btn.disabled = true;
@@ -600,10 +636,29 @@ function render(opts = {}) {
 
 function renderBitgetSection() {
   const a = bitgetAccount || {};
+  const hasData = !!bitgetAccount;
   const equity = Number(a.total_equity || 0);
   const free = Number(a.usdt_available || 0);
   const positions = (a.positions || []).filter((p) => Number(p.total) > 0);
   const pending = (a.pending_orders || []).filter((p) => p.orderId);
+
+  // When we've never successfully fetched (Bitget API timeout since
+  // mount), show "不可用" instead of $0.00 which misleads the user into
+  // thinking their money disappeared. 2026-04-23: user asked
+  // "why can I not see my money?" and the answer was a Bitget timeout.
+  if (!hasData) {
+    const reason = bitgetAccountError ? ` · ${bitgetAccountError}` : '';
+    return `
+      <div class="cond-section" data-bitget-section>
+        <div class="cond-header">
+          Bitget 实盘
+          <span class="cond-spacer"></span>
+          <span style="color:#fbbf24;font-size:10px">⚠ 连接中...${esc(reason)}</span>
+        </div>
+        <p class="muted" style="font-size:10px;margin:4px 0">Bitget 返回超时或错误,30s 后重试。余额/持仓暂时不可见,但本地挂单逻辑不受影响。</p>
+      </div>
+    `;
+  }
 
   const posRows = positions.length
     ? positions.map((p) => {
@@ -676,6 +731,16 @@ function renderBitgetSection() {
   `;
 }
 
+function activeOrderCountForLine(lineId) {
+  if (!lineId) return 0;
+  let count = 0;
+  for (const c of knownConditionals) {
+    if (c.status !== 'pending' && c.status !== 'triggered') continue;
+    if (c.manual_line_id === lineId) count += 1;
+  }
+  return count;
+}
+
 function renderLineListSection(lines) {
   // 2026-04-21 redesign per user: group by symbol across ALL drawings.
   // Click a symbol → expand to see all that symbol's lines. Click a
@@ -683,6 +748,12 @@ function renderLineListSection(lines) {
   // the old flat "7 lines stacked vertically" look.
   const all = Array.isArray(allDrawings) ? allDrawings : [];
   const currentSym = marketState.currentSymbol;
+  const activeByLine = new Map();
+  for (const c of knownConditionals) {
+    if (c.status !== 'pending' && c.status !== 'triggered') continue;
+    const id = c.manual_line_id;
+    if (id) activeByLine.set(id, (activeByLine.get(id) || 0) + 1);
+  }
 
   // Group by symbol
   const bySymbol = new Map();
@@ -722,13 +793,21 @@ function renderLineListSection(lines) {
       const isSel = l.manual_line_id === drawingsState.selectedLineId;
       const tfTag = `<span class="mydraw-tf">${esc(l.timeframe)}</span>`;
       const sideColor = l.side === 'support' ? '#2dd4bf' : '#fb923c';
+      const activeCount = activeByLine.get(l.manual_line_id) || 0;
+      const delAttrs = activeCount > 0
+        ? 'disabled title="有活跃订单,先撤单再删线"'
+        : 'title="删除此线"';
+      const activeBadge = activeCount > 0
+        ? `<span class="mydraw-active-order" title="活跃订单">${activeCount}单</span>`
+        : '';
       return `
         <div class="mydraw-line-row ${isSel ? 'is-selected' : ''}" data-jump-line="1" data-line-id="${esc(l.manual_line_id)}" data-line-symbol="${esc(l.symbol)}" data-line-tf="${esc(l.timeframe)}" title="点击跳转到 ${esc(l.symbol)} ${esc(l.timeframe)} 并选中此线">
           <span class="mydraw-dot" style="background:${sideColor}"></span>
           ${tfTag}
           <span class="mydraw-prices">${esc(fmtPrice(l.price_start))} → ${esc(fmtPrice(l.price_end))}</span>
           <span class="mydraw-time">${esc(fmtDateShort(l.updated_at || l.created_at))}</span>
-          <button class="mydraw-del" data-action="delete-line-any" data-line-id="${esc(l.manual_line_id)}" data-line-symbol="${esc(l.symbol)}" data-line-tf="${esc(l.timeframe)}" title="删除此线">×</button>
+          ${activeBadge}
+          <button class="mydraw-del" data-action="delete-line-any" data-line-id="${esc(l.manual_line_id)}" data-line-symbol="${esc(l.symbol)}" data-line-tf="${esc(l.timeframe)}" ${delAttrs}>×</button>
         </div>
       `;
     }).join('');
