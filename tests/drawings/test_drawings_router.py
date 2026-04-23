@@ -5,6 +5,7 @@ import polars as pl
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from server.conditionals import ConditionalOrder, OrderConfig, TriggerConfig
 import server.routers.drawings as drawings_router
 import server.strategy.drawing_learner as drawing_learner
 from server.drawings.store import ManualTrendlineStore
@@ -28,6 +29,83 @@ def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(drawings_router.router)
     return app
+
+
+class _FakeCascadeStore:
+    def __init__(self, cond):
+        self.cond = cond
+        self.events = []
+
+    def list_all(self, *, status=None, symbol=None, manual_line_id=None):
+        if manual_line_id and manual_line_id != self.cond.manual_line_id:
+            return []
+        if status and status != self.cond.status:
+            return []
+        return [self.cond]
+
+    def append_event(self, conditional_id, event):
+        self.events.append((conditional_id, event))
+        self.cond.events.append(event)
+        return self.cond
+
+    def set_status(self, conditional_id, status, *, reason=""):
+        if conditional_id != self.cond.conditional_id:
+            return None
+        self.cond.status = status
+        if status == "cancelled":
+            self.cond.cancel_reason = reason
+        return self.cond
+
+
+class _FakeCascadeAdapter:
+    plan_ok = False
+    pending_oids = {"plan-order-1"}
+
+    def has_api_keys(self):
+        return True
+
+    async def cancel_order(self, symbol, order_id, mode):
+        return {"ok": False, "reason": "regular_failed"}
+
+    async def cancel_plan_order_any_type(self, symbol, order_id, mode):
+        return {"ok": self.plan_ok, "reason": "plan_failed"}
+
+    async def get_pending_orders(self, mode, *, symbol=None):
+        return [{"orderId": oid, "symbol": symbol or "BTCUSDT"} for oid in self.pending_oids]
+
+    async def get_pending_plan_orders(self, mode, *, plan_type="normal_plan", symbol=None):
+        return [{"orderId": oid, "symbol": symbol or "BTCUSDT"} for oid in self.pending_oids]
+
+
+def _cond_for_line(line_id: str) -> ConditionalOrder:
+    return ConditionalOrder(
+        conditional_id="cond-for-delete",
+        manual_line_id=line_id,
+        symbol="BTCUSDT",
+        timeframe="4h",
+        side="resistance",
+        t_start=1712592000,
+        t_end=1712678400,
+        price_start=100.0,
+        price_end=105.0,
+        pattern_stats_at_create={},
+        trigger=TriggerConfig(poll_seconds=60),
+        order=OrderConfig(
+            direction="short",
+            order_kind="bounce",
+            tolerance_pct_of_line=0.05,
+            stop_offset_pct_of_line=0.01,
+            rr_target=8.0,
+            notional_usd=10.0,
+            submit_to_exchange=True,
+            exchange_mode="live",
+        ),
+        status="triggered",
+        created_at=1712592000,
+        updated_at=1712592000,
+        exchange_order_id="plan-order-1",
+        extend_right=True,
+    )
 
 
 def test_manual_drawing_crud(monkeypatch, tmp_path: Path) -> None:
@@ -130,3 +208,75 @@ def test_clear_drawings_removes_only_requested_symbol_timeframe(monkeypatch, tmp
     assert h4.status_code == 200
     assert h15.json()["drawings"] == []
     assert len(h4.json()["drawings"]) == 1
+
+
+def test_delete_drawing_refuses_when_line_has_active_order(monkeypatch, tmp_path: Path) -> None:
+    drawings_router.store = ManualTrendlineStore(tmp_path / "manual_trendlines.json")
+    monkeypatch.setattr(drawing_learner, "ML_DRAWINGS_FILE", tmp_path / "user_drawings_ml.jsonl")
+    client = TestClient(_build_app())
+
+    create_response = client.post(
+        "/api/drawings",
+        json={
+            "symbol": "BTCUSDT",
+            "timeframe": "4h",
+            "side": "resistance",
+            "t_start": 1712592000,
+            "t_end": 1712678400,
+            "price_start": 100.0,
+            "price_end": 105.0,
+            "label": "manual resistance",
+            "override_mode": "display_only",
+        },
+    )
+    line_id = create_response.json()["drawing"]["manual_line_id"]
+    cond = _cond_for_line(line_id)
+    fake_store = _FakeCascadeStore(cond)
+
+    import server.conditionals as conditionals_pkg
+
+    monkeypatch.setattr(conditionals_pkg, "ConditionalOrderStore", lambda: fake_store)
+
+    delete_response = client.delete(f"/api/drawings/{line_id}")
+
+    assert delete_response.status_code == 409
+    assert delete_response.json()["detail"]["reason"] == "active_conditionals_protect_line"
+    assert drawings_router.store.get(line_id) is not None
+    assert cond.status == "triggered"
+    assert fake_store.events == []
+
+
+def test_delete_drawing_removes_line_only_after_orders_are_inactive(monkeypatch, tmp_path: Path) -> None:
+    drawings_router.store = ManualTrendlineStore(tmp_path / "manual_trendlines.json")
+    monkeypatch.setattr(drawing_learner, "ML_DRAWINGS_FILE", tmp_path / "user_drawings_ml.jsonl")
+    client = TestClient(_build_app())
+
+    create_response = client.post(
+        "/api/drawings",
+        json={
+            "symbol": "BTCUSDT",
+            "timeframe": "4h",
+            "side": "resistance",
+            "t_start": 1712592000,
+            "t_end": 1712678400,
+            "price_start": 100.0,
+            "price_end": 105.0,
+            "label": "manual resistance",
+            "override_mode": "display_only",
+        },
+    )
+    line_id = create_response.json()["drawing"]["manual_line_id"]
+    cond = _cond_for_line(line_id)
+    cond.status = "cancelled"
+    fake_store = _FakeCascadeStore(cond)
+
+    import server.conditionals as conditionals_pkg
+
+    monkeypatch.setattr(conditionals_pkg, "ConditionalOrderStore", lambda: fake_store)
+
+    delete_response = client.delete(f"/api/drawings/{line_id}")
+
+    assert delete_response.status_code == 200
+    assert drawings_router.store.get(line_id) is None
+    assert cond.status == "cancelled"
+    assert fake_store.events == []

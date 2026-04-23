@@ -200,6 +200,10 @@ def force_replan_line(manual_line_id: str) -> int:
     Called by PATCH /api/drawings/{id} when the user drags an anchor.
     The next watcher tick will pick up the flag and replan without
     waiting for the usual bar-interval gate. Returns count flagged.
+
+    IMPORTANT: this MUST NOT mutate the conditional's stored line
+    geometry. Those fields are the approval-time snapshot / trade
+    rationale. Replan should read the CURRENT drawing separately.
     """
     global _force_replan_set
     n = 0
@@ -207,25 +211,66 @@ def force_replan_line(manual_line_id: str) -> int:
         for cond in _store.list_all(status="triggered", manual_line_id=manual_line_id):
             _force_replan_set.add(cond.conditional_id)
             n += 1
-            # Also mirror the line anchors from the drawings store so the
-            # replan actually uses the new geometry, not the snapshot that
-            # was captured at cond creation time.
-            try:
-                from server.drawings.store import ManualTrendlineStore
-                drawing = ManualTrendlineStore().get(manual_line_id)
-                if drawing is not None:
-                    cond.t_start = drawing.t_start
-                    cond.t_end = drawing.t_end
-                    cond.price_start = drawing.price_start
-                    cond.price_end = drawing.price_end
-                    cond.extend_left = bool(drawing.extend_left)
-                    cond.extend_right = bool(drawing.extend_right)
-                    _store.update(cond)
-            except Exception as e:
-                print(f"[force_replan] failed to refresh anchors for {cond.conditional_id}: {e}", flush=True)
     except Exception as e:
         print(f"[force_replan] {manual_line_id}: {e}", flush=True)
     return n
+
+
+def _project_line_geometry(
+    *,
+    t_start: int,
+    t_end: int,
+    price_start: float,
+    price_end: float,
+    extend_left: bool,
+    extend_right: bool,
+    ts: int,
+) -> float:
+    import math
+
+    span = int(t_end) - int(t_start)
+    if span <= 0:
+        return float(price_start)
+    if ts <= int(t_start) and not bool(extend_left):
+        return float(price_start)
+    if ts >= int(t_end) and not bool(extend_right):
+        return float(price_end)
+    p_start = float(price_start)
+    p_end = float(price_end)
+    if p_start <= 0 or p_end <= 0:
+        slope_per_sec = (p_end - p_start) / span
+        return p_start + slope_per_sec * (ts - int(t_start))
+    ratio = (ts - int(t_start)) / span
+    return math.exp(math.log(p_start) + ratio * (math.log(p_end) - math.log(p_start)))
+
+
+def _line_price_for_replan(cond: ConditionalOrder, ts: int) -> float:
+    """Project the ACTIVE line geometry for replan decisions.
+
+    Priority:
+      1. current drawing store row (what the user is editing now)
+      2. conditional snapshot (what the user originally approved)
+
+    This keeps the trade rationale immutable while still letting a live
+    order follow a moved line.
+    """
+    try:
+        from server.drawings.store import ManualTrendlineStore
+
+        drawing = ManualTrendlineStore().get(cond.manual_line_id)
+        if drawing is not None:
+            return _project_line_geometry(
+                t_start=int(drawing.t_start),
+                t_end=int(drawing.t_end),
+                price_start=float(drawing.price_start),
+                price_end=float(drawing.price_end),
+                extend_left=bool(getattr(drawing, "extend_left", False)),
+                extend_right=bool(getattr(drawing, "extend_right", True)),
+                ts=ts,
+            )
+    except Exception as exc:
+        print(f"[watcher] current drawing fetch failed {cond.manual_line_id}: {exc}", flush=True)
+    return cond.line_price_at(ts)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1839,7 +1884,7 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     # bar-open was 22h stale and diverged ~1.5% from the user's
     # visual reading. Same principle as place-line-order: reference
     # point = user's eye = right edge of live bar ≈ now.
-    line_now = cond.line_price_at(now)
+    line_now = _line_price_for_replan(cond, now)
 
     # Line-broken invalidation (user 2026-04-22, threshold fixed 2026-04-22):
     #   If price has moved to the WRONG side of the line for the chosen

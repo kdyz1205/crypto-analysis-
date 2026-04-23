@@ -236,19 +236,11 @@ async def api_live_cancel_order(
     norm_mode = _normalize_mode(mode)
 
     # Try regular order cancel first
-    body = {
-        "symbol": sym,
-        "productType": "USDT-FUTURES",
-        "marginCoin": "USDT",
-        "orderId": order_id,
-    }
-    resp = await adapter._bitget_request(
-        "POST", "/api/v2/mix/order/cancel-order", mode=norm_mode, body=body,
-    )
-    if resp.get("code") == "00000":
+    regular_resp = await adapter.cancel_order(sym, order_id, norm_mode)
+    if regular_resp.get("ok"):
         local_updated = _mark_local_cond_cancelled(order_id, reason="user cancel via api")
         return {"ok": True, "order_id": order_id, "kind": "order",
-                "bitget": resp.get("data"), "local_cond_updated": local_updated}
+                "bitget": regular_resp.get("exchange_response_excerpt"), "local_cond_updated": local_updated}
 
     # Fall through to plan / trigger order cancel
     plan_resp = await adapter.cancel_plan_order_any_type(sym, order_id, norm_mode)
@@ -257,14 +249,15 @@ async def api_live_cancel_order(
         return {"ok": True, "order_id": order_id, "kind": "plan",
                 "bitget": plan_resp.get("exchange_response_excerpt"), "local_cond_updated": local_updated}
 
-    # Even on Bitget failure, mark local cancelled if the order was
-    # already gone server-side — prevents zombie cond from re-spawning.
-    local_updated = _mark_local_cond_cancelled(order_id, reason="bitget cancel failed but cleanup")
+    # Bitget did not confirm the cancel. Keep local state active so the UI
+    # does not hide a potentially-live exchange order. Reconcile can clean
+    # up later only after exchange truth proves the order is gone.
+    local_updated = False
     return {
         "ok": False,
         "order_id": order_id,
-        "reason": plan_resp.get("reason") or resp.get("msg") or "both cancel paths failed",
-        "raw_order": resp,
+        "reason": plan_resp.get("reason") or regular_resp.get("reason") or "both cancel paths failed",
+        "raw_order": regular_resp,
         "raw_plan": plan_resp,
         "local_cond_updated": local_updated,
     }

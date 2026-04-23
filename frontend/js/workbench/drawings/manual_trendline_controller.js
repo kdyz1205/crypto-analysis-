@@ -54,6 +54,7 @@ export function initManualTrendlineController(chart, container) {
   // }
 
   subscribe('drawings.updated', () => { renderPanel(); void refreshTradePlanCounts(); });
+  subscribe('conditionals.changed', () => { void refreshTradePlanCounts(); });
   subscribe('drawings.loading', () => renderPanel());
   subscribe('drawings.error', () => renderPanel());
   subscribe('drawings.mode', () => renderPanel());
@@ -180,10 +181,12 @@ function renderLineList(lines, selectedLineId) {
   const hidden = drawingsState.hiddenLineIds || new Set();
   const multi = drawingsState.multiSelectedIds || new Set();
   const counts = drawingsState.tradePlanCounts || {};
+  const multiBlocked = Array.from(multi).some((id) => (counts[id] || 0) > 0);
   const multiBar = multi.size > 0
     ? `<div class="manual-panel-actions manual-multi-bar">
          <span class="manual-multi-count">${multi.size} selected</span>
-         <button class="btn btn-danger" data-action="multi-delete">Delete Selected</button>
+         <button class="btn btn-danger" data-action="multi-delete"
+           ${multiBlocked ? 'disabled title="Cancel active orders before deleting lines."' : ''}>Delete Selected</button>
          <button class="btn" data-action="multi-clear">Clear</button>
        </div>`
     : '';
@@ -228,7 +231,7 @@ async function refreshTradePlanCounts() {
     const resp = await condSvc.listConditionals('all', marketState.currentSymbol);
     const counts = {};
     for (const c of resp?.conditionals || []) {
-      if (c.status === 'cancelled' || c.status === 'failed') continue;
+      if (c.status !== 'pending' && c.status !== 'triggered') continue;
       const id = c.manual_line_id;
       if (!id) continue;
       counts[id] = (counts[id] || 0) + 1;
@@ -241,6 +244,11 @@ async function refreshTradePlanCounts() {
 
 function renderSelectedActions(selected) {
   const draft = getSelectedDraft(selected);
+  const counts = drawingsState.tradePlanCounts || {};
+  const activePlans = counts[selected.manual_line_id] || 0;
+  const deleteAttrs = activePlans > 0
+    ? 'disabled title="Cancel active orders before deleting this line."'
+    : '';
   return `
     <div class="manual-selected-actions">
       <div class="manual-selected-title">Selected: ${escapeHtml(selected.label || selected.manual_line_id)}</div>
@@ -257,7 +265,7 @@ function renderSelectedActions(selected) {
         <button class="btn" data-action="toggle-lock">${selected.locked ? 'Unlock' : 'Lock'}</button>
         <button class="btn" data-action="toggle-extend-left">${selected.extend_left ? 'Stop Extend Left' : 'Extend Left'}</button>
         <button class="btn" data-action="toggle-extend-right">${selected.extend_right ? 'Stop Extend' : 'Extend Right'}</button>
-        <button class="btn btn-danger" data-action="delete-selected">Delete</button>
+        <button class="btn btn-danger" data-action="delete-selected" ${deleteAttrs}>Delete</button>
       </div>
       <div class="manual-panel-actions">
         <label class="manual-inline-label">
@@ -353,7 +361,13 @@ async function onPanelClick(event) {
   if (action === 'multi-delete') {
     const ids = Array.from(drawingsState.multiSelectedIds || []);
     if (!ids.length) return;
-    if (!confirm(`Delete ${ids.length} line(s)? This also cancels their pending orders.`)) return;
+    const counts = drawingsState.tradePlanCounts || {};
+    const blocked = ids.filter((id) => (counts[id] || 0) > 0);
+    if (blocked.length) {
+      alert('Selected lines still have active orders. Cancel those orders first; the lines stay as the order rationale.');
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} line(s)?`)) return;
     for (const id of ids) {
       try { await drawingsSvc.deleteManualDrawing(id); }
       catch (err) { console.warn('[manual-panel] delete failed', id, err); }
@@ -402,6 +416,11 @@ async function onPanelClick(event) {
     return;
   }
   if (action === 'delete-selected') {
+    const counts = drawingsState.tradePlanCounts || {};
+    if ((counts[selected.manual_line_id] || 0) > 0) {
+      alert('This line still has active orders. Cancel those orders first; the line stays as the order rationale.');
+      return;
+    }
     await drawingsSvc.deleteManualDrawing(selected.manual_line_id);
     setSelectedManualLine(null);
     selectedDraft = null;

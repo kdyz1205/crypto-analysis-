@@ -36,7 +36,9 @@ def _order(**overrides):
 
 def test_line_price_extends_right_by_default():
     cond = _order()
-    assert cond.line_price_at(1_200) == 30.0
+    # Log-price interpolation matches the chart's log axis. A 10 -> 20 line
+    # over one span doubles each span, so one span to the right is 40.
+    assert cond.line_price_at(1_200) == pytest.approx(40.0)
 
 
 def test_line_price_can_clamp_right_when_disabled():
@@ -46,7 +48,7 @@ def test_line_price_can_clamp_right_when_disabled():
 
 def test_line_price_extends_left_only_when_enabled():
     assert _order().line_price_at(900) == 10.0
-    assert _order(extend_left=True).line_price_at(900) == 0.0
+    assert _order(extend_left=True).line_price_at(900) == pytest.approx(5.0)
 
 
 def test_trade_prices_can_place_stop_beyond_line_for_long():

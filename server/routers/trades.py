@@ -102,10 +102,37 @@ def _build_labels_index() -> dict[str, str]:
     idx: dict[str, str] = {}
     for row in _iter_jsonl(_LABELS_FILE):
         mid = row.get("manual_line_id")
-        lbl = row.get("label")
+        lbl = _normalize_user_label(row)
         if mid and lbl is not None:
-            idx[mid] = str(lbl)
+            idx[mid] = lbl
     return idx
+
+
+def _normalize_user_label(row: dict[str, Any]) -> str | None:
+    """Normalize historical + current label payloads into one display field.
+
+    Compatibility:
+      - new manual label API: {quality: "good"|"bad"|"mediocre"}
+      - older optimizer labels: {label_trade_win: 1|0}
+      - oldest free-form rows:   {label: "..."}
+    """
+    quality = row.get("quality")
+    if quality not in (None, ""):
+        return str(quality)
+
+    label_trade_win = row.get("label_trade_win")
+    if label_trade_win not in (None, ""):
+        try:
+            win = int(label_trade_win)
+            return "win" if win > 0 else "loss"
+        except Exception:
+            return str(label_trade_win)
+
+    label = row.get("label")
+    if label not in (None, ""):
+        return str(label)
+
+    return None
 
 
 def _derive_cond_stats(cond: dict) -> dict[str, Any]:

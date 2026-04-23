@@ -310,6 +310,10 @@ function numericTime(value) {
 function projectLinePrice(a, b, time) {
   const span = b.time - a.time;
   if (!span) return a.price;
+  if (a.price > 0 && b.price > 0) {
+    const ratio = (time - a.time) / span;
+    return Math.exp(Math.log(a.price) + ratio * (Math.log(b.price) - Math.log(a.price)));
+  }
   const slope = (b.price - a.price) / span;
   return a.price + slope * (time - a.time);
 }

@@ -260,17 +260,16 @@ async def api_delete_drawing(manual_line_id: str):
     if existing is None:
         raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
 
-    cancelled = await _cancel_conditionals_for_lines(
-        [manual_line_id],
-        reason_prefix="line deleted",
-    )
+    # Current rule: active orders PROTECT their rationale line. The user
+    # must cancel those orders first; delete/clear never cascade-cancels.
+    _refuse_active_conditionals_for_lines([manual_line_id])
 
     _schedule_drawing_ml_capture(existing, stage="deleted")
     removed = 1 if store.delete(manual_line_id) else 0
     if removed == 0:
         raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
 
-    return {"removed": removed, "cancelled_conditionals": cancelled}
+    return {"removed": removed, "cancelled_conditionals": 0}
 
 
 @router.post("/clear", response_model=ManualTrendlineClearResponse)
@@ -280,79 +279,58 @@ async def api_clear_drawings(
 ):
     normalized_symbol = _normalize_symbol(symbol) if symbol else None
     targets = store.list(symbol=normalized_symbol, timeframe=timeframe)
-    cancelled = await _cancel_conditionals_for_lines(
-        [item.manual_line_id for item in targets],
-        reason_prefix="lines cleared",
-    )
+    _refuse_active_conditionals_for_lines([item.manual_line_id for item in targets])
     removed = store.clear(symbol=normalized_symbol, timeframe=timeframe)
-    return {"removed": removed, "cancelled_conditionals": cancelled}
+    return {"removed": removed, "cancelled_conditionals": 0}
 
 
-async def _cancel_conditionals_for_lines(line_ids: list[str], *, reason_prefix: str) -> int:
-    """Cancel pending/triggered trade plans before parent drawings go away."""
+def _refuse_active_conditionals_for_lines(line_ids: list[str]) -> None:
+    """Keep a drawing as the visible order rationale while any order is active."""
     if not line_ids:
-        return 0
-    to_cancel = []
+        return
     try:
-        from ..conditionals import ConditionalOrderStore, ConditionalEvent, now_ts as _nt
-        from ..conditionals.exchange_cancel import cancel_exchange_order_for_cond
+        from ..conditionals import ConditionalOrderStore
 
         cstore = ConditionalOrderStore()
+        active = []
         for manual_line_id in line_ids:
             for cond in cstore.list_all(manual_line_id=manual_line_id):
                 if cond.status not in ("pending", "triggered"):
                     continue
-                bitget_cancel = None
-                if cond.exchange_order_id and cond.status == "triggered":
-                    bitget_cancel = await cancel_exchange_order_for_cond(cond)
-                    if not bitget_cancel.get("ok"):
-                        cstore.append_event(cond.conditional_id, ConditionalEvent(
-                            ts=_nt(),
-                            kind="exchange_error",
-                            message=f"{reason_prefix} refused: Bitget cancel not confirmed",
-                            extra={"bitget_cancel": bitget_cancel},
-                        ))
-                        raise HTTPException(
-                            409,
-                            {
-                                "reason": "bitget_cancel_not_confirmed",
-                                "message": (
-                                    "Refusing to remove the line because its "
-                                    "Bitget order may still be live."
-                                ),
-                                "manual_line_id": manual_line_id,
-                                "conditional_id": cond.conditional_id,
-                                "bitget_cancel": bitget_cancel,
-                            },
-                        )
-                to_cancel.append((manual_line_id, cond, bitget_cancel))
+                active.append({
+                    "manual_line_id": manual_line_id,
+                    "conditional_id": cond.conditional_id,
+                    "symbol": cond.symbol,
+                    "timeframe": cond.timeframe,
+                    "status": cond.status,
+                    "exchange_order_id": cond.exchange_order_id,
+                })
 
-        cancelled = 0
-        for manual_line_id, cond, bitget_cancel in to_cancel:
-            cstore.set_status(
-                cond.conditional_id,
-                "cancelled",
-                reason=f"{reason_prefix}: {manual_line_id}",
+        if active:
+            print(
+                f"[drawings.delete] refused: active conditionals protect line(s) {line_ids}",
+                flush=True,
             )
-            cancelled += 1
-            try:
-                cstore.append_event(cond.conditional_id, ConditionalEvent(
-                    ts=_nt(), kind="cancelled",
-                    message=f"parent line {manual_line_id} was removed",
-                    extra={"bitget_cancel": bitget_cancel},
-                ))
-            except Exception as exc:
-                print(f"[drawings.clear] append cancel event failed: {exc}", flush=True)
-        return cancelled
+            raise HTTPException(
+                409,
+                {
+                    "reason": "active_conditionals_protect_line",
+                    "message": (
+                        "This line has active trade plans. Cancel those orders "
+                        "first; the drawing is kept as the order rationale."
+                    ),
+                    "active_conditionals": active,
+                },
+            )
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"[drawings.clear] cascade cancel failed: {exc}", flush=True)
+        print(f"[drawings.delete] active conditional check failed: {exc}", flush=True)
         raise HTTPException(
             500,
             {
-                "reason": "cascade_cancel_failed",
-                "message": "Could not prove related trade plans were cancelled.",
+                "reason": "active_conditional_check_failed",
+                "message": "Could not prove whether related trade plans are active.",
                 "error": str(exc),
             },
         )

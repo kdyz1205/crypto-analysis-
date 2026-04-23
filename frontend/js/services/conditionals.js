@@ -1,7 +1,13 @@
 // frontend/js/services/conditionals.js
 // Thin wrapper over /api/conditionals/* + /api/drawings/manual/analyze
 
-import { fetchJson } from '../util/fetch.js';
+import { fetchJson, invalidateCachePrefix } from '../util/fetch.js';
+import { publish } from '../util/events.js';
+
+function notifyConditionalsChanged(action, data) {
+  invalidateCachePrefix('/api/conditionals');
+  publish('conditionals.changed', { action, data, ts: Date.now() });
+}
 
 export async function analyzeDrawing(manualLineId, k = 30) {
   return fetchJson('/api/drawings/manual/analyze', {
@@ -16,6 +22,9 @@ export async function createConditional(payload) {
     method: 'POST',
     body: payload,
     timeout: 15000,
+  }).then((data) => {
+    if (data?.ok !== false) notifyConditionalsChanged('create', data);
+    return data;
   });
 }
 
@@ -35,14 +44,20 @@ export async function getConditional(id) {
 export async function cancelConditional(id, reason = 'manual_cancel') {
   return fetchJson(
     `/api/conditionals/${encodeURIComponent(id)}/cancel?reason=${encodeURIComponent(reason)}`,
-    { method: 'POST', timeout: 10000 }
-  );
+    { method: 'POST', timeout: 35000 }
+  ).then((data) => {
+    if (data?.ok !== false) notifyConditionalsChanged('cancel', data);
+    return data;
+  });
 }
 
 export async function deleteConditional(id) {
   return fetchJson(`/api/conditionals/${encodeURIComponent(id)}`, {
     method: 'DELETE',
-    timeout: 10000,
+    timeout: 35000,
+  }).then((data) => {
+    if (data?.ok !== false) notifyConditionalsChanged('delete', data);
+    return data;
   });
 }
 
@@ -61,5 +76,8 @@ export async function placeLineOrder(payload) {
     method: 'POST',
     body: payload,
     timeout: 30000,
+  }).then((data) => {
+    if (data?.ok !== false) notifyConditionalsChanged('place-line-order', data);
+    return data;
   });
 }

@@ -36,8 +36,8 @@ export async function deleteManualDrawing(manualLineId) {
   try {
     const data = await fetchJson(`/api/drawings/${encodeURIComponent(manualLineId)}`, {
       method: 'DELETE',
-      // Backend 2026-04-22: Bitget cancel is synchronous before local
-      // line removal, so the UI never hides a still-live plan order.
+      // Current rule: backend REFUSES deletion while active orders still
+      // point at this line. Deletion does not cascade-cancel live orders.
       timeout: 35000,
     });
     invalidateCachePrefix('/api/drawings');
@@ -47,16 +47,13 @@ export async function deleteManualDrawing(manualLineId) {
       invalidateCachePrefix('/api/drawings');
       return { removed: 0, already_deleted: true };
     }
-    // 409 = backend refused because one or more Bitget cancels didn't
-    // confirm. Server preserved both the local line AND the cond records
-    // with status=triggered, so the sidebar panel will keep showing the
-    // pending Bitget order on its next 5s poll. Caller's catch should
-    // restore the optimistic line hide. This is the SAFE outcome:
-    // "cancel failed = effectively nothing was deleted."
+    // 409 = backend refused to delete the line because active orders still
+    // use it as their rationale. Cancel the orders first; line deletion must
+    // never cascade-cancel live money by surprise.
     if (err?.status === 409) {
       const detail = err?.detail || err?.body || {};
-      const reason = detail.reason || 'bitget_cancel_unconfirmed';
-      err.userHint = `Bitget 撤单未确认 (${reason}) — 本地线和挂单都没删,请去 Bitget app 自己撤单后重试,或追加 ?force=true 强删本地`;
+      const reason = detail.reason || 'active_orders_protect_line';
+      err.userHint = `这条线还有活跃挂单 (${reason}) — 先撤掉对应订单,本地线会保留作为下单依据`;
       throw err;
     }
     // Abort/timeout: could be mid-flight. Ambiguous state — safest to
@@ -75,7 +72,7 @@ export function clearManualDrawings(symbol, timeframe) {
   if (timeframe) params.set('timeframe', timeframe);
   return fetchJson(`/api/drawings/clear?${params}`, {
     method: 'POST',
-    timeout: 30000,   // may cascade-cancel many conds on bulk clear
+    timeout: 30000,   // bulk active-order checks can still take a moment
   }).then((data) => {
     invalidateCachePrefix('/api/drawings');
     return data;

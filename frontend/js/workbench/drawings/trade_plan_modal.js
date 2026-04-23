@@ -746,10 +746,17 @@ export function openTradePlanModal(line, options = {}) {
           resolve(resp);
         }, 900);
       } catch (err) {
-        btn.disabled = false;
-        btn.textContent = '确认挂单';
         $('#tp-error').style.color = '';
-        $('#tp-error').textContent = `创建失败: ${err?.message || err}`;
+        const msg = String(err?.message || err || '');
+        if (/abort|timeout|signal/i.test(msg)) {
+          $('#tp-error').style.color = '#fbbf24';
+          $('#tp-error').textContent = '网络超时: 订单可能已经到 Bitget。先去 Bitget app 或右侧挂单栏确认,不要直接重复点击。';
+          btn.textContent = '状态未知';
+        } else {
+          btn.disabled = false;
+          btn.textContent = '确认挂单';
+          $('#tp-error').textContent = `创建失败: ${msg}`;
+        }
       }
     });
 

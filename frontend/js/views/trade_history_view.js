@@ -13,6 +13,7 @@
 
 import { esc } from '../util/dom.js';
 import { fetchJson } from '../util/fetch.js';
+import { setIntervalTF, setSymbol } from '../state/market.js';
 
 let _host = null;
 let _rows = [];
@@ -79,7 +80,7 @@ function renderShell() {
       </table>
     </div>
     <div class="th-detail" id="th-detail" hidden>
-      <div class="th-detail-head">点击行查看全部特征</div>
+      <div class="th-detail-head">点击“详情”看完整 JSON，点击整行跳回 market</div>
       <pre id="th-detail-body"></pre>
     </div>
   </div>`;
@@ -92,6 +93,10 @@ function wire(el) {
       const action = btn.dataset.action;
       if (action === 'refresh') refresh();
       if (action === 'export') exportCsv();
+      if (action === 'detail-row') {
+        const idx = Number(btn.dataset.rowIdx);
+        showDetail(idx);
+      }
       return;
     }
     const th = ev.target.closest('th[data-sort]');
@@ -109,7 +114,7 @@ function wire(el) {
     const row = ev.target.closest('tr[data-row-idx]');
     if (row) {
       const idx = Number(row.dataset.rowIdx);
-      showDetail(idx);
+      jumpToTrade(idx);
     }
   });
   el.querySelectorAll('[data-filter]').forEach((inp) => {
@@ -209,17 +214,18 @@ function renderTable() {
       const active = _sort.key === c;
       const arrow = active ? (_sort.dir === 'asc' ? ' ▲' : ' ▼') : '';
       return `<th data-sort="${esc(c)}"${active ? ' class="is-active"' : ''}>${esc(c)}${arrow}</th>`;
-    }).join('') + '</tr>';
+    }).join('') + '<th class="th-action-col">详情</th></tr>';
   }
 
   if (tbody) {
     if (rows.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="${cols.length}" style="padding:14px;color:#8a95a6;text-align:center">没有匹配的交易记录</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" style="padding:14px;color:#8a95a6;text-align:center">没有匹配的交易记录</td></tr>`;
     } else {
       tbody.innerHTML = rows.map((r, idx) => {
         const cls = (Number(r.pnl_usd) || 0) >= 0 ? 'th-win' : 'th-loss';
         return `<tr class="${cls}" data-row-idx="${idx}">` +
           cols.map((c) => `<td class="col-${esc(c)}">${esc(fmt(r[c], c))}</td>`).join('') +
+          `<td class="th-action-col"><button class="th-mini-btn" data-action="detail-row" data-row-idx="${idx}">详情</button></td>` +
           `</tr>`;
       }).join('');
     }
@@ -234,6 +240,25 @@ function showDetail(idx) {
   if (!r) return;
   detail.hidden = false;
   body.textContent = JSON.stringify(r, null, 2);
+}
+
+function jumpToTrade(idx) {
+  const r = sortedRows(filteredRows())[idx];
+  if (!r) return;
+  const symbol = String(r.symbol || '').toUpperCase();
+  const timeframe = String(r.timeframe || '');
+  if (symbol) {
+    setSymbol(symbol);
+    const input = document.querySelector('#v2-symbol-input');
+    if (input) input.value = symbol;
+  }
+  if (timeframe) {
+    setIntervalTF(timeframe);
+  }
+  const marketBtn = document.querySelector('#v2-nav .v2-nav-btn[data-view="market"]');
+  if (marketBtn instanceof HTMLElement) {
+    marketBtn.click();
+  }
 }
 
 function exportCsv() {
@@ -286,7 +311,9 @@ function injectStyles() {
       padding:6px 8px; text-align:left; border-bottom:1px solid #2a3548;
       cursor:pointer; color:#8aa0bd; font-weight:600; white-space:nowrap;
     }
+    .th-table thead th.th-action-col { cursor:default; }
     .th-table thead th:hover { background:#141a2a; color:#cde; }
+    .th-table thead th.th-action-col:hover { background:#0f1420; color:#8aa0bd; }
     .th-table thead th.is-active { color:#60a5fa; }
     .th-table tbody td {
       padding:4px 8px; border-bottom:1px solid #1a2234;
@@ -294,6 +321,12 @@ function injectStyles() {
     }
     .th-table tbody tr { cursor:pointer; }
     .th-table tbody tr:hover { background:#141a2a; }
+    .th-action-col { width:68px; min-width:68px; }
+    .th-mini-btn {
+      background:#141a26; border:1px solid #2a3548; color:#cde;
+      padding:2px 8px; border-radius:4px; font-size:10px; cursor:pointer;
+    }
+    .th-mini-btn:hover { background:#1a2234; border-color:#3a4558; }
     .th-table tbody tr.th-win .col-pnl_usd,
     .th-table tbody tr.th-win .col-pnl_pct,
     .th-table tbody tr.th-win .col-price_move_pct { color:#00e676; font-weight:600; }

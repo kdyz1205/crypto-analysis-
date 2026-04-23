@@ -2035,6 +2035,16 @@ body.combat-mode .boot-status { display: none; }
   font-size: 9px;
   flex-shrink: 0;
 }
+.mydraw-active-order {
+  background: #3b2f12;
+  color: #fbbf24;
+  border: 1px solid #7c5c14;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 .mydraw-del {
   background: transparent;
   border: none;
@@ -2047,6 +2057,13 @@ body.combat-mode .boot-status { display: none; }
 }
 .mydraw-line-row:hover .mydraw-del { opacity: 1; }
 .mydraw-del:hover { color: #ff5252; }
+.mydraw-del:disabled {
+  color: #3f4654;
+  cursor: not-allowed;
+}
+.mydraw-del:disabled:hover {
+  color: #3f4654;
+}
 
 .cond-row {
   background: var(--v2-bg, #0b0f17);

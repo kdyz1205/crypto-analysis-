@@ -1,7 +1,9 @@
 import pytest
+import math
 
 from server.conditionals import watcher
 from server.conditionals.types import ConditionalOrder, OrderConfig, TriggerConfig
+from server.drawings.types import ManualTrendline
 
 
 class _FakeStore:
@@ -44,6 +46,16 @@ class _FakeStore:
             self.cond.cancel_reason = reason
         self.status_changes.append((to_status, reason))
         return self.cond
+
+    def list_all(self, *, status=None, symbol=None, manual_line_id=None):
+        items = [self.cond]
+        if status is not None:
+            items = [c for c in items if c.status == status]
+        if symbol is not None:
+            items = [c for c in items if c.symbol == symbol]
+        if manual_line_id is not None:
+            items = [c for c in items if c.manual_line_id == manual_line_id]
+        return items
 
 
 class _FakeAdapter:
@@ -159,6 +171,14 @@ def _cond(**overrides):
     return ConditionalOrder(**base)
 
 
+class _FakeDrawingStore:
+    def __init__(self, drawing):
+        self.drawing = drawing
+
+    def get(self, manual_line_id):
+        return self.drawing if self.drawing and manual_line_id == self.drawing.manual_line_id else None
+
+
 @pytest.mark.asyncio
 async def test_replan_uses_trigger_market_plan_order(monkeypatch):
     cond = _cond()
@@ -183,6 +203,86 @@ async def test_replan_uses_trigger_market_plan_order(monkeypatch):
     assert trigger_price == pytest.approx(intent.entry_price)
     assert cond.exchange_order_id == "new-plan-1"
     assert "trigger-market plan" in store.events[-1].message
+
+
+@pytest.mark.asyncio
+async def test_force_replan_line_flags_without_mutating_snapshot(monkeypatch):
+    cond = _cond(
+        manual_line_id="line-live-1",
+        t_start=1_000,
+        t_end=1_300,
+        price_start=40.0,
+        price_end=43.0,
+    )
+    store = _FakeStore(cond)
+    watcher._force_replan_set.clear()
+    monkeypatch.setattr(watcher, "_store", store)
+
+    flagged = watcher.force_replan_line("line-live-1")
+
+    assert flagged == 1
+    assert cond.conditional_id in watcher._force_replan_set
+    assert cond.t_start == 1_000
+    assert cond.t_end == 1_300
+    assert cond.price_start == 40.0
+    assert cond.price_end == 43.0
+    assert store.updated == []
+
+
+@pytest.mark.asyncio
+async def test_replan_uses_current_drawing_geometry_without_overwriting_snapshot(monkeypatch):
+    cond = _cond(
+        manual_line_id="line-live-2",
+        t_start=1_000,
+        t_end=1_300,
+        price_start=40.0,
+        price_end=43.0,
+        fill_price=40.04,
+    )
+    drawing = ManualTrendline(
+        manual_line_id="line-live-2",
+        symbol="HYPEUSDT",
+        timeframe="5m",
+        side="support",
+        source="manual",
+        t_start=1_250,
+        t_end=1_550,
+        price_start=200.0,
+        price_end=260.0,
+        extend_left=False,
+        extend_right=True,
+        locked=False,
+        label="",
+        notes="",
+        comparison_status="uncompared",
+        override_mode="display_only",
+        nearest_auto_line_id=None,
+        slope_diff=None,
+        projected_price_diff=None,
+        overlap_ratio=None,
+        created_at=1_000,
+        updated_at=1_000,
+    )
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    monkeypatch.setattr("server.drawings.store.ManualTrendlineStore", lambda: _FakeDrawingStore(drawing))
+    _patch_mark(monkeypatch, 210.0)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    adapter = _FakeAdapter.instances[-1]
+    intent, mode, trigger_price = adapter.plan_submits[0]
+    # Active drawing at ts=1300 uses LOG projection, not the frozen 40→43
+    # snapshot. The line is 1/6 of the way from 200 -> 260 in log space.
+    line_now = math.exp(math.log(200.0) + ((1_300 - 1_250) / (1_550 - 1_250)) * (math.log(260.0) - math.log(200.0)))
+    assert trigger_price == pytest.approx(line_now * 1.001)
+    assert intent.entry_price == pytest.approx(line_now * 1.001)
+    assert cond.t_start == 1_000
+    assert cond.t_end == 1_300
+    assert cond.price_start == 40.0
+    assert cond.price_end == 43.0
 
 
 @pytest.mark.asyncio
