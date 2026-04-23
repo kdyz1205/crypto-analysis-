@@ -115,13 +115,19 @@ const DEFAULTS = {
   stop_pct: 0.1,                // line-break stop (%)
   rr_target: 5.0,
   leverage: 10,                 // sent to Bitget via set-leverage API
-  // Two sizing modes (user spec 2026-04-20 part 2):
-  //   'notional_usd' : fixed USDT value, `notional_usd` is the size
-  //   'equity_pct'   : percentage of account equity, notional =
-  //                    equity * (equity_pct / 100) * leverage
+  // Three sizing modes:
+  //   'notional_usd' : fixed USDT value, `notional_usd` is the stake;
+  //                    actual notional = stake * leverage
+  //   'equity_pct'   : percentage of account equity * leverage
+  //                    (notional = equity * equity_pct/100 * leverage)
+  //   'risk_pct'     : user sets % of equity willing to LOSE per trade,
+  //                    system computes notional = equity * risk_pct /
+  //                    (buffer + stop + taker_fee*2). 2026-04-22 user:
+  //                    "愿意亏损一个固定 % 就够了,懒得算 lev/pct/usd"
   size_mode: 'notional_usd',
   notional_usd: 30,             // used when size_mode='notional_usd'
   equity_pct: 10,               // used when size_mode='equity_pct' (% of equity)
+  risk_pct: 3,                  // used when size_mode='risk_pct' (% willing to lose)
   exchange_mode: 'live',        // paper | live
   submit_to_exchange: true,
   // Auto-reverse: trigger IMMEDIATELY at the stop price (no entry buffer),
@@ -249,7 +255,7 @@ export function openTradePlanModal(line, options = {}) {
       if (!config) return;
       const numericFields = [
         'buffer_pct', 'stop_pct', 'rr_target', 'leverage',
-        'notional_usd', 'equity_pct',
+        'notional_usd', 'equity_pct', 'risk_pct',
         'reverse_stop_pct', 'reverse_rr_target',
       ];
       numericFields.forEach((k) => {
@@ -366,6 +372,7 @@ export function openTradePlanModal(line, options = {}) {
       size_mode: $('[name=size_mode]').value,
       notional_usd: Number($('[name=notional_usd]').value) || 0,
       equity_pct: Number($('[name=equity_pct]').value) || 0,
+      risk_pct: Number($('[name=risk_pct]')?.value) || 0,
       exchange_mode: $('[name=exchange_mode]').value,
       submit_to_exchange: $('[name=submit_to_exchange]').checked,
       reverse_enabled: $('[name=reverse_enabled]').checked,
@@ -377,13 +384,15 @@ export function openTradePlanModal(line, options = {}) {
       reverse_rr_target: Number($('[name=reverse_rr_target]').value) || 0,
     });
 
-    // Toggle visibility of the notional_usd vs equity_pct input row
+    // Toggle visibility of the 3 mutually-exclusive size input rows
     const applySizeModeVisibility = () => {
       const mode = $('[name=size_mode]')?.value || 'notional_usd';
       const usdRow = $('#tp-size-usd-group');
       const pctRow = $('#tp-size-pct-group');
+      const riskRow = $('#tp-size-risk-group');
       if (usdRow) usdRow.style.display = mode === 'notional_usd' ? '' : 'none';
       if (pctRow) pctRow.style.display = mode === 'equity_pct' ? '' : 'none';
+      if (riskRow) riskRow.style.display = mode === 'risk_pct' ? '' : 'none';
     };
 
     const refreshLivePreview = async () => {
@@ -413,10 +422,30 @@ export function openTradePlanModal(line, options = {}) {
       // notional) instead of expected $300 notional. Root cause: code
       // was treating the USDT input as raw notional instead of margin,
       // contradicting the UI hint. Fixed 2026-04-21.
+      // Compute buffer+stop first because risk_pct mode needs it.
+      const buffer = Math.abs(v.buffer_pct || 0);
+      const stop = Math.abs(v.stop_pct || 0);
+      const totalStopPct = buffer + stop;
+
+      // Read taker fee early too (needed by risk_pct formula).
+      let _previewTakerFeePct = 0.06;
+      try {
+        const _ov = parseFloat(localStorage.getItem('v2.trade.takerFeePct') || '');
+        if (Number.isFinite(_ov) && _ov > 0) _previewTakerFeePct = _ov;
+      } catch {}
+      const totalCostPct = totalStopPct + (_previewTakerFeePct * 2);
+
       let notional = 0;
       if (v.size_mode === 'equity_pct') {
         notional = equity > 0 && v.leverage > 0 && v.equity_pct > 0
           ? equity * (v.equity_pct / 100) * v.leverage
+          : 0;
+      } else if (v.size_mode === 'risk_pct') {
+        // Risk-based sizing: willingLoss$ = notional * totalCostPct/100
+        // => notional = equity * risk_pct / totalCostPct
+        // (leverage ignored here: user said "Bitget 那边账户级设置,UI 杠杆没用")
+        notional = equity > 0 && v.risk_pct > 0 && totalCostPct > 0
+          ? equity * (v.risk_pct / 100) / (totalCostPct / 100)
           : 0;
       } else {
         // User enters STAKE (margin), actual position = stake × leverage
@@ -425,15 +454,6 @@ export function openTradePlanModal(line, options = {}) {
           ? v.notional_usd * lev
           : (equity > 0 && v.leverage > 0 ? equity * v.leverage : 0);
       }
-      // Risk = entry-to-stop distance = buffer% + stop% (always).
-      // Entry sits on one side of the line, stop on the opposite side,
-      // so total distance is the sum. This is mode-agnostic for both
-      // "bounce" (mark drifts DOWN to trigger) and "breakout" (mark
-      // drifts UP to trigger) — Bitget's trigger-market plan handles
-      // both via the trigger price's position vs current mark.
-      const buffer = Math.abs(v.buffer_pct || 0);
-      const stop = Math.abs(v.stop_pct || 0);
-      const totalStopPct = buffer + stop;
 
       // 2026-04-21 user: "Bitget 收 taker fee,开仓 + 平仓两次。你这
       // 边没算,所以数字和 Bitget 对不上。加上去让显示一致。"
@@ -596,6 +616,30 @@ export function openTradePlanModal(line, options = {}) {
             throw new Error('账户百分比必须 > 0');
           }
           size_usdt = equity * (v.equity_pct / 100) * lev;
+        } else if (v.size_mode === 'risk_pct') {
+          // Risk-based: size_usdt = equity * risk_pct / (buffer+stop+fee*2)
+          const cachedEquity = getCachedEquity(v.exchange_mode);
+          const equity = cachedEquity > 0
+            ? cachedEquity
+            : await fetchEquity(v.exchange_mode).catch(() => 0);
+          if (!equity || equity <= 0) {
+            throw new Error('账户余额无法读取 — 风险%模式必须拿到 equity 才能反推仓位。稍等片刻重试。');
+          }
+          if (!v.risk_pct || v.risk_pct <= 0) {
+            throw new Error('愿意亏损% 必须 > 0');
+          }
+          const _buffer = Math.abs(v.buffer_pct || 0);
+          const _stop = Math.abs(v.stop_pct || 0);
+          let _tfee = 0.06;
+          try {
+            const _ov = parseFloat(localStorage.getItem('v2.trade.takerFeePct') || '');
+            if (Number.isFinite(_ov) && _ov > 0) _tfee = _ov;
+          } catch {}
+          const _totalCostPct = _buffer + _stop + (_tfee * 2);
+          if (_totalCostPct <= 0) {
+            throw new Error('buffer + stop + 费用 必须 > 0,否则无法反推仓位');
+          }
+          size_usdt = equity * (v.risk_pct / 100) / (_totalCostPct / 100);
         } else {
           // v.notional_usd is the STAKE; multiply by leverage for actual position
           size_usdt = (Number(v.notional_usd) || 0) * lev;
@@ -760,9 +804,10 @@ function renderShell(line, v, setupsState) {
           <label class="tp-label" title="通过 set-leverage API 设到 Bitget 账户,无需手动开">Bitget 杠杆</label>
           <input type="number" name="leverage" value="${v.leverage}" step="1" min="1" max="125"/>
           <label class="tp-label">仓位大小</label>
-          <select name="size_mode" style="min-width:110px">
+          <select name="size_mode" style="min-width:130px">
             <option value="notional_usd" ${v.size_mode === 'notional_usd' ? 'selected' : ''}>USDT 固定值</option>
             <option value="equity_pct" ${v.size_mode === 'equity_pct' ? 'selected' : ''}>账户 %</option>
+            <option value="risk_pct" ${v.size_mode === 'risk_pct' ? 'selected' : ''}>风险 %(自动)</option>
           </select>
           <label class="tp-label">账户</label>
           <select name="exchange_mode">
@@ -784,6 +829,14 @@ function renderShell(line, v, setupsState) {
           <input type="number" name="equity_pct" value="${v.equity_pct}" step="0.5" min="0" max="100"/>
           <span class="tp-hint" style="color:#6b7889;font-size:11px;grid-column:span 4">
             名义 = 权益 × 百分比 × 杠杆;按账户规模自动缩放
+          </span>
+        </div>
+
+        <div class="tp-row" id="tp-size-risk-group" style="display:none">
+          <label class="tp-label" title="愿意这一单最多损失占账户的百分比。名义自动反推,不用手动算杠杆">愿意亏损 %</label>
+          <input type="number" name="risk_pct" value="${v.risk_pct}" step="0.5" min="0.1" max="50"/>
+          <span class="tp-hint" style="color:#6b7889;font-size:11px;grid-column:span 4">
+            名义 = 权益 × 亏损% ÷ (buffer + stop + 手续费×2)% · 杠杆字段不参与计算
           </span>
         </div>
 
@@ -1084,9 +1137,9 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
     const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
     const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
 
-    // Direction + reverse are per-trade only (not in setup). Start
-    // from line side; user picks fresh in this popup.
-    let direction = line?.side === 'support' ? 'long' : 'short';
+    // Direction + reverse are per-trade only (not in setup). Require
+    // an explicit direction pick before any real-money quick order.
+    let direction = null;
     let reverseEnabled = false;
 
     // Warm equity cache in background so each setup row's $ risk /
@@ -1114,7 +1167,14 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
       padding: '10px',
       minWidth: '280px',
       boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
-      zIndex: '10001',
+      // Bug 2026-04-22 (user: "还是会有这种重叠的可视化bug"): lightweight-charts
+      // price-axis labels (40.983 / EMA21 / MA5 / MA55) were bleeding through
+      // the popup because they render inside the chart's canvas with an
+      // implicit stacking priority. Max int z-index + `isolation:isolate`
+      // forces this popup into its own topmost stacking context so the
+      // chart's canvas labels render below it.
+      zIndex: '2147483647',
+      isolation: 'isolate',
       fontSize: '12px',
       color: '#d8dde8',
     });
@@ -1140,14 +1200,38 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         const totalPct = buffer + stop;
         const rr = Number(c.rr_target) || 2;
         const lev = Number(c.leverage) > 0 ? Number(c.leverage) : 1;
-        // Compute notional the same way the real place path does
+        // Bug fix 2026-04-22 (user: "挂了 $300 但 plan 说 $1396"): previously
+        // the popup's preview AND the real place path used
+        //     if (size_mode === 'equity_pct' && equity_pct > 0) use equity_pct
+        //     else use notional_usd
+        // If a setup had equity_pct saved but size_mode was stale / absent,
+        // it fell to the notional_usd branch and shipped a tiny order.
+        // New policy: equity_pct > 0 ALWAYS wins. notional_usd is legacy
+        // fallback only when equity_pct is unset.
         let notional = 0;
-        if (c.size_mode === 'equity_pct' && c.equity_pct > 0) {
+        let sizeSrc = ''; // for preview label — tells user which formula ran
+        // Priority: risk_pct > equity_pct > notional_usd.
+        // risk_pct mode REQUIRES equity fetch. Leverage is ignored.
+        if (c.size_mode === 'risk_pct' && Number(c.risk_pct) > 0) {
           const mode = c.exchange_mode === 'paper' ? 'demo' : (c.exchange_mode || 'live');
           const eq = getCachedEquity(mode);
-          notional = eq > 0 ? eq * (c.equity_pct / 100) * lev : 0;
+          const totalCostPct = totalPct + (takerFeePct * 2);
+          if (eq > 0 && totalCostPct > 0) {
+            notional = eq * (Number(c.risk_pct) / 100) / (totalCostPct / 100);
+            sizeSrc = `$${eq.toFixed(0)} x ${c.risk_pct}% / ${totalCostPct.toFixed(3)}%`;
+          } else {
+            sizeSrc = eq <= 0 ? 'pending equity...' : 'buffer+stop+fee must > 0';
+          }
+        } else if (Number(c.equity_pct) > 0) {
+          const mode = c.exchange_mode === 'paper' ? 'demo' : (c.exchange_mode || 'live');
+          const eq = getCachedEquity(mode);
+          notional = eq > 0 ? eq * (Number(c.equity_pct) / 100) * lev : 0;
+          sizeSrc = eq > 0
+            ? `$${eq.toFixed(0)} x ${c.equity_pct}% x ${lev}x`
+            : `pending equity...`;
         } else {
           notional = (Number(c.notional_usd) || 0) * lev;
+          sizeSrc = `$${(Number(c.notional_usd) || 0).toFixed(0)} x ${lev}x`;
         }
         const feeUsd = notional * (takerFeePct * 2) / 100;
         const riskPriceUsd = notional * (totalPct / 100);
@@ -1155,6 +1239,11 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         const rewardNet = riskPriceUsd * rr - feeUsd;
         const effRr = riskNet > 0 ? (rewardNet / riskNet) : 0;
         const effColor = effRr >= 2 ? '#00e676' : (effRr >= 1.3 ? '#fbbf24' : '#ff5252');
+        // Preview line now ALWAYS shows real computed notional up front so
+        // user can catch "wait, that's wrong" before clicking.
+        const notionalLine = `<div style="color:#38bdf8;font-size:10px;margin-top:2px;font-weight:600">` +
+          `≈ $${notional.toFixed(0)} notional <span style="color:#6b7889;font-weight:400">(${sizeSrc})</span>` +
+          `</div>`;
         const pnlLine = notional > 0
           ? `<div style="color:#6b7889;font-size:10px;margin-top:2px">` +
               `风险 $${riskNet.toFixed(2)} · 目标 $${rewardNet.toFixed(2)} · ` +
@@ -1162,8 +1251,9 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
             `</div>`
           : '';
         return `
-          <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;">
+          <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;opacity:${direction ? '1' : '0.55'}">
             <div style="color:#d8dde8;font-size:12px">${esc(s.name)}</div>
+            ${notionalLine}
             ${pnlLine}
           </div>
         `;
@@ -1176,6 +1266,10 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         <div style="display:flex;gap:6px;margin-bottom:6px">
           <div class="qt-dir-btn" data-dir="long" style="${longCls};flex:1;text-align:center;padding:6px;border-radius:5px;cursor:pointer">做多 LONG</div>
           <div class="qt-dir-btn" data-dir="short" style="${shortCls};flex:1;text-align:center;padding:6px;border-radius:5px;cursor:pointer">做空 SHORT</div>
+        </div>
+
+        <div class="qt-dir-hint" style="color:#fbbf24;font-size:10px;margin-bottom:6px;text-align:center;${direction ? 'display:none' : ''}">
+          ⚠ 先选方向再点 setup
         </div>
 
         <div class="qt-rev-btn" style="${revCls};text-align:center;padding:6px;border-radius:5px;cursor:pointer;margin-bottom:10px">
@@ -1283,6 +1377,10 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         return;
       }
       if (setupRow) {
+        if (!direction) {
+          setStatus('⚠ 请先选方向 (做多 LONG / 做空 SHORT)', '#fbbf24');
+          return;
+        }
         const id = setupRow.dataset.setupId;
         const s = setupsState.setups.find((x) => x.id === id);
         if (!s) { setStatus('setup 找不到', '#ff5252'); return; }
@@ -1295,17 +1393,54 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         //   equity_pct mode = equity × pct × leverage
         const lev = Number(cfg.leverage) > 0 ? Number(cfg.leverage) : 1;
         let size_usdt = 0;
+        // Size priority: risk_pct > equity_pct > notional_usd.
+        // All equity-based modes fail LOUD if equity fetch fails, rather
+        // than silently falling back to a different (smaller) formula.
         try {
           const { getLiveAccount } = await import('../../services/live_execution.js');
-          if (cfg.size_mode === 'equity_pct' && cfg.equity_pct > 0) {
+          if (cfg.size_mode === 'risk_pct' && Number(cfg.risk_pct) > 0) {
             const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
             const acct = await getLiveAccount(mode);
             const equity = Number(acct?.total_equity || acct?.equity || 0);
-            if (equity > 0) size_usdt = equity * (cfg.equity_pct / 100) * lev;
+            if (!(equity > 0)) {
+              setStatus('⚠ 风险%模式需要 equity,但账户拉取失败,暂停挂单防止下错金额', '#ff5252');
+              _applyPlacingState(false);
+              return;
+            }
+            const _buffer = Math.abs(Number(cfg.buffer_pct) || 0);
+            const _stop = Math.abs(Number(cfg.stop_pct) || 0);
+            let _tfee = 0.06;
+            try {
+              const _ov = parseFloat(localStorage.getItem('v2.trade.takerFeePct') || '');
+              if (Number.isFinite(_ov) && _ov > 0) _tfee = _ov;
+            } catch {}
+            const _totalCostPct = _buffer + _stop + (_tfee * 2);
+            if (_totalCostPct <= 0) {
+              setStatus('⚠ buffer+stop+fee 必须 > 0 才能算风险%仓位', '#ff5252');
+              _applyPlacingState(false);
+              return;
+            }
+            size_usdt = equity * (Number(cfg.risk_pct) / 100) / (_totalCostPct / 100);
+          } else if (Number(cfg.equity_pct) > 0) {
+            const mode = cfg.exchange_mode === 'paper' ? 'demo' : (cfg.exchange_mode || 'live');
+            const acct = await getLiveAccount(mode);
+            const equity = Number(acct?.total_equity || acct?.equity || 0);
+            if (equity > 0) {
+              size_usdt = equity * (Number(cfg.equity_pct) / 100) * lev;
+            } else {
+              setStatus('⚠ 账户权益拉取失败 (equity=0), 暂停挂单防止下错金额, 等几秒再点', '#ff5252');
+              _applyPlacingState(false);
+              return;
+            }
           } else {
             size_usdt = (Number(cfg.notional_usd) || 0) * lev;
           }
         } catch (e) {
+          if ((cfg.size_mode === 'risk_pct' && Number(cfg.risk_pct) > 0) || Number(cfg.equity_pct) > 0) {
+            setStatus(`⚠ 算仓位时报错: ${e.message || e} — 暂停挂单`, '#ff5252');  // SAFE: setStatus uses textContent
+            _applyPlacingState(false);
+            return;
+          }
           size_usdt = (Number(cfg.notional_usd) || 0) * lev;
         }
         if (!(size_usdt > 0)) {
@@ -1383,4 +1518,3 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
     document.addEventListener('keydown', onKey);
   });
 }
-

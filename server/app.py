@@ -32,6 +32,17 @@ from .routers import (
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .core import scheduler as sched_core
 
+# Force UTF-8 on stdout/stderr so non-ASCII chars in print() statements
+# don't raise UnicodeEncodeError on Windows cp1252. User 2026-04-22: HTTP 500
+# on place-line-order triggered by `\u2192` right arrow in SL-cap log. Root-cause
+# fix: bypass the encoding rather than hunt every char.
+import sys as _sys_encoding_fix
+try:
+    _sys_encoding_fix.stdout.reconfigure(encoding='utf-8', errors='replace')
+    _sys_encoding_fix.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 
 app = FastAPI(title="Crypto TA")
 
@@ -210,8 +221,32 @@ app.add_middleware(
 # over the wire). minimum_size keeps tiny endpoints (health, status) bare.
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
+
 # Serve frontend static files at /static/ (legacy path)
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "frontend")), name="static")
+
+
+# ── JS no-cache middleware (Bug B cache-bust — 2026-04-22) ──────────────
+# StaticFiles subclass approach failed: headers set by override didn't
+# reach the wire (GZip middleware and/or internal Response finalization
+# stripped them). Middleware runs AFTER response build for every path,
+# so it reliably mutates Cache-Control on /static/**/*.js.
+# Verified via: curl -I http://localhost:8000/static/js/.../chart_drawing.js
+from starlette.middleware.base import BaseHTTPMiddleware as _BaseHTTPMiddleware
+
+
+class _StaticJsNoCacheMiddleware(_BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/") and path.endswith(".js"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
+app.add_middleware(_StaticJsNoCacheMiddleware)
 
 
 # ── Register routers ─────────────────────────────────────────────────────
@@ -239,4 +274,4 @@ app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB
 app.include_router(orderbook.router)    # /api/orderbook/* — real-time L2 features
 app.include_router(line_alerts.router)  # /api/alerts/* — trendline price alerts → Telegram
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
-# reload trigger 1776668707
+# reload trigger 1776885655

@@ -262,29 +262,76 @@ async def api_delete_drawing(manual_line_id: str):
     removed = 1 if store.delete(manual_line_id) else 0
     if removed == 0:
         raise HTTPException(404, f"Unknown manual_line_id: {manual_line_id}")
-    # Cascade: cancel all pending/triggered conditionals for this line.
-    # User policy: deleting a line means "I'm done with this edge" —
-    # any outstanding orders on it must be cancelled at the same moment.
+
+    # Cascade: cancel local conds + REAL Bitget plan orders (user 2026-04-22:
+    # "删除失败: signal is aborted without reason" + discovery that DELETE
+    # previously only touched local state, so Bitget plans lived on even
+    # after line deletion — dangerous for real money). Fix:
+    #   1. Synchronously flip local conds to cancelled (fast, file-only)
+    #   2. Fire asyncio.create_task to cancel Bitget plans in the background
+    #      (slow, network) so this endpoint returns in <100ms
+    import asyncio as _asyncio
+    cancelled_cids: list[tuple[str, str, str]] = []  # (cond_id, symbol, oid, mode)
     try:
         from ..conditionals import ConditionalOrderStore, ConditionalEvent, now_ts as _nt
         cstore = ConditionalOrderStore()
         for cond in cstore.list_all(manual_line_id=manual_line_id):
-            if cond.status in ("pending", "triggered"):
-                cstore.set_status(
+            if cond.status not in ("pending", "triggered"):
+                continue
+            cstore.set_status(
+                cond.conditional_id,
+                "cancelled",
+                reason=f"line deleted: {manual_line_id}",
+            )
+            try:
+                cstore.append_event(cond.conditional_id, ConditionalEvent(
+                    ts=_nt(), kind="cancelled",
+                    message=f"parent line {manual_line_id} was deleted",
+                ))
+            except Exception:
+                pass
+            if cond.exchange_order_id:
+                cancelled_cids.append((
                     cond.conditional_id,
-                    "cancelled",
-                    reason=f"line deleted: {manual_line_id}",
-                )
-                try:
-                    cstore.append_event(cond.conditional_id, ConditionalEvent(
-                        ts=_nt(), kind="cancelled",
-                        message=f"parent line {manual_line_id} was deleted",
-                    ))
-                except Exception:
-                    pass
+                    cond.symbol.upper(),
+                    str(cond.exchange_order_id),
+                    cond.order.exchange_mode or "live",
+                ))
     except Exception as exc:
-        # Don't block the delete on cascade errors
-        print(f"[drawings.delete] cascade cancel failed: {exc}", flush=True)
+        print(f"[drawings.delete] cascade local-cancel failed: {exc}", flush=True)
+
+    # Background Bitget cancels so user's DELETE call doesn't have to wait
+    # on 2-5 slow Bitget round-trips. Any failure is logged but the user's
+    # line is already gone locally — safe outcome.
+    if cancelled_cids:
+        async def _bg_cancel_bitget_plans(targets):
+            try:
+                from ..execution.live_adapter import LiveExecutionAdapter
+                adapter = LiveExecutionAdapter()
+                if not adapter.has_api_keys():
+                    print("[drawings.delete.bg] no api keys, skipping bitget cancel", flush=True)
+                    return
+                for (cid, sym, oid, mode) in targets:
+                    ok = False
+                    try:
+                        r = await adapter.cancel_order(sym, oid, mode)
+                        if (r or {}).get("ok"):
+                            ok = True
+                        else:
+                            r2 = await adapter.cancel_plan_order_any_type(sym, oid, mode)
+                            if (r2 or {}).get("ok"):
+                                ok = True
+                    except Exception as e:
+                        print(f"[drawings.delete.bg] cancel err {sym} {oid}: {e}", flush=True)
+                    print(f"[drawings.delete.bg] {sym} oid={oid} bitget cancel ok={ok}", flush=True)
+            except Exception as e:
+                print(f"[drawings.delete.bg] fatal: {e}", flush=True)
+        try:
+            loop = _asyncio.get_running_loop()
+            loop.create_task(_bg_cancel_bitget_plans(list(cancelled_cids)))
+        except RuntimeError:
+            pass
+
     return {"removed": removed}
 
 

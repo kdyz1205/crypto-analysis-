@@ -45,7 +45,23 @@ def _capturing_print(*args, **kwargs):
         "level": "INFO",
         "msg": msg,
     })
-    _original_print(*args, **kwargs)
+    # Bug A hardening 2026-04-22: Windows cp1252 stdout cannot encode
+    # non-ASCII chars like `\u2192` (→) or `\u2014` (—), which used to
+    # bubble UnicodeEncodeError up through _original_print() → FastAPI
+    # → HTTP 500 on the caller. Any print() with a non-cp1252 char on a
+    # real-money endpoint would kill the request. Catch here and retry
+    # with replaced chars so the caller never sees the encode error.
+    try:
+        _original_print(*args, **kwargs)
+    except UnicodeEncodeError:
+        safe_args = tuple(
+            str(a).encode("ascii", errors="replace").decode("ascii")
+            for a in args
+        )
+        try:
+            _original_print(*safe_args, **kwargs)
+        except Exception:
+            pass
 
 
 builtins.print = _capturing_print

@@ -106,10 +106,87 @@ async def on_summary_daily(event: Event):
     )
 
 
+# ── Manual-line conditional order events (user 2026-04-22) ────────────
+# Bridged from watcher._append_event. User: "Bitget doesn't notify me
+# when my plan orders fire; I need Telegram for every order event."
+
+def _esc_html(s) -> str:
+    """Escape HTML special chars so Telegram's parse_mode=HTML never
+    rejects the message (user saw broken formatting when a cancel
+    reason contained a bare '<' char)."""
+    return (
+        str(s)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+_COND_EMOJI = {
+    "exchange_submitted": "🔵",
+    "exchange_acked": "✅",
+    "triggered": "⚡",
+    "breakout": "⚡",
+    "cancelled": "⚪",
+    "line_broken": "❌",
+    "exchange_error": "⚠️",
+}
+
+_COND_TITLE_ZH = {
+    "exchange_submitted": "Bitget 下单成功",
+    "exchange_acked": "订单触发 / 成交",
+    "triggered": "条件达成",
+    "breakout": "突破触发",
+    "cancelled": "撤单",
+    "line_broken": "线破 cancel",
+    "exchange_error": "Bitget 错误",
+}
+
+
+async def on_conditional_event(event: Event):
+    """Forward a manual-line conditional's lifecycle event to Telegram.
+    Filters out noisy kinds upstream in _append_event (only user-
+    relevant kinds reach this handler)."""
+    p = event.payload or {}
+    kind = p.get("kind") or "?"
+    symbol = p.get("symbol") or "?"
+    tf = p.get("timeframe") or ""
+    direction = (p.get("direction") or "?").upper()
+    emoji = _COND_EMOJI.get(kind, "*")
+    title = _COND_TITLE_ZH.get(kind, kind)
+    price = p.get("price")
+    line_price = p.get("line_price")
+    oid = p.get("exchange_order_id")
+    message = p.get("message") or ""
+    mode = (p.get("exchange_mode") or "").lower()
+    mode_tag = "" if mode in ("", "live") else f" [{mode.upper()}]"
+
+    lines = [
+        f"{emoji} <b>{title}</b> {_esc_html(direction)} {_esc_html(symbol)} "
+        f"{_esc_html(tf)}{mode_tag}"
+    ]
+    if price is not None:
+        try:
+            lines.append(f"price: <code>{float(price):.6f}</code>")
+        except Exception:
+            lines.append(f"price: <code>{_esc_html(price)}</code>")
+    if line_price is not None:
+        try:
+            lines.append(f"line:  <code>{float(line_price):.6f}</code>")
+        except Exception:
+            lines.append(f"line:  <code>{_esc_html(line_price)}</code>")
+    if oid:
+        lines.append(f"oid:   <code>{_esc_html(oid)}</code>")
+    if message:
+        msg_short = message if len(message) < 400 else (message[:380] + "...")
+        lines.append(f"<i>{_esc_html(msg_short)}</i>")
+    await _send("\n".join(lines))
+
+
 def register():
     _load_config()
     if not _cfg:
-        print("[TelegramSubscriber] No config (TELEGRAM_BOT_TOKEN/CHAT_ID missing) — skipping")
+        print("[TelegramSubscriber] No config (TELEGRAM_BOT_TOKEN/CHAT_ID missing) -- skipping")
         return
     bus.subscribe("signal.blocked", on_signal_blocked)
     bus.subscribe("position.opened", on_position_opened)
@@ -119,4 +196,6 @@ def register():
     bus.subscribe("agent.stopped", on_agent_stopped)
     bus.subscribe("agent.regime.changed", on_agent_regime_changed)
     bus.subscribe("summary.daily", on_summary_daily)
-    print(f"[TelegramSubscriber] Registered for chat_id={_cfg['chat_id']}")
+    # Wildcard for all manual-line conditional events (user 2026-04-22)
+    bus.subscribe("conditional.*", on_conditional_event)
+    print(f"[TelegramSubscriber] Registered for chat_id={_cfg['chat_id']} (conditional.*)")

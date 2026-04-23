@@ -663,7 +663,16 @@ async def _spawn_reverse_conditional(src: ConditionalOrder, reason: str) -> None
             submit_to_exchange=src.order.submit_to_exchange,
             exchange_mode=src.order.exchange_mode,
             tolerance_pct_of_line=src.order.reverse_entry_offset_pct,
-            stop_offset_pct_of_line=0.0,
+            # Bug 6 fix (2026-04-22): was hardcoded 0.0, now respects the
+            # user's `reverse_stop_offset_pct` config. Fallback to the
+            # source cond's stop_offset_pct_of_line if reverse field is 0
+            # so the reverse inherits a sane stop instead of snapping to
+            # the 0.3% fail-safe default in the line-broken check.
+            stop_offset_pct_of_line=(
+                src.order.reverse_stop_offset_pct
+                if src.order.reverse_stop_offset_pct and src.order.reverse_stop_offset_pct > 0
+                else src.order.stop_offset_pct_of_line
+            ),
             leverage=src.order.reverse_leverage or src.order.leverage,
             # Don't chain auto-reverse infinitely by default
             reverse_enabled=False,
@@ -1142,14 +1151,14 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
             min_sl_cap = entry_price * (1.0 - max_sl_pct)
             if last_sl_set < min_sl_cap:
                 print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
-                      f"line-based {last_sl_set:.6f} → {min_sl_cap:.6f} "
+                      f"line-based {last_sl_set:.6f} -> {min_sl_cap:.6f} "
                       f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
                 last_sl_set = min_sl_cap
         else:
             max_sl_cap = entry_price * (1.0 + max_sl_pct)
             if last_sl_set > max_sl_cap:
                 print(f"[trailing_register] {cond.symbol} SL capped to setup total: "
-                      f"line-based {last_sl_set:.6f} → {max_sl_cap:.6f} "
+                      f"line-based {last_sl_set:.6f} -> {max_sl_cap:.6f} "
                       f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}%)", flush=True)
                 last_sl_set = max_sl_cap
     register_trendline_params(
@@ -1307,11 +1316,21 @@ async def _reconcile_against_bitget() -> None:
                 print(f"[reconcile] cond {cond.conditional_id} filled; trailing SL registered", flush=True)
                 continue
 
-            print(f"[reconcile] cond {cond.conditional_id} oid={oid} not pending and no position; marking cancelled", flush=True)
-            _store.set_status(
-                cond.conditional_id, "cancelled",
+            print(f"[reconcile] cond {cond.conditional_id} oid={oid} not pending and no position; attempting CAS-cancel", flush=True)
+            # Atomic CAS: only this path gets to spawn reverse. If
+            # _maybe_replan's line-broken branch raced us and already
+            # transitioned triggered→cancelled, we skip the event + reverse.
+            # This prevents double-reverse on one invalidation.
+            winner = _store.set_status_if(
+                cond.conditional_id,
+                from_status="triggered",
+                to_status="cancelled",
                 reason="reconcile: bitget order no longer exists",
             )
+            if winner is None:
+                print(f"[reconcile] cond {cond.conditional_id} CAS lost — "
+                      f"another path already handled it, skipping reverse", flush=True)
+                continue
             try:
                 _store.append_event(cond.conditional_id, ConditionalEvent(
                     ts=now_ts(), kind="cancelled",
@@ -1319,57 +1338,6 @@ async def _reconcile_against_bitget() -> None:
                 ))
             except Exception:
                 pass
-            try:
-                await _spawn_reverse_conditional(cond, reason="reconcile_order_gone")
-            except Exception as e:
-                print(f"[reconcile] reverse spawn failed for {cond.conditional_id}: {e}", flush=True)
-    except Exception as e:
-        print(f"[reconcile] err: {e}", flush=True)
-    return
-
-    try:
-        from server.execution.live_adapter import LiveExecutionAdapter
-        adapter = LiveExecutionAdapter()
-        if not adapter.has_api_keys():
-            return
-        # Fetch all live plan orders across all symbols for live mode
-        resp = await adapter._bitget_request(
-            "GET", "/api/v2/mix/order/orders-plan-pending",
-            mode="live",
-            params={"productType": "USDT-FUTURES", "planType": "normal_plan"},
-        )
-        if resp.get("code") != "00000":
-            return
-        data = resp.get("data") or {}
-        rows = data.get("entrustedList") or data.get("orderList") or []
-        live_oids = {str(r.get("orderId") or "") for r in rows}
-        for cond in triggered:
-            oid = str(cond.exchange_order_id or "")
-            if not oid:
-                continue
-            if oid in live_oids:
-                continue
-            # Local says triggered with this oid but Bitget doesn't have it.
-            # Could mean: user manually cancelled, filled, or (we assume)
-            # the position opened and stop-loss closed it. Under the user's
-            # strategy a stop-out = auto-reverse on the same line.
-            print(f"[reconcile] cond {cond.conditional_id} oid={oid} not on Bitget — marking closed", flush=True)
-            _store.set_status(
-                cond.conditional_id, "cancelled",
-                reason="reconcile: bitget order no longer exists",
-            )
-            try:
-                _store.append_event(cond.conditional_id, ConditionalEvent(
-                    ts=now_ts(), kind="cancelled",
-                    message=f"reconcile: order {oid} not on Bitget anymore",
-                ))
-            except Exception:
-                pass
-            # Auto-reverse (if pre-configured).
-            # NOTE: we cannot distinguish SL-fill from manual cancel here.
-            # The user's policy: if they pre-set reverse_enabled on the
-            # original cond, assume "gone = SL hit" and spawn the reverse.
-            # They can kill the reverse manually if it was actually a cancel.
             try:
                 await _spawn_reverse_conditional(cond, reason="reconcile_order_gone")
             except Exception as e:
@@ -1420,6 +1388,98 @@ async def _fetch_market_price(symbol: str) -> float | None:
         return None
 
 
+async def _fetch_mark_price_strict(symbol: str) -> float | None:
+    """Strict mark-price-only fetch for invalidation / line-broken checks.
+
+    Unlike `_fetch_market_price` which falls back to `lastPr` when
+    `markPrice` is missing, this returns None on ANY missing-mark case.
+    This is critical for semantic consistency with Bitget's trigger
+    engine — our plan orders are placed with triggerType="mark_price",
+    so the ONLY price that matters for "did the trigger fire / should
+    we cancel" is markPrice. Using lastPr here can cause:
+      - False cancels (lastPr spikes while markPrice stays tame)
+      - Missed real breaks (markPrice breaks while lastPr lags)
+
+    Returns None on any failure mode. Callers MUST treat None as
+    "cannot safely judge" — do NOT cancel, do NOT replan.
+    """
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get(
+                "https://api.bitget.com/api/v2/mix/market/ticker",
+                params={"symbol": symbol.upper(), "productType": "USDT-FUTURES"},
+            )
+            if r.status_code == 200:
+                data = (r.json() or {}).get("data") or []
+                if data:
+                    row = data[0] if isinstance(data, list) else data
+                    mp = row.get("markPrice")
+                    if mp:
+                        try:
+                            val = float(mp)
+                            if val > 0:
+                                return val
+                        except (TypeError, ValueError):
+                            pass
+    except Exception as e:
+        print(f"[watcher] strict mark fetch err {symbol}: {e}", flush=True)
+    return None
+
+
+async def _cancel_bitget_plan_safely(
+    cond: ConditionalOrder,
+    reason_tag: str,
+) -> bool:
+    """Attempt to cancel a Bitget plan order. Tries the normal cancel
+    path first, then falls back to cancel_plan_order_any_type.
+
+    Returns True ONLY if at least one cancel path confirmed ok=True.
+    Returns False on any failure (exception, both paths non-ok, None
+    response).
+
+    CRITICAL CONTRACT: callers MUST NOT set_status("cancelled") when
+    this returns False. Orphaning a live Bitget plan means:
+      - The plan can fill on next price kiss → unmanaged position (BG
+        does attach preset SL/TP, but our trailing logic won't engage
+        because we think the cond is dead)
+      - No further replan attempts because status=cancelled filters out
+
+    When False: leave cond.status="triggered" and retry next bar.
+    """
+    from server.execution.live_adapter import LiveExecutionAdapter
+    adapter = LiveExecutionAdapter()
+    if not adapter.has_api_keys() or not cond.exchange_order_id:
+        # Nothing to cancel on Bitget — either we're in paper mode or
+        # the order never reached Bitget. Trivially "cancelled".
+        return True
+    # Per-path try/except so the plan-cancel fallback ALWAYS gets a chance
+    # even when the regular cancel raises (network blip / transient 5xx).
+    # A single wrapping try would swallow the exception AND skip fallback,
+    # making us orphan Bitget orders on recoverable failures.
+    try:
+        _cr = await adapter.cancel_order(
+            cond.symbol.upper(),
+            cond.exchange_order_id,
+            cond.order.exchange_mode,
+        )
+        if (_cr or {}).get("ok"):
+            return True
+    except Exception as exc:
+        print(f"[watcher] {reason_tag} regular-cancel err: {exc} (falling back to plan-cancel)", flush=True)
+    try:
+        _cr2 = await adapter.cancel_plan_order_any_type(
+            cond.symbol.upper(),
+            cond.exchange_order_id,
+            cond.order.exchange_mode,
+        )
+        if (_cr2 or {}).get("ok"):
+            return True
+    except Exception as exc:
+        print(f"[watcher] {reason_tag} plan-cancel err: {exc}", flush=True)
+    return False
+
+
 async def _fetch_current_atr(symbol: str, timeframe: str, period: int = 14) -> float | None:
     """Compute ATR for the current timeframe from the last 20 bars."""
     try:
@@ -1449,8 +1509,58 @@ async def _fetch_current_atr(symbol: str, timeframe: str, period: int = 14) -> f
 # ─────────────────────────────────────────────────────────────
 # Mutation helpers
 # ─────────────────────────────────────────────────────────────
+
+# Kinds worth forwarding to Telegram / global bus. Everything else
+# (poll, tolerance_check, created, drifted_far, expired) is internal
+# bookkeeping that would spam the user's phone.
+_TG_BROADCAST_KINDS = frozenset({
+    "exchange_submitted",  # plan order placed on Bitget
+    "exchange_acked",      # position opened (plan filled)
+    "exchange_error",      # Bitget rejected / error returned
+    "triggered",           # local trigger conditions met
+    "breakout",            # breakout variant of triggered
+    "cancelled",           # cond cancelled (manual / line_broken / reconcile)
+    "line_broken",         # line invalidated
+})
+
+
 def _append_event(cond: ConditionalOrder, event: ConditionalEvent) -> None:
     _store.append_event(cond.conditional_id, event)
+    # Bridge to global event bus (Telegram subscriber, SSE broadcast,
+    # anything else listening). User 2026-04-22: "Bitget doesn't notify
+    # me when plans fire; I need Telegram for every order event." Fire-
+    # and-forget via asyncio so _append_event stays sync.
+    kind = getattr(event, "kind", None)
+    if kind not in _TG_BROADCAST_KINDS:
+        return
+    try:
+        from ..core.events import bus, Event
+        bus_event = Event(
+            type=f"conditional.{kind}",
+            payload={
+                "kind": kind,
+                "conditional_id": cond.conditional_id,
+                "symbol": cond.symbol,
+                "timeframe": cond.timeframe,
+                "side": cond.side,
+                "direction": cond.order.direction,
+                "manual_line_id": cond.manual_line_id,
+                "exchange_order_id": cond.exchange_order_id,
+                "exchange_mode": cond.order.exchange_mode,
+                "message": getattr(event, "message", "") or "",
+                "price": getattr(event, "price", None),
+                "line_price": getattr(event, "line_price", None),
+            },
+        )
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(bus.publish(bus_event))
+        except RuntimeError:
+            # Not in async context — drop the broadcast silently rather
+            # than spinning up a loop (which could deadlock on Windows).
+            pass
+    except Exception as exc:
+        print(f"[watcher] telegram bridge err: {exc}", flush=True)
 
 
 def _update_last_poll(
@@ -1521,79 +1631,148 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     # expectation every bar. For 4h TF, 22:58 click → bar_open 20:00.
     line_now = cond.line_price_at_bar_open(now)
 
-    # Line-broken invalidation (user 2026-04-22):
-    #   If price has moved FAR to the WRONG side of the line for the
-    #   chosen direction, the setup thesis is dead. The short-on-support-
-    #   breakdown plan shouldn't sit forever waiting for price to come
-    #   back; the 支撑 broke upward and that's now resistance.
+    # Line-broken invalidation (user 2026-04-22, threshold fixed 2026-04-22):
+    #   If price has moved to the WRONG side of the line for the chosen
+    #   direction PAST where SL would sit, the thesis is dead.
     #
-    #   Check: mark vs line. If mark is > line × (1 + INVALID_PCT) and
-    #   direction=short → thesis dead, cancel + optional auto-reverse.
-    #   Symmetric for long (mark < line × (1 - INVALID_PCT)).
+    #   Mental model (from user memory): "line IS the stop". The user's
+    #   own `stop_offset_pct_of_line` IS their definition of "how far past
+    #   the line counts as broken". Using it as the threshold makes the
+    #   cancel tight for tight setups and wide for wide setups — matches
+    #   user intent. No hardcoded buffer.
     #
-    #   Threshold: 2% default (configurable via cond.trigger.break_
-    #   threshold_atr if you treat atr as %). Stays tight to avoid
-    #   whipsaw but wide enough to let normal wick throughs through.
-    LINE_BROKEN_INVALID_PCT = 0.02   # 2%
-    try:
-        mark_for_check = await _fetch_market_price(cond.symbol)
-    except Exception:
-        mark_for_check = None
-    if mark_for_check and mark_for_check > 0 and line_now > 0:
-        if cond.order.direction == "short" and mark_for_check > line_now * (1 + LINE_BROKEN_INVALID_PCT):
-            # Price way above the line → support/resistance broke upward
-            # → short thesis is invalidated.
-            print(f"[watcher] {cond.symbol} short line-broken: mark={mark_for_check:.6f} "
-                  f"> line*1.02={line_now * 1.02:.6f}, cancelling cond", flush=True)
-            try:
-                # Cancel Bitget plan first
-                from server.execution.live_adapter import LiveExecutionAdapter
-                adapter2 = LiveExecutionAdapter()
-                if adapter2.has_api_keys() and cond.exchange_order_id:
-                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
-                    if not _cr.get("ok"):
-                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
-            except Exception as exc:
-                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
-            _store.set_status(cond.conditional_id, "cancelled",
-                              reason=f"line broken upward, short thesis dead (mark {mark_for_check:.6f} > line {line_now:.6f} × 1.02)")
+    #   Fallback: if stop_pct is 0 / missing, use 0.3% as a conservative
+    #   default (one typical tick past the line).
+    #
+    #   Called only at bar-boundary (via _trailing_scheduler_loop) so
+    #   intrabar wicks are already filtered.
+    _user_stop_pct = max(0.0, float(cond.order.stop_offset_pct_of_line or 0.0)) / 100.0
+    LINE_BROKEN_INVALID_PCT = _user_stop_pct if _user_stop_pct > 0 else 0.003
+
+    # FAIL-CLOSED: strict mark-only fetch. If we can't get a trustworthy
+    # markPrice, we can't judge line integrity safely. In that case we
+    # MUST abort the whole _maybe_replan (not just skip the line-broken
+    # check) — falling through to replan would re-create the exact BAS
+    # 2026-04-22 failure mode where a transient ticker outage caused the
+    # code to place a new trigger at the wrong semantic direction.
+    mark_for_check = await _fetch_mark_price_strict(cond.symbol)
+    if mark_for_check is None or mark_for_check <= 0 or line_now <= 0:
+        _append_event(cond, ConditionalEvent(
+            ts=now, kind="poll",
+            message=f"_maybe_replan ABORTED: mark={mark_for_check} line={line_now} "
+                    f"— cannot safely judge line integrity, retry next bar",
+        ))
+        # Update last_poll_ts so bar-gate holds until next bar
+        cond.last_poll_ts = now
+        try:
+            _store.update(cond)
+        except Exception:
+            pass
+        return
+
+    if cond.order.direction == "short" and mark_for_check > line_now * (1 + LINE_BROKEN_INVALID_PCT):
+        # Price above where SL would sit → support/resistance broke
+        # upward → short thesis is invalidated.
+        _break_level = line_now * (1 + LINE_BROKEN_INVALID_PCT)
+        print(f"[watcher] {cond.symbol} short line-broken: mark={mark_for_check:.6f} "
+              f"> line*(1+stop_pct)={_break_level:.6f} "
+              f"(stop_pct={LINE_BROKEN_INVALID_PCT*100:.3f}%), attempting cancel", flush=True)
+        cancelled_ok = await _cancel_bitget_plan_safely(cond, "line-broken-short")
+        if not cancelled_ok:
+            # CRITICAL: Bitget plan may still be live. Do NOT set status
+            # cancelled — that would orphan the Bitget order (trailing
+            # logic wouldn't engage on fill, stale preset SL/TP). Leave
+            # as "triggered" for next-bar retry.
             _append_event(cond, ConditionalEvent(
-                ts=now, kind="line_broken",
+                ts=now, kind="exchange_error",
                 price=mark_for_check, line_price=line_now,
-                message=f"SHORT invalidated: mark {mark_for_check:.6f} broke above line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
+                message=f"SHORT line-broken but BOTH Bitget cancel paths failed "
+                        f"— plan may still be live on exchange. Leaving cond=triggered "
+                        f"for next-bar retry (mark {mark_for_check:.6f} > "
+                        f"line {line_now:.6f} × (1+{LINE_BROKEN_INVALID_PCT*100:.3f}%))",
             ))
-            # Auto-reverse if configured (flip to LONG at the same line)
-            if cond.order.reverse_enabled:
-                try:
-                    await _spawn_reverse_conditional(cond, reason="line_broken_upward")
-                except Exception as exc:
-                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
-            return
-        elif cond.order.direction == "long" and mark_for_check < line_now * (1 - LINE_BROKEN_INVALID_PCT):
-            print(f"[watcher] {cond.symbol} long line-broken: mark={mark_for_check:.6f} "
-                  f"< line*0.98={line_now * 0.98:.6f}, cancelling cond", flush=True)
+            cond.last_poll_ts = now
             try:
-                from server.execution.live_adapter import LiveExecutionAdapter
-                adapter2 = LiveExecutionAdapter()
-                if adapter2.has_api_keys() and cond.exchange_order_id:
-                    _cr = await adapter2.cancel_order(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
-                    if not _cr.get("ok"):
-                        await adapter2.cancel_plan_order_any_type(cond.symbol.upper(), cond.exchange_order_id, cond.order.exchange_mode)
-            except Exception as exc:
-                print(f"[watcher] line-broken cancel err: {exc}", flush=True)
-            _store.set_status(cond.conditional_id, "cancelled",
-                              reason=f"line broken downward, long thesis dead (mark {mark_for_check:.6f} < line {line_now:.6f} × 0.98)")
-            _append_event(cond, ConditionalEvent(
-                ts=now, kind="line_broken",
-                price=mark_for_check, line_price=line_now,
-                message=f"LONG invalidated: mark {mark_for_check:.6f} broke below line {line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.0f}%",
-            ))
-            if cond.order.reverse_enabled:
-                try:
-                    await _spawn_reverse_conditional(cond, reason="line_broken_downward")
-                except Exception as exc:
-                    print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+                _store.update(cond)
+            except Exception:
+                pass
             return
+        # Cancel confirmed on Bitget. Attempt atomic status transition
+        # triggered → cancelled. If reconcile raced us and already did
+        # the transition, skip side effects (reverse spawn, event) —
+        # reconcile will handle those. Prevents double-reverse.
+        winner = _store.set_status_if(
+            cond.conditional_id,
+            from_status="triggered",
+            to_status="cancelled",
+            reason=f"line broken upward, short thesis dead "
+                   f"(mark {mark_for_check:.6f} > line {line_now:.6f} × "
+                   f"(1+{LINE_BROKEN_INVALID_PCT*100:.3f}%))",
+        )
+        if winner is None:
+            print(f"[watcher] {cond.symbol} line-broken CAS lost — "
+                  f"another path already handled this cond, skipping reverse", flush=True)
+            return
+        _append_event(cond, ConditionalEvent(
+            ts=now, kind="line_broken",
+            price=mark_for_check, line_price=line_now,
+            message=f"SHORT invalidated: mark {mark_for_check:.6f} broke above line "
+                    f"{line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.3f}% "
+                    f"(your stop_pct)",
+        ))
+        # Auto-reverse if configured (flip to LONG at the same line)
+        if cond.order.reverse_enabled:
+            try:
+                await _spawn_reverse_conditional(cond, reason="line_broken_upward")
+            except Exception as exc:
+                print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+        return
+    elif cond.order.direction == "long" and mark_for_check < line_now * (1 - LINE_BROKEN_INVALID_PCT):
+        _break_level = line_now * (1 - LINE_BROKEN_INVALID_PCT)
+        print(f"[watcher] {cond.symbol} long line-broken: mark={mark_for_check:.6f} "
+              f"< line*(1-stop_pct)={_break_level:.6f} "
+              f"(stop_pct={LINE_BROKEN_INVALID_PCT*100:.3f}%), attempting cancel", flush=True)
+        cancelled_ok = await _cancel_bitget_plan_safely(cond, "line-broken-long")
+        if not cancelled_ok:
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="exchange_error",
+                price=mark_for_check, line_price=line_now,
+                message=f"LONG line-broken but BOTH Bitget cancel paths failed "
+                        f"— plan may still be live on exchange. Leaving cond=triggered "
+                        f"for next-bar retry (mark {mark_for_check:.6f} < "
+                        f"line {line_now:.6f} × (1-{LINE_BROKEN_INVALID_PCT*100:.3f}%))",
+            ))
+            cond.last_poll_ts = now
+            try:
+                _store.update(cond)
+            except Exception:
+                pass
+            return
+        winner = _store.set_status_if(
+            cond.conditional_id,
+            from_status="triggered",
+            to_status="cancelled",
+            reason=f"line broken downward, long thesis dead "
+                   f"(mark {mark_for_check:.6f} < line {line_now:.6f} × "
+                   f"(1-{LINE_BROKEN_INVALID_PCT*100:.3f}%))",
+        )
+        if winner is None:
+            print(f"[watcher] {cond.symbol} line-broken CAS lost — "
+                  f"another path already handled this cond, skipping reverse", flush=True)
+            return
+        _append_event(cond, ConditionalEvent(
+            ts=now, kind="line_broken",
+            price=mark_for_check, line_price=line_now,
+            message=f"LONG invalidated: mark {mark_for_check:.6f} broke below line "
+                    f"{line_now:.6f} by >{LINE_BROKEN_INVALID_PCT*100:.3f}% "
+                    f"(your stop_pct)",
+        ))
+        if cond.order.reverse_enabled:
+            try:
+                await _spawn_reverse_conditional(cond, reason="line_broken_downward")
+            except Exception as exc:
+                print(f"[watcher] line-broken reverse err: {exc}", flush=True)
+        return
 
     # Re-apply the original LINE-RELATIVE percentages so each replan tracks
     # the new line price exactly. pct-only — legacy points path deleted.
@@ -1636,11 +1815,28 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if not cancel_resp.get("ok"):
         cancel_resp = await adapter.cancel_plan_order_any_type(sym, cond.exchange_order_id, cond.order.exchange_mode)
     if not cancel_resp.get("ok"):
-        _append_event(cond, ConditionalEvent(
-            ts=now, kind="exchange_error",
-            message=f"replan cancel failed: {cancel_resp.get('reason','?')}",
-        ))
-        return
+        # Re-query pending list: if our oid is NOT there, the order is
+        # effectively already gone (Bitget cleaned it up / it was never
+        # persisted / rate-limit glitch). Treat as success and proceed
+        # with replan — no double-order risk. This suppresses the false
+        # "replan cancel failed" Telegram alarm the user hit 2026-04-22.
+        order_truly_gone = False
+        try:
+            pending_oids = await _get_cached_pending_oids(cond.order.exchange_mode)
+            if str(cond.exchange_order_id) not in pending_oids:
+                order_truly_gone = True
+        except Exception:
+            pass
+        if not order_truly_gone:
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="exchange_error",
+                message=f"replan cancel failed: {cancel_resp.get('reason','?')}",
+            ))
+            return
+        # Order already gone -> log quietly at info level, skip Telegram.
+        print(f"[watcher] {sym} replan: old oid {cond.exchange_order_id} "
+              f"already absent from Bitget pending list (reason: "
+              f"{cancel_resp.get('reason','?')}), proceeding with replan", flush=True)
 
     # Recompute SL / TP from the new LINE projection using line-relative pct.
     rr = cond.order.rr_target or 2.0
@@ -1678,7 +1874,7 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
                     notional = equity * (equity_pct / 100.0) * lev
                     new_qty = notional / new_trigger
                     print(f"[replan] {cond.symbol} dynamic resize: equity=${equity:.2f} "
-                          f"× {equity_pct}% × {lev}x = ${notional:.2f} → qty {new_qty:.6f}", flush=True)
+                          f"x {equity_pct}% x {lev}x = ${notional:.2f} -> qty {new_qty:.6f}", flush=True)
         except Exception as exc:
             print(f"[replan] equity fetch err {cond.symbol}: {exc}", flush=True)
 

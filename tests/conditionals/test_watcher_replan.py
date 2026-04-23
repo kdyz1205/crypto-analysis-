@@ -9,6 +9,7 @@ class _FakeStore:
         self.cond = cond
         self.updated = []
         self.events = []
+        self.status_changes = []
 
     def get(self, conditional_id):
         return self.cond if conditional_id == self.cond.conditional_id else None
@@ -23,9 +24,37 @@ class _FakeStore:
         self.cond.events.append(event)
         return self.cond
 
+    def set_status(self, conditional_id, status, *, reason=""):
+        if conditional_id != self.cond.conditional_id:
+            return None
+        self.cond.status = status
+        if status == "cancelled":
+            self.cond.cancel_reason = reason
+        self.status_changes.append((status, reason))
+        return self.cond
+
+    def set_status_if(self, conditional_id, *, from_status, to_status, reason=""):
+        """Mirror store.set_status_if atomic CAS for tests."""
+        if conditional_id != self.cond.conditional_id:
+            return None
+        if self.cond.status != from_status:
+            return None
+        self.cond.status = to_status
+        if to_status == "cancelled":
+            self.cond.cancel_reason = reason
+        self.status_changes.append((to_status, reason))
+        return self.cond
+
 
 class _FakeAdapter:
     instances = []
+    # Test overrides: set before calling _maybe_replan to force a specific
+    # cancel outcome. Default both True (happy path).
+    cancel_regular_ok = True
+    cancel_plan_ok = True
+    # If set to an exception instance, the next cancel call raises it.
+    cancel_regular_raise = None
+    cancel_plan_raise = None
 
     def __init__(self):
         self.cancelled_regular = []
@@ -39,11 +68,21 @@ class _FakeAdapter:
 
     async def cancel_order(self, symbol, order_id, mode):
         self.cancelled_regular.append((symbol, order_id, mode))
-        return {"ok": True}
+        if _FakeAdapter.cancel_regular_raise:
+            raise _FakeAdapter.cancel_regular_raise
+        return {"ok": _FakeAdapter.cancel_regular_ok}
 
     async def cancel_plan_order_any_type(self, symbol, order_id, mode):
         self.cancelled_plan.append((symbol, order_id, mode))
-        return {"ok": True}
+        if _FakeAdapter.cancel_plan_raise:
+            raise _FakeAdapter.cancel_plan_raise
+        return {"ok": _FakeAdapter.cancel_plan_ok}
+
+    async def get_pending_orders(self, mode):
+        return [{"orderId": "old-order-1"}]
+
+    async def get_pending_plan_orders(self, mode, plan_type="normal_plan"):
+        return [{"orderId": "old-order-1"}]
 
     async def submit_live_entry(self, intent, mode):
         self.regular_submits.append((intent, mode))
@@ -52,6 +91,32 @@ class _FakeAdapter:
     async def submit_live_plan_entry(self, intent, mode, trigger_price):
         self.plan_submits.append((intent, mode, trigger_price))
         return {"ok": True, "exchange_order_id": "new-plan-1"}
+
+
+def _reset_fake_adapter():
+    _FakeAdapter.instances = []
+    _FakeAdapter.cancel_regular_ok = True
+    _FakeAdapter.cancel_plan_ok = True
+    _FakeAdapter.cancel_regular_raise = None
+    _FakeAdapter.cancel_plan_raise = None
+
+
+async def _mark_returns(value):
+    """Factory for a mocked _fetch_mark_price_strict that returns `value`."""
+    async def _inner(symbol):
+        return value
+    return _inner
+
+
+def _patch_mark(monkeypatch, value):
+    """Helper: patch _fetch_mark_price_strict to return a fixed value."""
+    async def _fake(symbol):
+        return value
+    monkeypatch.setattr(watcher, "_fetch_mark_price_strict", _fake)
+    # Also patch the pending-oids cache to bypass real Bitget calls.
+    async def _fake_pending(mode):
+        return {"old-order-1"}
+    monkeypatch.setattr(watcher, "_get_cached_pending_oids", _fake_pending)
 
 
 def _cond(**overrides):
@@ -94,9 +159,12 @@ def _cond(**overrides):
 async def test_replan_uses_trigger_market_plan_order(monkeypatch):
     cond = _cond()
     store = _FakeStore(cond)
-    _FakeAdapter.instances = []
+    _reset_fake_adapter()
     monkeypatch.setattr(watcher, "_store", store)
     monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    # Mock mark at line_now value (43.0) so neither long nor short line-broken
+    # check fires; replan path should run.
+    _patch_mark(monkeypatch, 43.0)
 
     await watcher._maybe_replan(cond, 1_300)
 
@@ -117,11 +185,209 @@ async def test_replan_uses_trigger_market_plan_order(monkeypatch):
 async def test_replan_waits_until_next_timeframe_bar(monkeypatch):
     cond = _cond()
     store = _FakeStore(cond)
-    _FakeAdapter.instances = []
+    _reset_fake_adapter()
     monkeypatch.setattr(watcher, "_store", store)
     monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    _patch_mark(monkeypatch, 43.0)
 
     await watcher._maybe_replan(cond, 1_199)
 
     assert _FakeAdapter.instances == []
     assert store.updated == []
+
+
+# ─────────────────────────────────────────────────────────────
+# Line-broken invalidation tests (user 2026-04-22 BAS incident)
+# ─────────────────────────────────────────────────────────────
+
+def _short_descending_cond(**overrides):
+    """Mirror the real BAS 2026-04-22 setup: descending line, SHORT direction,
+    tolerance_pct=1.0, stop_offset_pct=0.1.
+    Line goes from 0.01950 at t=1000 to 0.01199 at t=1300 (descending).
+    """
+    base = dict(
+        conditional_id="cond_bas_short",
+        manual_line_id="line_bas",
+        symbol="BASUSDT",
+        timeframe="5m",
+        side="support",
+        t_start=1_000,
+        t_end=1_300,
+        price_start=0.01950,
+        price_end=0.01199,
+        pattern_stats_at_create={},
+        trigger=TriggerConfig(poll_seconds=60),
+        order=OrderConfig(
+            direction="short",
+            order_kind="bounce",
+            tolerance_pct_of_line=1.0,
+            stop_offset_pct_of_line=0.1,
+            rr_target=5.0,
+            notional_usd=300.0,
+            submit_to_exchange=True,
+            exchange_mode="live",
+        ),
+        status="triggered",
+        created_at=1_000,
+        updated_at=1_000,
+        triggered_at=1_000,
+        exchange_order_id="old-order-1",
+        fill_price=0.01493,   # the original trigger price
+        fill_qty=20094.0,
+        last_poll_ts=1_000,
+        extend_right=True,
+    )
+    base.update(overrides)
+    return ConditionalOrder(**base)
+
+
+@pytest.mark.asyncio
+async def test_line_broken_short_cancels_when_mark_above_line_plus_stop_pct(monkeypatch):
+    """BAS 2026-04-22 scenario: line descended under a flat price, mark is
+    above line × (1 + stop_pct). Expected: cancel, status → cancelled,
+    line_broken event logged, NO replan (no plan_submits).
+    NOTE: ts=1300 with 5m TF snaps to bar_open=1200, where log-interpolated
+    line ≈ 0.01411. Mark must be > 0.01411 × 1.001 = 0.01412 to trigger."""
+    cond = _short_descending_cond()
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    # Mark=0.016 safely above line threshold
+    _patch_mark(monkeypatch, 0.016)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    adapter = _FakeAdapter.instances[-1]
+    # Confirm cancel fired, NOT replan
+    assert len(adapter.cancelled_regular) == 1, f"expected 1 cancel, got {adapter.cancelled_regular}"
+    assert adapter.plan_submits == [], "replan MUST NOT run when line-broken fires"
+    # Status transitioned via CAS
+    assert cond.status == "cancelled"
+    assert any(s == "cancelled" for s, _ in store.status_changes)
+    # line_broken event was appended
+    assert any(e.kind == "line_broken" for e in store.events), \
+        f"line_broken event missing; events: {[e.kind for e in store.events]}"
+
+
+@pytest.mark.asyncio
+async def test_line_broken_cancel_FAILS_both_paths_leaves_triggered(monkeypatch):
+    """Bug 1+2 coverage: if BOTH Bitget cancel paths return ok=False,
+    we MUST NOT set status=cancelled (would orphan the live Bitget plan).
+    Cond must stay as 'triggered' for next-bar retry."""
+    cond = _short_descending_cond()
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    _FakeAdapter.cancel_regular_ok = False
+    _FakeAdapter.cancel_plan_ok = False
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    _patch_mark(monkeypatch, 0.016)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    adapter = _FakeAdapter.instances[-1]
+    # Both cancel paths were attempted
+    assert len(adapter.cancelled_regular) == 1
+    assert len(adapter.cancelled_plan) == 1
+    # Status MUST NOT have moved to cancelled
+    assert cond.status == "triggered", \
+        f"CRITICAL: cancel failed but status={cond.status} (should stay triggered for retry)"
+    assert not any(s == "cancelled" for s, _ in store.status_changes)
+    # exchange_error event was logged so user can see the orphan risk
+    assert any(e.kind == "exchange_error" for e in store.events), \
+        f"exchange_error event missing; events: {[e.kind for e in store.events]}"
+    # Replan still must NOT have run
+    assert adapter.plan_submits == []
+
+
+@pytest.mark.asyncio
+async def test_line_broken_cancel_first_path_raises_then_fallback_succeeds(monkeypatch):
+    """Bug 2 coverage: cancel_order raises (network blip). The fallback
+    cancel_plan_order_any_type must STILL be attempted. If fallback
+    succeeds, overall cancel is ok and we transition to cancelled."""
+    cond = _short_descending_cond()
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    _FakeAdapter.cancel_regular_raise = RuntimeError("network blip")
+    _FakeAdapter.cancel_plan_ok = True
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    _patch_mark(monkeypatch, 0.016)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    adapter = _FakeAdapter.instances[-1]
+    # First path raised but fallback was attempted and succeeded
+    assert len(adapter.cancelled_regular) == 1
+    assert len(adapter.cancelled_plan) == 1, "fallback cancel must be attempted after regular raises"
+    # Overall cancel succeeded → status transitioned to cancelled
+    assert cond.status == "cancelled"
+    assert any(e.kind == "line_broken" for e in store.events)
+
+
+@pytest.mark.asyncio
+async def test_mark_fetch_returns_none_aborts_maybe_replan(monkeypatch):
+    """Bug 4 coverage: if _fetch_mark_price_strict returns None, the whole
+    _maybe_replan must abort — NO replan, NO cancel. Prevents the BAS
+    re-failure mode where a transient ticker outage re-triggers the
+    original bug."""
+    cond = _short_descending_cond()
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    _patch_mark(monkeypatch, None)
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    adapter_instances = _FakeAdapter.instances
+    # NO cancel, NO replan — all cancel / submit lists must be empty
+    for adapter in adapter_instances:
+        assert adapter.cancelled_regular == [], "Bug 4: mark=None triggered a cancel"
+        assert adapter.plan_submits == [], "Bug 4: mark=None triggered a replan"
+    # Cond stays triggered, last_poll_ts updated to gate next tick
+    assert cond.status == "triggered"
+    assert cond.last_poll_ts == 1_300
+    # A poll event was logged so user can see the skip
+    assert any(e.kind == "poll" and "ABORTED" in (e.message or "") for e in store.events), \
+        f"abort event missing; events: {[(e.kind, e.message) for e in store.events]}"
+
+
+@pytest.mark.asyncio
+async def test_line_broken_cas_lost_skips_reverse_spawn(monkeypatch):
+    """Bug 5 coverage: if CAS from_status=triggered fails (someone else
+    already transitioned), we must NOT spawn reverse. Simulate by pre-
+    setting cond.status to 'cancelled' before _maybe_replan runs."""
+    import dataclasses
+    cond = _short_descending_cond()
+    # OrderConfig is frozen — use dataclasses.replace to enable reverse.
+    cond = dataclasses.replace(
+        cond,
+        order=dataclasses.replace(
+            cond.order,
+            reverse_enabled=True,
+            reverse_entry_offset_pct=0.5,
+            reverse_stop_offset_pct=0.3,
+        ),
+    )
+    store = _FakeStore(cond)
+    _reset_fake_adapter()
+    monkeypatch.setattr(watcher, "_store", store)
+    monkeypatch.setattr("server.execution.live_adapter.LiveExecutionAdapter", _FakeAdapter)
+    _patch_mark(monkeypatch, 0.016)
+
+    reverse_spawn_called = []
+    async def _fake_reverse(src, reason):
+        reverse_spawn_called.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    # Pre-flip status to simulate a racing path that already cancelled.
+    cond.status = "cancelled"
+
+    await watcher._maybe_replan(cond, 1_300)
+
+    # CAS from_status='triggered' should have failed (status is already cancelled).
+    # Reverse spawn MUST NOT have been called.
+    assert reverse_spawn_called == [], \
+        f"Bug 5: reverse spawned despite losing CAS: {reverse_spawn_called}"

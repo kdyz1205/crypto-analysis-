@@ -144,6 +144,52 @@ class ConditionalOrderStore:
                     return it
         return None
 
+    def set_status_if(
+        self,
+        conditional_id: str,
+        *,
+        from_status: ConditionalStatus,
+        to_status: ConditionalStatus,
+        reason: str = "",
+    ) -> ConditionalOrder | None:
+        """Atomic compare-and-swap on status. Transitions only if the
+        current status matches `from_status`; otherwise returns None
+        without mutating.
+
+        CRITICAL USE: code paths that "cancel + spawn_reverse" (and any
+        other one-shot side effect) MUST use this, NOT set_status, to
+        avoid double-firing when two loops race on the same cond.
+        Example: _maybe_replan's line-broken cancel AND reconcile's
+        "order gone" path can both see status=triggered in the same
+        tick. Without CAS, both would fire set_status + spawn_reverse,
+        giving the user 2 reverse positions on 1 invalidation.
+
+        Returns the updated cond (now at to_status), or None if the
+        from_status guard failed. Callers MUST check the return value
+        before executing any side effect (reverse spawn, event append,
+        etc.).
+        """
+        with self._lock:
+            items = self._read_all()
+            for idx, it in enumerate(items):
+                if it.conditional_id == conditional_id:
+                    if it.status != from_status:
+                        return None
+                    it.status = to_status
+                    it.updated_at = now_ts()
+                    if to_status == "triggered":
+                        it.triggered_at = now_ts()
+                    elif to_status == "filled":
+                        if it.triggered_at is None:
+                            it.triggered_at = now_ts()
+                    elif to_status == "cancelled":
+                        it.cancelled_at = now_ts()
+                        it.cancel_reason = reason
+                    items[idx] = it
+                    self._write_all(items)
+                    return it
+        return None
+
     def delete(self, conditional_id: str) -> bool:
         with self._lock:
             items = self._read_all()

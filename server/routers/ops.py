@@ -6,7 +6,7 @@ import asyncio
 
 import httpx
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
 from ..core.config import PROJECT_ROOT, FRONTEND_DIR
 from ..core.log_buffer import _LOG_BUFFER
@@ -43,6 +43,33 @@ async def index_v2():
 async def index_v2_html():
     return FileResponse(
         str(FRONTEND_DIR / "v2.html"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@router.get("/agents")
+async def index_agents():
+    """Live Claude x Codex dialogue viewer (pixel-style chat bubbles).
+
+    Reads real task exchanges from data/logs/agent_dialogue.jsonl.
+    """
+    return FileResponse(
+        str(FRONTEND_DIR / "agent_dialogue.html"),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
+@router.get("/api/agent_dialogue")
+async def api_agent_dialogue():
+    """Serve the agent dialogue JSONL as plain text so the viewer can
+    parse it line-by-line. Each line is one turn."""
+    from pathlib import Path as _P
+    p = _P(__file__).resolve().parents[2] / "data" / "logs" / "agent_dialogue.jsonl"
+    if not p.exists():
+        return JSONResponse({"ok": False, "reason": "no dialogue log yet"}, status_code=404)
+    return FileResponse(
+        str(p),
+        media_type="text/plain; charset=utf-8",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
 

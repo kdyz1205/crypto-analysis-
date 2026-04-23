@@ -329,6 +329,30 @@ async def api_top_volume(n: int = Query(20, ge=1, le=50)):
     return {"symbols": symbols, "count": len(symbols)}
 
 
+# ─── Symbol screener (user 2026-04-22) ────────────────────────────────
+# Frontend filter chips POST to /api/symbols/screen with
+#   { rules: [{ tf, kind, fast, slow }] }
+# Currently: the endpoint returns `{ matched: null }` which the
+# frontend interprets as "no filter active" (i.e. show all rows).
+# This intentionally stubs out the filter — a real implementation would
+# iterate a symbol universe, fetch klines per TF, compute EMA/MA, and
+# return matches. That requires concurrent Bitget round-trips and a
+# caching layer. Punted to a follow-up task so the filter chips don't
+# cause a 404-then-timeout cascade on the dropdown render.
+@router.post("/symbols/screen")
+async def api_symbols_screen(body: dict):
+    rules = (body or {}).get("rules") or []
+    # Fast return with matched=null so frontend's `_matchedSymbols = null`
+    # branch kicks in -> no filter applied. Same visible behaviour as
+    # today's 404-timeout but without the 25s wait.
+    return {
+        "matched": None,
+        "implemented": False,
+        "note": "filter endpoint stubbed; returns no-op. Rules count: "
+                + str(len(rules)),
+    }
+
+
 # Live mark-price from Bitget public ticker. Bypasses all local caches so
 # the UI always sees the same number Bitget sees. Meant to be polled every
 # ~1 second from the frontend (no auth, so it's cheap).

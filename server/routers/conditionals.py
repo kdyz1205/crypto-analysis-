@@ -652,14 +652,14 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         min_sl_cap = entry_price * (1.0 - max_sl_pct)
         if stop_price < min_sl_cap:
             print(f"[place-line-order] SL distance-capped at setup total: "
-                  f"line-based {stop_price:.6f} → {min_sl_cap:.6f} "
+                  f"line-based {stop_price:.6f} -> {min_sl_cap:.6f} "
                   f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
             stop_price = min_sl_cap
     else:
         max_sl_cap = entry_price * (1.0 + max_sl_pct)
         if stop_price > max_sl_cap:
             print(f"[place-line-order] SL distance-capped at setup total: "
-                  f"line-based {stop_price:.6f} → {max_sl_cap:.6f} "
+                  f"line-based {stop_price:.6f} -> {max_sl_cap:.6f} "
                   f"(entry {entry_price:.6f}, cap {max_sl_pct*100:.2f}% = buffer+stop)", flush=True)
             stop_price = max_sl_cap
 
