@@ -36,10 +36,10 @@ export async function deleteManualDrawing(manualLineId) {
   try {
     const data = await fetchJson(`/api/drawings/${encodeURIComponent(manualLineId)}`, {
       method: 'DELETE',
-      // Backend cascades: cancel every conditional on this line +
-      // try to cancel the Bitget plan order for each. 3-5 Bitget
-      // calls per attached cond. 25s covers slow Bitget days.
-      timeout: 25000,
+      // Backend 2026-04-22: local cancel is synchronous (<100ms),
+      // Bitget plan cancels run in a background task so this endpoint
+      // returns immediately. 10s is plenty for the happy path.
+      timeout: 10000,
     });
     invalidateCachePrefix('/api/drawings');
     return data;
@@ -47,6 +47,13 @@ export async function deleteManualDrawing(manualLineId) {
     if (err?.status === 404) {
       invalidateCachePrefix('/api/drawings');
       return { removed: 0, already_deleted: true };
+    }
+    // Abort/timeout: the local delete MAY have succeeded on the server
+    // even if our response read aborted. Tell the user to refresh and
+    // manually check Bitget app for any orphan plan orders.
+    const msg = String(err?.message || err || '');
+    if (/abort|timeout|signal/i.test(msg)) {
+      err.userHint = '请求超时:本地可能已删,但 Bitget 挂单需要你手动去 app 核对有没有残留';
     }
     throw err;
   }

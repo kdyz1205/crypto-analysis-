@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Claude ⇄ Codex · Live Agent Dialogue</title>
+<style>
+  /* Pixel/8-bit aesthetic — dialogue-box inspired by old JRPG dialogs */
+  @import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    background: #07090f;
+    color: #d8dde8;
+    font-family: 'VT323', monospace;
+    font-size: 20px;
+    image-rendering: pixelated;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    padding: 14px;
+    min-height: 100vh;
+  }
+  .hdr {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 14px;
+    background: #0d121c;
+    border: 3px solid #1a2540;
+    image-rendering: pixelated;
+    box-shadow: 0 0 0 3px #07090f, 0 0 0 5px #1a2540;
+    margin-bottom: 18px;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .hdr .title { color: #00e5ff; flex: 1; }
+  .hdr .meta { color: #8a95a6; font-size: 9px; }
+  .hdr .dot { width: 10px; height: 10px; background: #00ff88; box-shadow: 0 0 8px #00ff88; image-rendering: pixelated; }
+  .hdr .dot.stale { background: #6b7889; box-shadow: none; }
+  .stream {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+  .bubble {
+    margin-bottom: 16px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .bubble.codex { flex-direction: row-reverse; }
+  .avatar {
+    flex-shrink: 0;
+    width: 56px; height: 56px;
+    border: 3px solid;
+    display: grid;
+    place-items: center;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 10px;
+    image-rendering: pixelated;
+  }
+  .avatar.claude { background: #0d3446; border-color: #00e5ff; color: #00e5ff; box-shadow: 0 0 0 2px #07090f, 0 0 0 4px #00e5ff; }
+  .avatar.codex  { background: #0d4618; border-color: #00ff88; color: #00ff88; box-shadow: 0 0 0 2px #07090f, 0 0 0 4px #00ff88; }
+  .box {
+    flex: 1;
+    border: 3px solid;
+    background: #0d121c;
+    padding: 10px 14px 12px 14px;
+    position: relative;
+    image-rendering: pixelated;
+    font-family: 'JetBrains Mono', 'VT323', monospace;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-word;
+    overflow: hidden;
+  }
+  .claude .box { border-color: #00e5ff; box-shadow: 4px 4px 0 #062a3a; }
+  .codex  .box { border-color: #00ff88; box-shadow: -4px 4px 0 #053a17; }
+  .box-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+    padding-bottom: 5px;
+    border-bottom: 2px dashed;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
+  .claude .box-head { border-color: #1a5a74; }
+  .codex  .box-head { border-color: #1a5a28; }
+  .box-head .who { flex: 1; }
+  .claude .box-head .who { color: #00e5ff; }
+  .codex  .box-head .who { color: #00ff88; }
+  .box-head .task { color: #ffc857; }
+  .box-head .ts   { color: #6b7889; }
+  .box .title-line { color: #ffd166; margin-bottom: 6px; font-weight: 700; font-size: 14px; }
+  .box pre {
+    margin: 6px 0 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #bfc8dd;
+    font-family: 'JetBrains Mono', 'VT323', monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 8px 10px;
+    background: #07090f;
+    border: 1px solid #1a2540;
+  }
+  .box pre.collapsed { max-height: 150px; }
+  .expand-btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    color: #6b7889;
+    background: transparent;
+    border: 1px solid #2a3548;
+    padding: 3px 7px;
+    margin-top: 6px;
+    cursor: pointer;
+  }
+  .expand-btn:hover { color: #00e5ff; border-color: #00e5ff; }
+  .box pre::-webkit-scrollbar { width: 8px; }
+  .box pre::-webkit-scrollbar-track { background: #07090f; }
+  .box pre::-webkit-scrollbar-thumb { background: #1a2540; }
+  .blinker {
+    display: inline-block; animation: blink 1.1s steps(1) infinite;
+    color: #00ff88;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .status-strip {
+    margin-top: auto;
+    padding: 6px 10px;
+    background: #0d121c;
+    border: 2px solid #1a2540;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 9px;
+    color: #8a95a6;
+    display: flex;
+    gap: 18px;
+  }
+  .status-strip b { color: #00e5ff; }
+  .status-strip .codex-c { color: #00ff88; }
+  .tag {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #1a2540;
+    color: #8a95a6;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    margin-left: 6px;
+  }
+  .tag.running { background: #3b2a0b; color: #fbbf24; }
+  .tag.done    { background: #0b3b1a; color: #00ff88; }
+  .tag.failed  { background: #3b0b0b; color: #ff5252; }
+  /* CRT scanline effect */
+  .stream::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 2px, rgba(255,255,255,0.015) 2px, rgba(255,255,255,0.015) 3px);
+    z-index: 999;
+  }
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="dot" id="liveDot"></div>
+    <div class="title">◢ AGENT DIALOGUE · CLAUDE × CODEX ◣</div>
+    <div class="meta" id="meta">loading…</div>
+  </div>
+
+  <div class="stream" id="stream">
+    <div style="color:#6b7889;text-align:center;padding:40px;font-family:'Press Start 2P';font-size:10px">
+      LOADING REAL DIALOGUE LOG...<br><br>
+      Source: data/logs/agent_dialogue.jsonl
+    </div>
+  </div>
+
+  <div class="status-strip">
+    <div><b>CLAUDE</b> = planner (reads data, writes tasks)</div>
+    <div class="codex-c">CODEX = executor (runs commands, edits files)</div>
+    <div style="margin-left:auto">auto-refresh 3s · <span id="refreshInfo">never</span></div>
+  </div>
+
+<script>
+// Primary: API endpoint (only works after server reload picks up new route).
+// Fallback: JSONL colocated in /static/ — copied here by our sync helper.
+const LOG_URL = '/api/agent_dialogue';
+const FALLBACK_URL = './agent_dialogue.jsonl';
+
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function fetchLog() {
+  // Try API first, fall back to static
+  for (const url of [LOG_URL, FALLBACK_URL]) {
+    try {
+      const r = await fetch(url + '?_=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) continue;
+      const text = await r.text();
+      const lines = text.trim().split('\n').filter(l => l.trim());
+      return lines.map(l => JSON.parse(l));
+    } catch (e) { continue; }
+  }
+  return null;
+}
+
+function render(entries) {
+  const stream = document.getElementById('stream');
+  if (!entries || !entries.length) {
+    stream.innerHTML = '<div style="color:#ff5252;text-align:center;padding:40px;font-family:\'Press Start 2P\';font-size:10px">NO DIALOGUE YET</div>';
+    return;
+  }
+  stream.innerHTML = entries.map((e, idx) => {
+    const isCodex = e.speaker === 'codex';
+    const avatar = isCodex ? 'CDX' : 'CLD';
+    const avCls = isCodex ? 'codex' : 'claude';
+    const who = isCodex ? 'CODEX · executor' : 'CLAUDE · planner';
+    const content = (e.content || '').trim();
+    const short = content.length > 400;
+    const collapsedCls = short ? 'collapsed' : '';
+    const isRunning = content.startsWith('[RUNNING]');
+    const tag = isRunning
+      ? '<span class="tag running">RUNNING</span>'
+      : (e.speaker === 'codex' ? '<span class="tag done">DONE</span>' : '<span class="tag">PROMPT</span>');
+
+    const body = isRunning
+      ? `<pre>${escHtml(content)} <span class="blinker">▌</span></pre>`
+      : `<pre class="${collapsedCls}" id="pre-${idx}">${escHtml(content)}</pre>` +
+        (short ? `<button class="expand-btn" data-toggle-idx="${idx}">展开 / 折叠</button>` : '');
+
+    return `
+      <div class="bubble ${avCls}">
+        <div class="avatar ${avCls}">${avatar}</div>
+        <div class="box">
+          <div class="box-head">
+            <span class="who">${who}</span>
+            <span class="task">${escHtml(e.task_id || '')}</span>
+            <span class="ts">${escHtml(e.ts || '')}</span>
+          </div>
+          <div class="title-line">${escHtml(e.title || '')}${tag}</div>
+          ${body}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function refresh() {
+  const entries = await fetchLog();
+  render(entries);
+  const now = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  document.getElementById('refreshInfo').textContent = now;
+  document.getElementById('meta').textContent = `${entries ? entries.length : 0} turns · last fetch ${now}`;
+  const dot = document.getElementById('liveDot');
+  if (entries) { dot.classList.remove('stale'); } else { dot.classList.add('stale'); }
+}
+
+// Event delegation for expand/collapse buttons (avoid inline onclick — XSS-prone + leaks listeners on re-render)
+document.getElementById('stream').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-toggle-idx]');
+  if (!btn) return;
+  const idx = btn.getAttribute('data-toggle-idx');
+  const pre = document.getElementById('pre-' + idx);
+  if (pre) pre.classList.toggle('collapsed');
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
