@@ -9,6 +9,7 @@
 // drawtool.mode events.
 
 import { startTrendlineTool } from './chart_drawing.js';
+import { resetChartViewport } from '../chart.js';
 import * as drawingsSvc from '../../services/drawings.js';
 import { marketState } from '../../state/market.js';
 import { subscribe } from '../../util/events.js';
@@ -33,6 +34,9 @@ export function initDrawToolbar(containerEl) {
     </button>
     <button class="dtb-btn dtb-cancel" data-tool="cancel" title="取消 (Esc)">✕</button>
     <button class="dtb-btn dtb-clear"  data-tool="clear"  title="清空当前 symbol/tf 的所有线">清空</button>
+    <button class="dtb-btn dtb-autofit" data-tool="autofit" title="自动 (调整数据适于屏幕) · R" aria-label="自动适应屏幕">
+      <span class="dtb-icon">⇱⇲</span><span>自动</span>
+    </button>
     <div class="dtb-status"></div>
   `;
   containerEl.appendChild(toolbar);
@@ -75,6 +79,13 @@ export function initDrawToolbar(containerEl) {
         return;
       }
       startTrendlineTool();
+      return;
+    }
+    if (tool === 'autofit') {
+      resetChartViewport();
+      // Brief visual pulse on the button so the user sees it fired
+      btn.classList.add('is-pulse');
+      setTimeout(() => btn.classList.remove('is-pulse'), 300);
       return;
     }
     startTrendlineTool();

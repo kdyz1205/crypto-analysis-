@@ -2223,6 +2223,25 @@ body.combat-mode .boot-status { display: none; }
 .dtb-icon { font-size: 11px; font-weight: bold; }
 .dtb-btn.dtb-cancel { padding: 2px 5px; }
 .dtb-btn.dtb-clear  { padding: 2px 5px; }
+.dtb-btn.dtb-autofit {
+  /* TradingView-style "Auto / fit to screen" reset button. User
+     2026-04-22 asked for it after dragging the price axis disabled
+     autoScale and there was no way back. */
+  background: #0b2540;
+  border-color: #1e4a7a;
+  color: #60a5fa;
+}
+.dtb-btn.dtb-autofit:hover {
+  background: #113352;
+  border-color: #2b6ab0;
+  color: #93c5fd;
+}
+.dtb-btn.dtb-autofit.is-pulse {
+  background: #1e4a7a;
+  border-color: #60a5fa;
+  color: #fff;
+  transition: all 60ms;
+}
 
 .dtb-status {
   margin-left: 4px;

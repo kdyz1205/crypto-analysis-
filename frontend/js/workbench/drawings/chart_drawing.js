@@ -566,6 +566,16 @@ function onKeyDown(ev) {
       startTrendlineTool();
     }
   }
+  // TradingView-style "reset chart" — re-enables autoScale + fitContent.
+  // Only fires when NOT in a drawing state so it doesn't interfere.
+  // User 2026-04-22 asked for a way back after dragging disabled auto-fit.
+  if ((ev.key === 'r' || ev.key === 'R') && tx.state === 'idle') {
+    if (ev.repeat) return;
+    // Ignore if user is typing in any input / textarea / contenteditable
+    const tgt = ev.target;
+    if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) return;
+    import('../chart.js').then((m) => m.resetChartViewport?.()).catch(() => {});
+  }
 }
 
 function onKeyUp(ev) {

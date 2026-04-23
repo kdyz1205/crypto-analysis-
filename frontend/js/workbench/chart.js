@@ -762,6 +762,29 @@ export function setChartTimezone(tz) {
 
 export function getChartTimezone() { return _currentTz; }
 
+/**
+ * Re-enable TradingView-style "auto fit" mode: price axis auto-scales
+ * to visible bars, and time axis fits all candles including future
+ * right-offset. User 2026-04-22: wanted an explicit button for this
+ * because lightweight-charts disables autoScale as soon as you drag
+ * the price axis, and there was no way back without reloading.
+ */
+export function resetChartViewport() {
+  if (!chart) return;
+  try {
+    chart.priceScale('right').applyOptions({ autoScale: true });
+  } catch {}
+  try {
+    chart.timeScale().fitContent();
+  } catch {}
+  // Also re-apply the TF-aware rightOffset (fitContent can sometimes
+  // collapse the future-area margin).
+  try {
+    const tfBars = futureDrawBarsFor(marketState?.currentInterval);
+    chart.timeScale().applyOptions({ rightOffset: tfBars });
+  } catch {}
+}
+
 // Expose for external UI
 if (typeof window !== 'undefined') {
   window.setChartTimezone = setChartTimezone;
