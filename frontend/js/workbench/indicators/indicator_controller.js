@@ -23,13 +23,15 @@ import {
   factorRSIOversold, factorRSIOverbought, factorVolumeSurge,
   factorMACDBullCross, factorMACDBearCross,
 } from './indicator_math.js';
+import { DEFAULT_RIBBON_LINES } from '../ma_overlay.js';
 
 const LS_KEY = 'v2.indicators.v1';
 
 /** Default list — matches the old hardcoded overlays so nothing visually
  *  disappears on first boot. New users can disable from the panel. */
 const DEFAULT_INDICATORS = [
-  { id: 'ma_ribbon', type: 'ma_ribbon', name: 'MA Ribbon (5/8/21/55)', visible: true, config: {} },
+  { id: 'ma_ribbon', type: 'ma_ribbon', name: 'MA Ribbon', visible: true,
+    config: { lines: JSON.parse(JSON.stringify(DEFAULT_RIBBON_LINES)) } },
   { id: 'bb',        type: 'bb',        name: 'Bollinger Bands (20, 2)', visible: true, config: { period: 20, stddev: 2 } },
   // Optional / heavier — off by default
   { id: 'wyckoff',   type: 'wyckoff',   name: 'Wyckoff (vol-ratio)', visible: false, config: {} },
@@ -45,7 +47,8 @@ export const INDICATOR_CATALOG = [
   {
     category: '趋势 Trend',
     items: [
-      { type: 'ma_ribbon', name: 'MA Ribbon (5/8/21/55)' },
+      { type: 'ma_ribbon', name: 'MA Ribbon',
+        defaultConfig: { lines: JSON.parse(JSON.stringify(DEFAULT_RIBBON_LINES)) } },
     ],
   },
   {
@@ -160,6 +163,26 @@ export function addIndicator(type, name, config = {}) {
   return id;
 }
 
+/** Mutate an indicator's config object in place (used by the ⚙ gear
+ *  editor in indicator_panel.js when the user changes periods / colors
+ *  / etc). Persists and notifies listeners so the chart re-renders. */
+export function updateConfig(id, config) {
+  const ind = _indicators.find((x) => x.id === id);
+  if (!ind) return;
+  ind.config = { ...(ind.config || {}), ...(config || {}) };
+  saveIndicators();
+  notify();
+}
+
+/** Rename an indicator (user may want "MA Ribbon (4h sweep)" etc.). */
+export function renameIndicator(id, name) {
+  const ind = _indicators.find((x) => x.id === id);
+  if (!ind) return;
+  ind.name = String(name || ind.name);
+  saveIndicators();
+  notify();
+}
+
 export function isVisible(type) {
   return _indicators.some((x) => x.type === type && x.visible);
 }
@@ -173,17 +196,18 @@ export function isVisible(type) {
 export async function applyIndicators(chart, candleSeries, candles, overlays) {
   if (!chart) return;
 
-  // MA Ribbon — delegate (existing) ----------------------------------
-  const maOn = isVisible('ma_ribbon');
+  // MA Ribbon — config-driven (2026-04-23). Every ma_ribbon instance
+  // gets its own lines array rendered via drawMARibbon(). Multiple
+  // instances allowed (e.g. one conservative + one short-term).
   try {
     const mod = await import('../ma_overlay.js');
-    if (maOn && overlays) {
-      const candleTimes = candles.map((c) => c.time);
-      mod.drawMAOverlays(chart, overlays, candleTimes);
-    } else if (typeof mod.toggleMAOverlays === 'function' && !maOn) {
-      // ma_overlay has a "hide all" via its own toggle that expects a
-      // next-visible value. Easier: set explicit false.
-      try { mod.setMAOverlaysVisible?.(false); } catch {}
+    const ribbons = _indicators.filter((x) => x.type === 'ma_ribbon');
+    for (const ind of ribbons) {
+      if (ind.visible) {
+        mod.drawMARibbon(chart, candles, ind.config, ind.id);
+      } else {
+        mod.clearRibbonInstance(chart, ind.id);
+      }
     }
   } catch (err) { console.warn('[indicators] ma_ribbon err:', err); }
 
