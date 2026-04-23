@@ -1191,14 +1191,39 @@ def _register_manual_trailing_if_position_open(cond: ConditionalOrder, pos: dict
 
 
 async def _reconcile_against_bitget() -> None:
-    """Compare local triggered conds against actual Bitget plan orders.
-    Any local cond whose exchange_order_id is NOT on Bitget gets marked
-    cancelled — covers user manual cancel from Bitget app, fills, expiry."""
+    """Reconcile local triggered conds with Bitget's authoritative state.
+
+    Hard design invariant (PRINCIPLES.md P9 + P9a, 2026-04-23):
+      Local state transitions (triggered → cancelled / filled) happen ONLY
+      on affirmative Bitget evidence. Never on "my oid was absent from a
+      list". If we can't tell for sure, we keep the cond triggered and
+      retry next cycle.
+
+    Flow:
+      1. Fetch pending oids + positions for each mode. Both can fail; the
+         classifier treats "fetch failed" as "no info from that source".
+      2. For each triggered cond, call classify_cond_state() which:
+            pending has my oid    → LIVE
+            position matches me   → FILLED
+            otherwise             → query orders-plan-history for my oid
+                                       row state=cancelled → CANCELLED
+                                       row state=filled    → FILLED
+                                       row state=live      → LIVE
+                                       row missing / error → UNKNOWN
+      3. Act only on LIVE / FILLED / CANCELLED. UNKNOWN → stay triggered.
+
+    Why this beats the old "not-in-pending → cancel" logic: a 429 on
+    orders-plan-pending used to cascade-cancel every triggered plan
+    cond in one tick. Now pending-list absence is just a hint that
+    forces a history lookup; only history can confirm a cancel.
+    """
     triggered = _store.list_all(status="triggered")
     if not triggered:
         return
     try:
         from server.execution.live_adapter import LiveExecutionAdapter
+        from .oid_state import classify_cond_state, CondRemoteState
+
         adapter = LiveExecutionAdapter()
         if not adapter.has_api_keys():
             return
@@ -1208,32 +1233,13 @@ async def _reconcile_against_bitget() -> None:
             for cond in triggered
             if cond.order.exchange_mode in {"demo", "live"}
         }
-        pending_oids_by_mode: dict[str, set[str]] = {}
-        positions_by_mode: dict[str, list[dict[str, Any]]] = {}
 
-        # Track whether BOTH pending fetches succeeded.
-        #
-        # Previous rule (2026-04-22) was "skip only if BOTH fail" — which
-        # left a gap: if the PLAN fetch fails (429 / timeout / 5xx) but
-        # the REGULAR fetch succeeds, the union `pending_oids` contains
-        # only regular (non-plan) orders. All our manual-line conds are
-        # plan-type (normal_plan). None of their oids will be in the
-        # union → every plan-type triggered cond gets falsely judged
-        # "not pending" → CAS-cancel → trades vanish while Bitget still
-        # has them live.
-        #
-        # Observed 2026-04-23 00:48 LA (user real money): Bitget returned
-        # 429 on plan pending only → HYPE/ETH/ORDI conds all nuked in
-        # the same tick while Bitget still held 275.22 HYPE short @ 41.446.
-        # User lost replan coverage and had to place a manual trade.
-        #
-        # Correct rule: we need the SPECIFIC list that covers a cond's
-        # order-type to have succeeded. Since plan-type is where all our
-        # manual-line entries live, we MUST have ok_plan to safely nuke
-        # plan-type conds. Simplest, safest fix: if EITHER fetch fails,
-        # skip the mode entirely — miss one cycle (30s) vs. lose a real
-        # order. Position fetch still runs so fills are still detected.
-        skip_modes: set[str] = set()
+        # Per-mode caches of pending + positions. A failed fetch just means
+        # classify_cond_state must fall back to its history query — it
+        # does NOT block the reconcile tick.
+        pending_by_mode: dict[str, tuple[set[str], bool]] = {}   # (oids, ok)
+        positions_by_mode: dict[str, tuple[list[dict[str, Any]], bool]] = {}
+
         for mode in modes:
             pending_oids: set[str] = set()
             ok_regular = False
@@ -1254,27 +1260,11 @@ async def _reconcile_against_bitget() -> None:
                 ok_plan = True
             except Exception as e:
                 print(f"[reconcile] plan pending fetch failed mode={mode}: {e}", flush=True)
-
-            # 2026-04-23 hardening: ANY fetch failure means the pending
-            # set is incomplete and we cannot safely decide "gone". Skip.
-            if not (ok_regular and ok_plan):
-                print(f"[reconcile] SKIP mode={mode} — pending fetch incomplete "
-                      f"(ok_regular={ok_regular} ok_plan={ok_plan}); retry next cycle", flush=True)
-                skip_modes.add(mode)
-                # Still try position fetch so fills get detected without
-                # false-cancelling the triggered set.
-                try:
-                    pos_resp = await adapter._bitget_request(
-                        "GET", "/api/v2/mix/position/all-position",
-                        mode=mode,
-                        params={"productType": "USDT-FUTURES", "marginCoin": "USDT"},
-                    )
-                    positions_by_mode[mode] = adapter._as_rows(pos_resp.get("data")) if pos_resp.get("code") == "00000" else []
-                except Exception as e:
-                    print(f"[reconcile] position fetch also failed mode={mode}: {e}", flush=True)
-                    positions_by_mode[mode] = []
-                pending_oids_by_mode[mode] = set()
-                continue
+            # "pending_fetch_ok" is the AND — the classifier only trusts
+            # pending-list absence as a hint (not evidence) when both paths
+            # succeeded, since we cannot know which list a cond's oid
+            # should live in without the other also being complete.
+            pending_by_mode[mode] = (pending_oids, ok_regular and ok_plan)
 
             try:
                 pos_resp = await adapter._bitget_request(
@@ -1282,33 +1272,57 @@ async def _reconcile_against_bitget() -> None:
                     mode=mode,
                     params={"productType": "USDT-FUTURES", "marginCoin": "USDT"},
                 )
-                positions_by_mode[mode] = adapter._as_rows(pos_resp.get("data")) if pos_resp.get("code") == "00000" else []
+                if pos_resp.get("code") == "00000":
+                    positions_by_mode[mode] = (adapter._as_rows(pos_resp.get("data")), True)
+                else:
+                    positions_by_mode[mode] = ([], False)
             except Exception as e:
                 print(f"[reconcile] position fetch failed mode={mode}: {e}", flush=True)
-                positions_by_mode[mode] = []
-            pending_oids_by_mode[mode] = pending_oids
+                positions_by_mode[mode] = ([], False)
 
         for cond in triggered:
-            oid = str(cond.exchange_order_id or "")
-            if not oid:
-                continue
             mode = cond.order.exchange_mode
             if mode not in {"demo", "live"}:
                 continue
-            # Skip modes where we couldn't reliably fetch pending oids.
-            # Better to leave a cond as "triggered" an extra 30s than to
-            # nuke it based on a transient Bitget API failure.
-            if mode in skip_modes:
-                continue
-            if oid in pending_oids_by_mode.get(mode, set()):
+            pending_oids, pending_ok = pending_by_mode.get(mode, (set(), False))
+            positions, positions_ok = positions_by_mode.get(mode, ([], False))
+
+            result = await classify_cond_state(
+                cond, adapter,
+                pending_oids=pending_oids,
+                pending_fetch_ok=pending_ok,
+                positions=positions,
+                positions_fetch_ok=positions_ok,
+            )
+
+            # Observability (PRINCIPLES.md P11): always log the decision
+            # with path so we can audit any surprise on the user's side.
+            print(
+                f"[reconcile] cond={cond.conditional_id} oid={cond.exchange_order_id} "
+                f"state={result.state.value} path={result.path}"
+                + (f" err={result.error}" if result.error else ""),
+                flush=True,
+            )
+
+            if result.state == CondRemoteState.LIVE:
+                _clear_unknown_streak(cond.conditional_id)
                 continue
 
-            pos = _find_position_for_cond(positions_by_mode.get(mode, []), cond)
-            if pos is not None:
+            if result.state == CondRemoteState.FILLED:
+                _clear_unknown_streak(cond.conditional_id)
                 now = now_ts()
-                _register_manual_trailing_if_position_open(cond, pos, now)
-                entry = _position_entry_price(pos) or float(cond.fill_price or 0.0)
-                qty = _position_size(pos) or float(cond.fill_qty or 0.0)
+                pos = result.matched_row if (result.matched_row and "holdSide" in (result.matched_row or {})) else None
+                # matched_row may be a history row (filled via history) rather
+                # than a position row; still fine — use cond.fill_price as fallback.
+                if pos is not None:
+                    _register_manual_trailing_if_position_open(cond, pos, now)
+                    entry = _position_entry_price(pos) or float(cond.fill_price or 0.0)
+                    qty = _position_size(pos) or float(cond.fill_qty or 0.0)
+                    opened_ts = _position_open_ts(pos) or now
+                else:
+                    entry = float(cond.fill_price or 0.0)
+                    qty = float(cond.fill_qty or 0.0)
+                    opened_ts = now
                 cond.status = "filled"
                 cond.fill_price = entry or cond.fill_price
                 cond.fill_qty = qty or cond.fill_qty
@@ -1317,47 +1331,101 @@ async def _reconcile_against_bitget() -> None:
                     if latest is not None:
                         cond.events = latest.events
                     _store.update(cond)
-                    opened_ts = _position_open_ts(pos) or now
                     _store.append_event(cond.conditional_id, ConditionalEvent(
-                        ts=now,
-                        kind="exchange_acked",
+                        ts=now, kind="exchange_acked",
                         price=entry or None,
                         line_price=cond.line_price_at(opened_ts),
-                        message="entry filled; registered manual line slope for trailing SL",
+                        message=f"reconcile: classifier={result.path}; fill captured",
                     ))
                 except Exception as e:
                     print(f"[reconcile] fill status update failed for {cond.conditional_id}: {e}", flush=True)
-                print(f"[reconcile] cond {cond.conditional_id} filled; trailing SL registered", flush=True)
+                print(f"[reconcile] cond {cond.conditional_id} transitioned triggered→filled ({result.path})", flush=True)
                 continue
 
-            print(f"[reconcile] cond {cond.conditional_id} oid={oid} not pending and no position; attempting CAS-cancel", flush=True)
-            # Atomic CAS: only this path gets to spawn reverse. If
-            # _maybe_replan's line-broken branch raced us and already
-            # transitioned triggered→cancelled, we skip the event + reverse.
-            # This prevents double-reverse on one invalidation.
-            winner = _store.set_status_if(
-                cond.conditional_id,
-                from_status="triggered",
-                to_status="cancelled",
-                reason="reconcile: bitget order no longer exists",
-            )
-            if winner is None:
-                print(f"[reconcile] cond {cond.conditional_id} CAS lost — "
-                      f"another path already handled it, skipping reverse", flush=True)
+            if result.state == CondRemoteState.CANCELLED:
+                _clear_unknown_streak(cond.conditional_id)
+                # Affirmative cancel from Bitget history. Safe to transition.
+                winner = _store.set_status_if(
+                    cond.conditional_id,
+                    from_status="triggered",
+                    to_status="cancelled",
+                    reason=f"reconcile history-confirmed cancel: {result.path}",
+                )
+                if winner is None:
+                    print(f"[reconcile] cond {cond.conditional_id} CAS lost — another path already handled it, skipping reverse", flush=True)
+                    continue
+                try:
+                    _store.append_event(cond.conditional_id, ConditionalEvent(
+                        ts=now_ts(), kind="cancelled",
+                        message=f"reconcile: Bitget history confirms oid {cond.exchange_order_id} cancelled ({result.path})",
+                    ))
+                except Exception:
+                    pass
+                try:
+                    await _spawn_reverse_conditional(cond, reason="reconcile_history_cancelled")
+                except Exception as e:
+                    print(f"[reconcile] reverse spawn failed for {cond.conditional_id}: {e}", flush=True)
                 continue
-            try:
-                _store.append_event(cond.conditional_id, ConditionalEvent(
-                    ts=now_ts(), kind="cancelled",
-                    message=f"reconcile: order {oid} not on Bitget anymore",
-                ))
-            except Exception:
-                pass
-            try:
-                await _spawn_reverse_conditional(cond, reason="reconcile_order_gone")
-            except Exception as e:
-                print(f"[reconcile] reverse spawn failed for {cond.conditional_id}: {e}", flush=True)
+
+            # UNKNOWN. The whole point of this branch: do NOTHING. Keep
+            # the cond triggered; next reconcile cycle will re-classify.
+            # The log line above already reports the 'path' so ops can see
+            # which reason the classifier couldn't resolve.
+            _record_unknown_tick(cond, result)
     except Exception as e:
         print(f"[reconcile] err: {e}", flush=True)
+
+
+# ─── UNKNOWN-tick escalation ───────────────────────────────────────────
+#
+# If the same cond keeps classifying as UNKNOWN for many consecutive
+# reconcile cycles, something non-transient is happening (Bitget API
+# persistently broken / the oid is so old it's off the history window /
+# a bug in our classifier). We track consecutive unknowns per cond and
+# emit ONE Telegram notification on crossing a threshold so the user
+# isn't left flying blind in silence.
+_UNKNOWN_STREAK: dict[str, int] = {}
+_UNKNOWN_ALERT_THRESHOLD = 10   # ~5 min at 30s reconcile cadence
+_UNKNOWN_ALERT_FIRED: set[str] = set()
+
+
+def _record_unknown_tick(cond: ConditionalOrder, result: Any) -> None:
+    cid = cond.conditional_id
+    streak = _UNKNOWN_STREAK.get(cid, 0) + 1
+    _UNKNOWN_STREAK[cid] = streak
+    if streak >= _UNKNOWN_ALERT_THRESHOLD and cid not in _UNKNOWN_ALERT_FIRED:
+        _UNKNOWN_ALERT_FIRED.add(cid)
+        print(
+            f"[reconcile] cond {cid} has been UNKNOWN for {streak} cycles "
+            f"(~{streak * 30}s). Last path={getattr(result, 'path', '?')}. "
+            f"Check Bitget manually — this oid may need intervention.",
+            flush=True,
+        )
+        # Telegram notify so the user knows something's off without
+        # having to watch the log.
+        try:
+            from server.core.bus import get_event_bus
+            bus = get_event_bus()
+            if bus is not None:
+                bus.publish(
+                    "conditional.reconcile_unknown_streak",
+                    {
+                        "conditional_id": cid,
+                        "symbol": cond.symbol,
+                        "oid": cond.exchange_order_id,
+                        "streak": streak,
+                        "last_path": getattr(result, "path", "?"),
+                    },
+                )
+        except Exception:
+            pass
+
+
+def _clear_unknown_streak(conditional_id: str) -> None:
+    """Called by non-UNKNOWN resolution paths (LIVE/FILLED/CANCELLED)
+    so a future UNKNOWN flash doesn't carry over the old streak."""
+    _UNKNOWN_STREAK.pop(conditional_id, None)
+    _UNKNOWN_ALERT_FIRED.discard(conditional_id)
 
 
 async def _fetch_market_price(symbol: str) -> float | None:
@@ -1829,28 +1897,49 @@ async def _maybe_replan(cond: ConditionalOrder, now: int) -> None:
     if not cancel_resp.get("ok"):
         cancel_resp = await adapter.cancel_plan_order_any_type(sym, cond.exchange_order_id, cond.order.exchange_mode)
     if not cancel_resp.get("ok"):
-        # Re-query pending list: if our oid is NOT there, the order is
-        # effectively already gone (Bitget cleaned it up / it was never
-        # persisted / rate-limit glitch). Treat as success and proceed
-        # with replan — no double-order risk. This suppresses the false
-        # "replan cancel failed" Telegram alarm the user hit 2026-04-22.
-        order_truly_gone = False
+        # Both cancel paths failed. Before treating as "already gone" and
+        # submitting a new plan (which would risk double-orders if the
+        # original is actually still alive), confirm via AFFIRMATIVE
+        # Bitget evidence, not absence from pending list. See
+        # memory/feedback_exchange_cancel_forensics.md Q4.
+        from .oid_state import classify_cond_state, CondRemoteState
         try:
             pending_oids = await _get_cached_pending_oids(cond.order.exchange_mode)
-            if str(cond.exchange_order_id) not in pending_oids:
-                order_truly_gone = True
+            pending_ok = True
         except Exception:
-            pass
-        if not order_truly_gone:
+            pending_oids, pending_ok = set(), False
+        state_result = await classify_cond_state(
+            cond, adapter,
+            pending_oids=pending_oids,
+            pending_fetch_ok=pending_ok,
+            positions=None, positions_fetch_ok=False,
+        )
+        if state_result.state == CondRemoteState.LIVE:
+            # Old plan is confirmed still alive. Submitting a new plan
+            # now would create duplicate or trigger Bitget's same-symbol
+            # auto-cancel quirk (Q1). Abort and retry next bar.
             _append_event(cond, ConditionalEvent(
                 ts=now, kind="exchange_error",
-                message=f"replan cancel failed: {cancel_resp.get('reason','?')}",
+                message=f"replan cancel failed AND history confirms oid still LIVE: {cancel_resp.get('reason','?')} / classifier={state_result.path}",
             ))
             return
-        # Order already gone -> log quietly at info level, skip Telegram.
+        if state_result.state == CondRemoteState.UNKNOWN:
+            # Don't know → don't submit a new plan. Next bar retry.
+            _append_event(cond, ConditionalEvent(
+                ts=now, kind="exchange_error",
+                message=f"replan cancel failed AND classifier UNKNOWN: {cancel_resp.get('reason','?')} / classifier={state_result.path}",
+            ))
+            return
+        # state is CANCELLED or FILLED → safe to proceed. For FILLED, the
+        # reconcile loop will transition status=filled on the next tick;
+        # a "replan" at that point would just create a stray plan, so
+        # return early.
+        if state_result.state == CondRemoteState.FILLED:
+            print(f"[watcher] {sym} replan: old oid {cond.exchange_order_id} already FILLED per classifier; skipping replan", flush=True)
+            return
+        # state is CANCELLED — old plan truly gone, OK to submit new.
         print(f"[watcher] {sym} replan: old oid {cond.exchange_order_id} "
-              f"already absent from Bitget pending list (reason: "
-              f"{cancel_resp.get('reason','?')}), proceeding with replan", flush=True)
+              f"history-confirmed cancelled ({state_result.path}); proceeding with replan", flush=True)
 
     # Recompute SL / TP from the new LINE projection using line-relative pct.
     rr = cond.order.rr_target or 2.0

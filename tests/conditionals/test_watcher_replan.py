@@ -591,83 +591,277 @@ async def test_reconcile_skips_on_regular_pending_failure(monkeypatch):
     assert reverse_calls == []
 
 
+class _FakeStoreList:
+    """Minimal store stub matching the reconcile path's contract."""
+    def __init__(self, cond):
+        self.cond = cond
+        self.status_changes: list[tuple[str, str]] = []
+
+    def list_all(self, status=None):
+        if status is None or self.cond.status == status:
+            return [self.cond]
+        return []
+
+    def get(self, cid):
+        return self.cond if cid == self.cond.conditional_id else None
+
+    def update(self, cond):
+        self.cond = cond
+        return cond
+
+    def append_event(self, cid, event):
+        self.cond.events.append(event)
+        return self.cond
+
+    def set_status_if(self, cid, *, from_status, to_status, reason=""):
+        if self.cond.status != from_status:
+            return None
+        self.cond.status = to_status
+        self.status_changes.append((to_status, reason))
+        return self.cond
+
+
+class _HistoryAdapter:
+    """Configurable fake adapter used for reconcile scenario tests.
+
+    Tell it what pending-plan / pending-regular / history / positions
+    should return; everything else is canned."""
+    def __init__(self, *,
+                 plan_pending_rows: list[dict] | Exception = None,
+                 regular_pending_rows: list[dict] | Exception = None,
+                 history_rows: list[dict] | Exception = None,
+                 history_code: str = "00000",
+                 positions_rows: list[dict] | None = None):
+        self.plan_pending_rows = plan_pending_rows if plan_pending_rows is not None else []
+        self.regular_pending_rows = regular_pending_rows if regular_pending_rows is not None else []
+        self.history_rows = history_rows if history_rows is not None else []
+        self.history_code = history_code
+        self.positions_rows = positions_rows or []
+
+    def has_api_keys(self): return True
+
+    async def get_pending_orders(self, mode, symbol=None):
+        if isinstance(self.regular_pending_rows, Exception):
+            raise self.regular_pending_rows
+        return self.regular_pending_rows
+
+    async def get_pending_plan_orders(self, mode, plan_type="normal_plan", symbol=None):
+        if isinstance(self.plan_pending_rows, Exception):
+            raise self.plan_pending_rows
+        return self.plan_pending_rows
+
+    async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
+        if "position/all-position" in path:
+            return {"code": "00000", "data": self.positions_rows}
+        if "orders-plan-history" in path:
+            if isinstance(self.history_rows, Exception):
+                raise self.history_rows
+            return {"code": self.history_code, "data": {"entrustedList": self.history_rows}}
+        return {"code": "00000", "data": []}
+
+    @staticmethod
+    def _as_rows(data):
+        if not data: return []
+        if isinstance(data, list): return data
+        return data.get("list") or data.get("entrustedList") or []
+
+
+# ─── The three contract tests the user explicitly asked for ─────────
+
 @pytest.mark.asyncio
-async def test_reconcile_nukes_plan_when_BOTH_fetches_ok_and_oid_absent(monkeypatch):
-    """Positive control: the legitimate cancel path still fires when both
-    fetches succeed AND our oid is truly absent. Without this test the
-    strengthened gate could silently refuse to ever cancel."""
+async def test_reconcile_pending_429_but_history_shows_live(monkeypatch):
+    """Scenario 1 (the exact bug from 2026-04-23 00:48 LA):
+    pending fetch fails with 429, but if we query history Bitget shows
+    our oid is still live. Cond MUST stay triggered — no false cancel."""
     cond = _cond(
-        conditional_id="cond_truly_gone",
+        conditional_id="cond_429_but_live",
         symbol="HYPEUSDT",
-        exchange_order_id="gone_oid",
+        exchange_order_id="oid_alive_on_bitget",
         status="triggered",
     )
-
-    class _FakeStoreList:
-        def __init__(self, cond):
-            self.cond = cond
-            self.status_changes: list[tuple[str, str]] = []
-
-        def list_all(self, status=None):
-            if status is None or self.cond.status == status:
-                return [self.cond]
-            return []
-
-        def get(self, cid):
-            return self.cond if cid == self.cond.conditional_id else None
-
-        def update(self, cond):
-            self.cond = cond
-            return cond
-
-        def append_event(self, cid, event):
-            self.cond.events.append(event)
-            return self.cond
-
-        def set_status_if(self, cid, *, from_status, to_status, reason=""):
-            if self.cond.status != from_status:
-                return None
-            self.cond.status = to_status
-            self.status_changes.append((to_status, reason))
-            return self.cond
-
     store = _FakeStoreList(cond)
     monkeypatch.setattr(watcher, "_store", store)
 
-    class _BothOKAdapter:
-        def has_api_keys(self):
-            return True
-
-        async def get_pending_orders(self, mode):
-            return []
-
-        async def get_pending_plan_orders(self, mode, plan_type="normal_plan"):
-            # Both fetches succeed. Our oid is truly absent → nuke is correct.
-            return [{"orderId": "some_other_plan"}]
-
-        async def _bitget_request(self, method, path, *, mode=None, params=None, body=None):
-            return {"code": "00000", "data": []}
-
-        @staticmethod
-        def _as_rows(data):
-            if not data: return []
-            if isinstance(data, list): return data
-            return data.get("list") or data.get("entrustedList") or []
-
+    adapter = _HistoryAdapter(
+        plan_pending_rows=RuntimeError(
+            'plan pending fetch failed: {"code":"429","msg":"too many requests"}'
+        ),
+        regular_pending_rows=[],
+        history_rows=[{
+            "orderId": "oid_alive_on_bitget",
+            "planStatus": "live",
+            "symbol": "HYPEUSDT",
+        }],
+    )
     monkeypatch.setattr(
         "server.execution.live_adapter.LiveExecutionAdapter",
-        _BothOKAdapter,
+        lambda: adapter,
     )
 
-    reverse_calls: list[tuple[str, str]] = []
-    async def _fake_reverse(src, reason):
-        reverse_calls.append((src.conditional_id, reason))
+    reverse_calls: list = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "triggered", \
+        f"Test 1 FAIL: 429 + history-live produced status={cond.status}. This is the exact bug we fixed; it must NEVER regress."
+    assert store.status_changes == []
+    assert reverse_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_pending_absent_history_cancelled(monkeypatch):
+    """Scenario 2: pending does not have the oid AND history explicitly
+    shows state=cancelled. This is the ONLY legitimate local cancel path
+    under the new design. Cond MUST transition to cancelled + reverse spawn."""
+    cond = _cond(
+        conditional_id="cond_truly_cancelled",
+        symbol="HYPEUSDT",
+        exchange_order_id="oid_really_gone",
+        status="triggered",
+    )
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    adapter = _HistoryAdapter(
+        plan_pending_rows=[{"orderId": "other_order_unrelated"}],
+        regular_pending_rows=[],
+        history_rows=[{
+            "orderId": "oid_really_gone",
+            "planStatus": "cancelled",
+            "symbol": "HYPEUSDT",
+        }],
+    )
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        lambda: adapter,
+    )
+
+    reverse_calls: list = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
     monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
 
     await watcher._reconcile_against_bitget()
 
     assert cond.status == "cancelled", \
-        f"legitimate cancel missed after gate strengthening: status={cond.status}"
-    assert any(
-        reason.startswith("reconcile:") for _, reason in store.status_changes
-    ), f"expected reconcile cancel reason, got {store.status_changes}"
+        f"Test 2 FAIL: affirmative history cancel was ignored, status={cond.status}"
+    assert any("history-confirmed cancel" in reason for _, reason in store.status_changes), \
+        f"expected history-confirmed cancel reason, got {store.status_changes}"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_pending_absent_history_also_absent_stays_triggered(monkeypatch):
+    """Scenario 3: pending does not have the oid AND history also does not
+    contain it (either oldthan 48h window, or API returned empty). This is
+    the UNKNOWN state — we must NEVER transition. Stay triggered and retry
+    next cycle."""
+    cond = _cond(
+        conditional_id="cond_unknown",
+        symbol="HYPEUSDT",
+        exchange_order_id="oid_in_limbo",
+        status="triggered",
+    )
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    adapter = _HistoryAdapter(
+        plan_pending_rows=[{"orderId": "unrelated"}],
+        regular_pending_rows=[],
+        history_rows=[],   # history successfully queried but contains no row for our oid
+    )
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        lambda: adapter,
+    )
+
+    reverse_calls: list = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "triggered", \
+        f"Test 3 FAIL: UNKNOWN classification falsely transitioned cond, status={cond.status}"
+    assert store.status_changes == []
+    assert reverse_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_history_api_error_stays_triggered(monkeypatch):
+    """Bonus (should also hold): pending absent, history API itself fails
+    (429/5xx/timeout). Cond MUST stay triggered. This locks the invariant
+    that we NEVER act on API failures, only on affirmative responses."""
+    cond = _cond(
+        conditional_id="cond_history_error",
+        symbol="HYPEUSDT",
+        exchange_order_id="oid_api_fail",
+        status="triggered",
+    )
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    adapter = _HistoryAdapter(
+        plan_pending_rows=[],
+        regular_pending_rows=[],
+        history_rows=RuntimeError("history endpoint 503"),
+    )
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        lambda: adapter,
+    )
+
+    reverse_calls: list = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "triggered"
+    assert store.status_changes == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_history_shows_filled_transitions_to_filled(monkeypatch):
+    """Positive FILLED path: pending absent (order filled), history shows
+    state=triggered (Bitget's terminology for a fired plan). Cond should
+    transition to filled. No reverse spawn (those are for cancel paths)."""
+    cond = _cond(
+        conditional_id="cond_filled_via_history",
+        symbol="HYPEUSDT",
+        exchange_order_id="oid_filled",
+        status="triggered",
+    )
+    store = _FakeStoreList(cond)
+    monkeypatch.setattr(watcher, "_store", store)
+
+    adapter = _HistoryAdapter(
+        plan_pending_rows=[],
+        regular_pending_rows=[],
+        history_rows=[{
+            "orderId": "oid_filled",
+            "planStatus": "triggered",   # Bitget's "fired" state
+            "symbol": "HYPEUSDT",
+        }],
+        positions_rows=[],   # position not yet visible, but history is enough
+    )
+    monkeypatch.setattr(
+        "server.execution.live_adapter.LiveExecutionAdapter",
+        lambda: adapter,
+    )
+
+    reverse_calls: list = []
+    async def _fake_reverse(src, reason): reverse_calls.append((src.conditional_id, reason))
+    monkeypatch.setattr(watcher, "_spawn_reverse_conditional", _fake_reverse)
+
+    # Also stub the manual-trailing register so we don't need chart data.
+    monkeypatch.setattr(
+        watcher, "_register_manual_trailing_if_position_open",
+        lambda *a, **kw: None,
+    )
+
+    await watcher._reconcile_against_bitget()
+
+    assert cond.status == "filled", \
+        f"Test bonus FAIL: history-filled should transition status=filled, got {cond.status}"
+    assert reverse_calls == [], "reverse must NOT fire on filled"

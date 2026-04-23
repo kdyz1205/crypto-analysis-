@@ -87,40 +87,67 @@ async def cancel_exchange_order_for_cond(
     except Exception as exc:
         attempts.append({"path": "plan", "error": repr(exc)})
 
-    pending_oids: set[str] = set()
-    pending_fetch_ok = False
-    pending_errors: list[str] = []
+    # ── Fallback: both cancel paths failed. Confirm "already gone" via
+    # AFFIRMATIVE Bitget evidence, never via absence inference. Using
+    # orders-plan-history so we can see the row's final state.
+    #
+    # Old logic said "not in pending list → already gone" — that was
+    # the same class of bug as the reconcile 429 false-cancel. If the
+    # pending fetch hits 429, oid not in pending_oids is meaningless.
+    # Now we only return ok=True when Bitget's own history row says
+    # the oid is cancelled/filled, or when the pending list CONTAINS
+    # the oid (we can see it's live, so cancel really did fail).
+    import time
+    history_checked = False
+    history_error: str | None = None
+    history_state: str | None = None
     try:
-        pending_oids |= _oid_set(await adapter.get_pending_orders(mode, symbol=symbol))
-        pending_fetch_ok = True
-    except Exception as exc:
-        pending_errors.append(f"regular_pending={exc!r}")
-    try:
-        pending_oids |= _oid_set(
-            await adapter.get_pending_plan_orders(mode, plan_type="normal_plan", symbol=symbol)
+        now_ms = int(time.time() * 1000)
+        resp = await adapter._bitget_request(
+            "GET", "/api/v2/mix/order/orders-plan-history",
+            mode=mode,
+            params={
+                "productType": "USDT-FUTURES",
+                "symbol": symbol,
+                "planType": "normal_plan",
+                "startTime": str(now_ms - 48 * 3600 * 1000),
+                "endTime": str(now_ms),
+                "limit": "100",
+            },
         )
-        pending_fetch_ok = True
+        if resp.get("code") == "00000":
+            history_checked = True
+            rows = (resp.get("data") or {}).get("entrustedList") or []
+            for row in rows:
+                if str(row.get("orderId") or "") != oid:
+                    continue
+                history_state = (row.get("planStatus") or row.get("state") or "").lower()
+                break
+        else:
+            history_error = f"code={resp.get('code')} msg={resp.get('msg')}"
     except Exception as exc:
-        pending_errors.append(f"plan_pending={exc!r}")
+        history_error = repr(exc)
 
-    if pending_fetch_ok and oid not in pending_oids:
+    if history_state in ("cancelled", "filled", "triggered", "executed", "failed"):
         return {
             "ok": True,
             "attempted": True,
-            "reason": "already_absent_from_bitget",
+            "reason": f"already_{history_state}_per_history",
             "order_id": oid,
             "mode": mode,
             "attempts": attempts,
-            "pending_checked": True,
+            "history_checked": history_checked,
+            "history_state": history_state,
         }
 
     return {
         "ok": False,
         "attempted": True,
-        "reason": "bitget_cancel_not_confirmed",
+        "reason": "bitget_cancel_not_confirmed_history_unknown",
         "order_id": oid,
         "mode": mode,
         "attempts": attempts,
-        "pending_checked": pending_fetch_ok,
-        "pending_errors": pending_errors,
+        "history_checked": history_checked,
+        "history_state": history_state,
+        "history_error": history_error,
     }
