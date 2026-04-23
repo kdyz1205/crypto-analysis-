@@ -1019,7 +1019,12 @@ async function _doBackfill() {
     } catch {}
     console.log(`[chart] backfilled ${uniqCandles.length} older bars (total now ${_backfillCandles.length})`);
   } catch (err) {
-    console.warn('[chart] backfill failed', err);
+    // Any failure (including 500 from backend when Bitget has no older
+    // history) must mark exhausted — otherwise every subsequent scroll-
+    // left fires another doomed request, which is how we'd flood the
+    // server with 500s on a freshly listed coin.
+    console.warn('[chart] backfill failed, marking exhausted:', err?.message || err);
+    _backfillExhausted = true;
   } finally {
     _backfillInFlight = false;
   }

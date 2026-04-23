@@ -299,6 +299,15 @@ async def api_ohlcv_backfill(
     try:
         df = await _download_ohlcv_bitget(symbol, interval, days=days_window, end_ms=end_ms)
     except Exception as e:
+        # Bitget returning "No data returned for ..." is a NORMAL terminal
+        # case (user scrolled past the listing date). Fall through to the
+        # empty-response branch below so the frontend marks backfill as
+        # exhausted and stops scrolling-left firing more requests. Only
+        # unexpected errors (network, bad-schema, etc.) are worth 500-ing.
+        msg = str(e)
+        if "No data returned" in msg or "no_history" in msg or "listing" in msg.lower():
+            print(f"[backfill] {symbol} {interval} end={end_ms}: no older history ({msg})", flush=True)
+            return {"candles": [], "volume": []}
         raise HTTPException(500, f"backfill fetch failed: {e}")
     if df is None or df.is_empty():
         return {"candles": [], "volume": []}
