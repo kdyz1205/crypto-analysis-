@@ -1251,7 +1251,7 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
             `</div>`
           : '';
         return `
-          <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;opacity:${direction ? '1' : '0.55'}">
+          <div class="qt-setup-row" data-setup-id="${esc(s.id)}" style="padding:8px 10px;cursor:pointer;border-radius:5px;margin:2px 0;background:#16202f;">
             <div style="color:#d8dde8;font-size:12px">${esc(s.name)}</div>
             ${notionalLine}
             ${pnlLine}
@@ -1332,16 +1332,15 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
 
     // Hard click lock. User 2026-04-21: clicked setup 3 times when the
     // first click appeared to do nothing (request was in-flight but no
-    // visible feedback). Result: 3 duplicate orders on Bitget. Fix:
-    // the FIRST setup click flips _placing=true, visually dims the
-    // popup + shows "挂单中", and subsequent clicks are hard-blocked
-    // until the request returns or errors out.
+    // visible feedback). Result: 3 duplicate orders on Bitget. Keep the
+    // guard, but don't dim/blur the whole popup: user 2026-04-22 reported
+    // the "faded shadow" made it look broken.
     let _placing = false;
     const _applyPlacingState = (on) => {
       _placing = on;
       if (_quickPopup) {
-        _quickPopup.style.pointerEvents = on ? 'none' : '';
-        _quickPopup.style.opacity = on ? '0.6' : '';
+        _quickPopup.dataset.placing = on ? '1' : '0';
+        _quickPopup.style.borderColor = on ? '#38bdf8' : '#2a3548';
       }
     };
 
@@ -1470,8 +1469,20 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
         try {
           const resp = await placeLineOrder(payload);
           if (resp?.ok) {
-            setStatus(`✓ 已挂单: ${resp.message || ''}`, '#00e676');  // SAFE: setStatus uses textContent
-            setTimeout(() => { cleanup(); resolve(resp); }, 1200);
+            const cid = resp.conditional?.conditional_id || resp.conditional_id || '';
+            const oid = resp.exchange_order_id || resp.conditional?.exchange_order_id || '';
+            const parts = ['✓ Bitget 已确认挂单'];
+            if (cid) parts.push(`cond ${String(cid).slice(0, 14)}`);
+            if (oid) parts.push(`oid ...${String(oid).slice(-8)}`);
+            setStatus(parts.join(' · '), '#00e676');  // SAFE: setStatus uses textContent
+            // Notify sidebar panels to refresh NOW (not wait 5s for next
+            // poll). User 2026-04-22: "挂单后 panel 看不到,必须刷新"
+            try {
+              window.dispatchEvent(new CustomEvent('cond-placed', {
+                detail: { symbol: line.symbol, tf: line.timeframe, cid, oid },
+              }));
+            } catch {}
+            setTimeout(() => { cleanup(); resolve(resp); }, 2500);
             // DON'T unlock on success — popup is closing anyway, prevent
             // any last-ms double click.
           } else {

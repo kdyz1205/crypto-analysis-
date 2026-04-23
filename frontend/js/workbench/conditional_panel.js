@@ -159,9 +159,28 @@ export function initConditionalPanel(container) {
 
   void refreshPending();
   pendingRefreshTimer = setInterval(() => void refreshPending(), 10000);
+  subscribe('conditionals.changed', () => {
+    void refreshPending();
+    void refreshBitgetAccount();
+  });
 
   void refreshBitgetAccount();
   bitgetTimer = setInterval(() => void refreshBitgetAccount(), 5000);
+
+  // Immediate refresh when trade_plan_modal fires 'cond-placed' — user
+  // 2026-04-22 complaint: "挂单后 panel 看不到,必须刷新". Backend
+  // persists within the request; Bitget pending list updates by the
+  // time we return; but our 5s poll was the bottleneck. Dispatching
+  // the event cuts that wait to ~one request round-trip.
+  const onCondPlaced = () => {
+    void refreshPending();
+    void refreshBitgetAccount();
+    void refreshAllDrawings();
+    // Kick one more after Bitget-propagation delay (~1.5s) in case the
+    // plan order shows up a tick late on Bitget's pending-list API.
+    setTimeout(() => { void refreshBitgetAccount(); }, 1500);
+  };
+  window.addEventListener('cond-placed', onCondPlaced);
 
   // All-drawings grouped view — refresh every 15s and on PATCH/POST/DELETE.
   void refreshAllDrawings();
@@ -405,7 +424,7 @@ async function onPanelClick(e) {
     try {
       const r = await fetchJson(
         `/api/live-execution/cancel-order?symbol=${encodeURIComponent(sym)}&order_id=${encodeURIComponent(oid)}&mode=live`,
-        { method: 'POST', timeout: 10000, noCache: true },
+        { method: 'POST', timeout: 35000, noCache: true },
       );
       if (r && r.ok === false) {
         alert(`撤单失败: ${r.reason || '未知'}`);  // SAFE: alert() renders text, not HTML
@@ -422,7 +441,13 @@ async function onPanelClick(e) {
   if (action === 'cancel-cond') {
     const cid = btn.dataset.cid;
     if (cid && confirm('取消这个 pending 条件单?')) {
-      void condSvc.cancelConditional(cid).then(() => refreshPending());
+      try {
+        await condSvc.cancelConditional(cid);
+      } catch (err) {
+        const detail = err?.body?.detail || err?.body?.reason || err?.message || String(err);
+        alert(`取消失败: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+      }
+      void refreshPending();
     }
     return;
   }
@@ -437,7 +462,7 @@ async function onPanelClick(e) {
     try {
       const r = await fetchJson(
         `/api/live-execution/cancel-order?symbol=${encodeURIComponent(sym)}&order_id=${encodeURIComponent(oid)}&mode=live`,
-        { method: 'POST', timeout: 10000, noCache: true },
+        { method: 'POST', timeout: 35000, noCache: true },
       );
       console.log('[cond_panel] bitget cancel-from-cond resp', r);
     } catch (err) {
@@ -458,11 +483,17 @@ async function onPanelClick(e) {
     let msg = '删除这条本地记录?';
     if (hasLiveBitget) {
       msg = '⚠ 这条 cond 还在 Bitget 上挂着!\n' +
-            '删除只清本地记录,Bitget 那一单不会撤,会留下"鬼单"\n\n' +
-            '继续删除? (建议先点"撤Bitget"按钮)';
+            '删除前会先撤 Bitget 实单；如果撤单无法确认，后端会拒绝删除。\n\n' +
+            '继续?';
     }
     if (!confirm(msg)) return;
-    void condSvc.deleteConditional(cid).then(() => refreshPending());
+    try {
+      await condSvc.deleteConditional(cid);
+    } catch (err) {
+      const detail = err?.body?.detail || err?.body?.reason || err?.message || String(err);
+      alert(`删除失败: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+    }
+    void refreshPending();
     return;
   }
 
@@ -477,40 +508,39 @@ async function onPanelClick(e) {
     const id = btn.dataset.lineId;
     if (!id) return;
     console.log('[cond_panel] delete-line clicked', id);
-
-    // Optimistic: remove from local state immediately so UI reacts NOW,
-    // even if the backend call is slow or the refresh races.
-    const localLines = (drawingsState.lines || []).filter(l => l.manual_line_id !== id);
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '删除中...';
     try {
-      const { setManualDrawings } = await import('../state/drawings.js');
-      setManualDrawings(localLines);
-    } catch {}
-    if (currentLine?.manual_line_id === id) {
-      currentLine = null;
-      currentAnalyze = null;
-    }
-    render();
-
-    try {
-      const resp = await fetchJson(`/api/drawings/${encodeURIComponent(id)}`, {
-        method: 'DELETE', timeout: 8000,
-      });
+      const { deleteManualDrawing } = await import('../services/drawings.js');
+      const resp = await deleteManualDrawing(id);
       console.log('[cond_panel] delete response', resp);
     } catch (err) {
       console.error('[cond_panel] delete failed', err);
-      alert(`删除失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
+      const detail = err?.body?.detail || err?.body?.reason || err?.userHint || err?.message || String(err);
+      alert(`删除失败: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);  // SAFE: alert() renders text, not HTML
       // rollback — re-fetch the real list
       try {
         const mod = await import('./drawings/manual_trendline_controller.js');
         await mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
-      } catch {}
+      } catch (refreshErr) {
+        console.warn('[cond_panel] refresh after failed delete failed', refreshErr);
+      }
+      btn.disabled = false;
+      btn.textContent = oldText || '删除';
       return;
+    }
+    if (currentLine?.manual_line_id === id) {
+      currentLine = null;
+      currentAnalyze = null;
     }
     // Hard resync after success to ensure chart overlay and state agree
     try {
       const mod = await import('./drawings/manual_trendline_controller.js');
       await mod.refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
-    } catch {}
+    } catch (refreshErr) {
+      console.warn('[cond_panel] refresh after delete failed', refreshErr);
+    }
     return;
   }
 
@@ -518,10 +548,8 @@ async function onPanelClick(e) {
     if (!confirm('清空所有画线?')) return;
     console.log('[cond_panel] clear-all-lines clicked');
     try {
-      await fetchJson(
-        `/api/drawings/clear?symbol=${encodeURIComponent(marketState.currentSymbol)}&timeframe=${encodeURIComponent(marketState.currentInterval)}`,
-        { method: 'POST', timeout: 8000 }
-      );
+      const { clearManualDrawings } = await import('../services/drawings.js');
+      await clearManualDrawings(marketState.currentSymbol, marketState.currentInterval);
       const { setManualDrawings } = await import('../state/drawings.js');
       setManualDrawings([]);
       currentLine = null;
@@ -529,7 +557,8 @@ async function onPanelClick(e) {
       render();
     } catch (err) {
       console.error('[cond_panel] clear failed', err);
-      alert(`清空失败: ${err?.message || err}`);  // SAFE: alert() renders text, not HTML
+      const detail = err?.body?.detail || err?.body?.reason || err?.userHint || err?.message || String(err);
+      alert(`清空失败: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);  // SAFE: alert() renders text, not HTML
     }
     return;
   }
@@ -887,7 +916,7 @@ function renderPendingSection(returnHtml = false) {
           ${c.status === 'triggered' && oid
             ? `<button class="cond-btn-sm cond-btn-warn" data-action="bitget-cancel-from-cond" data-cid="${esc(c.conditional_id)}" data-symbol="${esc(c.symbol)}" data-oid="${esc(oid)}" title="撤掉 Bitget 上的挂单 + 标记本地 cancelled">撤Bitget</button>`
             : ''}
-          <button class="cond-btn-sm cond-btn-danger" data-action="delete-cond" data-cid="${esc(c.conditional_id)}" title="${c.status === 'triggered' ? '⚠ 仅删本地记录,不撤Bitget,请先点撤Bitget' : '删除本地记录'}">×</button>
+          <button class="cond-btn-sm cond-btn-danger" data-action="delete-cond" data-cid="${esc(c.conditional_id)}" title="${c.status === 'triggered' ? '先撤 Bitget,确认后再删本地记录' : '删除本地记录'}">×</button>
         </div>
         <div class="cond-row-stats">
           mkt <b>${marketText}</b> · line <b>${lineText}</b> · <b>${esc(distanceText)}</b>
