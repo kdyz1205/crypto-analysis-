@@ -30,7 +30,23 @@ let _lastFullReloadTs = 0;
 // extend into the future have canvas room. 2026-04-20 iterations:
 //   48  → 120 (too much; user said chart stretched weird)
 //   120 → 60  (balance — ~5h on 5m, ~15h on 15m, ~60h on 1h).
-const FUTURE_DRAW_BARS = 60;
+//   2026-04-22: flat 60 still stretched 4h/1d charts to look "not
+//   like TradingView" (candles squished into left half, vast empty
+//   right side). TradingView default rightOffset is ~10 bars. We
+//   need SOME future room for trendline extensions, so scale by TF:
+//   fewer absolute bars on higher TFs where each bar is many hours.
+const FUTURE_DRAW_BARS_BY_TF = {
+  '1m': 45, '3m': 35, '5m': 30, '15m': 24, '30m': 20,
+  '1h': 16, '2h': 14, '4h': 12, '6h': 10, '12h': 10,
+  '1d': 10, '1w': 8,
+};
+const FUTURE_DRAW_BARS_DEFAULT = 20;
+function futureDrawBarsFor(tf) {
+  return FUTURE_DRAW_BARS_BY_TF[(tf || '').toLowerCase()] ?? FUTURE_DRAW_BARS_DEFAULT;
+}
+// Kept for backwards compat where the flat constant is referenced;
+// most call sites should now use futureDrawBarsFor(tf) instead.
+const FUTURE_DRAW_BARS = FUTURE_DRAW_BARS_DEFAULT;
 
 // Lazy backfill state. Kept at module level so the visible-range
 // subscriber can see the current candle buffer without a closure over
@@ -357,12 +373,16 @@ export async function loadCurrent(forcePatterns = false) {
       const ts = chart.timeScale();
       const totalBars = candles.length;
       const barDur = totalBars >= 2 ? candles[1].time - candles[0].time : 3600;
+      // TF-aware future bars — 4h/1d with a flat 60-bar tail looked
+      // stretched (candles squeezed into left half). See FUTURE_DRAW_BARS_BY_TF.
+      const tfFutureBars = futureDrawBarsFor(currentInterval);
+      try { ts.applyOptions({ rightOffset: tfFutureBars }); } catch {}
 
       const applyViewport = () => {
         try {
           if (totalBars > VISIBLE_BARS) {
             const fromTime = candles[totalBars - VISIBLE_BARS].time;
-            const toTime   = candles[totalBars - 1].time + barDur * FUTURE_DRAW_BARS;
+            const toTime   = candles[totalBars - 1].time + barDur * tfFutureBars;
             ts.setVisibleRange({ from: fromTime, to: toTime });
             // Verify it stuck
             const got = ts.getVisibleRange();
