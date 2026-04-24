@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import os
 import time
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -597,13 +598,49 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     #     - If the client doesn't send it (older UI), fall back to now.
     from server.conditionals.types import _TF_SECONDS  # noqa: F401 — kept for any future guard
     now_ts_ = now_ts()
-    ref_ts = int(req.reference_ts) if req.reference_ts and req.reference_ts > 0 else int(now_ts_)
+    ref_ts = int(req.reference_ts) if req.reference_ts and req.reference_ts > 0 else 0
     # Guard: reference_ts mustn't be before the line's first anchor
     # (nonsensical) or wildly in the future (indicates a bug).
-    if ref_ts < int(drawing.t_start) - 86400:
+    if ref_ts and ref_ts < int(drawing.t_start) - 86400:
+        ref_ts = 0
+    if ref_ts and ref_ts > int(now_ts_) + 86400:
+        ref_ts = 0
+
+    # Server-side fallback: if client didn't provide a valid reference_ts
+    # (e.g. stale cached JS from before the 2026-04-23 fix), fetch the
+    # latest 1d candle from Bitget and use its open_ts. This makes the
+    # fix robust against users who haven't hard-reloaded their browser.
+    if not ref_ts:
+        try:
+            from ..data_service import _BITGET_INTERVAL_MAP
+            from ..market.bitget_client import BitgetPublicClient
+            granularity = _BITGET_INTERVAL_MAP.get(drawing.timeframe, drawing.timeframe)
+            client = BitgetPublicClient()
+            bars = await asyncio.wait_for(
+                client.get_candles(drawing.symbol, granularity, limit=2, history=False),
+                timeout=2.5,
+            )
+            if bars:
+                # Bitget candles: [ts_ms, open, high, low, close, volume, turnover]
+                last = bars[-1]
+                if isinstance(last, (list, tuple)) and len(last) > 0:
+                    ts_ms = int(last[0])
+                    cand = ts_ms // 1000 if ts_ms > 1_000_000_000_000 else ts_ms
+                    if cand > 0:
+                        ref_ts = cand
+                        print(
+                            f"[place-line-order] server-side ref_ts fallback: "
+                            f"{drawing.symbol} {drawing.timeframe} latest candle "
+                            f"{cand} ({datetime.fromtimestamp(cand, tz=timezone.utc).isoformat()})",
+                            flush=True,
+                        )
+        except Exception as exc:
+            print(f"[place-line-order] ref_ts fallback failed: {exc!s}", flush=True)
+
+    if not ref_ts:
+        # Last-resort fallback: wall-clock now (pre-2026-04-23 behavior).
         ref_ts = int(now_ts_)
-    if ref_ts > int(now_ts_) + 86400:
-        ref_ts = int(now_ts_)
+
     line_now = _project_manual_line_price(drawing, ref_ts)
     ref_price = float(line_now)
     if ref_price <= 0:
