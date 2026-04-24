@@ -357,15 +357,26 @@ export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
   // Counts for diagnostics — exposed via probe even when nothing is shown.
   let counts = { total: conds.length, on_symbol_tf: 0, hidden_filled_stale: 0, hidden_triggered_stale: 0, shown_triggered: 0, shown_filled: 0 };
 
-  const active = conds.filter((c) => {
-    if (c.symbol?.toUpperCase() !== symbol) return false;
-    if (interval && c.timeframe && c.timeframe !== interval) return false;
-    counts.on_symbol_tf += 1;
+  // Step 1: pre-filter by symbol/TF + status, sort by created_at desc
+  const bySymTf = conds
+    .filter((c) => c.symbol?.toUpperCase() === symbol)
+    .filter((c) => !interval || !c.timeframe || c.timeframe === interval);
+  counts.on_symbol_tf = bySymTf.length;
+  bySymTf.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+
+  // Step 2: dedup filled conds per (symbol, direction). Bitget aggregates
+  // multiple fills into ONE position; drawing N label-sets for N filled
+  // conds clutters the chart with phantom TPs/SLs that don't correspond
+  // to the actual live position. Keep only the most-recent filled cond
+  // per direction. 2026-04-24 user complaint: 84 filled ZEC long conds
+  // produced duplicate 持仓止损 / 持仓止盈 labels at 322.156 / 319.869 /
+  // 346.978 / 380.963 / 383.690 — all stale from prior test placements.
+  const filledSeenByDir = new Set();
+  const active = bySymTf.filter((c) => {
     if (c.status === 'triggered') {
       // Plan order waiting on Bitget. Fail-SAFE: if account API is
       // unavailable we trust local state (the backend classifier only
-      // transitions to 'triggered' on affirmative Bitget evidence, so
-      // stale 'triggered' is unlikely compared to stale 'filled').
+      // transitions to 'triggered' on affirmative Bitget evidence).
       if (!haveSnapshot) { counts.shown_triggered += 1; return true; }
       const oid = String(c.exchange_order_id || '');
       if (oid && pendingOids.has(oid)) { counts.shown_triggered += 1; return true; }
@@ -373,20 +384,24 @@ export async function refreshPlanOverlay(chart, candleSeries, opts = {}) {
       return false;
     }
     if (c.status === 'filled') {
-      // Position supposedly open. Fail-CLOSED: without a Bitget
-      // snapshot we HIDE the labels, because user's most common stale-
-      // state bug is "position closed on Bitget app but local watcher
-      // never transitioned" — the 2026-04-23 user screenshot showed 6
-      // phantom HYPE shorts with Bitget holding 0. When in doubt, we'd
-      // rather blank the chart than lie about open positions.
+      // Fail-CLOSED: hide when Bitget snapshot unavailable (avoid lying
+      // about phantom positions). See 2026-04-23 HYPE incident.
       if (!haveSnapshot) { counts.hidden_filled_stale += 1; return false; }
       const dir = c.order?.direction || 'long';
-      if (openPositionKeys.has(`${c.symbol.toUpperCase()}:${dir}`)) {
-        counts.shown_filled += 1;
-        return true;
+      const key = `${c.symbol.toUpperCase()}:${dir}`;
+      if (!openPositionKeys.has(key)) {
+        counts.hidden_filled_stale += 1;
+        return false;
       }
-      counts.hidden_filled_stale += 1;
-      return false;
+      // DEDUP: only the FIRST cond we see for this (symbol, dir) —
+      // since we sorted desc by created_at, that's the most recent.
+      if (filledSeenByDir.has(key)) {
+        counts.hidden_filled_stale += 1;
+        return false;
+      }
+      filledSeenByDir.add(key);
+      counts.shown_filled += 1;
+      return true;
     }
     return false;
   });
