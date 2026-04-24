@@ -724,11 +724,30 @@ export function toggleWyckoffOverlay() {
 }
 
 // Chart timezone for X-axis labels. User 2026-04-21: "K线时间基本上无所
-// 谓, 你可以让我选择是 洛杉矶/国内/UTC". Default = 'la' (UTC-7 PDT,
-// which is user's current locale per taskbar screenshot). Persisted.
+// 谓, 你可以让我选择是 洛杉矶/国内/UTC".
+//
+// Default CHANGED to 'utc' 2026-04-23 — user asked every time reference
+// (chart axis, bar boundaries, line projection server-side, % change
+// baseline) to share ONE time base with no shift. Mixing UTC (% change
+// is UTC 00:00) with local X-axis ('la' = UTC-7) meant "today's visible
+// bar" on the chart was offset 7-8 hours from the UTC bar the server
+// used for line projection, so the user's visual line reading didn't
+// match what the server placed against.
+//
+// Migration: existing users who never touched the setting auto-switch
+// to 'utc' once. Explicit post-migration choices (including switching
+// back to 'la') persist.
 const TZ_LS_KEY = 'v2.chart.tz.v1';
+const TZ_MIGRATION_KEY = 'v2.chart.tz.utc-default.v1';
 function _loadChartTz() {
-  try { return localStorage.getItem(TZ_LS_KEY) || 'la'; } catch { return 'la'; }
+  try {
+    if (!localStorage.getItem(TZ_MIGRATION_KEY)) {
+      localStorage.setItem(TZ_LS_KEY, 'utc');
+      localStorage.setItem(TZ_MIGRATION_KEY, '1');
+      return 'utc';
+    }
+    return localStorage.getItem(TZ_LS_KEY) || 'utc';
+  } catch { return 'utc'; }
 }
 function _saveChartTz(tz) {
   try { localStorage.setItem(TZ_LS_KEY, tz); } catch {}

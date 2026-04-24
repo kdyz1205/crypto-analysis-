@@ -471,12 +471,17 @@ export function openTradePlanModal(line, options = {}) {
       const v = readForm();
       const mode = v.exchange_mode;
 
-      // ── Raw-price block: line_at_now + entry + SL + TP ──────────
+      // ── Raw-price block: line_at_bar + entry + SL + TP ──────────
       // User 2026-04-23 ZEC incident: server placed at a different
       // price than user read visually. These raw numbers go to Bitget
       // if "确认挂单" is clicked — user needs to see them BEFORE.
       // Uses the SAME log projection as chart_drawing.js + server
       // conditionals.py:_project_manual_line_price so all three agree.
+      //
+      // Reference ts = current LIVE BAR's open_ts (= rightmost candle's
+      // time). Matches the X position where the user sees the line
+      // cross today's candle. Fall back to wall-clock now if chart
+      // data isn't available.
       {
         const drawing = (drawingsState.lines || []).find(
           (l) => l && l.manual_line_id === line.manual_line_id
@@ -496,10 +501,26 @@ export function openTradePlanModal(line, options = {}) {
           if (n >= 0.01) return n.toFixed(6);
           return n.toFixed(7);
         };
+        // Read current live bar open_ts from chart data
+        let refTs = Math.floor(Date.now() / 1000);
+        let refSource = 'wall-clock-now';
+        try {
+          const chartMod = await import('../chart.js');
+          const candles = chartMod.getCandles?.() || [];
+          const last = candles[candles.length - 1];
+          if (last) {
+            const t = typeof last.time === 'number'
+              ? last.time
+              : Math.floor(new Date(last.time).getTime() / 1000);
+            if (Number.isFinite(t) && t > 0) {
+              refTs = t;
+              refSource = 'live-bar-open';
+            }
+          }
+        } catch {}
         if (drawing && drawing.t_end > drawing.t_start
             && drawing.price_start > 0 && drawing.price_end > 0) {
-          const nowS = Math.floor(Date.now() / 1000);
-          const r = (nowS - drawing.t_start) / (drawing.t_end - drawing.t_start);
+          const r = (refTs - drawing.t_start) / (drawing.t_end - drawing.t_start);
           const lineNow = Math.exp(
             Math.log(drawing.price_start)
             + r * (Math.log(drawing.price_end) - Math.log(drawing.price_start))
@@ -795,6 +816,28 @@ export function openTradePlanModal(line, options = {}) {
           }
         }
 
+        // Look up the chart's current live bar open_ts so the server
+        // projects the line at the SAME X position the user's eye sees
+        // it cross today's candle. 2026-04-23 ZEC: Bitget anchors 1d
+        // bars at UTC+8 midnight (= UTC 16:00), not UTC 00:00, so any
+        // floor-based or wall-clock-now reference drifts from visual.
+        // Pulling the rightmost candle's time direcly from chart data
+        // eliminates the guess.
+        let reference_ts = null;
+        try {
+          const chartMod = await import('../chart.js');
+          const candles = chartMod.getCandles?.() || [];
+          const last = candles[candles.length - 1];
+          if (last) {
+            const t = typeof last.time === 'number'
+              ? last.time
+              : Math.floor(new Date(last.time).getTime() / 1000);
+            if (Number.isFinite(t) && t > 0) reference_ts = t;
+          }
+        } catch (err) {
+          console.warn('[tp_modal] reference_ts lookup failed', err);
+        }
+
         // Place a real Bitget plan order. The backend stores it as a
         // triggered conditional so the watcher can cancel+replace it as
         // the sloped line projection moves.
@@ -816,6 +859,7 @@ export function openTradePlanModal(line, options = {}) {
           reverse_stop_offset_pct: v.reverse_stop_pct,
           reverse_rr_target: v.reverse_rr_target,
           reverse_leverage: v.leverage > 0 ? Math.round(v.leverage) : null,
+          reference_ts,
         };
 
         const resp = v.submit_to_exchange
@@ -991,7 +1035,7 @@ function renderShell(line, v, setupsState) {
 
         <div class="tp-preview tp-preview-prices">
           <div class="tp-preview-header">📊 挂单前核对 · 服务端计算,即将写入 Bitget</div>
-          <div class="tp-preview-row tp-price-line"><span>line 现在值 (log @ now)</span><span id="tp-preview-line-now">—</span></div>
+          <div class="tp-preview-row tp-price-line"><span>line @ 当前蜡烛 (log)</span><span id="tp-preview-line-now">—</span></div>
           <div class="tp-preview-row tp-price-entry"><span>入场价</span><span id="tp-preview-entry-price">—</span></div>
           <div class="tp-preview-row tp-price-sl"><span>止损价</span><span id="tp-preview-sl-price">—</span></div>
           <div class="tp-preview-row tp-price-tp"><span>止盈价</span><span id="tp-preview-tp-price">—</span></div>

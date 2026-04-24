@@ -385,6 +385,12 @@ class PlaceLineOrderReq(BaseModel):
     reverse_stop_offset_pct: float = 0.0
     reverse_rr_target: float | None = None
     reverse_leverage: float | None = None
+    # Unix seconds. Client passes the CURRENT LIVE BAR's open_ts (= the
+    # rightmost candle's `time` on the chart). Server projects the line
+    # at this ts so the entry matches the height the user visually sees
+    # on today's bar. Falls back to wall-clock now if not provided.
+    # See TA_BASICS.md + 2026-04-23 ZEC incident.
+    reference_ts: int | None = None
 
 
 _TF_LADDER = ["1m", "3m", "5m", "15m", "1h", "4h", "1d", "1w"]
@@ -569,29 +575,36 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if drawing is None:
         raise HTTPException(404, f"manual line not found: {req.manual_line_id}")
 
-    # Project the line to NOW (the actual click timestamp).
+    # Project the line at the CURRENT LIVE BAR's open_ts.
     #
-    # History (2026-04-20 → 2026-04-23): original code used the exact ms
-    # of the click, which drifted ~2.5h inside a 4h bar (user BAS report).
-    # That was "fixed" by snapping to bar-open of the current TF. The
-    # bar-open snap worked for 4h (<=4h stale) but introduced a NEW bug
-    # on 1d/1w: bar-open is up to 24h/7d stale, and for any trendline
-    # with non-trivial slope the projection diverges from what the user
-    # visually reads (user's eye is at the RIGHT edge of the current
-    # bar, which is ≈ now, NOT the left edge = bar-open).
+    # History (2026-04-20 → 2026-04-23):
+    #   v1: exact click ms → ~2.5h drift inside a 4h bar (BAS report).
+    #   v2: snap `floor(now/tf_sec)*tf_sec` → worked for 4h but assumed
+    #       UTC-00:00 bar alignment. For Bitget 1d (UTC+8 anchor, bar
+    #       opens at UTC 16:00), this floors to UTC 00:00 which is NOT
+    #       the actual bar boundary — drifts up to 16h.
+    #   v3: wall-clock now → better but user's eye reads the bar at its
+    #       chart-rendered X position (= bar_open_ts), not at "now"
+    #       midway through the bar. ZEC 1d: wall-clock now gave 317.83,
+    #       visual read 315.81. Gap = 2 points = ~10h of line slope.
     #
-    # User 2026-04-23 ZEC: drew a +58%/28d trendline on 1d, line value
-    # at now ≈ 317 but snap-to-bar-open (22h ago) projected 312.3 →
-    # entry placed 4.8 points below user's expectation.
-    #
-    # Root principle (PRINCIPLES.md P14 finally abstracted): the line
-    # price the server uses MUST equal the line price the user is
-    # reading off the chart in real-time. The chart's rightmost data
-    # point for the live bar is at ≈ now (the candle is still forming),
-    # so `now` is the correct reference.
+    #   v4 (this): use the CURRENT LIVE BAR's open_ts as the reference.
+    #     - Client passes `reference_ts` = time of the rightmost candle
+    #       on their chart (= Bitget-exchange-aligned bar_open_ts, which
+    #       for 1d is UTC 16:00, for 4h/1h/15m is the intraday boundary).
+    #     - Server uses this directly. Matches the exact pixel position
+    #       where the user sees the line cross the live candle.
+    #     - If the client doesn't send it (older UI), fall back to now.
     from server.conditionals.types import _TF_SECONDS  # noqa: F401 — kept for any future guard
     now_ts_ = now_ts()
-    line_now = _project_manual_line_price(drawing, int(now_ts_))
+    ref_ts = int(req.reference_ts) if req.reference_ts and req.reference_ts > 0 else int(now_ts_)
+    # Guard: reference_ts mustn't be before the line's first anchor
+    # (nonsensical) or wildly in the future (indicates a bug).
+    if ref_ts < int(drawing.t_start) - 86400:
+        ref_ts = int(now_ts_)
+    if ref_ts > int(now_ts_) + 86400:
+        ref_ts = int(now_ts_)
+    line_now = _project_manual_line_price(drawing, ref_ts)
     ref_price = float(line_now)
     if ref_price <= 0:
         raise HTTPException(
