@@ -606,48 +606,49 @@ async def api_place_line_order(req: PlaceLineOrderReq):
     if ref_ts and ref_ts > int(now_ts_) + 86400:
         ref_ts = 0
 
-    # Server-side fallback: if client didn't provide a valid reference_ts
-    # (e.g. stale cached JS from before the 2026-04-23 fix), read the
-    # latest bar from the LOCAL OHLCV cache (CSV + in-memory). This is
-    # the exact data the chart renders, so the bar_open_ts we pick here
-    # matches the rightmost candle visually. Crucially: does NOT call
-    # Bitget's private REST — that pool has been getting wedged on this
-    # machine, which broke the previous "fetch from Bitget" fallback
-    # silently and fell through to wall-clock now (the bug we keep
-    # hitting). 2026-04-23 ZEC incident.
+    # Server-side fallback: deterministic math anchor. No network calls.
+    #
+    # Bitget USDT-M futures 1d bars open at UTC 16:00 each day (= UTC+8
+    # midnight, the Asian-exchange convention). All intraday bars align
+    # to UTC hour/minute boundaries. For any timeframe we can compute
+    # the current live bar's open_ts with pure arithmetic on `now`.
+    #
+    # Previous attempts — direct Bitget fetch, data_service.get_ohlcv
+    # — both went through httpx to Bitget and the pool wedged
+    # intermittently, causing silent fallbacks to wall-clock now. After
+    # 3 successful placements the 4th would time out and skew again.
+    # This version has zero async/network dependency.
     if not ref_ts:
-        try:
-            from ..data_service import get_ohlcv
-            ohlcv = await asyncio.wait_for(
-                get_ohlcv(drawing.symbol, drawing.timeframe, end_time=None, days=7, history_mode="fast_window"),
-                timeout=3.0,
-            )
-            rows = (ohlcv or {}).get("candles") or (ohlcv or {}).get("ohlcv") or []
-            if rows:
-                last = rows[-1]
-                t = last.get("time") if isinstance(last, dict) else None
-                if isinstance(t, (int, float)):
-                    cand = int(t)
-                elif isinstance(t, str):
-                    cand = int(datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp())
-                else:
-                    cand = 0
-                if cand > 1_000_000_000:
-                    ref_ts = cand
-                    print(
-                        f"[place-line-order] server-side ref_ts fallback OK via local OHLCV: "
-                        f"{drawing.symbol} {drawing.timeframe} latest bar_open_ts={cand} "
-                        f"({datetime.fromtimestamp(cand, tz=timezone.utc).isoformat()})",
-                        flush=True,
-                    )
-        except Exception as exc:
-            print(
-                f"[place-line-order] ref_ts fallback failed: {type(exc).__name__}: {exc!s}",
-                flush=True,
-            )
+        tf = drawing.timeframe
+        _ONE_DAY = 86400
+        _BITGET_1D_ANCHOR_SEC = 16 * 3600  # UTC 16:00 = UTC+8 00:00
+        _ONE_WEEK = 7 * _ONE_DAY
+        tf_to_seconds = {
+            "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+            "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+        }
+        now_i = int(now_ts_)
+        if tf == "1d":
+            # floor to nearest (anchor + N*day)
+            ref_ts = ((now_i - _BITGET_1D_ANCHOR_SEC) // _ONE_DAY) * _ONE_DAY + _BITGET_1D_ANCHOR_SEC
+        elif tf == "1w":
+            # 1w bars open at UTC+8 midnight on a specific day; keep daily-anchor
+            # floor as safe default (same cadence as 1d for slope on weekly).
+            ref_ts = ((now_i - _BITGET_1D_ANCHOR_SEC) // _ONE_WEEK) * _ONE_WEEK + _BITGET_1D_ANCHOR_SEC
+        elif tf in tf_to_seconds:
+            sec = tf_to_seconds[tf]
+            ref_ts = (now_i // sec) * sec
+        else:
+            ref_ts = now_i
+        print(
+            f"[place-line-order] ref_ts computed {drawing.symbol} {tf}: "
+            f"ref_ts={ref_ts} ({datetime.fromtimestamp(ref_ts, tz=timezone.utc).isoformat()}) "
+            f"from now={now_i}",
+            flush=True,
+        )
 
     if not ref_ts:
-        # Last-resort fallback: wall-clock now (pre-2026-04-23 behavior).
+        # Absolute last-resort (should be unreachable after the math block above).
         ref_ts = int(now_ts_)
 
     line_now = _project_manual_line_price(drawing, ref_ts)

@@ -244,6 +244,31 @@ def _project_line_geometry(
     return math.exp(math.log(p_start) + ratio * (math.log(p_end) - math.log(p_start)))
 
 
+_BITGET_1D_ANCHOR_SEC = 16 * 3600  # Bitget 1d bars open at UTC 16:00 (UTC+8 midnight)
+_TF_SECONDS_FOR_ANCHOR = {
+    "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "12h": 43200,
+}
+
+
+def _current_bar_open_ts(tf: str, now_i: int) -> int:
+    """Return the open_ts of the currently-live bar for the given timeframe.
+
+    Mirrors server/routers/conditionals.py so place-line + replan use the
+    same reference point. See TA_BASICS.md Section 2a and USER_TRADE_RULES.md
+    Section 2a. Bitget 1d anchored at UTC+8 midnight = UTC 16:00; intraday
+    bars align to UTC hour/minute.
+    """
+    if tf == "1d":
+        return ((now_i - _BITGET_1D_ANCHOR_SEC) // 86400) * 86400 + _BITGET_1D_ANCHOR_SEC
+    if tf == "1w":
+        return ((now_i - _BITGET_1D_ANCHOR_SEC) // (7 * 86400)) * (7 * 86400) + _BITGET_1D_ANCHOR_SEC
+    sec = _TF_SECONDS_FOR_ANCHOR.get(tf)
+    if sec:
+        return (now_i // sec) * sec
+    return now_i
+
+
 def _line_price_for_replan(cond: ConditionalOrder, ts: int) -> float:
     """Project the ACTIVE line geometry for replan decisions.
 
@@ -251,9 +276,15 @@ def _line_price_for_replan(cond: ConditionalOrder, ts: int) -> float:
       1. current drawing store row (what the user is editing now)
       2. conditional snapshot (what the user originally approved)
 
-    This keeps the trade rationale immutable while still letting a live
-    order follow a moved line.
+    The projection is anchored to the CURRENT LIVE BAR's open_ts (= the
+    rightmost candle's time on the chart). This keeps replan's "line_now"
+    in lock-step with what the user reads visually AND with what
+    place-line-order used when the plan was first placed, so there's no
+    drift between place and re-place. (2026-04-24 ZEC: replan was pulling
+    wall-clock now and drifting the trigger away from the user's original
+    317.03 placement toward 319.41 every reconcile tick.)
     """
+    anchor_ts = _current_bar_open_ts(cond.timeframe, int(ts))
     try:
         from server.drawings.store import ManualTrendlineStore
 
@@ -266,11 +297,11 @@ def _line_price_for_replan(cond: ConditionalOrder, ts: int) -> float:
                 price_end=float(drawing.price_end),
                 extend_left=bool(getattr(drawing, "extend_left", False)),
                 extend_right=bool(getattr(drawing, "extend_right", True)),
-                ts=ts,
+                ts=anchor_ts,
             )
     except Exception as exc:
         print(f"[watcher] current drawing fetch failed {cond.manual_line_id}: {exc}", flush=True)
-    return cond.line_price_at(ts)
+    return cond.line_price_at(anchor_ts)
 
 
 # ─────────────────────────────────────────────────────────────
