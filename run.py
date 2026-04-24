@@ -2,10 +2,55 @@ import os
 import platform
 import socket
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
-import uvicorn
+
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+
+def _candidate_python_exes() -> list[str]:
+    candidates = [
+        os.environ.get("TRADING_OS_PYTHON", ""),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python312", "python.exe"),
+        os.path.expanduser(r"~\AppData\Local\Programs\Python\Python312\python.exe"),
+    ]
+    seen = set()
+    for path in candidates:
+        if not path:
+            continue
+        norm = os.path.normcase(os.path.abspath(path))
+        if norm in seen or norm == os.path.normcase(os.path.abspath(sys.executable)):
+            continue
+        seen.add(norm)
+        if os.path.exists(path):
+            yield path
+
+
+try:
+    import uvicorn
+except ModuleNotFoundError as exc:
+    if exc.name != "uvicorn":
+        raise
+    for python_exe in _candidate_python_exes():
+        probe = subprocess.run(
+            [python_exe, "-c", "import uvicorn, fastapi"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            print(f"[launcher] current Python lacks uvicorn: {sys.executable}")
+            print(f"[launcher] restarting with: {python_exe}")
+            os.execv(python_exe, [python_exe, os.path.abspath(__file__), *sys.argv[1:]])
+    raise
 
 # Load .env file if it exists (for ANTHROPIC_API_KEY, OKX keys, etc.)
 try:
@@ -18,8 +63,6 @@ try:
         load_dotenv()
 except ImportError:
     pass
-
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Default 8001 to avoid conflict with anything left on 8000 (TIME_WAIT or other app)
 PORT = int(os.environ.get("PORT", 8001))
@@ -112,12 +155,16 @@ if __name__ == "__main__":
                 f"  Legacy UI: http://127.0.0.1:{port}/\n"
                 f"  Open in browser if not auto-opened.\n"
                 f"\n  >>> Use HTTP only (not HTTPS). If Chrome says \"invalid response\",\n"
-                f"      you opened https:// — copy the line above exactly (starts with http://).\n"
+                f"      you opened https:// - copy the line above exactly (starts with http://).\n"
             )
-            # reload=True: uvicorn watches .py files and auto-restarts on changes
-            # This allows the self-healer to apply code fixes and have them take effect immediately
-            uvicorn.run("server.app:app", host=host, port=port, reload=True,
-                        reload_dirs=[os.path.join(PROJECT_ROOT, "server"), os.path.join(PROJECT_ROOT, "frontend")])
+            reload_enabled = os.environ.get("TRADING_OS_RELOAD", "").lower() in {"1", "true", "yes", "on"}
+            uvicorn_kwargs = {"host": host, "port": port, "reload": reload_enabled}
+            if reload_enabled:
+                uvicorn_kwargs["reload_dirs"] = [
+                    os.path.join(PROJECT_ROOT, "server"),
+                    os.path.join(PROJECT_ROOT, "frontend"),
+                ]
+            uvicorn.run("server.app:app", **uvicorn_kwargs)
             break
         if port < PORT + 4:
             print(f"\n  Port {port} in use, trying {port + 1} ...\n")
