@@ -1,3 +1,4 @@
+import asyncio
 import os
 import polars as pl
 import httpx
@@ -1185,6 +1186,18 @@ async def _incremental_update(symbol: str, base_interval: str) -> pl.DataFrame:
     return _merge_and_save(existing_df, new_df, symbol, base_interval)
 
 
+_ohlcv_inflight: dict[tuple, asyncio.Task] = {}
+_ohlcv_exchange_floor_ms: dict[tuple[str, str], int] = {}
+_ohlcv_last_redownload_ts: dict[tuple[str, str], float] = {}
+
+# Minimum seconds between re-download attempts for the SAME (symbol, interval).
+# Before this, we had 137 redundant "Re-downloading full range" calls for
+# ZECUSDT 1d in one session because every /api/ohlcv?days=500 triggered a
+# fresh download even though the prior one had already hit the exchange's
+# listing-date floor. See PRINCIPLES.md P14.
+_REDOWNLOAD_COOLDOWN_SEC = 600   # 10 minutes
+
+
 async def get_ohlcv(
     symbol: str,
     interval: str,
@@ -1207,6 +1220,32 @@ async def get_ohlcv(
         cached_ts, cached_result = cached
         if (time.time() - cached_ts) < _result_cache_ttl(interval):
             return cached_result
+
+    # In-flight deduplication: if another coroutine is already computing
+    # the exact same request, await that task instead of launching a new
+    # download. Prevents the "frontend retries → stacking Bitget calls"
+    # cascade that wedged the event loop (symptom: every endpoint timing
+    # out for 5-15s while one slow 500d download held everything up).
+    inflight = _ohlcv_inflight.get(result_key)
+    if inflight is not None and not inflight.done():
+        return await inflight
+    task = asyncio.create_task(_get_ohlcv_impl(symbol, interval, end_time, days, history_mode, result_key))
+    _ohlcv_inflight[result_key] = task
+    try:
+        return await task
+    finally:
+        _ohlcv_inflight.pop(result_key, None)
+
+
+async def _get_ohlcv_impl(
+    symbol: str,
+    interval: str,
+    end_time: str | None,
+    days: int,
+    history_mode: str,
+    result_key: tuple,
+) -> dict:
+    # (unchanged body continues below)
 
     base_interval, resample_to = RESAMPLE_MAP.get(interval, (interval, None))
     loaded_from_csv = False
@@ -1264,6 +1303,32 @@ async def get_ohlcv(
                         csv_first_ms is not None
                         and csv_first_ms > needed_first_ms + 24 * 60 * 60 * 1000  # 1d slack
                     )
+                    # Two additional guards (2026-04-24 PRINCIPLES.md P14):
+                    #
+                    # (a) Exchange-floor: if we already know this symbol's
+                    #     earliest available bar (recorded on a prior
+                    #     successful download), stop asking for more history
+                    #     than the exchange actually has. Otherwise every
+                    #     /api/ohlcv?days=500 on a newly-listed coin re-runs
+                    #     the full paginated Bitget crawl and blocks the
+                    #     event loop. This was the cause of the 137× redundant
+                    #     "Re-downloading full range" log storm.
+                    # (b) Cooldown: even when csv_too_short is genuinely true,
+                    #     don't re-download more often than _REDOWNLOAD_COOLDOWN_SEC
+                    #     per (symbol, base_interval).
+                    floor_ms = _ohlcv_exchange_floor_ms.get((symbol.upper(), base_interval))
+                    if floor_ms is not None and csv_first_ms is not None and csv_first_ms <= floor_ms + 2 * 24 * 60 * 60 * 1000:
+                        csv_too_short = False
+                    now_wallclock = time.time()
+                    last_redownload = _ohlcv_last_redownload_ts.get((symbol.upper(), base_interval), 0.0)
+                    if csv_too_short and (now_wallclock - last_redownload) < _REDOWNLOAD_COOLDOWN_SEC:
+                        print(
+                            f"[data_service] skip re-download {symbol} {base_interval}: "
+                            f"cooldown active ({int(now_wallclock - last_redownload)}s since last, "
+                            f"need {_REDOWNLOAD_COOLDOWN_SEC}s).",
+                            flush=True,
+                        )
+                        csv_too_short = False
                     if csv_too_short:
                         print(
                             f"[data_service] CSV for {symbol} {base_interval} only covers "
@@ -1274,6 +1339,11 @@ async def get_ohlcv(
                         download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                         df = await download_ohlcv(symbol, base_interval, days=download_days)
                         loaded_from_api = True
+                        _ohlcv_last_redownload_ts[(symbol.upper(), base_interval)] = now_wallclock
+                        # Record the exchange's actual floor so future calls don't retry.
+                        new_first = _get_first_timestamp_ms(df)
+                        if new_first is not None:
+                            _ohlcv_exchange_floor_ms[(symbol.upper(), base_interval)] = new_first
                     else:
                         is_okx_file = csv_path.name.upper().startswith("OKX_")
                         if not is_okx_file:

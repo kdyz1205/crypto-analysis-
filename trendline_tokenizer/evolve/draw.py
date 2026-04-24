@@ -78,43 +78,83 @@ def draw_lines_for_symbol(
         return []
 
     lines: list[TrendlineRecord] = []
-    patterns = getattr(result, "patterns", None) or getattr(result, "lines", None) or []
-    for idx, p in enumerate(patterns):
-        # sr_patterns returns PatternResult-like objects; defensively pull fields
-        pd_dict = p.__dict__ if hasattr(p, "__dict__") else (p if isinstance(p, dict) else {})
-        a1_idx = int(pd_dict.get("anchor1_idx") or pd_dict.get("x1") or pd_dict.get("start_bar") or 0)
-        a2_idx = int(pd_dict.get("anchor2_idx") or pd_dict.get("x2") or pd_dict.get("end_bar") or max(1, a1_idx + 1))
-        a1_price = float(pd_dict.get("anchor1_price") or pd_dict.get("y1") or 0.0)
-        a2_price = float(pd_dict.get("anchor2_price") or pd_dict.get("y2") or a1_price)
-        if a2_idx <= a1_idx or a1_price <= 0 or a2_price <= 0:
-            continue
-        role = _role_from_pattern_result(pd_dict)
-        direction = "up" if a2_price > a1_price * 1.001 else ("down" if a2_price < a1_price * 0.999 else "flat")
 
-        t_start = int(df.iloc[a1_idx]["timestamp"]) if "timestamp" in df.columns else int(a1_idx)
-        t_end = int(df.iloc[a2_idx]["timestamp"]) if "timestamp" in df.columns else int(a2_idx)
+    # sr_patterns.PatternResult has:
+    #   support_lines: list[TrendLine]  (x1, x2, y1, y2, slope, strength, tolerance, touches, line_type)
+    #   resistance_lines: list[TrendLine]
+    #   triangles: list[TrianglePattern]  each has .support_line + .resistance_line
+    buckets: list[tuple[str, list]] = [
+        ("support", list(getattr(result, "support_lines", []) or [])),
+        ("resistance", list(getattr(result, "resistance_lines", []) or [])),
+    ]
+    # Triangles contribute two triangle_side lines each
+    for tri in list(getattr(result, "triangles", []) or []):
+        sup = getattr(tri, "support_line", None)
+        res = getattr(tri, "resistance_line", None)
+        if sup is not None:
+            buckets.append(("triangle_side", [sup]))
+        if res is not None:
+            buckets.append(("triangle_side", [res]))
 
-        rid = f"evolve-{symbol}-{timeframe}-{a1_idx}-{a2_idx}-{role}-{idx}"
-        line = TrendlineRecord(
-            id=rid,
-            symbol=symbol.upper(),
-            exchange="bitget",
-            timeframe=timeframe,
-            start_time=t_start,
-            end_time=t_end,
-            start_bar_index=a1_idx,
-            end_bar_index=a2_idx,
-            start_price=a1_price,
-            end_price=a2_price,
-            line_role=role,
-            direction=direction,
-            touch_count=int(pd_dict.get("touches") or pd_dict.get("touch_count") or 2),
-            label_source="auto",
-            auto_method=f"sr_patterns.evolve[{','.join(f'{k}={v}' for k,v in sr_params_kwargs.items())}]",
-            score=float(pd_dict.get("score") or pd_dict.get("touch_quality") or 0.0) or None,
-            created_at=t_end,
-        )
-        lines.append(line)
-        if max_lines and len(lines) >= max_lines:
-            break
+    idx_global = 0
+    for role_tag, bucket in buckets:
+        for p in bucket:
+            # Pull TrendLine fields robustly
+            a1_idx = int(getattr(p, "x1", 0) or 0)
+            a2_idx = int(getattr(p, "x2", 0) or 0)
+            a1_price = float(getattr(p, "y1", 0.0) or 0.0)
+            a2_price = float(getattr(p, "y2", 0.0) or 0.0)
+            if a2_idx <= a1_idx or a1_price <= 0 or a2_price <= 0:
+                continue
+            role: LineRole = role_tag  # already one of our enum values
+            direction = ("up" if a2_price > a1_price * 1.001
+                         else ("down" if a2_price < a1_price * 0.999 else "flat"))
+
+            # Map bar index → wall-clock timestamp via the DataFrame
+            ts_col = "open_time" if "open_time" in df.columns else (
+                "timestamp" if "timestamp" in df.columns else None
+            )
+            if ts_col is not None and 0 <= a1_idx < len(df) and 0 <= a2_idx < len(df):
+                t_start_val = df[ts_col][a1_idx] if hasattr(df, "__getitem__") else df.iloc[a1_idx][ts_col]
+                t_end_val = df[ts_col][a2_idx] if hasattr(df, "__getitem__") else df.iloc[a2_idx][ts_col]
+                # polars returns np.int64 / datetime — coerce
+                try:
+                    t_start = int(t_start_val)
+                    t_end = int(t_end_val)
+                except (TypeError, ValueError):
+                    import pandas as _pd
+                    t_start = int(_pd.Timestamp(t_start_val).timestamp())
+                    t_end = int(_pd.Timestamp(t_end_val).timestamp())
+                # Bitget timestamps may be ms → downshift
+                if t_start > 10_000_000_000:
+                    t_start //= 1000
+                    t_end //= 1000
+            else:
+                t_start = a1_idx
+                t_end = a2_idx
+
+            rid = f"evolve-{symbol}-{timeframe}-{a1_idx}-{a2_idx}-{role}-{idx_global}"
+            lines.append(TrendlineRecord(
+                id=rid,
+                symbol=symbol.upper(),
+                exchange="bitget",
+                timeframe=timeframe,
+                start_time=t_start,
+                end_time=t_end,
+                start_bar_index=a1_idx,
+                end_bar_index=a2_idx,
+                start_price=a1_price,
+                end_price=a2_price,
+                line_role=role,
+                direction=direction,
+                touch_count=int(getattr(p, "touches", 2) or 2),
+                rejection_strength_atr=None,
+                label_source="auto",
+                auto_method=f"sr_patterns.live({','.join(f'{k}={v}' for k,v in sr_params_kwargs.items())})",
+                score=float(getattr(p, "strength", 0.0) or 0.0) or None,
+                created_at=t_end,
+            ))
+            idx_global += 1
+            if max_lines and len(lines) >= max_lines:
+                return lines
     return lines
