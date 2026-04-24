@@ -607,35 +607,44 @@ async def api_place_line_order(req: PlaceLineOrderReq):
         ref_ts = 0
 
     # Server-side fallback: if client didn't provide a valid reference_ts
-    # (e.g. stale cached JS from before the 2026-04-23 fix), fetch the
-    # latest 1d candle from Bitget and use its open_ts. This makes the
-    # fix robust against users who haven't hard-reloaded their browser.
+    # (e.g. stale cached JS from before the 2026-04-23 fix), read the
+    # latest bar from the LOCAL OHLCV cache (CSV + in-memory). This is
+    # the exact data the chart renders, so the bar_open_ts we pick here
+    # matches the rightmost candle visually. Crucially: does NOT call
+    # Bitget's private REST — that pool has been getting wedged on this
+    # machine, which broke the previous "fetch from Bitget" fallback
+    # silently and fell through to wall-clock now (the bug we keep
+    # hitting). 2026-04-23 ZEC incident.
     if not ref_ts:
         try:
-            from ..data_service import _BITGET_INTERVAL_MAP
-            from ..market.bitget_client import BitgetPublicClient
-            granularity = _BITGET_INTERVAL_MAP.get(drawing.timeframe, drawing.timeframe)
-            client = BitgetPublicClient()
-            bars = await asyncio.wait_for(
-                client.get_candles(drawing.symbol, granularity, limit=2, history=False),
-                timeout=2.5,
+            from ..data_service import get_ohlcv
+            ohlcv = await asyncio.wait_for(
+                get_ohlcv(drawing.symbol, drawing.timeframe, end_time=None, days=7, history_mode="fast_window"),
+                timeout=3.0,
             )
-            if bars:
-                # Bitget candles: [ts_ms, open, high, low, close, volume, turnover]
-                last = bars[-1]
-                if isinstance(last, (list, tuple)) and len(last) > 0:
-                    ts_ms = int(last[0])
-                    cand = ts_ms // 1000 if ts_ms > 1_000_000_000_000 else ts_ms
-                    if cand > 0:
-                        ref_ts = cand
-                        print(
-                            f"[place-line-order] server-side ref_ts fallback: "
-                            f"{drawing.symbol} {drawing.timeframe} latest candle "
-                            f"{cand} ({datetime.fromtimestamp(cand, tz=timezone.utc).isoformat()})",
-                            flush=True,
-                        )
+            rows = (ohlcv or {}).get("candles") or (ohlcv or {}).get("ohlcv") or []
+            if rows:
+                last = rows[-1]
+                t = last.get("time") if isinstance(last, dict) else None
+                if isinstance(t, (int, float)):
+                    cand = int(t)
+                elif isinstance(t, str):
+                    cand = int(datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp())
+                else:
+                    cand = 0
+                if cand > 1_000_000_000:
+                    ref_ts = cand
+                    print(
+                        f"[place-line-order] server-side ref_ts fallback OK via local OHLCV: "
+                        f"{drawing.symbol} {drawing.timeframe} latest bar_open_ts={cand} "
+                        f"({datetime.fromtimestamp(cand, tz=timezone.utc).isoformat()})",
+                        flush=True,
+                    )
         except Exception as exc:
-            print(f"[place-line-order] ref_ts fallback failed: {exc!s}", flush=True)
+            print(
+                f"[place-line-order] ref_ts fallback failed: {type(exc).__name__}: {exc!s}",
+                flush=True,
+            )
 
     if not ref_ts:
         # Last-resort fallback: wall-clock now (pre-2026-04-23 behavior).
