@@ -24,6 +24,7 @@ import { createConditional, placeLineOrder } from '../../services/conditionals.j
 import { getTradePlanSetups, saveTradePlanSetups } from '../../services/trade_plan_setups.js';
 import { esc } from '../../util/dom.js';
 import { drawingsState } from '../../state/drawings.js';
+import { marketState } from '../../state/market.js';
 
 const LS_KEY = 'v2.tradeplan.defaults.v1';
 const SETUPS_KEY = 'v2.tradeplan.setups.v1';
@@ -501,12 +502,13 @@ export function openTradePlanModal(line, options = {}) {
           if (n >= 0.01) return n.toFixed(6);
           return n.toFixed(7);
         };
-        // Read current live bar open_ts from chart data
+        // Read current live bar open_ts from marketState.lastCandles
+        // (chart.js publishes candles there via setCandles). There is
+        // NO getCandles export on chart.js — don't try to import it.
         let refTs = Math.floor(Date.now() / 1000);
         let refSource = 'wall-clock-now';
         try {
-          const chartMod = await import('../chart.js');
-          const candles = chartMod.getCandles?.() || [];
+          const candles = marketState?.lastCandles || [];
           const last = candles[candles.length - 1];
           if (last) {
             const t = typeof last.time === 'number'
@@ -821,12 +823,13 @@ export function openTradePlanModal(line, options = {}) {
         // it cross today's candle. 2026-04-23 ZEC: Bitget anchors 1d
         // bars at UTC+8 midnight (= UTC 16:00), not UTC 00:00, so any
         // floor-based or wall-clock-now reference drifts from visual.
-        // Pulling the rightmost candle's time direcly from chart data
-        // eliminates the guess.
+        // Pulling the rightmost candle's time directly from chart data
+        // eliminates the guess. Candles live in marketState.lastCandles
+        // (chart.js populates it via setCandles). There is NO getCandles
+        // export — don't import it.
         let reference_ts = null;
         try {
-          const chartMod = await import('../chart.js');
-          const candles = chartMod.getCandles?.() || [];
+          const candles = marketState?.lastCandles || [];
           const last = candles[candles.length - 1];
           if (last) {
             const t = typeof last.time === 'number'
