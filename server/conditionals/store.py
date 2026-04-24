@@ -235,10 +235,49 @@ class ConditionalOrderStore:
         os.replace(tmp_path, self.path)
 
     def _order_to_dict(self, o: ConditionalOrder) -> dict[str, Any]:
-        """Serialize ConditionalOrder + nested dataclasses to JSON-safe dict."""
-        from dataclasses import asdict as _asdict
-        d = _asdict(o)
-        return d
+        """Serialize ConditionalOrder + nested dataclasses to JSON-safe dict.
+
+        2026-04-24: added defensive fallback. A prior bug report caught
+        `dataclasses._asdict_inner` recursing to Python's limit on some
+        in-flight cond (pre-persist), likely because something placed a
+        cyclic structure into ConditionalEvent.extra (dict[str, Any]).
+        When that happens, fall back to a manual serializer that skips
+        `extra` entirely so the rest of the cond can still be stored +
+        returned to the client.
+        """
+        from dataclasses import asdict as _asdict, is_dataclass
+        try:
+            return _asdict(o)
+        except RecursionError:
+            print(
+                f"[store] _order_to_dict RecursionError on {getattr(o, 'conditional_id', '?')} "
+                f"— falling back to shallow serialization (events[].extra dropped)",
+                flush=True,
+            )
+            # Manual shallow serializer. Dataclasses → vars-like dict, but
+            # for ConditionalEvent we DROP extra (the likely cycle source)
+            # and keep only the scalar fields.
+            def _safe(obj, depth: int = 0) -> Any:
+                if depth > 20:
+                    return "<truncated_depth>"
+                if is_dataclass(obj) and not isinstance(obj, type):
+                    out = {}
+                    for f in obj.__dataclass_fields__.values():
+                        val = getattr(obj, f.name, None)
+                        if f.name == "extra":
+                            out[f.name] = {}  # drop potentially-cyclic extra
+                        else:
+                            out[f.name] = _safe(val, depth + 1)
+                    return out
+                if isinstance(obj, dict):
+                    return {k: _safe(v, depth + 1) for k, v in obj.items()
+                            if not isinstance(v, type) and k != "extra"}
+                if isinstance(obj, (list, tuple)):
+                    return [_safe(v, depth + 1) for v in obj]
+                if isinstance(obj, (str, int, float, bool)) or obj is None:
+                    return obj
+                return str(obj)
+            return _safe(o)
 
     def _dict_to_order(self, d: dict[str, Any]) -> ConditionalOrder:
         """Inverse of _order_to_dict. Reconstructs nested dataclasses.
