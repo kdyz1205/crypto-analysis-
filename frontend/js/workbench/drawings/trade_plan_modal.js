@@ -21,10 +21,13 @@
 
 import { getLiveAccount } from '../../services/live_execution.js';
 import { createConditional, placeLineOrder } from '../../services/conditionals.js';
+import { getTradePlanSetups, saveTradePlanSetups } from '../../services/trade_plan_setups.js';
 import { esc } from '../../util/dom.js';
+import { drawingsState } from '../../state/drawings.js';
 
 const LS_KEY = 'v2.tradeplan.defaults.v1';
 const SETUPS_KEY = 'v2.tradeplan.setups.v1';
+const SETUPS_BACKUP_KEY = 'v2.tradeplan.setups.backup.v1';
 
 // ────────────────────────────────────────────────────────────────
 // Setup presets (reusable parameter bundles)
@@ -35,15 +38,30 @@ const SETUPS_KEY = 'v2.tradeplan.setups.v1';
 // because that's derived from the line side at open time).
 // First use: seeds one "默认 Default" setup from DEFAULTS.
 
-function loadSetups() {
+function _normalizeSetupsState(parsed) {
+  if (!Array.isArray(parsed?.setups) || parsed.setups.length === 0) return null;
+  const setups = parsed.setups
+    .filter((s) => s && typeof s === 'object' && s.id && s.config && typeof s.config === 'object')
+    .map((s) => ({
+      id: String(s.id),
+      name: String(s.name || s.id),
+      config: { ...s.config },
+      custom_name: !!s.custom_name,
+    }));
+  if (!setups.length) return null;
+  const active = setups.some((s) => s.id === parsed?.active_id)
+    ? String(parsed.active_id)
+    : setups[0].id;
+  return { active_id: active, setups };
+}
+
+function loadSetupsLocal() {
   try {
     const raw = localStorage.getItem(SETUPS_KEY);
-    if (!raw) return _seedSetups();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.setups) || parsed.setups.length === 0) return _seedSetups();
-    return parsed;
+    if (!raw) return null;
+    return _normalizeSetupsState(JSON.parse(raw));
   } catch {
-    return _seedSetups();
+    return null;
   }
 }
 
@@ -55,11 +73,50 @@ function _seedSetups() {
     ],
   };
   try { localStorage.setItem(SETUPS_KEY, JSON.stringify(seed)); } catch {}
+  try { localStorage.setItem(SETUPS_BACKUP_KEY, JSON.stringify(seed)); } catch {}
   return seed;
 }
 
 function saveSetups(state) {
-  try { localStorage.setItem(SETUPS_KEY, JSON.stringify(state)); } catch {}
+  const normalized = _normalizeSetupsState(state) || _seedSetups();
+  try { localStorage.setItem(SETUPS_KEY, JSON.stringify(normalized)); } catch {}
+  try { localStorage.setItem(SETUPS_BACKUP_KEY, JSON.stringify(normalized)); } catch {}
+  void saveTradePlanSetups(normalized).catch((err) => {
+    console.warn('[trade_plan_modal] server setup backup save failed', err);
+  });
+}
+
+async function loadSetupsState() {
+  const local = loadSetupsLocal();
+  try {
+    const resp = await getTradePlanSetups();
+    const remote = _normalizeSetupsState(resp?.state);
+    if (remote) {
+      try { localStorage.setItem(SETUPS_KEY, JSON.stringify(remote)); } catch {}
+      try { localStorage.setItem(SETUPS_BACKUP_KEY, JSON.stringify(remote)); } catch {}
+      return remote;
+    }
+  } catch (err) {
+    console.warn('[trade_plan_modal] server setup load failed', err);
+  }
+  if (local) {
+    void saveTradePlanSetups(local).catch((err) => {
+      console.warn('[trade_plan_modal] server setup backfill failed', err);
+    });
+    return local;
+  }
+  try {
+    const rawBackup = localStorage.getItem(SETUPS_BACKUP_KEY);
+    const backup = rawBackup ? _normalizeSetupsState(JSON.parse(rawBackup)) : null;
+    if (backup) {
+      try { localStorage.setItem(SETUPS_KEY, JSON.stringify(backup)); } catch {}
+      void saveTradePlanSetups(backup).catch((err) => {
+        console.warn('[trade_plan_modal] server backup restore save failed', err);
+      });
+      return backup;
+    }
+  } catch {}
+  return _seedSetups();
 }
 
 function getActiveSetup(state) {
@@ -228,13 +285,13 @@ function getCachedEquity(mode) {
  * @param {string} [options.activeSetupId]  Open with this setup pre-selected.
  */
 export function openTradePlanModal(line, options = {}) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     closeExisting();
     // Load the ACTIVE setup's config (not the legacy LS_KEY defaults).
     // Setups system supersedes "last used" persistence: now the user
     // picks from named bundles instead of carrying whatever they last
     // typed into the next line.
-    let setupsState = loadSetups();
+    let setupsState = await loadSetupsState();
     if (options.activeSetupId
         && setupsState.setups.some((s) => s.id === options.activeSetupId)) {
       setupsState.active_id = options.activeSetupId;
@@ -413,6 +470,72 @@ export function openTradePlanModal(line, options = {}) {
     const refreshLivePreview = async () => {
       const v = readForm();
       const mode = v.exchange_mode;
+
+      // ── Raw-price block: line_at_now + entry + SL + TP ──────────
+      // User 2026-04-23 ZEC incident: server placed at a different
+      // price than user read visually. These raw numbers go to Bitget
+      // if "确认挂单" is clicked — user needs to see them BEFORE.
+      // Uses the SAME log projection as chart_drawing.js + server
+      // conditionals.py:_project_manual_line_price so all three agree.
+      {
+        const drawing = (drawingsState.lines || []).find(
+          (l) => l && l.manual_line_id === line.manual_line_id
+        );
+        const lineNowEl = $('#tp-preview-line-now');
+        const entryEl = $('#tp-preview-entry-price');
+        const slEl = $('#tp-preview-sl-price');
+        const tpEl = $('#tp-preview-tp-price');
+        const fmt = (p) => {
+          const n = Number(p);
+          if (!Number.isFinite(n) || n <= 0) return '—';
+          if (n >= 1000) return n.toFixed(2);
+          if (n >= 100) return n.toFixed(3);
+          if (n >= 10) return n.toFixed(3);
+          if (n >= 1) return n.toFixed(4);
+          if (n >= 0.1) return n.toFixed(5);
+          if (n >= 0.01) return n.toFixed(6);
+          return n.toFixed(7);
+        };
+        if (drawing && drawing.t_end > drawing.t_start
+            && drawing.price_start > 0 && drawing.price_end > 0) {
+          const nowS = Math.floor(Date.now() / 1000);
+          const r = (nowS - drawing.t_start) / (drawing.t_end - drawing.t_start);
+          const lineNow = Math.exp(
+            Math.log(drawing.price_start)
+            + r * (Math.log(drawing.price_end) - Math.log(drawing.price_start))
+          );
+          const bufPct = Math.abs(v.buffer_pct || 0) / 100;
+          const stopPct = Math.abs(v.stop_pct || 0) / 100;
+          const isLong = v.direction === 'long';
+          // LONG: entry above line, SL below line.
+          // SHORT: entry below line, SL above line.
+          const entryP = isLong ? lineNow * (1 + bufPct) : lineNow * (1 - bufPct);
+          const slP = isLong ? lineNow * (1 - stopPct) : lineNow * (1 + stopPct);
+          const slDist = Math.abs(entryP - slP);
+          const slDistPct = entryP > 0 ? (slDist / entryP) * 100 : 0;
+          const tpP = isLong
+            ? entryP + slDist * (v.rr_target || 0)
+            : entryP - slDist * (v.rr_target || 0);
+          if (lineNowEl) lineNowEl.textContent = fmt(lineNow);
+          if (entryEl) {
+            entryEl.textContent =
+              `${fmt(entryP)}  (${v.buffer_pct || 0}% ${isLong ? '上' : '下'}, 距 line ${fmt(Math.abs(entryP - lineNow))})`;
+          }
+          if (slEl) {
+            slEl.textContent =
+              `${fmt(slP)}  (距 entry ${fmt(slDist)} = ${slDistPct.toFixed(3)}%)`;
+          }
+          if (tpEl) {
+            tpEl.textContent = `${fmt(tpP)}  (RR ${(v.rr_target || 0).toFixed(1)})`;
+          }
+        } else {
+          if (lineNowEl) lineNowEl.textContent = drawing ? '— (端点无效)' : '— (找不到线)';
+          if (entryEl) entryEl.textContent = '—';
+          if (slEl) slEl.textContent = '—';
+          if (tpEl) tpEl.textContent = '—';
+        }
+      }
+
       const equity = await fetchEquity(mode);
       const accountErr = _equityCache.error;
       // Friendlier message — user doesn't care about "signal is aborted",
@@ -866,6 +989,15 @@ function renderShell(line, v, setupsState) {
           <label><input type="checkbox" name="submit_to_exchange" ${v.submit_to_exchange ? 'checked' : ''}/> 提交到交易所</label>
         </div>
 
+        <div class="tp-preview tp-preview-prices">
+          <div class="tp-preview-header">📊 挂单前核对 · 服务端计算,即将写入 Bitget</div>
+          <div class="tp-preview-row tp-price-line"><span>line 现在值 (log @ now)</span><span id="tp-preview-line-now">—</span></div>
+          <div class="tp-preview-row tp-price-entry"><span>入场价</span><span id="tp-preview-entry-price">—</span></div>
+          <div class="tp-preview-row tp-price-sl"><span>止损价</span><span id="tp-preview-sl-price">—</span></div>
+          <div class="tp-preview-row tp-price-tp"><span>止盈价</span><span id="tp-preview-tp-price">—</span></div>
+          <div class="tp-preview-row tp-price-note"><span></span><span id="tp-preview-price-note" style="color:#8ac4ff;font-size:10px">视觉读数和 line 值不符请点 "取消" 调整参数或重画线</span></div>
+        </div>
+
         <div class="tp-preview">
           <div class="tp-preview-row"><span>账户余额</span><span id="tp-preview-equity">—</span></div>
           <div class="tp-preview-row"><span>仓位名义</span><span id="tp-preview-notional">—</span></div>
@@ -978,6 +1110,21 @@ function injectStyles() {
     }
     .tp-preview-row.tp-risk span:last-child { color: #ff5252; font-weight: 700; }
     .tp-preview-row.tp-reward span:last-child { color: #00e676; font-weight: 700; }
+    /* Raw-price preview section — distinct style so user's eye lands on it */
+    .tp-preview.tp-preview-prices {
+      background: #0d1624; border: 1px solid #2a3f5f;
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.15) inset;
+    }
+    .tp-preview-header {
+      font-size: 11px; font-weight: 700; color: #60a5fa;
+      letter-spacing: 0.03em; margin-bottom: 6px;
+      padding-bottom: 6px; border-bottom: 1px solid #1d2537;
+    }
+    .tp-preview-row.tp-price-line span:last-child { color: #fbbf24; font-weight: 700; }
+    .tp-preview-row.tp-price-entry span:last-child { color: #60a5fa; font-weight: 700; }
+    .tp-preview-row.tp-price-sl span:last-child { color: #ef4444; font-weight: 700; }
+    .tp-preview-row.tp-price-tp span:last-child { color: #22c55e; font-weight: 700; }
+    .tp-preview-row.tp-price-note span:last-child { font-weight: 400 !important; }
     .tp-section-head {
       font-size: 11px; font-weight: 700; text-transform: uppercase;
       color: #38bdf8; letter-spacing: 0.06em;
@@ -1016,12 +1163,12 @@ let _picker = null;
 let _pickerCleanup = null;
 
 export function openSetupPickerPopup(line, clickX = null, clickY = null) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     // If a previous picker is still open, tear it down first.
     // IMPORTANT: don't reference inner handlers here (TDZ trap) — use
     // the previously-captured cleanup closure instead.
     if (_pickerCleanup) { try { _pickerCleanup(); } catch {} _pickerCleanup = null; }
-    const setupsState = loadSetups();
+    const setupsState = await loadSetupsState();
     const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
     const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
 
@@ -1152,10 +1299,10 @@ let _quickPopup = null;
 let _quickPopupCleanup = null;
 
 export function openQuickTradePopup(line, clickX = null, clickY = null) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     if (_quickPopupCleanup) { try { _quickPopupCleanup(); } catch {} _quickPopupCleanup = null; }
 
-    const setupsState = loadSetups();
+    const setupsState = await loadSetupsState();
     const x = Number.isFinite(clickX) ? clickX : window.innerWidth / 2;
     const y = Number.isFinite(clickY) ? clickY : window.innerHeight / 2;
 
