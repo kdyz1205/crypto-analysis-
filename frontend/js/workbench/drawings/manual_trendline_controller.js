@@ -262,6 +262,7 @@ function renderSelectedActions(selected) {
       <div class="manual-panel-actions">
         <button class="btn" data-action="edit-start" ${selected.locked ? 'disabled' : ''}>Edit Start</button>
         <button class="btn" data-action="edit-end" ${selected.locked ? 'disabled' : ''}>Edit End</button>
+        <button class="btn" data-action="duplicate-selected" title="复制一条平行线,放在原线下方 1%">复制</button>
         <button class="btn" data-action="toggle-lock">${selected.locked ? 'Unlock' : 'Lock'}</button>
         <button class="btn" data-action="toggle-extend-left">${selected.extend_left ? 'Stop Extend Left' : 'Extend Left'}</button>
         <button class="btn" data-action="toggle-extend-right">${selected.extend_right ? 'Stop Extend' : 'Extend Right'}</button>
@@ -426,6 +427,42 @@ async function onPanelClick(event) {
     selectedDraft = null;
     setEditTarget(null);
     await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
+    return;
+  }
+  if (action === 'duplicate-selected' && selected) {
+    // Feature 6B (USER_TRADE_RULES.md Section 6b). Create a PARALLEL copy
+    // shifted down 1% in price so the user can see both lines at once and
+    // drag the duplicate to its own level. Same slope = same growth rate
+    // in log-space → subtract a small constant % from both endpoints.
+    const OFFSET_PCT = 0.01; // 1% below original
+    const avgPrice = (selected.price_start + selected.price_end) / 2;
+    const shift = avgPrice * OFFSET_PCT;
+    try {
+      const resp = await drawingsSvc.createManualDrawing({
+        symbol: selected.symbol,
+        timeframe: selected.timeframe,
+        side: selected.side,
+        t_start: selected.t_start,
+        t_end: selected.t_end,
+        price_start: Math.max(0.00000001, selected.price_start - shift),
+        price_end: Math.max(0.00000001, selected.price_end - shift),
+        extend_left: !!selected.extend_left,
+        extend_right: !!selected.extend_right,
+        locked: false,
+        label: `${selected.label || 'trendline'} (copy)`,
+        notes: selected.notes || '',
+        line_width: selected.line_width || undefined,
+        override_mode: selected.override_mode || 'display_only',
+      });
+      if (resp?.drawing?.manual_line_id) {
+        setSelectedManualLine(resp.drawing.manual_line_id);
+      }
+      await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
+    } catch (err) {
+      console.error('[manual-panel] duplicate failed', err);
+      alert(`复制失败: ${err?.message || err}`);
+    }
+    return;
   }
 }
 
