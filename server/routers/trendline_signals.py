@@ -163,3 +163,58 @@ def recent_signals(limit: int = 50) -> dict:
     _, _, dispatcher, _ = _ensure_loaded()
     rows = dispatcher.read_all()[-limit:]
     return {"count": len(rows), "signals": rows}
+
+
+@router.get("/agent/state")
+def agent_state() -> dict:
+    """Current self-evolving agent state."""
+    from trendline_tokenizer.agent.state import AgentState
+    s = AgentState.load()
+    return {
+        "iteration": s.iteration,
+        "last_run_ts": s.last_run_ts,
+        "last_train_ts": s.last_train_ts,
+        "last_train_artifact": s.last_train_artifact,
+        "n_lines_auto_drawn_total": s.n_lines_auto_drawn_total,
+        "n_retrain_triggered": s.n_retrain_triggered,
+        "recent_log": s.log[-10:],
+    }
+
+
+@router.get("/agent/reports")
+def agent_reports(limit: int = 20) -> dict:
+    """Tail of the agent's iteration reports."""
+    from trendline_tokenizer.agent.report import tail_reports
+    return {"reports": tail_reports(n=limit)}
+
+
+@router.get("/agent/auto_drawn")
+def agent_auto_drawn(symbol: str | None = None, timeframe: str | None = None,
+                     limit: int = 50) -> dict:
+    """List the most-recent auto-drawn lines from data/agent_drawn/."""
+    from pathlib import Path
+    import json as _json
+    drawn_dir = PROJECT_ROOT / "data" / "agent_drawn"
+    if not drawn_dir.exists():
+        return {"files": [], "lines": []}
+    files = sorted(drawn_dir.glob("*.jsonl"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)
+    if symbol:
+        files = [f for f in files if f.name.upper().startswith(symbol.upper())]
+    if timeframe:
+        files = [f for f in files if f"_{timeframe}_" in f.name]
+    files = files[:limit]
+    lines: list[dict] = []
+    for f in files:
+        for line in f.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = _json.loads(line)
+                if obj.get("_meta"):
+                    continue
+                lines.append(obj)
+            except Exception:
+                continue
+    return {"files": [str(f.name) for f in files], "lines": lines[-200:]}
