@@ -87,3 +87,25 @@ def test_enable_rejects_zero_capital(client):
         "strategy_capital_usd": 0.0,
     })
     assert r.status_code == 400
+
+
+def test_config_rejects_layer_risk_above_5pct(client):
+    r = client.post("/api/ma_ribbon_auto/config", json={
+        "layer_risk_pct": {"LV1": 0.06, "LV2": 0.0025, "LV3": 0.005, "LV4": 0.02},
+    })
+    assert r.status_code == 400
+
+
+def test_config_accepts_valid_max_concurrent(client):
+    r = client.post("/api/ma_ribbon_auto/config", json={
+        "max_concurrent_orders": 10,
+    })
+    assert r.status_code == 200
+    assert client.get("/api/ma_ribbon_auto/status").json()["config"]["max_concurrent_orders"] == 10
+
+
+def test_config_rejects_dd_halt_above_50pct(client):
+    r = client.post("/api/ma_ribbon_auto/config", json={
+        "dd_halt_pct": 0.6,
+    })
+    assert r.status_code == 400

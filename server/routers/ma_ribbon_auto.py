@@ -72,3 +72,35 @@ def disable() -> dict:
     s.enabled = False
     _save(s)
     return get_status()
+
+
+@router.post("/config")
+def update_config(payload: dict = Body(...)) -> dict:
+    s = _state()
+    if "layer_risk_pct" in payload:
+        for layer, val in payload["layer_risk_pct"].items():
+            if not isinstance(val, (int, float)) or val <= 0 or val > 0.05:
+                raise HTTPException(400, detail=f"layer_risk_pct[{layer}] = {val} out of (0, 0.05]")
+            s.config.layer_risk_pct[layer] = float(val)
+    if "max_concurrent_orders" in payload:
+        v = payload["max_concurrent_orders"]
+        if not isinstance(v, int) or v < 1 or v > 200:
+            raise HTTPException(400, detail="max_concurrent_orders must be 1..200")
+        s.config.max_concurrent_orders = v
+    if "dd_halt_pct" in payload:
+        v = payload["dd_halt_pct"]
+        if not 0 < v <= 0.5:
+            raise HTTPException(400, detail="dd_halt_pct must be in (0, 0.5]")
+        s.config.dd_halt_pct = float(v)
+    if "per_symbol_risk_cap_pct" in payload:
+        v = payload["per_symbol_risk_cap_pct"]
+        if not 0 < v <= 0.10:
+            raise HTTPException(400, detail="per_symbol_risk_cap_pct must be in (0, 0.10]")
+        s.config.per_symbol_risk_cap_pct = float(v)
+    if "ribbon_buffer_pct" in payload:
+        for tf, val in payload["ribbon_buffer_pct"].items():
+            if not 0 < val <= 0.30:
+                raise HTTPException(400, detail=f"ribbon_buffer_pct[{tf}] = {val} out of range")
+            s.config.ribbon_buffer_pct[tf] = float(val)
+    _save(s)
+    return get_status()
