@@ -35,7 +35,15 @@ class _FusionBlock(nn.Module):
             return q + self.ff(self.norm_ff(q))
         q_norm = self.norm_q(q)
         kv_norm = self.norm_kv(kv)
-        attn_out, _ = self.cross(q_norm, kv_norm, kv_norm, key_padding_mask=kv_pad_mask)
+        # Unmask position 0 of any fully-padded KV row so softmax has a
+        # valid attention target. We zero attn_out for those rows after,
+        # so the masked-out behaviour is preserved without NaN backprop.
+        if bool(kv_all_padded.any().item()):
+            safe_kv_mask = kv_pad_mask.clone()
+            safe_kv_mask[kv_all_padded, 0] = False
+        else:
+            safe_kv_mask = kv_pad_mask
+        attn_out, _ = self.cross(q_norm, kv_norm, kv_norm, key_padding_mask=safe_kv_mask)
         if bool(kv_all_padded.any().item()):
             attn_out = attn_out.masked_fill(kv_all_padded.view(-1, 1, 1), 0.0)
         h = q + attn_out

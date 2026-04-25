@@ -78,5 +78,17 @@ class TrendlineMultiStreamEncoder(nn.Module):
     def forward(self, batch: dict, pad_mask: torch.Tensor) -> torch.Tensor:
         h = self._embed_streams(batch)
         h = h + self.pos_emb[:, : h.shape[1]]
-        h = self.encoder(h, src_key_padding_mask=pad_mask)
+        # Fully-padded rows would cause softmax(NaN) inside the Transformer.
+        # Unmask the first position of any fully-padded row, then zero the
+        # output for those rows so downstream cross-attention treats them
+        # as padded anyway (we keep `pad_mask` unchanged for the caller).
+        all_pad = pad_mask.all(dim=-1)
+        if bool(all_pad.any().item()):
+            safe_mask = pad_mask.clone()
+            safe_mask[all_pad, 0] = False
+        else:
+            safe_mask = pad_mask
+        h = self.encoder(h, src_key_padding_mask=safe_mask)
+        if bool(all_pad.any().item()):
+            h = h.masked_fill(all_pad.view(-1, 1, 1), 0.0)
         return self.out_norm(h)

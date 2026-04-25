@@ -46,45 +46,83 @@ class SequenceExample:
 
 
 def _price_window(df: pd.DataFrame, end_idx: int, length: int) -> tuple[np.ndarray, np.ndarray]:
-    """Return (window, pad_mask). end_idx is exclusive."""
+    """Return (window, pad_mask). end_idx is exclusive.
+
+    All features are scale-stable so the linear projection in the
+    price encoder behaves no matter the absolute price level:
+      - OHLC -> log-ratio vs last close in window (centered ~0)
+      - volume -> log1p(vol / median_vol)
+      - ema21, ema50 -> log(ema / close)
+      - atr14 -> atr / close (relative ATR)
+      - rsi14 -> rsi / 100 (in [0, 1])
+      - ret1, ret5 -> already returns
+      - vol_z, dist_ma_atr -> already normalized
+    """
     start = max(0, end_idx - length)
     raw = df.iloc[start:end_idx]
     if len(raw) == 0:
         feats = np.zeros((0, 13), dtype=np.float32)
     else:
-        ohlcv = raw[["open", "high", "low", "close", "volume"]].to_numpy(dtype=np.float32)
-        closes = ohlcv[:, 3]
-        ema21 = pd.Series(closes).ewm(span=21, adjust=False).mean().to_numpy()
-        ema50 = pd.Series(closes).ewm(span=50, adjust=False).mean().to_numpy()
-        ret1 = np.diff(closes, prepend=closes[:1]) / np.maximum(closes, 1e-9)
-        ret5 = (closes - np.roll(closes, 5)) / np.maximum(closes, 1e-9)
-        if len(ret5) > 5:
-            ret5[:5] = 0.0
-        else:
-            ret5[:] = 0.0
-        high = ohlcv[:, 1]; low = ohlcv[:, 2]
-        prev_close = np.roll(closes, 1)
-        prev_close[0] = closes[0]
-        tr = np.maximum.reduce([high - low,
-                                np.abs(high - prev_close),
-                                np.abs(low - prev_close)])
+        o = raw["open"].to_numpy(dtype=np.float64)
+        h = raw["high"].to_numpy(dtype=np.float64)
+        lo = raw["low"].to_numpy(dtype=np.float64)
+        c = raw["close"].to_numpy(dtype=np.float64)
+        v = raw["volume"].to_numpy(dtype=np.float64)
+
+        # reference close for OHLC log-ratios
+        ref = c[-1] if c[-1] > 0 else 1.0
+        log_o = np.log(np.maximum(o, 1e-9) / ref)
+        log_h = np.log(np.maximum(h, 1e-9) / ref)
+        log_l = np.log(np.maximum(lo, 1e-9) / ref)
+        log_c = np.log(np.maximum(c, 1e-9) / ref)
+
+        # volume: log1p(vol/median)
+        med_v = np.median(v) if np.median(v) > 0 else 1.0
+        log_v = np.log1p(v / med_v) - np.log1p(1.0)  # centered around 0 at median
+
+        # indicators
+        ema21 = pd.Series(c).ewm(span=21, adjust=False).mean().to_numpy()
+        ema50 = pd.Series(c).ewm(span=50, adjust=False).mean().to_numpy()
+        ema21_rel = np.log(np.maximum(ema21, 1e-9) / np.maximum(c, 1e-9))
+        ema50_rel = np.log(np.maximum(ema50, 1e-9) / np.maximum(c, 1e-9))
+
+        prev_close = np.roll(c, 1); prev_close[0] = c[0]
+        tr = np.maximum.reduce([h - lo, np.abs(h - prev_close), np.abs(lo - prev_close)])
         atr14 = pd.Series(tr).rolling(14, min_periods=1).mean().to_numpy()
-        delta = np.diff(closes, prepend=closes[:1])
+        atr_rel = atr14 / np.maximum(c, 1e-9)
+
+        delta = np.diff(c, prepend=c[:1])
         up = np.where(delta > 0, delta, 0.0)
         dn = np.where(delta < 0, -delta, 0.0)
         up_avg = pd.Series(up).rolling(14, min_periods=1).mean()
         dn_avg = pd.Series(dn).rolling(14, min_periods=1).mean().replace(0, 1e-9)
         rs = (up_avg / dn_avg).to_numpy()
-        rsi14 = 100 - 100 / (1 + rs)
-        vol = ohlcv[:, 4]
-        vol_std = vol.std()
-        vol_z = (vol - vol.mean()) / (vol_std if vol_std > 0 else 1e-9)
-        dist_ma_atr = (closes - ema21) / np.maximum(atr14, 1e-9)
+        rsi14 = (100 - 100 / (1 + rs)) / 100.0  # in [0, 1]
+
+        ret1 = np.diff(c, prepend=c[:1]) / np.maximum(c, 1e-9)
+        if len(c) > 5:
+            ret5 = (c - np.roll(c, 5)) / np.maximum(c, 1e-9)
+            ret5[:5] = 0.0
+        else:
+            ret5 = np.zeros_like(c)
+
+        vol_std = v.std()
+        vol_z = (v - v.mean()) / (vol_std if vol_std > 0 else 1.0)
+        vol_z = np.clip(vol_z, -5, 5)
+
+        dist_ma_atr = (c - ema21) / np.maximum(atr14, 1e-9)
+        dist_ma_atr = np.clip(dist_ma_atr, -10, 10)
 
         feats = np.column_stack([
-            ohlcv,
-            ema21, ema50, atr14, rsi14, vol_z, dist_ma_atr, ret1, ret5,
+            log_o, log_h, log_l, log_c, log_v,            # 5 OHLCV
+            ema21_rel, ema50_rel, atr_rel, rsi14,         # 4 indicators
+            np.clip(vol_z, -5, 5),
+            np.clip(dist_ma_atr, -10, 10),
+            np.clip(ret1, -0.5, 0.5),
+            np.clip(ret5, -0.5, 0.5),                     # 4 more = 8 total
         ]).astype(np.float32)
+        # Sanity: replace any residual NaN/inf with 0
+        feats = np.nan_to_num(feats, nan=0.0, posinf=0.0, neginf=0.0)
 
     pad = length - feats.shape[0]
     if pad > 0:
