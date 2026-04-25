@@ -104,6 +104,29 @@ class OrderConfig:
     reverse_rr_target: float | None = None
     reverse_leverage: float | None = None
 
+    # ── MA-ribbon auto-execution opt-in (added 2026-04-25 per spec
+    # docs/superpowers/specs/2026-04-25-ma-ribbon-auto-execution-design.md). ──
+    # When sl_logic == "ribbon_ema21_trailing", the watcher computes SL from
+    # current EMA21 of ribbon_meta["tf"] instead of from the manual line.
+    # When "line_buffer" (default), behaviour is unchanged.
+    sl_logic: Literal["line_buffer", "ribbon_ema21_trailing"] = "line_buffer"
+    ribbon_meta: dict | None = None
+    # Risk / qty targets used by the MA-ribbon adapter (Task 2). None means
+    # the existing risk_pct / equity_pct / notional_usd / leverage path is used.
+    risk_usd_target: float | None = None
+    qty_notional_target: float | None = None
+
+    def __post_init__(self) -> None:
+        # Runtime validation for sl_logic. Python's typing.Literal does not
+        # enforce values at runtime, so we have to check explicitly. This
+        # protects callers (e.g. JSON-loaded persisted configs) from silently
+        # routing through an unknown SL path.
+        if self.sl_logic not in ("line_buffer", "ribbon_ema21_trailing"):
+            raise ValueError(
+                "sl_logic must be 'line_buffer' or 'ribbon_ema21_trailing', "
+                f"got {self.sl_logic!r}"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class ConditionalEvent:
