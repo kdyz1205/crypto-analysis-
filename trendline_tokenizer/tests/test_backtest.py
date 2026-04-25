@@ -82,19 +82,20 @@ def test_replay_no_lookahead(tmp_path: Path):
         last_seen = step.bar_index
 
 
-def _fake_step(bar_index, close, signal_action="WAIT", confidence=0.0,
-               buffer_pct=0.01, signal=True):
+def _fake_step(bar_index, close, signal_action="WAIT", trade_type="wait",
+               confidence=0.0, buffer_pct=0.01, signal=True):
     sig = None
     if signal:
         sig = SignalRecord(
             symbol="X", timeframe="5m", timestamp=bar_index,
             artifact_name="x", tokenizer_version="rule.v1",
-            action=signal_action, confidence=confidence,
-            suggested_buffer_pct=buffer_pct,
-            bounce_prob=confidence if signal_action == "BOUNCE" else 0.0,
-            break_prob=confidence if signal_action == "BREAK" else 0.0,
+            action=signal_action, trade_type=trade_type,
+            confidence=confidence, suggested_buffer_pct=buffer_pct,
+            bounce_prob=confidence if "bounce" in trade_type else 0.0,
+            break_prob=confidence if "break" in trade_type or "down" in trade_type else 0.0,
             continuation_prob=0.5,
-            next_coarse_id=0, next_fine_id=0, reason="",
+            next_coarse_id=0, next_fine_id=0,
+            predicted_role="support", reason="",
         )
     return ReplayStep(bar_index=bar_index, open_time=bar_index,
                       prediction=None, signal=sig, close=close)
@@ -102,9 +103,9 @@ def _fake_step(bar_index, close, signal_action="WAIT", confidence=0.0,
 
 def test_simulator_long_stop_hit():
     steps = [
-        _fake_step(0, 100.0, "BOUNCE", confidence=0.8, buffer_pct=0.02),
-        _fake_step(1, 99.5, "WAIT"),       # not stopped (< 2%)
-        _fake_step(2, 97.0, "WAIT"),       # below stop=98 -> stop
+        _fake_step(0, 100.0, "LONG", "bounce_long", confidence=0.8, buffer_pct=0.02),
+        _fake_step(1, 99.5, "WAIT"),
+        _fake_step(2, 97.0, "WAIT"),       # below 98 -> stop
         _fake_step(3, 105.0, "WAIT"),
     ]
     trades = simulate(steps, hold_bars=10, min_confidence=0.5)
@@ -116,7 +117,8 @@ def test_simulator_long_stop_hit():
 
 
 def test_simulator_short_expiry():
-    steps = [_fake_step(0, 100.0, "BREAK", confidence=0.8, buffer_pct=0.02)]
+    steps = [_fake_step(0, 100.0, "SHORT", "breakdown_short",
+                        confidence=0.8, buffer_pct=0.02)]
     for i in range(1, 30):
         steps.append(_fake_step(i, 100.0 - i * 0.05, "WAIT"))
     trades = simulate(steps, hold_bars=5, min_confidence=0.5)
@@ -124,22 +126,31 @@ def test_simulator_short_expiry():
     t = trades[0]
     assert t.direction == "short"
     assert t.reason == "expiry"
-    assert t.return_pct > 0    # price fell, short gains
+    assert t.return_pct > 0
 
 
 def test_simulator_skips_low_confidence():
-    steps = [_fake_step(0, 100.0, "BOUNCE", confidence=0.3)]
+    steps = [_fake_step(0, 100.0, "LONG", "bounce_long", confidence=0.3)]
     for i in range(1, 10):
         steps.append(_fake_step(i, 100.0 + i, "WAIT"))
     trades = simulate(steps, hold_bars=5, min_confidence=0.55)
     assert trades == []
 
 
+def test_simulator_skips_wait_action():
+    """Even a high-confidence WAIT must not open a trade."""
+    steps = [_fake_step(0, 100.0, "WAIT", "wait", confidence=0.9)]
+    for i in range(1, 10):
+        steps.append(_fake_step(i, 100.0 + i, "WAIT"))
+    trades = simulate(steps, hold_bars=5, min_confidence=0.5)
+    assert trades == []
+
+
 def test_metrics_basic():
     trades = [
-        Trade(0, 5, "long", 100, 102, 0.02, "expiry", "BOUNCE", 0.6),
-        Trade(6, 10, "long", 102, 100, -0.02, "stop", "BOUNCE", 0.6),
-        Trade(11, 15, "short", 100, 99, 0.01, "expiry", "BREAK", 0.7),
+        Trade(0, 5, "long", 100, 102, 0.02, "expiry", "LONG", 0.6),
+        Trade(6, 10, "long", 102, 100, -0.02, "stop", "LONG", 0.6),
+        Trade(11, 15, "short", 100, 99, 0.01, "expiry", "SHORT", 0.7),
     ]
     m = compute_metrics(trades)
     assert m.n_trades == 3

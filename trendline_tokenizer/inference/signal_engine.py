@@ -1,28 +1,58 @@
 """Signal engine: PredictionRecord -> SignalRecord.
 
-Turns model probabilities into a discrete trading-relevant decision plus
-a confidence score and a human-readable reason. The engine NEVER places
-orders - it just emits a SignalRecord that downstream paper / live
-dispatchers consume.
+Combines (predicted line role) with (bounce vs break) probabilities to
+emit a LONG / SHORT / WAIT decision per the canonical 4-cell trade-type
+matrix from TA_BASICS.md:
 
-Decision rule (intentionally simple - the model has the nuance):
-    bounce_prob >= bounce_threshold and bounce - break >= edge_min:
-        action = "BOUNCE"
-    break_prob  >= break_threshold and break - bounce >= edge_min:
-        action = "BREAK"
-    else:
-        action = "WAIT"
+    Line role @ now | bounce | break
+    ---------------+---------+---------
+    support        | LONG    | SHORT       (bounce-long  / breakdown-short)
+    resistance     | SHORT   | LONG        (bounce-short / breakout-long)
 
-confidence = max(bounce, break) when action != WAIT, else 1 - max.
+Channels collapse to support/resistance:
+    channel_upper -> resistance,  channel_lower -> support
+
+Roles we cannot assign a directional thesis to (wedge_side, triangle_side,
+unknown) yield WAIT regardless of probabilities. The model is also
+suppressed when the role is ambiguous.
 """
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Literal
 
+from ..tokenizer.rule import _decompose
+from ..tokenizer.vocab import (
+    LINE_ROLES, DIRECTIONS, TIMEFRAMES,
+    DURATION_LABELS, SLOPE_COARSE_LABELS,
+    coarse_cardinalities,
+)
 from .inference_service import PredictionRecord
 
 
-SignalAction = Literal["BOUNCE", "BREAK", "WAIT"]
+SignalAction = Literal["LONG", "SHORT", "WAIT"]
+TradeType = Literal[
+    "bounce_long", "breakdown_short",
+    "breakout_long", "bounce_short",
+    "wait",
+]
+
+
+def decode_role_from_coarse(coarse_id: int) -> str:
+    """Decompose a rule-coarse token id back to its line_role string."""
+    indices = _decompose(coarse_id, coarse_cardinalities())
+    role_idx = indices[0]
+    if 0 <= role_idx < len(LINE_ROLES):
+        return LINE_ROLES[role_idx]
+    return "unknown"
+
+
+def effective_role(line_role: str) -> str:
+    """Collapse channel labels to plain support/resistance."""
+    if line_role == "channel_upper":
+        return "resistance"
+    if line_role == "channel_lower":
+        return "support"
+    return line_role
 
 
 @dataclass
@@ -33,6 +63,7 @@ class SignalRecord:
     artifact_name: str
     tokenizer_version: str
     action: SignalAction
+    trade_type: TradeType
     confidence: float
     suggested_buffer_pct: float
     bounce_prob: float
@@ -40,6 +71,7 @@ class SignalRecord:
     continuation_prob: float
     next_coarse_id: int
     next_fine_id: int
+    predicted_role: str
     reason: str
     extras: dict = field(default_factory=dict)
 
@@ -51,9 +83,18 @@ class SignalRecord:
 class SignalEngineConfig:
     bounce_threshold: float = 0.55
     break_threshold: float = 0.55
-    edge_min: float = 0.10            # min |bounce - break| to be decisive
-    min_buffer_pct: float = 0.001     # 0.1% floor
-    max_buffer_pct: float = 0.05      # 5% ceiling
+    edge_min: float = 0.10
+    min_buffer_pct: float = 0.001
+    max_buffer_pct: float = 0.05
+
+
+# 4-cell decision table: (effective_role, behaviour) -> (SignalAction, TradeType)
+_DECISION_TABLE: dict[tuple[str, str], tuple[SignalAction, TradeType]] = {
+    ("support",    "bounce"): ("LONG",  "bounce_long"),
+    ("support",    "break"):  ("SHORT", "breakdown_short"),
+    ("resistance", "bounce"): ("SHORT", "bounce_short"),
+    ("resistance", "break"):  ("LONG",  "breakout_long"),
+}
 
 
 class SignalEngine:
@@ -62,26 +103,40 @@ class SignalEngine:
 
     def evaluate(self, pred: PredictionRecord) -> SignalRecord:
         cfg = self.cfg
+        role_raw = decode_role_from_coarse(pred.next_coarse_id)
+        role = effective_role(role_raw)
         bo = pred.bounce_prob
         br = pred.break_prob
-        co = pred.continuation_prob
         edge = bo - br
-        action: SignalAction
+
+        # Decide the behavioural side first (bounce vs break vs neither)
         if bo >= cfg.bounce_threshold and edge >= cfg.edge_min:
-            action = "BOUNCE"
+            behaviour = "bounce"
             confidence = bo
-            reason = (f"bounce_prob={bo:.2f} >= {cfg.bounce_threshold:.2f} and "
-                      f"edge={edge:+.2f} >= {cfg.edge_min:.2f}")
+            edge_phrase = f"edge={edge:+.2f}>={cfg.edge_min:.2f}"
         elif br >= cfg.break_threshold and -edge >= cfg.edge_min:
-            action = "BREAK"
+            behaviour = "break"
             confidence = br
-            reason = (f"break_prob={br:.2f} >= {cfg.break_threshold:.2f} and "
-                      f"edge={-edge:+.2f} >= {cfg.edge_min:.2f}")
+            edge_phrase = f"edge={-edge:+.2f}>={cfg.edge_min:.2f}"
         else:
-            action = "WAIT"
+            behaviour = "neither"
             confidence = 1.0 - max(bo, br)
-            reason = (f"no decisive edge: bounce={bo:.2f}, break={br:.2f}, "
-                      f"|edge|={abs(edge):.2f} < {cfg.edge_min:.2f}")
+            edge_phrase = f"|edge|={abs(edge):.2f}<{cfg.edge_min:.2f}"
+
+        # Map (role, behaviour) to action + trade_type
+        action: SignalAction
+        trade_type: TradeType
+        if behaviour == "neither":
+            action, trade_type = "WAIT", "wait"
+            reason = f"no decisive edge: bounce={bo:.2f}, break={br:.2f}, {edge_phrase}"
+        elif role not in ("support", "resistance"):
+            action, trade_type = "WAIT", "wait"
+            reason = (f"predicted role={role_raw!r} has no directional thesis; "
+                      f"behaviour={behaviour}, confidence={confidence:.2f}")
+        else:
+            action, trade_type = _DECISION_TABLE[(role, behaviour)]
+            reason = (f"role={role}/{behaviour}: confidence={confidence:.2f}, "
+                      f"{edge_phrase} -> {trade_type}")
 
         suggested_buf = max(cfg.min_buffer_pct,
                             min(cfg.max_buffer_pct, pred.suggested_buffer_pct))
@@ -91,12 +146,16 @@ class SignalEngine:
             timestamp=pred.timestamp,
             artifact_name=pred.artifact_name,
             tokenizer_version=pred.tokenizer_version,
-            action=action, confidence=float(confidence),
+            action=action, trade_type=trade_type,
+            confidence=float(confidence),
             suggested_buffer_pct=float(suggested_buf),
-            bounce_prob=bo, break_prob=br, continuation_prob=co,
+            bounce_prob=bo, break_prob=br, continuation_prob=pred.continuation_prob,
             next_coarse_id=pred.next_coarse_id,
             next_fine_id=pred.next_fine_id,
+            predicted_role=role_raw,
             reason=reason,
             extras={"n_input_records": pred.n_input_records,
-                    "n_bars_in_cache": pred.n_bars_in_cache},
+                    "n_bars_in_cache": pred.n_bars_in_cache,
+                    "effective_role": role,
+                    "behaviour": behaviour},
         )

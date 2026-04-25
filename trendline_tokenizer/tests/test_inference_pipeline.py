@@ -122,9 +122,11 @@ def test_signal_engine_and_paper_dispatcher(tmp_path: Path):
 
     engine = SignalEngine()
     sig = engine.evaluate(pred)
-    assert sig.action in ("BOUNCE", "BREAK", "WAIT")
+    assert sig.action in ("LONG", "SHORT", "WAIT")
+    assert sig.trade_type in ("bounce_long", "breakdown_short",
+                              "breakout_long", "bounce_short", "wait")
     assert 0.0 <= sig.confidence <= 1.0
-    assert "edge" in sig.reason
+    assert sig.predicted_role  # always populated
 
     dispatcher = PaperDispatcher(tmp_path / "signals.jsonl")
     dispatcher.dispatch(sig)

@@ -56,16 +56,16 @@ def simulate(
     *,
     hold_bars: int = 20,
     min_confidence: float = 0.55,
-    open_long_on: tuple[str, ...] = ("BOUNCE",),
-    open_short_on: tuple[str, ...] = ("BREAK",),
 ) -> list[Trade]:
-    """One open position max. Position closes on stop hit or expiry."""
+    """One open position max. Position closes on stop hit or expiry.
+
+    The signal engine emits LONG/SHORT/WAIT directly (role-aware), so
+    this simulator only needs to map LONG->long, SHORT->short, ignore WAIT.
+    """
     trades: list[Trade] = []
     open_pos: Position | None = None
     for step in steps:
-        # update open position
         if open_pos is not None:
-            sig = open_pos.signal
             px = step.close
             if open_pos.direction == "long":
                 stop_px = open_pos.entry_price * (1 - open_pos.stop_pct)
@@ -81,24 +81,21 @@ def simulate(
                 trades.append(_close_position(open_pos, step, "expiry"))
                 open_pos = None
 
-        # maybe open a new position
         if open_pos is None and step.signal is not None:
             sig = step.signal
             if sig.confidence >= min_confidence:
-                if sig.action in open_long_on:
+                if sig.action == "LONG":
                     open_pos = Position(
                         open_bar=step.bar_index, entry_price=step.close,
                         direction="long",
                         stop_pct=max(0.001, sig.suggested_buffer_pct),
-                        expiry_bar=step.bar_index + hold_bars,
-                        signal=sig,
+                        expiry_bar=step.bar_index + hold_bars, signal=sig,
                     )
-                elif sig.action in open_short_on:
+                elif sig.action == "SHORT":
                     open_pos = Position(
                         open_bar=step.bar_index, entry_price=step.close,
                         direction="short",
                         stop_pct=max(0.001, sig.suggested_buffer_pct),
-                        expiry_bar=step.bar_index + hold_bars,
-                        signal=sig,
+                        expiry_bar=step.bar_index + hold_bars, signal=sig,
                     )
     return trades
