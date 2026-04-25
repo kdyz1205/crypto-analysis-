@@ -4,14 +4,32 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trading OS</title>
+  <!-- 2026-04-23: preconnect hints. Browser opens TCP+TLS to these hosts
+       in parallel with HTML parsing, so by the time the JS runs they're
+       already warm. Shaves 100-300ms off first meaningful paint. -->
+  <link rel="preconnect" href="https://api.bitget.com" crossorigin />
+  <link rel="preconnect" href="https://ws.bitget.com" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+
+  <!-- 2026-04-23: preload critical chunks. HTML parser kicks off these
+       fetches in parallel with module resolution — JS, CSS, and charts
+       lib all transit the network at the same time instead of waiting
+       for each parse step to discover the next dep. -->
+  <link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" />
+  <link rel="modulepreload" href="/js/main.js" />
+  <link rel="modulepreload" href="/js/workbench/chart.js" />
+  <link rel="modulepreload" href="/js/services/market.js" />
+  <link rel="modulepreload" href="/js/services/ohlcv_cache.js" />
+  <link rel="modulepreload" href="/js/workbench/ws_ticker.js" />
+
   <!-- v param is bumped on every meaningful frontend change so browsers
        auto-fetch fresh assets without requiring Ctrl+Shift+R. Format:
        YYYYMMDDhh. Bump whenever JS/CSS semantics change in a way the
        user needs to see immediately (new preview rows, bug fixes, etc.) -->
-  <link rel="stylesheet" href="/style.css?v=2026042303" />
-  <link rel="stylesheet" href="/v2.css?v=2026042303" />
+  <link rel="stylesheet" href="/style.css?v=2026042406" />
+  <link rel="stylesheet" href="/v2.css?v=2026042406" />
   <!-- 2026-04-20: theme overrides (higher-contrast palette + softer radii) -->
-  <link rel="stylesheet" href="/v2-theme-enhanced.css?v=2026042303" />
+  <link rel="stylesheet" href="/v2-theme-enhanced.css?v=2026042406" />
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="v2-body">
@@ -100,6 +118,7 @@
   <!-- Legacy execution panel (kept for backward compat) -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
-  <script type="module" src="/js/main.js?v=2026042303"></script>
+  <script type="module" src="/js/main.js?v=2026042514"></script>
+  <script src="/js/workbench/trendline_ai.js?v=2026042402"></script>
 </body>
 </html>
