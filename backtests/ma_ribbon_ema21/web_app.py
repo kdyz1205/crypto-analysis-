@@ -126,12 +126,26 @@ def root() -> HTMLResponse:
 
 
 @app.get("/api/symbols")
-async def api_symbols(min_volume: float = 10_000_000.0) -> dict:
-    """Live: full Bitget USDT-perp universe filtered by 24h quote volume."""
+async def api_symbols(
+    min_volume: float = 1_000_000.0,
+    product_types: str = "USDT-FUTURES,USDC-FUTURES,COIN-FUTURES",
+) -> dict:
+    """Live: full Bitget perp universe across the requested product types,
+    filtered by 24h quote volume. product_types is a comma-separated list."""
+    pt_tuple = tuple(s.strip() for s in product_types.split(",") if s.strip())
     cfg = AsyncLoaderConfig()
     async with httpx.AsyncClient() as client:
-        syms = await fetch_all_usdt_perp_symbols(client, cfg, min_quote_volume_24h=min_volume)
-    return {"symbols": syms, "count": len(syms), "min_volume_usd": min_volume}
+        syms = await fetch_all_usdt_perp_symbols(
+            client, cfg,
+            min_quote_volume_24h=min_volume,
+            product_types=pt_tuple,
+        )
+    return {
+        "symbols": syms,
+        "count": len(syms),
+        "min_volume_usd": min_volume,
+        "product_types": list(pt_tuple),
+    }
 
 
 @app.get("/api/universe")

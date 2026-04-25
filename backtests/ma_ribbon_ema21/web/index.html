@@ -102,12 +102,17 @@
   <aside>
 
     <div class="group">
-      <h2>1. 币种 (Bitget USDT-perp)
+      <h2>1. 币种 (Bitget 全网 perp)
         <button class="secondary" id="select-all">全选</button>
       </h2>
+      <div class="row" style="flex-wrap:wrap">
+        <label><input type="checkbox" name="pt" value="USDT-FUTURES" checked /> USDT</label>
+        <label><input type="checkbox" name="pt" value="USDC-FUTURES" checked /> USDC</label>
+        <label><input type="checkbox" name="pt" value="COIN-FUTURES" checked /> COIN</label>
+      </div>
       <div class="row">
         <label>min 24h vol $</label>
-        <input type="number" id="min-vol" value="10" min="0" max="1000" step="1" />
+        <input type="number" id="min-vol" value="1" min="0" max="1000" step="1" />
         <button class="secondary" id="reload-syms">M$ 刷新</button>
       </div>
       <div class="symbol-list" id="symbol-list"></div>
@@ -159,11 +164,24 @@
       <h2>5. 数据深度</h2>
       <div class="row">
         <label>pages</label>
-        <input type="number" id="pages" value="5" min="1" max="50" />
+        <input type="number" id="pages" value="30" min="1" max="200" />
         <label style="margin-left:10px">concurrency</label>
-        <input type="number" id="concurrency" value="10" min="1" max="20" />
+        <input type="number" id="concurrency" value="12" min="1" max="20" />
       </div>
-      <div class="help">5 pages = 1000 candles per (币,TF). 1h ≈ 41 天,4h ≈ 166 天,5m ≈ 3.5 天.</div>
+      <div class="help">每 page = 200 bars. 30 = 6000 bars. 100 = 20000 bars (≈Bitget 上限). 1h: 30 page ≈ 250 天; 4h: 30 page ≈ 1000 天.</div>
+    </div>
+
+    <div class="group">
+      <h2>6. 手续费 / 滑点</h2>
+      <div class="row">
+        <label>taker fee %</label>
+        <input type="number" id="fee-pct" value="0.05" min="0" max="1" step="0.01" />
+      </div>
+      <div class="row">
+        <label>slippage bp</label>
+        <input type="number" id="slip-bp" value="1" min="0" max="100" step="0.5" />
+      </div>
+      <div class="help">来回成本 = 2 × (fee% + slip bp/100). 默认 0.05% × 2 + 0.01% × 2 = 0.12%. 资金费率(funding)未算 — Phase 2 实盘逻辑加.</div>
     </div>
 
     <div class="group">
@@ -211,10 +229,11 @@ async function loadSymbols() {
   setStatus("fetching live universe from Bitget…", "run");
   try {
     const min_vol = parseFloat($("min-vol").value) * 1_000_000;
-    const r = await fetch(`/api/symbols?min_volume=${min_vol}`).then(r => r.json());
+    const pts = Array.from(document.querySelectorAll('input[name="pt"]:checked')).map(e => e.value).join(",");
+    const r = await fetch(`/api/symbols?min_volume=${min_vol}&product_types=${encodeURIComponent(pts)}`).then(r => r.json());
     UNIVERSE = r.symbols;
     renderSymbolList();
-    $("symbol-count").textContent = `${UNIVERSE.length} symbols (24h vol ≥ $${(min_vol/1e6).toFixed(0)}M)`;
+    $("symbol-count").textContent = `${UNIVERSE.length} symbols [${(r.product_types || []).join(", ")}] (24h vol ≥ $${(min_vol/1e6).toFixed(0)}M)`;
     setStatus(`universe ready: ${UNIVERSE.length} symbols`);
   } catch (e) {
     setStatus(`universe load failed: ${e.message}`, "err");
@@ -289,6 +308,8 @@ async function runScan() {
       gate_min_symbol_pct: parseFloat($("min-symbol-pct").value) / 100,
       pages_per_symbol: parseInt($("pages").value, 10),
       concurrency: parseInt($("concurrency").value, 10),
+      fee_per_side: parseFloat($("fee-pct").value) / 100,
+      slippage_per_fill: parseFloat($("slip-bp").value) / 10000,
     };
     const r = await fetch("/api/scan", {
       method: "POST", headers: {"Content-Type": "application/json"},
@@ -362,6 +383,7 @@ function renderResults(r) {
 
 $("run-btn").addEventListener("click", runScan);
 $("reload-syms").addEventListener("click", loadSymbols);
+document.querySelectorAll("input[name='pt']").forEach(cb => cb.addEventListener("change", loadSymbols));
 $("select-all").addEventListener("click", () => {
   const all = document.querySelectorAll("input[name='symbol']");
   const allOn = Array.from(all).every(c => c.checked);

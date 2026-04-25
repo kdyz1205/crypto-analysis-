@@ -52,38 +52,58 @@ class AsyncLoaderConfig:
 # ───────────────────────── universe (all USDT perps) ─────────────────────────
 
 
+_PRODUCT_TYPES = ("USDT-FUTURES", "USDC-FUTURES", "COIN-FUTURES")
+_UNIVERSE_CACHE_BY_KEY: dict[tuple, tuple[list[str], float]] = {}
+
+
 async def fetch_all_usdt_perp_symbols(
     client: httpx.AsyncClient,
     cfg: AsyncLoaderConfig,
     min_quote_volume_24h: float = 1_000_000.0,
+    product_types: tuple[str, ...] = ("USDT-FUTURES",),
 ) -> list[str]:
-    """Returns sorted list of USDT-perp symbol strings filtered by 24h quote volume.
-    Uses Bitget tickers endpoint. Cached for 5 minutes in process memory."""
-    global _UNIVERSE_CACHE
+    """Returns sorted list of perp symbol strings across the requested product types,
+    filtered by 24h quote volume. Cached 5 min in process memory keyed by
+    (product_types, min_volume). Bitget API only allows one productType per call,
+    so we fan out and merge.
+    """
+    key = (product_types, round(min_quote_volume_24h, 2))
     now = time.time()
-    if _UNIVERSE_CACHE and (now - _UNIVERSE_CACHE[1] < cfg.cache_ttl_seconds):
-        return _UNIVERSE_CACHE[0]
+    cached = _UNIVERSE_CACHE_BY_KEY.get(key)
+    if cached and (now - cached[1] < cfg.cache_ttl_seconds):
+        return cached[0]
 
-    r = await client.get(
-        _BITGET_TICKERS_URL,
-        params={"productType": "USDT-FUTURES"},
-        timeout=cfg.request_timeout_seconds,
-    )
-    r.raise_for_status()
-    data = r.json().get("data", []) or []
     out: list[str] = []
-    for row in data:
-        sym = row.get("symbol")
+    for product_type in product_types:
         try:
-            qv = float(row.get("usdtVolume") or row.get("quoteVolume") or 0)
-        except (TypeError, ValueError):
-            qv = 0.0
-        if sym and sym.endswith("USDT") and qv >= min_quote_volume_24h:
+            r = await client.get(
+                _BITGET_TICKERS_URL,
+                params={"productType": product_type},
+                timeout=cfg.request_timeout_seconds,
+            )
+            r.raise_for_status()
+            data = r.json().get("data", []) or []
+        except (httpx.HTTPError, ValueError) as exc:
+            _LOG.warning("tickers fetch failed for %s: %s", product_type, exc)
+            continue
+
+        for row in data:
+            sym = row.get("symbol")
+            try:
+                qv = float(row.get("usdtVolume") or row.get("quoteVolume") or 0)
+            except (TypeError, ValueError):
+                qv = 0.0
+            if not sym:
+                continue
+            if qv < min_quote_volume_24h:
+                continue
             out.append(sym)
-    out.sort()
-    _UNIVERSE_CACHE = (out, now)
-    _LOG.info("bitget USDT-perp universe: %d symbols (>= $%.0f 24h vol)",
-              len(out), min_quote_volume_24h)
+
+    # Dedup (some symbols may exist on multiple product types) and sort.
+    out = sorted(set(out))
+    _UNIVERSE_CACHE_BY_KEY[key] = (out, now)
+    _LOG.info("bitget perp universe (%s): %d symbols (>= $%.0f 24h vol)",
+              "+".join(product_types), len(out), min_quote_volume_24h)
     return out
 
 
