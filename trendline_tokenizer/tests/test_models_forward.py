@@ -42,3 +42,31 @@ def test_fusion_config_rejects_zero_streams():
     with pytest.raises(ValueError):
         FusionConfig(use_rule_tokens=False, use_learned_tokens=False,
                      use_raw_features=False)
+
+
+# ---------------------------------------------------------------------
+# Task 2 - PriceSequenceEncoder
+# ---------------------------------------------------------------------
+
+from trendline_tokenizer.models.price_seq_encoder import PriceSequenceEncoder
+
+
+def test_price_seq_encoder_forward_shape():
+    cfg = FusionConfig(d_model=64, n_layers_price=2, n_heads_price=4)
+    enc = PriceSequenceEncoder(cfg)
+    B, T, F = 2, cfg.price_seq_len, cfg.price_feat_dim
+    x = torch.randn(B, T, F)
+    pad_mask = torch.zeros(B, T, dtype=torch.bool)
+    h = enc(x, pad_mask)
+    assert h.shape == (B, T, cfg.d_model)
+
+
+def test_price_seq_encoder_handles_padding():
+    cfg = FusionConfig(d_model=64, n_layers_price=2, n_heads_price=4)
+    enc = PriceSequenceEncoder(cfg)
+    B, T, F = 2, cfg.price_seq_len, cfg.price_feat_dim
+    x = torch.randn(B, T, F)
+    pad_mask = torch.zeros(B, T, dtype=torch.bool)
+    pad_mask[0, -10:] = True
+    h = enc(x, pad_mask)
+    assert torch.isfinite(h).all()
