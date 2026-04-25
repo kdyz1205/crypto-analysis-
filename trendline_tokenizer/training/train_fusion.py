@@ -163,16 +163,37 @@ def main():
         model.train()
         t0 = time.time()
         n, agg = 0, 0.0
+        n_skipped_nan = 0
         for batch in train_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             targets = {k: batch.pop(k) for k in target_keys}
+            # Defensively scrub NaN/inf from float inputs/targets
+            for k, v in list(batch.items()):
+                if v.dtype.is_floating_point:
+                    batch[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+            for k, v in list(targets.items()):
+                if v.dtype.is_floating_point:
+                    targets[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
             opt.zero_grad()
             loss, _ = model.compute_loss(batch, targets)
+            if not torch.isfinite(loss):
+                n_skipped_nan += 1
+                continue
             loss.backward()
+            # Skip step if any gradient is NaN — model would diverge otherwise
+            grad_finite = all(
+                p.grad is None or torch.isfinite(p.grad).all().item()
+                for p in model.parameters()
+            )
+            if not grad_finite:
+                n_skipped_nan += 1
+                opt.zero_grad()
+                continue
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             n += 1; agg += loss.item()
-        print(f"[train] epoch {epoch}: train_loss={agg/max(n,1):.4f} ({time.time()-t0:.1f}s)")
+        print(f"[train] epoch {epoch}: train_loss={agg/max(n,1):.4f} "
+              f"({time.time()-t0:.1f}s, n_ok={n}, n_skipped_nan={n_skipped_nan})")
 
     model.eval()
     n, agg = 0, 0.0
