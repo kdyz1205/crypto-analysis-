@@ -435,7 +435,28 @@ async def _spawn_layer(state: AutoState, sig: Phase1Signal, layer: str, now_utc:
     """Spawn one layer: build ConditionalOrder via adapter, persist via the
     canonical ConditionalOrderStore, record in ledger.open_positions for
     risk-cap accounting.
+
+    Supervised first-cycle gate (spec §10): when state.supervised_mode is
+    True, the spawn is QUEUED to state.pending_releases instead of being
+    persisted. The user must call /api/ma_ribbon_auto/release_layer to push
+    it through. After the first release, supervised_mode flips to False and
+    subsequent calls run the full path directly.
     """
+    if state.supervised_mode:
+        state.pending_releases.append({
+            "signal_id": sig.signal_id,
+            "layer": layer,
+            "tf": sig.tf,
+            "symbol": sig.symbol,
+            "direction": sig.direction,
+            "ema21_at_signal": sig.ema21_at_signal,
+            "next_bar_open_estimate": sig.next_bar_open_estimate,
+            "queued_at_utc": now_utc,
+        })
+        _LOG.info("supervised: queued %s %s %s %s for manual release",
+                  sig.symbol, sig.tf, sig.direction, layer)
+        return
+
     from server.strategy.ma_ribbon_auto_adapter import signal_to_conditional
     cond = signal_to_conditional(sig, layer=layer, state=state, now_utc=now_utc)
     cond.conditional_id = _mint_conditional_id(sig.signal_id, layer)

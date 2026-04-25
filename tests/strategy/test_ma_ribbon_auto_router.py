@@ -117,3 +117,18 @@ def test_emergency_stop_sets_halt_and_lock(client):
     body = r.json()
     assert body["halted"] is True
     assert body["locked_until_utc"] is not None
+
+
+def test_supervised_mode_default_true(client):
+    """Spec §10: new users land in supervised mode; first release requires
+    a manual click via /release_layer."""
+    body = client.get("/api/ma_ribbon_auto/status").json()
+    assert body["supervised_mode"] is True
+    assert body["pending_releases_count"] == 0
+
+
+def test_release_layer_404_when_not_pending(client):
+    r = client.post("/api/ma_ribbon_auto/release_layer", json={
+        "signal_id": "nonexistent", "layer": "LV1",
+    })
+    assert r.status_code == 404

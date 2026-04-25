@@ -81,6 +81,14 @@ class AutoState:
     pending_signals: list[dict[str, Any]] = field(default_factory=list)
     errors_recent: list[dict[str, Any]] = field(default_factory=list)
 
+    # Supervised first-cycle gate (spec §10): the FIRST live release after
+    # enable requires a manual click via /api/ma_ribbon_auto/release_layer.
+    # Auto-flips to False after one successful release so subsequent layers
+    # spawn directly. New users land in supervised mode by default — this is
+    # the human-in-the-loop check before real Bitget orders go live.
+    supervised_mode: bool = True
+    pending_releases: list[dict[str, Any]] = field(default_factory=list)
+
     @staticmethod
     def default() -> "AutoState":
         return AutoState()

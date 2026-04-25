@@ -42,6 +42,8 @@ def get_status() -> dict:
         },
         "pending_signals_count": len(s.pending_signals),
         "errors_recent_count": len(s.errors_recent),
+        "supervised_mode": s.supervised_mode,
+        "pending_releases_count": len(s.pending_releases),
     }
 
 
@@ -112,5 +114,55 @@ async def emergency_stop_endpoint(payload: dict = Body(...)) -> dict:
     s = _state()
     reason = payload.get("reason", "manual")
     await emergency_stop(s, now_utc=int(time.time()), reason=reason)
+    _save(s)
+    return get_status()
+
+
+@router.post("/release_layer")
+async def release_layer(payload: dict = Body(...)) -> dict:
+    """Release a supervised-queue entry (spec §10).
+
+    The first ribbon order after enable is queued instead of being submitted
+    to Bitget directly; the user must explicitly release it. After the first
+    successful release, supervised_mode auto-flips to False so subsequent
+    layers spawn directly.
+    """
+    s = _state()
+    sig_id = payload.get("signal_id")
+    layer = payload.get("layer")
+    if not sig_id or not layer:
+        raise HTTPException(400, detail="signal_id + layer required")
+
+    matching = [
+        r for r in s.pending_releases
+        if r.get("signal_id") == sig_id and r.get("layer") == layer
+    ]
+    if not matching:
+        raise HTTPException(404, detail=f"no pending release {sig_id}/{layer}")
+    rec = matching[0]
+
+    # Disengage supervised gate BEFORE spawn so _spawn_layer takes the live
+    # path (it short-circuits to the queue when supervised_mode is True).
+    s.supervised_mode = False
+    s.pending_releases = [
+        r for r in s.pending_releases
+        if not (r.get("signal_id") == sig_id and r.get("layer") == layer)
+    ]
+
+    from server.strategy.ma_ribbon_auto_adapter import Phase1Signal
+    from server.strategy.ma_ribbon_auto_scanner import _spawn_layer
+    sig = Phase1Signal(
+        signal_id=rec["signal_id"],
+        symbol=rec["symbol"],
+        tf=rec["tf"],
+        direction=rec["direction"],
+        # signal_bar_ts is not preserved on release records; the adapter
+        # only uses it for line-geometry placeholders, not for sizing.
+        # Use the queued_at_utc as a defensible approximation.
+        signal_bar_ts=int(rec.get("queued_at_utc", time.time())),
+        next_bar_open_estimate=rec["next_bar_open_estimate"],
+        ema21_at_signal=rec["ema21_at_signal"],
+    )
+    await _spawn_layer(s, sig, layer=layer, now_utc=int(time.time()))
     _save(s)
     return get_status()
