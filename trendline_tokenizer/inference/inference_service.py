@@ -1,0 +1,136 @@
+"""End-to-end inference service.
+
+Boots from a manifest. Caller pushes closed bars into the FeatureCache;
+calls predict(symbol, tf) when a higher-tf candle closes; gets back a
+PredictionRecord with versions, confidence, and the predicted next-token
++ behaviour distributions.
+
+Strict contract:
+- The manifest's tokenizer_version must equal the RuntimeTokenizer's.
+- Predictions only fire when there are >= MIN_BARS bars in the cache.
+- The price window comes from FeatureCache (training-parity feature builder).
+- The trendline records used as input come from the runtime detector
+  on the same DataFrame (no future bars).
+"""
+from __future__ import annotations
+import json
+import time
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+import torch
+
+from ..models.config import FusionConfig
+from ..models.full_model import TrendlineFusionModel
+from ..registry.manifest import ArtifactManifest
+from .feature_cache import FeatureCache
+from .runtime_detector import detect_lines
+from .runtime_tokenizer import RuntimeTokenizer
+
+
+MIN_BARS = 64
+
+
+@dataclass
+class PredictionRecord:
+    symbol: str
+    timeframe: str
+    timestamp: int
+    artifact_name: str
+    tokenizer_version: str
+    next_coarse_id: int
+    next_fine_id: int
+    bounce_prob: float
+    break_prob: float
+    continuation_prob: float
+    suggested_buffer_pct: float
+    n_input_records: int
+    n_bars_in_cache: int
+    extras: dict = field(default_factory=dict)
+
+
+class InferenceService:
+    def __init__(
+        self,
+        manifest_path: Path | str,
+        *,
+        feature_cache: Optional[FeatureCache] = None,
+        device: str | None = None,
+    ):
+        self.manifest = ArtifactManifest.load(manifest_path)
+        cfg_dict = json.loads(Path(self.manifest.config_path).read_text(encoding="utf-8"))
+        self.cfg = FusionConfig(**cfg_dict)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = TrendlineFusionModel(self.cfg).to(self.device).eval()
+        state = torch.load(self.manifest.ckpt_path, map_location=self.device, weights_only=False)
+        self.model.load_state_dict(state["state_dict"])
+
+        self.tokenizer = RuntimeTokenizer(
+            use_rule=self.cfg.use_rule_tokens,
+            use_learned=self.cfg.use_learned_tokens,
+            use_raw=self.cfg.use_raw_features,
+            vqvae_path=self.cfg.vqvae_checkpoint_path,
+        )
+        # Hard fail if the runtime tokenizer doesn't match what produced
+        # the training data: silent mismatch = wrong predictions.
+        self.tokenizer.assert_version_matches(self.manifest.tokenizer_version)
+        self.fc = feature_cache or FeatureCache(capacity=max(512, self.cfg.price_seq_len * 2))
+
+    def push_bar(self, symbol: str, tf: str, bar: dict) -> bool:
+        return self.fc.push(symbol, tf, bar)
+
+    def predict(self, symbol: str, tf: str) -> Optional[PredictionRecord]:
+        df = self.fc.bars_df(symbol, tf)
+        if len(df) < MIN_BARS:
+            return None
+
+        # 1. Detect candidate lines on the in-cache history.
+        lines = detect_lines(df, symbol=symbol, timeframe=tf,
+                             max_lines=self.cfg.token_seq_len)
+        # Right-align lines into the token slots; older lines pad on the left.
+        lines = sorted(lines, key=lambda r: r.end_bar_index)[-self.cfg.token_seq_len:]
+
+        # 2. Tokenise.
+        tok = self.tokenizer.encode_records(lines)
+        T = self.cfg.token_seq_len
+        rule_c = np.zeros(T, dtype=np.int64); rule_c[T - len(lines):] = tok["rule_coarse"]
+        rule_f = np.zeros(T, dtype=np.int64); rule_f[T - len(lines):] = tok["rule_fine"]
+        l_c = np.zeros(T, dtype=np.int64); l_c[T - len(lines):] = tok["learned_coarse"]
+        l_f = np.zeros(T, dtype=np.int64); l_f[T - len(lines):] = tok["learned_fine"]
+        raw = np.zeros((T, self.cfg.raw_feat_dim), dtype=np.float32)
+        if len(lines) > 0:
+            raw[T - len(lines):] = tok["raw_feat"]
+        token_pad = np.ones(T, dtype=bool); token_pad[T - len(lines):] = False
+
+        # 3. Build the price window via the training-parity helper.
+        price_window, price_pad = self.fc.price_window(symbol, tf, self.cfg.price_seq_len)
+
+        # 4. Run the model.
+        batch = {
+            "price": torch.from_numpy(price_window).unsqueeze(0).to(self.device),
+            "price_pad": torch.from_numpy(price_pad).unsqueeze(0).to(self.device),
+            "rule_coarse": torch.from_numpy(rule_c).unsqueeze(0).to(self.device),
+            "rule_fine": torch.from_numpy(rule_f).unsqueeze(0).to(self.device),
+            "learned_coarse": torch.from_numpy(l_c).unsqueeze(0).to(self.device),
+            "learned_fine": torch.from_numpy(l_f).unsqueeze(0).to(self.device),
+            "raw_feat": torch.from_numpy(raw).unsqueeze(0).to(self.device),
+            "token_pad": torch.from_numpy(token_pad).unsqueeze(0).to(self.device),
+        }
+        pred = self.model.predict(batch)
+
+        return PredictionRecord(
+            symbol=symbol.upper(), timeframe=tf,
+            timestamp=int(df["open_time"].iloc[-1]) if len(df) else int(time.time() * 1000),
+            artifact_name=self.manifest.artifact_name,
+            tokenizer_version=self.manifest.tokenizer_version,
+            next_coarse_id=int(pred["next_coarse_id"].item()),
+            next_fine_id=int(pred["next_fine_id"].item()),
+            bounce_prob=float(pred["bounce_prob"].item()),
+            break_prob=float(pred["break_prob"].item()),
+            continuation_prob=float(pred["continuation_prob"].item()),
+            suggested_buffer_pct=float(pred["suggested_buffer_pct"].item()),
+            n_input_records=len(lines),
+            n_bars_in_cache=len(df),
+        )
