@@ -78,3 +78,36 @@ def test_history_append_creates_jsonl(tmp_path):
     lines = history.read_text().strip().splitlines()
     assert len(lines) == 2
     assert json.loads(lines[1])["enabled"] is True
+
+
+def test_save_and_load_preserves_nested_dataclass_types(tmp_path):
+    """Round-trip must preserve AutoStateConfig / Ledger / UniverseFilter / FetchCfg
+    as proper dataclass instances, not raw dicts."""
+    from server.strategy.ma_ribbon_auto_state import (
+        AutoStateConfig, UniverseFilter, FetchCfg, Ledger,
+    )
+    path = tmp_path / "state.json"
+    s = AutoState.default()
+    s.config.strategy_capital_usd = 12345.0
+    s.config.universe_filter.min_volume_usd = 5_000_000.0
+    s.config.fetch_cfg.pages_per_symbol = 50
+    s.ledger.realized_pnl_usd_cumulative = -500.0
+    save_state(s, path=path)
+    loaded = load_state(path=path)
+
+    # Type-level: nested objects must be dataclass instances after load
+    assert isinstance(loaded.config, AutoStateConfig), \
+        f"config is {type(loaded.config).__name__}, expected AutoStateConfig"
+    assert isinstance(loaded.config.universe_filter, UniverseFilter)
+    assert isinstance(loaded.config.fetch_cfg, FetchCfg)
+    assert isinstance(loaded.ledger, Ledger)
+
+    # Value-level: nested fields preserve their values
+    assert loaded.config.strategy_capital_usd == 12345.0
+    assert loaded.config.universe_filter.min_volume_usd == 5_000_000.0
+    assert loaded.config.fetch_cfg.pages_per_symbol == 50
+    assert loaded.ledger.realized_pnl_usd_cumulative == -500.0
+
+    # Attribute access (not subscript) must work — proves it's the dataclass not a dict
+    assert loaded.config.layer_risk_pct["LV1"] == 0.001
+    assert loaded.config.dd_halt_pct == 0.15

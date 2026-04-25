@@ -8,6 +8,7 @@ every tick.
 from __future__ import annotations
 import json
 import os
+import typing
 from dataclasses import dataclass, field, asdict, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -91,19 +92,29 @@ def _to_dict(obj: Any) -> Any:
 
 def _from_dict(cls: type, data: dict[str, Any]) -> Any:
     """Tolerant constructor: missing fields fall back to defaults; extra fields
-    raise StateCorruptError to surface schema drift."""
+    raise StateCorruptError to surface schema drift.
+
+    NOTE: with `from __future__ import annotations` active, dataclass field types
+    are stored as strings. We resolve them with typing.get_type_hints which
+    evaluates the strings against the class's module namespace.
+    """
     if not is_dataclass(cls):
         return data
     valid = {f.name: f for f in cls.__dataclass_fields__.values()}
     extra = set(data.keys()) - set(valid.keys())
     if extra:
         raise StateCorruptError(f"unrecognised fields in {cls.__name__}: {sorted(extra)}")
+    try:
+        resolved_types = typing.get_type_hints(cls)
+    except Exception:  # noqa: BLE001 — fallback to no-resolution path
+        resolved_types = {}
     kwargs: dict[str, Any] = {}
     for name, fld in valid.items():
         if name not in data:
             continue
         value = data[name]
-        ftype = fld.type
+        ftype = resolved_types.get(name, fld.type)
+        # If ftype is a dataclass, recurse; else use value as-is.
         if isinstance(ftype, type) and is_dataclass(ftype):
             kwargs[name] = _from_dict(ftype, value or {})
         else:
