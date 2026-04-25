@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>MA Ribbon EMA21 Backtest Panel</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    margin: 0; background: #0d1117; color: #c9d1d9;
+  }
+  header {
+    padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 50px); }
+  aside {
+    padding: 16px; background: #0d1117; border-right: 1px solid #30363d;
+    overflow-y: auto; max-height: calc(100vh - 50px);
+  }
+  main { padding: 16px 24px; overflow: auto; }
+  .group { margin-bottom: 18px; }
+  .group h2 {
+    font-size: 12px; text-transform: uppercase; color: #8b949e;
+    margin: 0 0 8px 0; letter-spacing: 0.04em;
+  }
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; font-size: 13px; }
+  label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  input[type="number"], input[type="text"], select {
+    background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    border-radius: 4px; padding: 4px 8px; width: 80px;
+  }
+  input[type="checkbox"] { accent-color: #2f81f7; }
+  button {
+    background: #238636; color: #fff; border: 0; border-radius: 6px;
+    padding: 8px 16px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { background: #2ea043; }
+  button.secondary { background: #30363d; }
+  button.secondary:hover { background: #444c56; }
+  button:disabled { background: #6e7681; cursor: wait; }
+  .symbol-list {
+    max-height: 240px; overflow-y: auto;
+    border: 1px solid #30363d; border-radius: 4px; padding: 6px;
+    background: #010409;
+  }
+  .symbol-list label { display: block; padding: 2px 0; }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    background: #21262d; color: #8b949e;
+  }
+  .pill.cached { background: #1f6feb; color: #fff; }
+  .pill.pass { background: #238636; color: #fff; }
+  .pill.fail { background: #da3633; color: #fff; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; text-align: left; font-weight: 500; }
+  th:first-child, td:first-child, td:nth-child(2), td:nth-child(3), td:nth-child(4) {
+    text-align: left;
+  }
+  .pos { color: #3fb950; }
+  .neg { color: #f85149; }
+  #status { color: #8b949e; font-size: 12px; padding: 4px 0; }
+  #status.err { color: #f85149; }
+  #gate-banner {
+    padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;
+    display: none; font-size: 13px;
+  }
+  #gate-banner.pass { background: #102e1a; border: 1px solid #238636; }
+  #gate-banner.fail { background: #2a0d0c; border: 1px solid #da3633; }
+  details { margin-bottom: 6px; }
+  summary { cursor: pointer; color: #8b949e; font-size: 12px; }
+  .help { font-size: 11px; color: #6e7681; margin-top: 2px; }
+  .smallnum { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MA Ribbon EMA21 Backtest Panel</h1>
+  <span id="status">loading…</span>
+</header>
+
+<div class="layout">
+
+  <aside>
+
+    <div class="group">
+      <h2>1. 选币种 <button class="secondary" id="select-all" style="float:right;font-size:11px;padding:2px 8px">全选</button></h2>
+      <div class="symbol-list" id="symbol-list"></div>
+    </div>
+
+    <div class="group">
+      <h2>2. Timeframes</h2>
+      <div class="row" id="tf-list">
+        <label><input type="checkbox" name="tf" value="5m" />5m</label>
+        <label><input type="checkbox" name="tf" value="15m" />15m</label>
+        <label><input type="checkbox" name="tf" value="1h" checked />1h</label>
+        <label><input type="checkbox" name="tf" value="4h" checked />4h</label>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>3. 多头排列 (alignment)</h2>
+      <details open>
+        <summary>调整对齐严格度</summary>
+        <div class="row"><label><input type="checkbox" id="al_close_ma5"   checked /> close &gt; MA5</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ma8"   checked /> close &gt; MA8</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ema21" checked /> close &gt; EMA21</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ma55"  checked /> close &gt; MA55</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ma5_ma8"     checked /> MA5 &gt; MA8</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ma8_ema21"   checked /> MA8 &gt; EMA21</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ema21_ma55"  checked /> EMA21 &gt; MA55</label></div>
+      </details>
+    </div>
+
+    <div class="group">
+      <h2>4. 验收 gate</h2>
+      <div class="row">
+        <label>horizon (bars)</label>
+        <input type="number" id="horizon" value="20" min="1" max="200" />
+      </div>
+      <div class="row">
+        <label>threshold %</label>
+        <input type="number" id="threshold" value="1.0" min="0" max="20" step="0.1" />
+      </div>
+      <div class="row">
+        <label>min symbol %</label>
+        <input type="number" id="min-symbol-pct" value="30" min="0" max="100" step="5" />
+      </div>
+      <div class="help">Gate: ≥ min_symbol % 的币,在 [0%,0.5%) 距离档,test split 平均收益 &gt; threshold % (扣手续费)</div>
+    </div>
+
+    <div class="group">
+      <h2>5. 数据补充 fetch</h2>
+      <div class="row">
+        <label>pages</label>
+        <input type="number" id="pages" value="30" min="5" max="100" />
+        <button class="secondary" id="fetch-btn" style="font-size:12px;padding:4px 10px">补 CSV</button>
+      </div>
+      <div class="help">未缓存的 (币,TF) 才会发 Bitget 请求。已缓存的跳过。</div>
+    </div>
+
+    <div class="group">
+      <button id="run-btn" style="width:100%;padding:12px">回测</button>
+    </div>
+  </aside>
+
+  <main>
+    <div id="gate-banner"></div>
+    <div id="summary"></div>
+    <div id="results"></div>
+  </main>
+
+</div>
+
+<script>
+const TFS = ["5m", "15m", "1h", "4h"];
+let UNIVERSE = [];
+let CACHED   = new Map();   // "SYMBOL_TF" -> {bars, size_kb}
+
+const $ = id => document.getElementById(id);
+
+function setStatus(msg, isErr=false) {
+  const el = $("status");
+  el.textContent = msg;
+  el.className = isErr ? "err" : "";
+}
+
+function fmtPct(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const n = (v * 100).toFixed(2);
+  const cls = v > 0 ? "pos" : (v < 0 ? "neg" : "");
+  return `<span class="${cls} smallnum">${v >= 0 ? "+" : ""}${n}%</span>`;
+}
+
+function fmtRate(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return `<span class="smallnum">${(v * 100).toFixed(0)}%</span>`;
+}
+
+async function loadUniverse() {
+  const res = await fetch("/api/universe").then(r => r.json());
+  UNIVERSE = res.universe;
+  const cache = await fetch("/api/cache").then(r => r.json());
+  CACHED = new Map(cache.available.map(c => [`${c.symbol}_${c.tf}`, c]));
+  renderSymbolList();
+  setStatus(`universe ${UNIVERSE.length} symbols, ${CACHED.size} cached pairs`);
+}
+
+function isAnyCached(sym) {
+  return TFS.some(tf => CACHED.has(`${sym}_${tf}`));
+}
+
+function renderSymbolList() {
+  const host = $("symbol-list");
+  host.innerHTML = "";
+  for (const sym of UNIVERSE) {
+    const cached = isAnyCached(sym);
+    const cb = document.createElement("label");
+    cb.innerHTML = `
+      <input type="checkbox" name="symbol" value="${sym}" ${cached ? "checked" : ""}/>
+      ${sym}
+      <span class="pill ${cached ? "cached" : ""}" style="margin-left:6px">${cached ? "cached" : "no-data"}</span>
+    `;
+    host.appendChild(cb);
+  }
+}
+
+function getSelected(name) {
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(e => e.value);
+}
+
+function getAlignment() {
+  return {
+    require_close_above_ma5:    $("al_close_ma5").checked,
+    require_close_above_ma8:    $("al_close_ma8").checked,
+    require_close_above_ema21:  $("al_close_ema21").checked,
+    require_close_above_ma55:   $("al_close_ma55").checked,
+    require_ma5_above_ma8:      $("al_ma5_ma8").checked,
+    require_ma8_above_ema21:    $("al_ma8_ema21").checked,
+    require_ema21_above_ma55:   $("al_ema21_ma55").checked,
+  };
+}
+
+async function runFetch() {
+  const symbols = getSelected("symbol");
+  const tfs = getSelected("tf");
+  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", true); return; }
+  $("fetch-btn").disabled = true;
+  setStatus(`fetching ${symbols.length} symbols × ${tfs.length} TFs ...`);
+  try {
+    const r = await fetch("/api/fetch", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({symbols, tfs, pages: parseInt($("pages").value, 10)})
+    }).then(r => r.json());
+    setStatus(`fetch done: +${r.fetched} fresh, ${r.skipped} cached, ${r.errors.length} errors`);
+    if (r.errors.length) console.warn("fetch errors", r.errors);
+    await loadUniverse();
+  } catch (e) {
+    setStatus(`fetch failed: ${e.message}`, true);
+  } finally {
+    $("fetch-btn").disabled = false;
+  }
+}
+
+async function runScan() {
+  const symbols = getSelected("symbol");
+  const tfs = getSelected("tf");
+  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", true); return; }
+
+  $("run-btn").disabled = true;
+  setStatus(`scanning ${symbols.length} symbols × ${tfs.length} TFs ...`);
+  try {
+    const body = {
+      symbols, tfs,
+      alignment: getAlignment(),
+      horizon_for_gate: parseInt($("horizon").value, 10),
+      gate_threshold_pct: parseFloat($("threshold").value) / 100,
+      gate_min_symbol_pct: parseFloat($("min-symbol-pct").value) / 100,
+    };
+    const r = await fetch("/api/scan", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    }).then(r => r.json());
+    renderResults(r);
+    setStatus(`scan done: ${r.total_events} events`);
+  } catch (e) {
+    setStatus(`scan failed: ${e.message}`, true);
+  } finally {
+    $("run-btn").disabled = false;
+  }
+}
+
+function renderResults(r) {
+  // Gate banner
+  const banner = $("gate-banner");
+  banner.style.display = "block";
+  banner.className = r.gate.passed ? "pass" : "fail";
+  banner.innerHTML = `
+    <div><strong>${r.gate.passed ? "GATE PASS ✓" : "GATE FAIL ✗"}</strong>
+      <span class="pill ${r.gate.passed ? "pass" : "fail"}" style="margin-left:8px">
+        ${r.gate.symbols_passing}/${r.gate.symbols_total} = ${r.gate.symbols_total ? Math.round(100 * r.gate.symbols_passing / r.gate.symbols_total) : 0}%</span>
+    </div>
+    <div style="margin-top:6px;color:#8b949e">${r.gate.reason}</div>
+    ${r.gate.passing_symbols.length ? `<div style="margin-top:6px"><strong style="color:#3fb950">PASS:</strong> ${r.gate.passing_symbols.join(", ")}</div>` : ""}
+    ${r.gate.failing_symbols.length ? `<div><strong style="color:#f85149">FAIL:</strong> ${r.gate.failing_symbols.join(", ")}</div>` : ""}
+  `;
+
+  // Skipped pairs (no cache)
+  const skipMsg = r.skipped_pairs.length
+    ? `<div style="color:#f85149;margin-bottom:8px">⚠ ${r.skipped_pairs.length} 对没缓存被跳过 (例: ${r.skipped_pairs.slice(0,3).map(p => p.join(" ")).join(", ")}). 先点 "补 CSV"</div>`
+    : "";
+
+  $("summary").innerHTML = skipMsg + `
+    <div style="margin-bottom:8px">${r.total_events} formation events, horizon = +${r.horizon} bars</div>
+  `;
+
+  // Cohort table — sort by (symbol, TF, split, bucket)
+  const sorted = r.cohorts.slice().sort((a, b) => {
+    if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol);
+    if (a.tf !== b.tf) return TFS.indexOf(a.tf) - TFS.indexOf(b.tf);
+    if (a.split !== b.split) return a.split.localeCompare(b.split);
+    return a.bucket.localeCompare(b.bucket);
+  });
+
+  const rows = sorted.map(c => {
+    return `<tr>
+      <td>${c.symbol}</td>
+      <td>${c.tf}</td>
+      <td>${c.bucket}</td>
+      <td>${c.split}</td>
+      <td>${c.count}</td>
+      <td>${fmtPct(c.mean_post_fee)}</td>
+      <td>${fmtPct(c.median_post_fee)}</td>
+      <td>${fmtRate(c.win_rate)}</td>
+      <td>${fmtPct(c.worst_post_fee)}</td>
+    </tr>`;
+  }).join("");
+
+  $("results").innerHTML = `
+    <table>
+      <thead><tr>
+        <th>symbol</th><th>TF</th><th>bucket (距 MA5%)</th><th>split</th>
+        <th>count</th><th>mean post-fee</th><th>median</th><th>winrate</th><th>worst</th>
+      </tr></thead>
+      <tbody>${rows || "<tr><td colspan='9' style='text-align:center;color:#8b949e'>无 cohort,可能 events 都被 NaN 过滤</td></tr>"}</tbody>
+    </table>
+  `;
+}
+
+$("run-btn").addEventListener("click", runScan);
+$("fetch-btn").addEventListener("click", runFetch);
+$("select-all").addEventListener("click", () => {
+  const all = document.querySelectorAll("input[name='symbol']");
+  const allOn = Array.from(all).every(c => c.checked);
+  all.forEach(c => c.checked = !allOn);
+});
+
+loadUniverse();
+</script>
+</body>
+</html>
