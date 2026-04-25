@@ -216,6 +216,131 @@ def force_replan_line(manual_line_id: str) -> int:
     return n
 
 
+async def force_replan_line_with_reconcile(manual_line_id: str) -> dict:
+    """Reconcile-aware replan. Fixes the case where local cond status
+    drifted (e.g. wrongly marked 'filled' or 'cancelled') while the
+    Bitget plan-order is still LIVE — discovered 2026-04-24 when user
+    moved a ZEC line and noticed the actual Bitget order didn't update,
+    even though our store had a "filled" cond pointing at the still-live
+    Bitget orderId.
+
+    Algorithm:
+      1. Pull ALL conds for this manual_line_id (any status).
+      2. For those with an `exchange_order_id`, query Bitget's pending
+         plan-orders list once.
+      3. For each cond whose order_id is STILL pending on Bitget but
+         whose local status is NOT 'triggered' → promote local status
+         back to 'triggered' (with a recovery audit event) and add to
+         _force_replan_set so the watcher's existing replan path will
+         cancel + re-place against the new line geometry.
+      4. Also flag genuinely-triggered conds (existing behavior).
+
+    Returns:
+      {
+        "flagged": int,           # total conds flagged for replan
+        "recovered": int,         # conds that had wrong status, fixed
+        "skipped_no_oid": int,    # conds without exchange_order_id
+        "skipped_terminated": int, # conds whose order Bitget no longer has
+        "errors": [str, ...],
+      }
+    """
+    import asyncio as _aio
+    global _force_replan_set
+    result = {"flagged": 0, "recovered": 0, "skipped_no_oid": 0,
+              "skipped_terminated": 0, "errors": []}
+    try:
+        all_conds = list(_store.list_all(manual_line_id=manual_line_id))
+    except Exception as exc:
+        result["errors"].append(f"list_all failed: {exc}")
+        return result
+
+    if not all_conds:
+        return result
+
+    # Step 1: any locally-triggered cond → flag immediately (preserves the
+    # original behavior even if the Bitget query below fails).
+    for cond in all_conds:
+        if str(cond.status) == "triggered":
+            _force_replan_set.add(cond.conditional_id)
+            result["flagged"] += 1
+
+    # Step 2: query Bitget for live plan-orders. If this fails we still
+    # return the basic result above — better than blocking on Bitget hiccup.
+    try:
+        from server.execution.live_adapter import LiveExecutionAdapter
+        adapter = LiveExecutionAdapter()
+        if not adapter.has_api_keys():
+            return result
+
+        # Build the set of order_ids we care about, by exchange mode.
+        modes = {cond.order.exchange_mode for cond in all_conds
+                 if getattr(cond, "exchange_order_id", None)
+                 and cond.order.exchange_mode in {"demo", "live"}}
+        live_oids_by_mode: dict[str, set[str]] = {}
+        for mode in modes:
+            try:
+                resp = await adapter._bitget_request(
+                    "GET", "/api/v2/mix/order/orders-plan-pending",
+                    mode=mode,
+                    params={"productType": "usdt-futures", "planType": "normal_plan"},
+                )
+                if resp.get("code") == "00000":
+                    rows = (resp.get("data") or {}).get("entrustedList") or []
+                    live_oids_by_mode[mode] = {str(r.get("orderId")) for r in rows if r.get("orderId")}
+                else:
+                    result["errors"].append(f"bitget pending fetch failed [{mode}]: {resp.get('msg')}")
+                    live_oids_by_mode[mode] = set()
+            except Exception as exc:
+                result["errors"].append(f"bitget query failed [{mode}]: {exc}")
+                live_oids_by_mode[mode] = set()
+    except Exception as exc:
+        result["errors"].append(f"adapter init failed: {exc}")
+        return result
+
+    # Step 3: for each cond NOT already triggered, check Bitget reality.
+    for cond in all_conds:
+        if str(cond.status) == "triggered":
+            continue   # already handled
+        oid = str(getattr(cond, "exchange_order_id", "") or "")
+        if not oid:
+            result["skipped_no_oid"] += 1
+            continue
+        mode = cond.order.exchange_mode
+        live_oids = live_oids_by_mode.get(mode, set())
+        if oid in live_oids:
+            # Local status is wrong — Bitget has it live. Promote local
+            # status back to triggered so the watcher will process it.
+            try:
+                winner = _store.set_status_if(
+                    cond.conditional_id,
+                    from_status=str(cond.status),
+                    to_status="triggered",
+                    reason=f"force_replan reconcile: Bitget plan {oid} still live",
+                )
+                if winner is not None:
+                    _force_replan_set.add(cond.conditional_id)
+                    result["flagged"] += 1
+                    result["recovered"] += 1
+                    print(f"[force_replan_reconcile] {cond.conditional_id} {cond.status}→triggered "
+                          f"(oid {oid} still live on Bitget)", flush=True)
+                    try:
+                        _store.append_event(cond.conditional_id, ConditionalEvent(
+                            ts=now_ts(), kind="status_recovered",
+                            message=f"force_replan_reconcile: Bitget plan {oid} live; restoring triggered",
+                        ))
+                    except Exception:
+                        pass
+            except Exception as exc:
+                result["errors"].append(f"recover {cond.conditional_id}: {exc}")
+        else:
+            # Bitget doesn't have it live (may be filled, cancelled, or
+            # we lost track). Don't replan — leave for the regular
+            # reconciliation path to confirm via history.
+            result["skipped_terminated"] += 1
+
+    return result
+
+
 def _project_line_geometry(
     *,
     t_start: int,
@@ -1133,9 +1258,41 @@ async def _sync_sl_to_line_now(
     User 2026-04-22: BAS entered at 0.01693 with preset SL at 0.01634
     (bar_open basis, 3.5% below fill). Stop hit in 3 min 34 sec, before
     first trailing scan. This function closes that window.
+
+    MA-ribbon branch (added 2026-04-25, Task 5 of MA-ribbon EMA21 auto-
+    execution): when the cond is ma_ribbon lineage with sl_logic=
+    "ribbon_ema21_trailing", the caller's `target_sl_price` was derived
+    from manual-line geometry (which doesn't apply to a ribbon order).
+    Override it with the ribbon trailing SL — never loosens, computed
+    from current EMA21 of ribbon_meta["tf"].
     """
     import httpx  # noqa: F401 — ensure imported
     from server.execution.live_adapter import LiveExecutionAdapter
+
+    # ── MA-ribbon SL branch — uses EMA21 trailing instead of line-buffer.
+    # Sits BEFORE any line-based math so manual-line code below is untouched.
+    if (cond.lineage == "ma_ribbon"
+            and cond.order is not None
+            and cond.order.sl_logic == "ribbon_ema21_trailing"):
+        try:
+            existing_sl = getattr(cond, "current_sl", None)
+            if existing_sl is None:
+                existing_sl = float(target_sl_price) if target_sl_price else None
+            new_sl = await _compute_ribbon_trailing_sl(cond, current_sl=existing_sl)
+            if new_sl is not None and float(new_sl) > 0:
+                if abs(float(new_sl) - float(target_sl_price)) > 1e-9:
+                    print(
+                        f"[sync_sl] ribbon override {cond.symbol}: line-derived "
+                        f"{target_sl_price:.6f} -> ema21-trailing {float(new_sl):.6f}",
+                        flush=True,
+                    )
+                target_sl_price = float(new_sl)
+        except (AssertionError, ValueError) as exc:
+            # Defensive: if the helper rejects the cond shape, fall through
+            # with the original target_sl_price rather than blocking SL placement.
+            print(f"[sync_sl] ribbon SL compute rejected {cond.symbol}: {exc}",
+                  flush=True)
+
     adapter = LiveExecutionAdapter()
     if not adapter.has_api_keys():
         return
@@ -2161,6 +2318,144 @@ def _expire(cond: ConditionalOrder, reason: str) -> None:
         ts=now_ts(), kind="expired", message=reason,
     ))
     _store.set_status(cond.conditional_id, "cancelled", reason=f"expired: {reason}")
+
+
+# ─────────────────────────────────────────────────────────────────────
+# MA-ribbon ribbon_ema21_trailing SL helpers — added 2026-04-25 per spec
+# docs/superpowers/specs/2026-04-25-ma-ribbon-auto-execution-design.md §3.8
+# Task 5 of plan docs/superpowers/plans/2026-04-25-ma-ribbon-auto-execution-plan.md
+#
+# Two pure-ish entry points:
+#   fetch_current_ema21(symbol, tf)   -> latest EMA21 close-of-bar value or None
+#   _compute_ribbon_trailing_sl(cond, current_sl=...) -> new SL (never loosens)
+#
+# The watcher's existing _sync_sl_to_line_now overrides its line-derived
+# `target_sl_price` argument with the value from _compute_ribbon_trailing_sl
+# when the cond is ma_ribbon lineage with sl_logic="ribbon_ema21_trailing".
+# manual_line lineage is untouched.
+# ─────────────────────────────────────────────────────────────────────
+
+# In-process cache so multiple watcher ticks within 60s don't hammer Bitget
+# for the same (symbol, tf). 60s is shorter than even the 1m bar interval,
+# so the trailing math will pick up new bars promptly while still amortising
+# the API cost across 60 ticks.
+_EMA21_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
+_EMA21_TTL_SECONDS = 60
+
+
+async def fetch_current_ema21(symbol: str, tf: str) -> float | None:
+    """Returns latest EMA21 close-of-bar value for (symbol, tf), or None
+    if data is unavailable / non-positive / NaN.
+
+    In-process 60-second cache keyed by (symbol, tf) avoids hammering
+    Bitget on every watcher tick. On any fetch error we return None and
+    let the caller fall back to current_sl unchanged (P10 — never silently
+    re-snap SL to a wrong value because of a transient outage).
+    """
+    import math as _math
+    import httpx
+    import pandas as pd
+    from backtests.ma_ribbon_ema21.data_loader_async import (
+        fetch_ohlcv_async, AsyncLoaderConfig,
+    )
+    from backtests.ma_ribbon_ema21.indicators import ema
+
+    now = time.time()
+    cached = _EMA21_CACHE.get((symbol, tf))
+    if cached and (now - cached[1] < _EMA21_TTL_SECONDS):
+        return cached[0]
+    cfg = AsyncLoaderConfig(pages_per_symbol=1, concurrency=1)
+    try:
+        async with httpx.AsyncClient() as client:
+            df = await fetch_ohlcv_async(client, symbol, tf, cfg)
+    except Exception as exc:  # noqa: BLE001 — top-level safety net per PRINCIPLES P10
+        print(f"[fetch_current_ema21] {symbol} {tf} error: {exc}", flush=True)
+        return None
+    if df is None or df.empty or len(df) < 21:
+        return None
+    series = pd.Series(df["close"].astype(float).values)
+    e21 = ema(series, period=21)
+    if e21.empty:
+        return None
+    val = float(e21.iloc[-1])
+    if val <= 0 or _math.isnan(val):
+        return None
+    _EMA21_CACHE[(symbol, tf)] = (val, now)
+    return val
+
+
+async def _compute_ribbon_trailing_sl(
+    cond: ConditionalOrder,
+    current_sl: float | None = None,
+) -> float:
+    """Compute new trailing SL for a ribbon-lineage ConditionalOrder.
+
+    Long  → sl never loosens: sl = max(current_sl, ema21 * (1 - buffer))
+    Short → sl never raises:  sl = min(current_sl, ema21 * (1 + buffer))
+
+    Returns current_sl unchanged if EMA21 is None / NaN / non-positive.
+
+    Raises (AssertionError) if the cond is not a ribbon conditional —
+    the caller MUST branch on lineage before invoking this helper. Raises
+    ValueError on bad config (zero buffer, unknown direction).
+
+    Args:
+        cond: ConditionalOrder with lineage="ma_ribbon" and
+              order.sl_logic == "ribbon_ema21_trailing".
+        current_sl: the current SL value to compare against (the existing
+              SL on Bitget). If None, falls back to
+              ribbon_meta["initial_sl_estimate"] from the cond.
+
+    Notes:
+        - Direction is read from `cond.direction` (the canonical alias on
+          ConditionalOrder, mirrored from order.direction in __post_init__).
+        - The helper is pure async — no side-effects beyond the EMA21
+          cache populated by fetch_current_ema21.
+    """
+    import math as _math
+
+    if cond.lineage != "ma_ribbon" or (
+        cond.order is None or cond.order.sl_logic != "ribbon_ema21_trailing"
+    ):
+        raise AssertionError(
+            f"_compute_ribbon_trailing_sl called on non-ribbon cond "
+            f"(lineage={cond.lineage}, "
+            f"sl_logic={getattr(cond.order, 'sl_logic', None)})"
+        )
+    meta = cond.order.ribbon_meta or {}
+    tf = meta.get("tf")
+    buffer = meta.get("ribbon_buffer_pct")
+    if buffer is None or buffer <= 0:
+        raise ValueError(f"invalid ribbon_buffer_pct={buffer}")
+
+    # Resolve the SL to compare against. Explicit arg wins; otherwise we
+    # fall back to ribbon_meta["initial_sl_estimate"] (the SL the adapter
+    # computed at signal-emit time before the position was opened).
+    if current_sl is None:
+        fallback = meta.get("initial_sl_estimate")
+        if fallback is None:
+            raise ValueError(
+                "current_sl=None and ribbon_meta has no initial_sl_estimate "
+                f"for cond {cond.conditional_id}"
+            )
+        current_sl = float(fallback)
+    current_sl_f = float(current_sl)
+
+    ema21 = await fetch_current_ema21(cond.symbol, tf)
+    if ema21 is None or _math.isnan(ema21) or ema21 <= 0:
+        return current_sl_f
+
+    if cond.direction == "long":
+        candidate = ema21 * (1.0 - buffer)
+        return max(current_sl_f, candidate)
+    elif cond.direction == "short":
+        candidate = ema21 * (1.0 + buffer)
+        return min(current_sl_f, candidate)
+    else:
+        raise ValueError(
+            f"unknown direction {cond.direction!r} for ribbon cond "
+            f"{cond.conditional_id}"
+        )
 
 
 __all__ = ["start_watcher", "stop_watcher"]
