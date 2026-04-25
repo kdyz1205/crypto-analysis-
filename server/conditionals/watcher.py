@@ -1130,6 +1130,16 @@ async def _compute_qty(cond: ConditionalOrder, market_price: float, atr: float) 
     = 1%" in real time.
     """
     oc = cond.order
+    # MA-ribbon: qty notional target is precomputed by the adapter
+    # (risk_usd / entry_to_sl_pct). No tolerance / stop math needed.
+    if cond.lineage == "ma_ribbon":
+        notional = oc.qty_notional_target
+        if notional is None or notional <= 0:
+            return None
+        if market_price is None or market_price <= 0:
+            return None
+        return float(notional) / float(market_price)
+    # ── existing manual-line code path unchanged below ──
     if oc.leverage and oc.leverage > 0:
         if market_price <= 0:
             return None
