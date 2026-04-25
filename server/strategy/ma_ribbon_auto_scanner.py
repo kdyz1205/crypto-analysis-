@@ -177,3 +177,79 @@ def can_spawn_layer(
             f"ramp cap {ramp_cap:.1%} exceeded (current open {_total_open_risk_pct(state):.2%})")
 
     return GateResult(True, "")
+
+
+# ---------------------------------------------------------------------------
+# Task 10 — Emergency stop + scan_loop orchestrator
+# ---------------------------------------------------------------------------
+import asyncio
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
+from server.strategy.ma_ribbon_auto_state import save_state, load_state, StateCorruptError
+
+
+_LOCK_DURATION_SECONDS = 86_400
+_EMERGENCY_LOG_PATH = Path("data/logs/ma_ribbon_emergency_stop.log")
+_TICK_INTERVAL_SECONDS = 60
+
+
+async def flatten_all_ribbon_positions() -> dict[str, int]:
+    """Cancel pending Bitget plan orders + market-close open positions for
+    every conditional with lineage='ma_ribbon'. Returns counts.
+
+    Stub for now — full implementation lives behind Task 16 wiring once the
+    scanner can talk to the watcher's Bitget cancel/close helpers. Tests mock
+    this function. Production-time stub returns {0, 0} so emergency_stop
+    still completes safely.
+    """
+    return {"cancelled": 0, "closed": 0}
+
+
+async def emergency_stop(state: AutoState, now_utc: int, reason: str) -> None:
+    state.halted = True
+    state.halt_reason = f"emergency_stop: {reason}"
+    state.locked_until_utc = now_utc + _LOCK_DURATION_SECONDS
+    open_snapshot = list(state.ledger.open_positions)
+    state.pending_signals = []
+
+    counts = await flatten_all_ribbon_positions()
+
+    _EMERGENCY_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "ts_utc": now_utc,
+        "iso": datetime.fromtimestamp(now_utc, tz=timezone.utc).isoformat(),
+        "reason": reason,
+        "counts": counts,
+        "open_positions_at_stop": open_snapshot,
+    }
+    with _EMERGENCY_LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+
+
+async def scan_loop():
+    """Top-level asyncio task. Catches every exception so a single bug
+    doesn't take the loop down silently. PRINCIPLES P10: errors visible."""
+    while True:
+        try:
+            await tick()
+        except StateCorruptError:
+            _LOG.exception("state corrupt — scanner sleeping until manual fix")
+            await asyncio.sleep(_TICK_INTERVAL_SECONDS * 5)
+        except Exception:  # noqa: BLE001 — top-level safety net
+            _LOG.exception("scanner tick failed")
+        await asyncio.sleep(_TICK_INTERVAL_SECONDS)
+
+
+async def tick() -> None:
+    """Stub implementation. Task 16 fleshes out the full pipeline:
+    fetch universe → detect signals → spawn LV1 → register higher layers →
+    fire ready higher layers → save state.
+    For now the loop just keeps state file warm so save_state validates the
+    schema on each tick.
+    """
+    state = load_state()
+    if not state.enabled:
+        return
+    save_state(state)
