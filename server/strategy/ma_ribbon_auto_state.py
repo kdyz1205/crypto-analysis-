@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import typing
-from dataclasses import dataclass, field, asdict, is_dataclass
+from dataclasses import dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,12 @@ from typing import Any
 _STATE_PATH_DEFAULT   = Path("data/state/ma_ribbon_auto_state.json")
 _HISTORY_PATH_DEFAULT = Path("data/state/ma_ribbon_auto_state_history.jsonl")
 _DAY_SECONDS = 86_400
+_HISTORY_MAX_BYTES = 10 * 1024 * 1024  # 10 MB per spec §7
+
+# Ramp-up schedule (spec §7): cap grows from day 0 → day 13.
+_RAMP_DAY_0_CAP       = 0.02   # day-0 starting cap (% of strategy capital)
+_RAMP_DAILY_INCREMENT = 0.01   # cap grows by this each 24h
+_RAMP_MAX_CAP         = 0.15   # final cap reached at day 13
 
 
 class StateCorruptError(Exception):
@@ -90,16 +96,27 @@ def _to_dict(obj: Any) -> Any:
     return obj
 
 
-def _from_dict(cls: type, data: dict[str, Any]) -> Any:
+def _from_dict(cls: type, data: dict[str, Any] | None) -> Any:
     """Tolerant constructor: missing fields fall back to defaults; extra fields
     raise StateCorruptError to surface schema drift.
 
     NOTE: with `from __future__ import annotations` active, dataclass field types
     are stored as strings. We resolve them with typing.get_type_hints which
     evaluates the strings against the class's module namespace.
+
+    `None` for a nested-dataclass field means "use defaults" (a user editing
+    the JSON to set `"config": null` should not crash). Any other non-dict
+    value raises StateCorruptError to surface schema drift.
     """
+    if data is None:
+        # null in JSON for a nested dataclass field → use defaults
+        return cls() if is_dataclass(cls) else None
     if not is_dataclass(cls):
         return data
+    if not isinstance(data, dict):
+        raise StateCorruptError(
+            f"expected dict for {cls.__name__}, got {type(data).__name__}"
+        )
     valid = {f.name: f for f in cls.__dataclass_fields__.values()}
     extra = set(data.keys()) - set(valid.keys())
     if extra:
@@ -115,8 +132,9 @@ def _from_dict(cls: type, data: dict[str, Any]) -> Any:
         value = data[name]
         ftype = resolved_types.get(name, fld.type)
         # If ftype is a dataclass, recurse; else use value as-is.
+        # None / non-dict handling lives at the top of _from_dict.
         if isinstance(ftype, type) and is_dataclass(ftype):
-            kwargs[name] = _from_dict(ftype, value or {})
+            kwargs[name] = _from_dict(ftype, value)
         else:
             kwargs[name] = value
     return cls(**kwargs)
@@ -127,6 +145,21 @@ def save_state(
     path: Path | None = None,
     history_path: Path | None = None,
 ) -> None:
+    """Atomically persist state to disk + append to history.
+
+    Ordering: state.json is replaced first (atomic via tmp+fsync+rename),
+    then the history line is appended. If history append fails after state
+    is committed, the state file is still durable but the history may be
+    one entry behind. This is by design — we prioritise the source-of-truth
+    state file over the audit trail.
+
+    Single-writer assumption: callers must serialise calls. The scanner
+    asyncio task is the sole writer in production. Router endpoints that
+    mutate state must funnel through the scanner's queue (Task 15+) — they
+    must not call save_state directly while the scanner loop is running.
+    There is currently no file lock; concurrent calls would last-write-win
+    and silently lose updates.
+    """
     p = Path(path or _STATE_PATH_DEFAULT)
     h = Path(history_path or _HISTORY_PATH_DEFAULT)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -136,17 +169,34 @@ def save_state(
     blob = json.dumps(payload, indent=2, sort_keys=False).encode("utf-8")
 
     tmp = p.with_suffix(p.suffix + ".tmp")
-    with tmp.open("wb") as f:
-        f.write(blob)
-        f.flush()
-        os.fsync(f.fileno())
-    tmp.replace(p)
+    try:
+        with tmp.open("wb") as f:
+            f.write(blob)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp.replace(p)
+    finally:
+        # Clean up orphan tmp if the rename never happened (write or fsync failed).
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
+    # History append is best-effort; rotate at _HISTORY_MAX_BYTES (spec §7).
+    if h.exists() and h.stat().st_size >= _HISTORY_MAX_BYTES:
+        rotated = h.with_suffix(h.suffix + ".1")
+        if rotated.exists():
+            rotated.unlink()
+        h.rename(rotated)
     with h.open("ab") as f:
         f.write(json.dumps(payload).encode("utf-8") + b"\n")
 
 
 def load_state(path: Path | None = None) -> AutoState:
+    """Load state from JSON. Returns AutoState.default() if the file is absent.
+    Raises StateCorruptError on parse failure or schema drift — never silently
+    zero out a financial ledger."""
     p = Path(path or _STATE_PATH_DEFAULT)
     if not p.exists():
         return AutoState.default()
@@ -158,10 +208,11 @@ def load_state(path: Path | None = None) -> AutoState:
 
 
 def current_ramp_cap_pct(state: AutoState, now_utc: int) -> float:
-    """Day 1 = 2 %, +1 % per 24 h, capped at 15 %.
-    If never enabled, returns 0 (no spawning allowed)."""
+    """Day 0 = 2 %, +1 % per 24 h, capped at 15 % from day 13.
+    If never enabled, returns 0 (no spawning allowed).
+    Negative elapsed time (clock skew / future timestamp) clamps to day 0."""
     if state.first_enabled_at_utc is None:
         return 0.0
-    days = (now_utc - state.first_enabled_at_utc) // _DAY_SECONDS
-    cap = 0.02 + 0.01 * days
-    return min(cap, 0.15)
+    days = max(0, (now_utc - state.first_enabled_at_utc) // _DAY_SECONDS)
+    cap = _RAMP_DAY_0_CAP + _RAMP_DAILY_INCREMENT * days
+    return min(cap, _RAMP_MAX_CAP)
