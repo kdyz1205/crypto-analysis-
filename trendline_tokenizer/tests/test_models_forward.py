@@ -131,3 +131,55 @@ def test_trendline_encoder_clamps_out_of_range_ids():
     batch["rule_coarse"] = batch["rule_coarse"] + cfg.rule_coarse_vocab_size
     h = enc(batch, batch["token_pad"])
     assert torch.isfinite(h).all()
+
+
+# ---------------------------------------------------------------------
+# Task 4 - CrossAttentionFusion
+# ---------------------------------------------------------------------
+
+from trendline_tokenizer.models.fusion import CrossAttentionFusion
+
+
+def test_fusion_forward_shape():
+    cfg = FusionConfig(d_model=64, n_layers_fusion=2, n_heads_fusion=4)
+    fusion = CrossAttentionFusion(cfg)
+    B = 2
+    price_h = torch.randn(B, cfg.price_seq_len, cfg.d_model)
+    token_h = torch.randn(B, cfg.token_seq_len, cfg.d_model)
+    price_pad = torch.zeros(B, cfg.price_seq_len, dtype=torch.bool)
+    token_pad = torch.zeros(B, cfg.token_seq_len, dtype=torch.bool)
+    fused = fusion(price_h, token_h, price_pad, token_pad)
+    assert fused.shape == (B, cfg.price_seq_len, cfg.d_model)
+
+
+def test_fusion_with_all_token_padding():
+    cfg = FusionConfig(d_model=32, n_layers_fusion=1, n_heads_fusion=2)
+    fusion = CrossAttentionFusion(cfg)
+    B = 1
+    price_h = torch.randn(B, cfg.price_seq_len, cfg.d_model)
+    token_h = torch.zeros(B, cfg.token_seq_len, cfg.d_model)
+    price_pad = torch.zeros(B, cfg.price_seq_len, dtype=torch.bool)
+    token_pad = torch.ones(B, cfg.token_seq_len, dtype=torch.bool)
+    fused = fusion(price_h, token_h, price_pad, token_pad)
+    assert torch.isfinite(fused).all()
+
+
+# ---------------------------------------------------------------------
+# Task 5 - MultiTaskHeads
+# ---------------------------------------------------------------------
+
+from trendline_tokenizer.models.heads import MultiTaskHeads
+
+
+def test_heads_forward_shapes():
+    cfg = FusionConfig(d_model=64)
+    heads = MultiTaskHeads(cfg)
+    B = 4
+    pooled = torch.randn(B, cfg.d_model)
+    out = heads(pooled)
+    assert out["next_coarse_logits"].shape == (B, cfg.rule_coarse_vocab_size)
+    assert out["next_fine_logits"].shape == (B, cfg.rule_fine_vocab_size)
+    assert out["bounce_logits"].shape == (B, 2)
+    assert out["break_logits"].shape == (B, 2)
+    assert out["continuation_logits"].shape == (B, 2)
+    assert out["buffer_pct"].shape == (B,)
