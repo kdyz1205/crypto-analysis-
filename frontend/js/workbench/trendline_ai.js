@@ -208,6 +208,38 @@
     // Set reason via textContent to avoid HTML injection (XSS-safe)
     const reasonEl = card.querySelector('#tl-ai-reason');
     if (reasonEl) reasonEl.textContent = sig.reason || '';
+
+    const drawBtn = card.querySelector('#tl-ai-draw');
+    const clearBtn = card.querySelector('#tl-ai-clear');
+    // Disable draw button if we don't have geometry or a chart instance.
+    const hasGeom = sig.decoded_log_slope_per_bar !== undefined
+                    || (sig.extras && sig.extras.decoded_log_slope_per_bar !== undefined);
+    const hasChart = !!window.__chartRef;
+    if (drawBtn && (!hasGeom || !hasChart)) {
+      drawBtn.disabled = true;
+      drawBtn.title = !hasChart ? '图表未初始化' : '此模型未返回几何字段(需要重训)';
+      drawBtn.style.opacity = '0.5';
+      drawBtn.style.cursor = 'not-allowed';
+    }
+    if (drawBtn) {
+      drawBtn.addEventListener('click', () => {
+        if (drawBtn.disabled) return;
+        const ok = drawPredictedLineOnChart();
+        const status = card.querySelector('#tl-ai-feedback-status');
+        if (status) {
+          status.textContent = ok ? '✓ 已画到图表' : '✗ 画线失败';
+          status.style.color = ok ? '#34d399' : '#f87171';
+        }
+      });
+    }
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        clearOverlay();
+        const status = card.querySelector('#tl-ai-feedback-status');
+        if (status) { status.textContent = '已清除图表线'; status.style.color = '#94a3b8'; }
+      });
+    }
+
     card.querySelector('#tl-ai-accept').addEventListener('click', () => sendFeedback('signal_accepted'));
     card.querySelector('#tl-ai-reject').addEventListener('click', () => sendFeedback('signal_rejected'));
   }

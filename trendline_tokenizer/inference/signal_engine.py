@@ -73,6 +73,15 @@ class SignalRecord:
     next_fine_id: int
     predicted_role: str
     reason: str
+    # Geometry of the predicted next line — passed through from
+    # PredictionRecord so the UI / strategy layer can draw / project
+    # the line without re-decoding.
+    decoded_role: str = "unknown"
+    decoded_direction: str = "flat"
+    decoded_log_slope_per_bar: float = 0.0
+    decoded_duration_bars: int = 1
+    price_target_pct: float = 0.0
+    horizon_seconds: int = 0
     extras: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -154,8 +163,16 @@ class SignalEngine:
             next_fine_id=pred.next_fine_id,
             predicted_role=role_raw,
             reason=reason,
+            decoded_role=pred.decoded_role,
+            decoded_direction=pred.decoded_direction,
+            decoded_log_slope_per_bar=pred.decoded_log_slope_per_bar,
+            decoded_duration_bars=pred.decoded_duration_bars,
+            price_target_pct=pred.price_target_pct,
+            horizon_seconds=pred.horizon_seconds,
             extras={"n_input_records": pred.n_input_records,
                     "n_bars_in_cache": pred.n_bars_in_cache,
                     "effective_role": role,
-                    "behaviour": behaviour},
+                    "behaviour": behaviour,
+                    "anchor_close": (pred.extras or {}).get("anchor_close", 0.0),
+                    "anchor_open_time_ms": (pred.extras or {}).get("anchor_open_time_ms", 0)},
         )

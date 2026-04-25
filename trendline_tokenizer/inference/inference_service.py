@@ -172,6 +172,27 @@ class InferenceService:
 
         last_close = float(df["close"].iloc[-1]) if len(df) else 0.0
         last_open_time = int(df["open_time"].iloc[-1]) if len(df) else int(time.time() * 1000)
+
+        # Real values for price_target_pct + horizon_seconds (previously
+        # left at default 0). Derived from the decoded slope + duration:
+        #   price_target_pct = exp(slope * duration) - 1
+        #   horizon_seconds  = duration * bar_seconds(timeframe)
+        import math as _math
+        try:
+            price_target_pct = float(_math.exp(signed_slope * duration_bars) - 1.0)
+        except (OverflowError, ValueError):
+            price_target_pct = 0.0
+        # bar seconds from timeframe string (e.g. "5m" -> 300)
+        _tf_str = str(tf or "1m").lower()
+        _tf_unit_secs = {"m": 60, "h": 3600, "d": 86400, "w": 86400 * 7}
+        try:
+            _n = int(_tf_str[:-1])
+            _u = _tf_str[-1]
+            bar_seconds = _n * _tf_unit_secs.get(_u, 60)
+        except (ValueError, KeyError):
+            bar_seconds = 60
+        horizon_seconds = int(duration_bars * bar_seconds)
+
         return PredictionRecord(
             symbol=symbol.upper(), timeframe=tf,
             timestamp=last_open_time,
@@ -189,5 +210,7 @@ class InferenceService:
             decoded_direction=decoded_dir,
             decoded_log_slope_per_bar=float(signed_slope),
             decoded_duration_bars=duration_bars,
+            price_target_pct=price_target_pct,
+            horizon_seconds=horizon_seconds,
             extras={"anchor_close": last_close, "anchor_open_time_ms": last_open_time},
         )
