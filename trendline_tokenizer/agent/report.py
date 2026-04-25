@@ -16,7 +16,7 @@ from typing import Optional
 from ..registry.paths import ROOT
 
 
-DEFAULT_REPORT_PATH = ROOT / "data" / "agent_reports.jsonl"
+DEFAULT_REPORT_PATH = ROOT / "data" / "trendline_agent_reports.jsonl"
 
 
 @dataclass

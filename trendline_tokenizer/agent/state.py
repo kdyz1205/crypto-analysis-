@@ -12,7 +12,7 @@ from pathlib import Path
 from ..registry.paths import ROOT
 
 
-DEFAULT_STATE_PATH = ROOT / "data" / "agent_state.json"
+DEFAULT_STATE_PATH = ROOT / "data" / "trendline_agent_state.json"
 
 
 @dataclass
