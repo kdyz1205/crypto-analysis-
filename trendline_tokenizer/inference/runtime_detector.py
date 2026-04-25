@@ -49,8 +49,16 @@ def detect_lines(
     sr_params = sr_params or {}
     params = SRParams(**{k: v for k, v in sr_params.items()
                          if k in SRParams.__dataclass_fields__})
+    # sr_patterns expects polars; convert if we got pandas.
+    df_for_detect = df
     try:
-        result = detect_patterns(df, params)
+        import polars as pl  # noqa: F401
+        if isinstance(df, pd.DataFrame):
+            df_for_detect = pl.from_pandas(df)
+    except ImportError:
+        pass
+    try:
+        result = detect_patterns(df_for_detect, params)
     except Exception as exc:
         print(f"[runtime_detector] detect_patterns failed {symbol} {timeframe}: {exc}")
         return []
