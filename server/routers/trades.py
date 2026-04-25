@@ -311,3 +311,102 @@ async def api_manual_trade_history(
         "columns": all_keys,
         "rows": rows_out,
     }
+
+
+
+# ─── Chart marker endpoint (2026-04-25) ─────────────────────────────────
+# Returns lightweight fill/exit events for a symbol so the chart can
+# render OKX/Bitget-style buy/sell arrows. Independent of TF — every
+# fill shows on every chart of that symbol because the timestamp maps
+# to whichever bar contains it.
+
+@router.get("/trades/fills")
+def api_trades_fills(
+    symbol: str = Query(..., description="e.g. ZECUSDT"),
+    days: int = Query(30, ge=1, le=730, description="lookback days"),
+):
+    """Return fill events for chart markers.
+
+    Sources merged:
+      1. ConditionalOrderStore: conds with status in (triggered, filled,
+         cancelled) → entry markers (and triggered_at for time)
+      2. user_drawings_ml.jsonl: position_closed_from_drawing events
+         → exit markers with side, exit_price, pnl
+
+    Each fill row:
+      {
+        "time":  int (unix sec),
+        "type":  'entry' | 'exit' | 'cancel',
+        "side":  'long' | 'short',          # direction of position
+        "price": float,
+        "qty":   float | null,
+        "pnl_usd":   float | null,          # only set on exits
+        "close_reason": str | null,         # 'sl' | 'tp' | 'manual' | etc
+        "exchange_order_id": str | null,
+        "conditional_id": str | null,
+      }
+    """
+    import time as _time
+    sym = symbol.upper().replace("/", "")
+    if not sym.endswith("USDT"):
+        sym += "USDT"
+
+    cutoff = int(_time.time()) - days * 86400
+    out: list[dict[str, Any]] = []
+
+    # ── Source 1: ConditionalOrderStore (entries + cancels) ────────────
+    try:
+        from ..conditionals.store import ConditionalOrderStore
+        store = ConditionalOrderStore()
+        conds = store.list_all(symbol=sym)
+        for c in conds:
+            # Entry marker: when the plan-order's trigger fired and a
+            # position opened. We capture this on triggered_at.
+            if getattr(c, "fill_price", None) and c.fill_price > 0 \
+               and getattr(c, "triggered_at", None) and c.triggered_at >= cutoff:
+                out.append({
+                    "time": int(c.triggered_at),
+                    "type": "entry",
+                    "side": c.order.direction,
+                    "price": float(c.fill_price),
+                    "qty": float(c.fill_qty) if c.fill_qty else None,
+                    "pnl_usd": None,
+                    "close_reason": None,
+                    "exchange_order_id": c.exchange_order_id,
+                    "conditional_id": c.conditional_id,
+                })
+            # Cancel marker: optional, only mark if user wants visible
+            # bookkeeping. For now we DON'T render cancels on chart
+            # (would clutter); telegram covers cancels separately.
+    except Exception as exc:
+        print(f"[trades.fills] cond store err: {exc}")
+
+    # ── Source 2: user_drawings_ml.jsonl (position close events) ──────
+    if _ML_FILE.exists():
+        for row in _iter_jsonl(_ML_FILE):
+            kind = row.get("kind") or row.get("event_type")
+            if kind != "position_closed_from_drawing":
+                continue
+            if str(row.get("symbol") or "").upper() != sym:
+                continue
+            close_ts = row.get("close_ts") or row.get("ts")
+            if not close_ts or close_ts < cutoff:
+                continue
+            exit_price = row.get("exit_price") or row.get("close_price")
+            if not exit_price:
+                continue
+            out.append({
+                "time": int(close_ts),
+                "type": "exit",
+                "side": row.get("side") or row.get("direction"),
+                "price": float(exit_price),
+                "qty": row.get("close_qty") or row.get("qty"),
+                "pnl_usd": row.get("pnl_usd"),
+                "close_reason": row.get("close_reason"),
+                "exchange_order_id": row.get("close_order_id"),
+                "conditional_id": row.get("conditional_id"),
+            })
+
+    # Sort by time ascending (lightweight-charts requires sorted markers)
+    out.sort(key=lambda r: r["time"])
+    return {"symbol": sym, "fills": out, "count": len(out)}

@@ -195,9 +195,13 @@ export function initConditionalPanel(container) {
   window.addEventListener('cond-placed', onCondPlaced);
   panelWindowListeners.push(['cond-placed', onCondPlaced]);
 
-  // All-drawings grouped view — refresh every 15s and on PATCH/POST/DELETE.
+  // All-drawings grouped view — primary refresh is event-driven
+  // ('drawings.updated' fires on any PATCH/POST/DELETE); the poll is just
+  // a 60s safety net for anything that slips through. Was 15s, bumped to
+  // 60s 2026-04-23 because the event path covers all user actions and
+  // the poll was burning /api/drawings?all=true RPS for no benefit.
   void refreshAllDrawings();
-  allDrawingsTimer = setInterval(() => void refreshAllDrawings(), 15000);
+  allDrawingsTimer = setInterval(() => void refreshAllDrawings(), 60000);
   panelUnsubscribers.push(subscribe('drawings.updated', () => { void refreshAllDrawings(); }));
 
   render();

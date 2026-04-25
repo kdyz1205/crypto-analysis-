@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>MA Ribbon EMA21 · Strategy Tester</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg-0: #0d1117;       /* panel background */
+    --bg-1: #161b22;       /* sidebar / cards */
+    --bg-2: #21262d;       /* hover / inputs */
+    --line: #30363d;       /* borders */
+    --text-0: #e6edf3;     /* primary text */
+    --text-1: #8b949e;     /* secondary */
+    --text-2: #6e7681;     /* tertiary */
+    --pos: #3fb950;        /* gain */
+    --neg: #f85149;        /* loss */
+    --accent: #1f6feb;
+    --accent-2: #58a6ff;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    margin: 0; background: var(--bg-0); color: var(--text-0); font-size: 13px;
+  }
+  /* ───────── header ───────── */
+  header {
+    padding: 10px 20px; background: var(--bg-1); border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; justify-content: space-between;
+  }
+  header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+  header h1 .accent { color: var(--accent-2); }
+  #status { color: var(--text-1); font-size: 12px; }
+  #status.run { color: var(--accent-2); }
+  #status.err { color: var(--neg); }
+  #status.ok  { color: var(--pos); }
+
+  /* ───────── layout ───────── */
+  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 41px); }
+  aside { padding: 14px; background: var(--bg-1); border-right: 1px solid var(--line);
+          overflow-y: auto; max-height: calc(100vh - 41px); }
+  main  { padding: 14px 18px; overflow: auto; }
+
+  /* ───────── sidebar groups ───────── */
+  .group { margin-bottom: 16px; }
+  .group h2 {
+    font-size: 10px; text-transform: uppercase; color: var(--text-2);
+    margin: 0 0 6px 0; letter-spacing: 0.05em;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
+  label { display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 12px; }
+  input[type="number"], input[type="text"], select {
+    background: var(--bg-0); color: var(--text-0); border: 1px solid var(--line);
+    border-radius: 4px; padding: 3px 6px; width: 70px; font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="checkbox"] { accent-color: var(--accent); }
+  button {
+    background: #238636; color: #fff; border: 0; border-radius: 5px;
+    padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 12px;
+  }
+  button:hover { background: #2ea043; }
+  button.secondary { background: var(--line); font-size: 11px; padding: 3px 9px; font-weight: 500; }
+  button.secondary:hover { background: #444c56; }
+  button.accent { background: var(--accent); }
+  button.accent:hover { background: #388bfd; }
+  button:disabled { background: #6e7681; cursor: wait; }
+
+  .symbol-list {
+    max-height: 280px; overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 4px; padding: 5px;
+    background: var(--bg-0);
+  }
+  .symbol-list label { display: block; padding: 1px 0; font-size: 11px; }
+  .help { font-size: 10px; color: var(--text-2); margin-top: 3px; line-height: 1.4; }
+
+  /* ───────── KPI cards ───────── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 14px; }
+  .kpi {
+    background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .kpi .label { font-size: 10px; color: var(--text-2); text-transform: uppercase;
+                letter-spacing: 0.05em; margin-bottom: 4px; }
+  .kpi .value {
+    font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
+    color: var(--text-0); line-height: 1.1;
+  }
+  .kpi .sub { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+  .kpi .value.pos { color: var(--pos); }
+  .kpi .value.neg { color: var(--neg); }
+
+  /* ───────── tabs ───────── */
+  .tab-strip {
+    display: flex; gap: 0; border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  }
+  .tab {
+    padding: 8px 16px; cursor: pointer; color: var(--text-1); font-size: 12px;
+    border-bottom: 2px solid transparent; user-select: none;
+  }
+  .tab:hover { color: var(--text-0); }
+  .tab.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+
+  /* ───────── tables ───────── */
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  thead th {
+    padding: 6px 8px; color: var(--text-1); text-align: right; font-weight: 500;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg-0);
+    cursor: pointer; user-select: none;
+    font-variant-numeric: tabular-nums;
+  }
+  thead th:hover { color: var(--text-0); }
+  thead th.left { text-align: left; }
+  thead th.sorted-asc::after  { content: " ▲"; color: var(--accent-2); }
+  thead th.sorted-desc::after { content: " ▼"; color: var(--accent-2); }
+  tbody td {
+    padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--bg-2);
+    font-variant-numeric: tabular-nums;
+  }
+  tbody td.left { text-align: left; }
+  tbody tr:hover { background: var(--bg-1); }
+
+  .pos { color: var(--pos); }
+  .neg { color: var(--neg); }
+  .pill {
+    display: inline-block; padding: 1px 6px; border-radius: 9px; font-size: 10px;
+    background: var(--bg-2); color: var(--text-1); font-weight: 500;
+  }
+  .pill.pass { background: rgba(63,185,80,0.15); color: var(--pos); }
+  .pill.fail { background: rgba(248,81,73,0.15); color: var(--neg); }
+
+  /* ───────── progress ───────── */
+  .progress-shell {
+    background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px;
+    padding: 10px 14px; margin-bottom: 12px; display: none;
+  }
+  #progress-text { font-size: 12px; color: var(--text-1); }
+  .progress-bar {
+    height: 4px; background: var(--bg-2); border-radius: 2px; overflow: hidden;
+    margin-top: 6px;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.3s;
+  }
+
+  /* ───────── gate banner ───────── */
+  #gate-banner {
+    padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;
+    display: none; font-size: 12px;
+  }
+  #gate-banner.pass { background: rgba(63,185,80,0.10); border: 1px solid rgba(63,185,80,0.4); }
+  #gate-banner.fail { background: rgba(248,81,73,0.10); border: 1px solid rgba(248,81,73,0.4); }
+
+  /* ───────── tab panels ───────── */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  details summary { cursor: pointer; color: var(--text-1); font-size: 11px; }
+  details[open] summary { color: var(--text-0); }
+
+  hr.sep { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>MA Ribbon <span class="accent">EMA21</span> · Strategy Tester · LIVE</h1>
+  <span id="status">loading universe…</span>
+</header>
+
+<div class="layout">
+
+  <aside>
+
+    <!-- 1. universe -->
+    <div class="group">
+      <h2>universe
+        <button class="secondary" id="select-all">all</button>
+      </h2>
+      <div class="row">
+        <label><input type="checkbox" name="pt" value="USDT-FUTURES" checked /> USDT</label>
+        <label><input type="checkbox" name="pt" value="USDC-FUTURES" checked /> USDC</label>
+        <label><input type="checkbox" name="pt" value="COIN-FUTURES" checked /> COIN</label>
+      </div>
+      <div class="row">
+        <label>vol $M</label>
+        <input type="number" id="min-vol" value="1" min="0" max="1000" step="1" />
+        <button class="secondary" id="reload-syms">↻</button>
+      </div>
+      <div class="symbol-list" id="symbol-list"></div>
+      <div class="help" id="symbol-count">—</div>
+    </div>
+
+    <!-- 2. timeframes -->
+    <div class="group">
+      <h2>timeframes</h2>
+      <div class="row" id="tf-list">
+        <label><input type="checkbox" name="tf" value="5m" />5m</label>
+        <label><input type="checkbox" name="tf" value="15m" />15m</label>
+        <label><input type="checkbox" name="tf" value="1h" checked />1h</label>
+        <label><input type="checkbox" name="tf" value="4h" checked />4h</label>
+      </div>
+    </div>
+
+    <!-- 3. alignment -->
+    <div class="group">
+      <h2>bullish alignment</h2>
+      <details>
+        <summary>7 toggles</summary>
+        <div class="row"><label><input type="checkbox" id="al_close_ma5"   checked /> close &gt; MA5</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ma8"   checked /> close &gt; MA8</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ema21" checked /> close &gt; EMA21</label></div>
+        <div class="row"><label><input type="checkbox" id="al_close_ma55"  checked /> close &gt; MA55</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ma5_ma8"     checked /> MA5 &gt; MA8</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ma8_ema21"   checked /> MA8 &gt; EMA21</label></div>
+        <div class="row"><label><input type="checkbox" id="al_ema21_ma55"  checked /> EMA21 &gt; MA55</label></div>
+      </details>
+    </div>
+
+    <!-- 4. data depth -->
+    <div class="group">
+      <h2>data depth</h2>
+      <div class="row">
+        <label>pages</label>
+        <input type="number" id="pages" value="30" min="1" max="200" />
+        <label>conc</label>
+        <input type="number" id="concurrency" value="12" min="1" max="20" />
+      </div>
+      <div class="help">每页 200 bars · 30 = 6000 bars/对 · 100 ≈ Bitget 上限</div>
+    </div>
+
+    <!-- 5. fees -->
+    <div class="group">
+      <h2>fees · slippage</h2>
+      <div class="row">
+        <label>fee %</label>
+        <input type="number" id="fee-pct" value="0.05" min="0" max="1" step="0.01" />
+        <label>slip bp</label>
+        <input type="number" id="slip-bp" value="1" min="0" max="100" step="0.5" />
+      </div>
+      <div class="help">来回 = 2 × (fee + slip/100) · 默认 0.12% RT</div>
+    </div>
+
+    <!-- 6. P1 gate -->
+    <div class="group">
+      <h2>phase 1 gate (signal)</h2>
+      <div class="row">
+        <label>horizon bars</label>
+        <input type="number" id="horizon" value="20" min="1" max="200" />
+      </div>
+      <div class="row">
+        <label>thresh %</label>
+        <input type="number" id="threshold" value="1.0" min="0" max="20" step="0.1" />
+        <label>min sym %</label>
+        <input type="number" id="min-symbol-pct" value="30" min="0" max="100" step="5" />
+      </div>
+    </div>
+
+    <!-- 7. P2 trailing -->
+    <div class="group">
+      <h2>phase 2 trailing SL</h2>
+      <div class="row">
+        <label>buffer %</label>
+        <input type="number" id="buffer-pct" value="1.5" min="0.1" max="20" step="0.1" />
+      </div>
+      <div class="help">SL = EMA21 × (1 − buffer%), 永远只升不降. 建议:5m=0.5–1, 15m=1–2, 1h=1.5–3, 4h=3–7</div>
+    </div>
+
+    <!-- run buttons -->
+    <div class="group">
+      <button id="run-p1" style="width:100%;padding:9px;margin-bottom:5px">▶ Phase 1: Signal cohort</button>
+      <button id="run-p2" class="accent" style="width:100%;padding:9px">▶ Phase 2: Trailing SL</button>
+    </div>
+
+  </aside>
+
+  <main>
+
+    <!-- progress + KPI -->
+    <div id="progress" class="progress-shell">
+      <div id="progress-text">running…</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
+
+    <div class="kpi-grid" id="kpi-grid">
+      <!-- 6 KPI cards inserted dynamically -->
+    </div>
+
+    <div id="gate-banner"></div>
+
+    <!-- tabs -->
+    <div class="tab-strip">
+      <div class="tab active" data-tab="p1">Phase 1 · Signal cohort</div>
+      <div class="tab"        data-tab="p2">Phase 2 · Trailing SL</div>
+      <div class="tab"        data-tab="info">About / 说明</div>
+    </div>
+
+    <div class="tab-panel active" id="panel-p1">
+      <div id="p1-summary" class="help" style="margin-bottom:8px">点击左侧 ▶ Phase 1 跑信号 cohort 分析</div>
+      <div id="p1-table"></div>
+    </div>
+
+    <div class="tab-panel" id="panel-p2">
+      <div id="p2-summary" class="help" style="margin-bottom:8px">点击左侧 ▶ Phase 2 跑 trailing SL 真实交易模拟</div>
+      <div id="p2-table"></div>
+    </div>
+
+    <div class="tab-panel" id="panel-info">
+      <div style="max-width:760px;line-height:1.65;font-size:12.5px;color:var(--text-1)">
+        <h3 style="color:var(--text-0);margin-top:0">什么是 train / test split</h3>
+        <p>历史数据按时间切前 70% 给策略调参 (train), 后 30% 锁起来不让策略看到 (test).
+        gate 只看 test split 的数字 — 这样如果策略在 train 上很漂亮但 test 上拉胯, 我们就
+        知道是过拟合, 不是真信号.</p>
+
+        <h3 style="color:var(--text-0)">为什么一个币有多行</h3>
+        <p>每行答一个具体条件下的表现, 不是不同参数. 一个币 BTCUSDT 在 1h+4h 两个 TF, 6 个
+        距离 MA5 档 (0–0.5%, 0.5–1%, ...), 2 个 split (train/test), 最多 2×6×2 = 24 行.
+        每行: "BTC 在 1h, 排列形成且距 MA5 在 0–0.5%, test split, 平均收益是 X".</p>
+
+        <h3 style="color:var(--text-0)">Phase 1 vs Phase 2</h3>
+        <p><strong>Phase 1</strong>: 信号 cohort. 测每次"多头排列"成立后, 固定 N 根 bar 内的
+        平均收益. 不模拟真实交易, 只测信号本身有没有边际.</p>
+        <p><strong>Phase 2</strong>: 真实交易模拟. 信号触发 → 下一根 bar 开盘买入 →
+        SL = 当下 EMA21 × (1 − buffer%), 永远只往上 trail → 价格跌穿 SL 平仓. 输出
+        胜率 / 总收益 / 回撤 / Sharpe / 持仓时长 等真实策略指标.</p>
+
+        <h3 style="color:var(--text-0)">手续费 / 资金费率</h3>
+        <p>默认 Bitget taker 0.05% × 进出 + 1bp 滑点 × 进出 = 来回 0.12%. 资金费率 (funding
+        rate) 暂未算入 — 多头持仓 8 小时一次, -0.005% ~ -0.05% 不等. 如果平均持仓 10+ bar
+        on 4h (= 40+ 小时 = 5+ 次资金费率), 影响会显著. 后续会加入.</p>
+      </div>
+    </div>
+
+  </main>
+
+</div>
+
+<script>
+const TFS = ["5m","15m","1h","4h"];
+let UNIVERSE = [];
+let LAST_P1 = null, LAST_P2 = null;
+const $ = id => document.getElementById(id);
+
+// ───── status & utils ─────
+function setStatus(msg, mode = "") {
+  $("status").textContent = msg;
+  $("status").className = mode;
+}
+function fmtPct(v, digits=2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const n = (v * 100).toFixed(digits);
+  const cls = v > 0 ? "pos" : (v < 0 ? "neg" : "");
+  return `<span class="${cls}">${v >= 0 ? "+" : ""}${n}%</span>`;
+}
+function fmtNum(v, digits=2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return v.toFixed(digits);
+}
+function fmtRate(v) {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  return (v * 100).toFixed(0) + "%";
+}
+
+// ───── universe ─────
+async function loadSymbols() {
+  setStatus("fetching live universe from Bitget…", "run");
+  try {
+    const min_vol = parseFloat($("min-vol").value) * 1_000_000;
+    const pts = Array.from(document.querySelectorAll('input[name="pt"]:checked')).map(e => e.value).join(",");
+    const r = await fetch(`/api/symbols?min_volume=${min_vol}&product_types=${encodeURIComponent(pts)}`).then(r => r.json());
+    UNIVERSE = r.symbols;
+    renderSymbolList();
+    $("symbol-count").textContent = `${UNIVERSE.length} symbols [${(r.product_types || []).join("·")}]`;
+    setStatus(`${UNIVERSE.length} symbols ready`, "ok");
+  } catch (e) { setStatus(`universe failed: ${e.message}`, "err"); }
+}
+function renderSymbolList() {
+  const host = $("symbol-list");
+  host.innerHTML = "";
+  for (const sym of UNIVERSE) {
+    const cb = document.createElement("label");
+    cb.innerHTML = `<input type="checkbox" name="symbol" value="${sym}" checked />${sym}`;
+    host.appendChild(cb);
+  }
+}
+function getSelected(name) {
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(e => e.value);
+}
+function getAlignment() {
+  return {
+    require_close_above_ma5:    $("al_close_ma5").checked,
+    require_close_above_ma8:    $("al_close_ma8").checked,
+    require_close_above_ema21:  $("al_close_ema21").checked,
+    require_close_above_ma55:   $("al_close_ma55").checked,
+    require_ma5_above_ma8:      $("al_ma5_ma8").checked,
+    require_ma8_above_ema21:    $("al_ma8_ema21").checked,
+    require_ema21_above_ma55:   $("al_ema21_ma55").checked,
+  };
+}
+
+// ───── progress ─────
+let progressTimer = null;
+function showProgress(message) {
+  $("progress").style.display = "block";
+  $("progress-text").textContent = message;
+  $("progress-fill").style.width = "8%";
+  let elapsed = 0;
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = setInterval(() => {
+    elapsed += 1;
+    $("progress-text").textContent = `${message} — ${elapsed}s`;
+    const pct = Math.min(95, 8 + 87 * (1 - Math.exp(-elapsed / 90)));
+    $("progress-fill").style.width = pct + "%";
+  }, 1000);
+}
+function endProgress() {
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = null;
+  $("progress-fill").style.width = "100%";
+  setTimeout(() => { $("progress").style.display = "none"; }, 600);
+}
+
+// ───── KPI cards ─────
+function renderKPIs(cards) {
+  $("kpi-grid").innerHTML = cards.map(c => `
+    <div class="kpi">
+      <div class="label">${c.label}</div>
+      <div class="value ${c.cls || ""}">${c.value}</div>
+      <div class="sub">${c.sub || ""}</div>
+    </div>
+  `).join("");
+}
+
+// ───── tabs ─────
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("panel-" + tab.dataset.tab).classList.add("active");
+    // re-render KPIs for the selected tab
+    if (tab.dataset.tab === "p1" && LAST_P1) renderKPIsP1(LAST_P1);
+    if (tab.dataset.tab === "p2" && LAST_P2) renderKPIsP2(LAST_P2);
+  });
+});
+
+// ───── sortable table helper ─────
+function makeSortableTable(host, columns, rows) {
+  let sortCol = null, sortDir = -1;
+  function render() {
+    const sorted = sortCol === null ? rows : rows.slice().sort((a, b) => {
+      const va = columns[sortCol].get(a), vb = columns[sortCol].get(b);
+      if (va === vb) return 0;
+      return (va < vb ? -1 : 1) * sortDir;
+    });
+    host.innerHTML = `
+      <table>
+        <thead><tr>${columns.map((c, i) => `
+          <th class="${c.left ? "left" : ""} ${i === sortCol ? (sortDir > 0 ? "sorted-asc" : "sorted-desc") : ""}" data-col="${i}">${c.title}</th>
+        `).join("")}</tr></thead>
+        <tbody>${sorted.map(r => `<tr>${columns.map(c => `
+          <td class="${c.left ? "left" : ""}">${c.fmt ? c.fmt(c.get(r)) : c.get(r)}</td>`).join("")}</tr>`).join("")}
+        </tbody>
+      </table>
+    `;
+    host.querySelectorAll("th").forEach(th => th.addEventListener("click", () => {
+      const idx = parseInt(th.dataset.col, 10);
+      if (sortCol === idx) sortDir = -sortDir;
+      else { sortCol = idx; sortDir = -1; }
+      render();
+    }));
+  }
+  render();
+}
+
+// ───── PHASE 1 ─────
+async function runP1() {
+  const symbols = getSelected("symbol"), tfs = getSelected("tf");
+  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", "err"); return; }
+  $("run-p1").disabled = true; $("run-p2").disabled = true;
+  setStatus(`P1 live: ${symbols.length} syms × ${tfs.length} TFs`, "run");
+  showProgress(`Phase 1: fetching ${symbols.length * tfs.length} pairs`);
+  try {
+    const body = {
+      symbols, tfs, alignment: getAlignment(),
+      horizon_for_gate: parseInt($("horizon").value, 10),
+      gate_threshold_pct: parseFloat($("threshold").value) / 100,
+      gate_min_symbol_pct: parseFloat($("min-symbol-pct").value) / 100,
+      pages_per_symbol: parseInt($("pages").value, 10),
+      concurrency: parseInt($("concurrency").value, 10),
+      fee_per_side: parseFloat($("fee-pct").value) / 100,
+      slippage_per_fill: parseFloat($("slip-bp").value) / 10000,
+    };
+    const r = await fetch("/api/scan", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    }).then(r => r.json());
+    LAST_P1 = r;
+    document.querySelector('.tab[data-tab="p1"]').click();
+    renderKPIsP1(r);
+    renderP1Table(r);
+    setStatus(`P1 done — ${r.total_events} events · fetch ${r.fetch_seconds}s + scan ${r.scan_seconds}s`, "ok");
+  } catch (e) { setStatus(`P1 failed: ${e.message}`, "err"); }
+  finally { $("run-p1").disabled = false; $("run-p2").disabled = false; endProgress(); }
+}
+
+function renderKPIsP1(r) {
+  const banner = $("gate-banner");
+  banner.style.display = "block";
+  banner.className = r.gate.passed ? "pass" : "fail";
+  banner.innerHTML = `
+    <div><strong>${r.gate.passed ? "PHASE 1 GATE PASS ✓" : "PHASE 1 GATE FAIL ✗"}</strong>
+      <span class="pill ${r.gate.passed ? "pass" : "fail"}">${r.gate.symbols_passing}/${r.gate.symbols_total} = ${r.gate.symbols_total ? Math.round(100 * r.gate.symbols_passing / r.gate.symbols_total) : 0}%</span>
+    </div>
+    <div style="margin-top:5px;color:var(--text-1)">${r.gate.reason}</div>
+    ${r.gate.passing_symbols.length ? `<div style="margin-top:5px"><span class="pos">PASS:</span> ${r.gate.passing_symbols.join(" · ")}</div>` : ""}
+    ${r.gate.failing_symbols.length ? `<div style="color:var(--text-2)"><span class="neg">FAIL (${r.gate.failing_symbols.length}):</span> ${r.gate.failing_symbols.slice(0,30).join(" · ")}${r.gate.failing_symbols.length > 30 ? " …" : ""}</div>` : ""}
+  `;
+  renderKPIs([
+    {label: "events", value: r.total_events, sub: `over ${r.gate.symbols_total} symbols`},
+    {label: "cohorts", value: r.cohorts.length, sub: `(sym, TF, bucket, split)`},
+    {label: "gate", value: r.gate.passed ? "PASS" : "FAIL",
+      cls: r.gate.passed ? "pos" : "neg",
+      sub: `${r.gate.symbols_passing}/${r.gate.symbols_total}`},
+    {label: "skipped", value: r.skipped_pairs.length, sub: "no Bitget data"},
+    {label: "fetch", value: r.fetch_seconds.toFixed(1) + "s", sub: "live from Bitget"},
+    {label: "total time", value: r.total_seconds.toFixed(1) + "s", sub: "per scan"},
+  ]);
+}
+
+function renderP1Table(r) {
+  $("p1-summary").innerHTML = `${r.total_events} events · horizon = +${r.horizon} bars · cohorts grouped by (symbol, TF, bucket, split)`;
+  const cols = [
+    {title: "symbol",   left: true, get: c => c.symbol},
+    {title: "TF",       left: true, get: c => c.tf,
+      fmt: v => `<span class="pill">${v}</span>`},
+    {title: "bucket",   left: true, get: c => c.bucket},
+    {title: "split",    left: true, get: c => c.split,
+      fmt: v => `<span class="pill ${v==='test' ? 'pass' : ''}">${v}</span>`},
+    {title: "count",    get: c => c.count},
+    {title: "mean",     get: c => c.mean_post_fee, fmt: v => fmtPct(v)},
+    {title: "median",   get: c => c.median_post_fee, fmt: v => fmtPct(v)},
+    {title: "win%",     get: c => c.win_rate, fmt: v => fmtRate(v)},
+    {title: "worst",    get: c => c.worst_post_fee, fmt: v => fmtPct(v)},
+  ];
+  makeSortableTable($("p1-table"), cols, r.cohorts);
+}
+
+// ───── PHASE 2 ─────
+async function runP2() {
+  const symbols = getSelected("symbol"), tfs = getSelected("tf");
+  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", "err"); return; }
+  $("run-p1").disabled = true; $("run-p2").disabled = true;
+  setStatus(`P2 trailing SL live: ${symbols.length} syms × ${tfs.length} TFs`, "run");
+  showProgress(`Phase 2: fetching + trailing-SL simulating`);
+  try {
+    const body = {
+      symbols, tfs, alignment: getAlignment(),
+      buffer_pct: parseFloat($("buffer-pct").value) / 100,
+      pages_per_symbol: parseInt($("pages").value, 10),
+      concurrency: parseInt($("concurrency").value, 10),
+      fee_per_side: parseFloat($("fee-pct").value) / 100,
+      slippage_per_fill: parseFloat($("slip-bp").value) / 10000,
+    };
+    const r = await fetch("/api/phase2_scan", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    }).then(r => r.json());
+    LAST_P2 = r;
+    document.querySelector('.tab[data-tab="p2"]').click();
+    renderKPIsP2(r);
+    renderP2Table(r);
+    setStatus(`P2 done — ${r.portfolio.total_trades} trades · ${fmtPct(r.portfolio.portfolio_total_return_post_fee, 1).replace(/<[^>]+>/g,"")} portfolio · fetch ${r.fetch_seconds}s`, "ok");
+  } catch (e) { setStatus(`P2 failed: ${e.message}`, "err"); }
+  finally { $("run-p1").disabled = false; $("run-p2").disabled = false; endProgress(); }
+}
+
+function renderKPIsP2(r) {
+  const p = r.portfolio;
+  $("gate-banner").style.display = "none";
+  renderKPIs([
+    {label: "Total Trades", value: p.total_trades,
+      sub: `${p.total_wins} wins · ${p.symbols_total} symbols`},
+    {label: "Win Rate",
+      value: (p.win_rate * 100).toFixed(1) + "%",
+      cls: p.win_rate > 0.5 ? "pos" : (p.win_rate < 0.4 ? "neg" : ""),
+      sub: "of all trades"},
+    {label: "Net P&L",
+      value: (p.portfolio_total_return_post_fee >= 0 ? "+" : "") + (p.portfolio_total_return_post_fee * 100).toFixed(2) + "%",
+      cls: p.portfolio_total_return_post_fee > 0 ? "pos" : "neg",
+      sub: "compounded post-fee"},
+    {label: "Profit Factor",
+      value: p.portfolio_profit_factor >= 999 ? "∞" : p.portfolio_profit_factor.toFixed(2),
+      cls: p.portfolio_profit_factor > 1.5 ? "pos" : (p.portfolio_profit_factor < 1 ? "neg" : ""),
+      sub: "gross gains / losses"},
+    {label: "Max Drawdown",
+      value: (p.portfolio_max_drawdown * 100).toFixed(2) + "%",
+      cls: "neg",
+      sub: "peak → trough"},
+    {label: "Sharpe",
+      value: p.portfolio_sharpe_per_trade.toFixed(3),
+      cls: p.portfolio_sharpe_per_trade > 0.3 ? "pos" : (p.portfolio_sharpe_per_trade < 0 ? "neg" : ""),
+      sub: "per-trade · avg hold " + p.avg_holding_bars.toFixed(0) + " bars"},
+  ]);
+}
+
+function renderP2Table(r) {
+  const p = r.portfolio;
+  $("p2-summary").innerHTML = `
+    ${r.pairs.length} (sym, TF) pairs · ${p.total_trades} trades · ${p.symbols_with_positive_test_return}/${p.symbols_total} symbols positive on test split ·
+    fetch ${r.fetch_seconds}s + scan ${r.scan_seconds}s = ${r.total_seconds}s
+  `;
+  const cols = [
+    {title: "symbol", left: true, get: r => r.symbol},
+    {title: "TF",     left: true, get: r => r.tf,
+      fmt: v => `<span class="pill">${v}</span>`},
+    {title: "trades", get: r => r.trades},
+    {title: "win%",   get: r => r.win_rate, fmt: v => fmtRate(v)},
+    {title: "total",  get: r => r.total_return_post_fee, fmt: v => fmtPct(v)},
+    {title: "mean",   get: r => r.mean_return_post_fee, fmt: v => fmtPct(v)},
+    {title: "PF",     get: r => r.profit_factor,
+      fmt: v => v >= 999 ? "∞" : v.toFixed(2)},
+    {title: "MDD",    get: r => r.max_drawdown, fmt: v => fmtPct(v)},
+    {title: "Sharpe", get: r => r.sharpe_per_trade,
+      fmt: v => `<span class="${v > 0 ? "pos" : (v < 0 ? "neg" : "")}">${v.toFixed(2)}</span>`},
+    {title: "hold",   get: r => r.avg_holding_bars, fmt: v => v.toFixed(0)},
+    {title: "MFE avg",get: r => r.avg_mfe, fmt: v => fmtPct(v)},
+    {title: "MAE avg",get: r => r.avg_mae, fmt: v => fmtPct(v)},
+    {title: "test μ", get: r => r.test_mean_return,
+      fmt: v => `<span class="pill ${v > 0 ? 'pass' : 'fail'}">${fmtPct(v).replace(/<[^>]+>/g,'')}</span>`},
+  ];
+  makeSortableTable($("p2-table"), cols, r.pairs);
+}
+
+// ───── wire up ─────
+$("run-p1").addEventListener("click", runP1);
+$("run-p2").addEventListener("click", runP2);
+$("reload-syms").addEventListener("click", loadSymbols);
+document.querySelectorAll("input[name='pt']").forEach(cb => cb.addEventListener("change", loadSymbols));
+$("select-all").addEventListener("click", () => {
+  const all = document.querySelectorAll("input[name='symbol']");
+  const allOn = Array.from(all).every(c => c.checked);
+  all.forEach(c => c.checked = !allOn);
+});
+
+loadSymbols();
+</script>
+</body>
+</html>

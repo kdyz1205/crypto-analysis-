@@ -218,20 +218,43 @@ let _modal = null;
 // User 2026-04-22: popup showed "$0 notional (pending...)" because a
 // transient /account abort zeroed out the cache, blocking order placement
 // even though the sidebar was still showing real equity from its own poll.
-let _equityCache = {
-  freshTs: 0,        // last time we GOT a successful fetch
-  staleTs: 0,        // last time we TRIED (success or fail)
-  equity: 0,         // last good value (kept across failures)
-  mode: '',
-  error: '',
-};
+//
+// 2026-04-24: bucketed BY MODE. Previous version was a single-mode cache
+// that got OVERWRITTEN whenever fetchEquity was called for a different
+// mode. Real bug seen this session:
+//   - User has setups in BOTH live ($469) and demo ($0, no funding)
+//   - Modal opens → Promise.all([fetchEquity('live'), fetchEquity('demo')])
+//   - live resolves → cache = {mode:'live', equity:469}
+//   - demo resolves last → cache = {mode:'demo', equity:0}
+//   - getCachedEquity('live') → mode mismatch → return 0
+//   - All live setups show "$0 notional"; click triggers "暂停挂单"
+// The fix: cache keyed by mode so demo's $0 cannot evict live's $469.
+const _equityCacheByMode = new Map();   // mode → {freshTs, staleTs, equity, error}
 const EQUITY_FRESH_MS = 10_000;   // within this: no re-fetch
 const EQUITY_STALE_MS = 5 * 60_000;  // last good remains usable for 5 min
 
+function _readEquityCache(mode) {
+  return _equityCacheByMode.get(mode) || {
+    freshTs: 0, staleTs: 0, equity: 0, error: '',
+  };
+}
+
+function _writeEquityCache(mode, entry) {
+  _equityCacheByMode.set(mode, entry);
+}
+
 async function fetchEquity(mode) {
   const now = Date.now();
-  if (_equityCache.mode === mode && now - _equityCache.freshTs < EQUITY_FRESH_MS && !_equityCache.error) {
-    return _equityCache.equity;
+  const cur = _readEquityCache(mode);
+  // Treat equity > 0 as fresh; equity == 0 is "fetched but useless"
+  // → don't short-circuit on it (force a real refetch).
+  // 2026-04-25: user reported "挂单失败缓存失败" — root cause was that
+  // a single transient Bitget hiccup returning total_equity=0 got
+  // cached as `freshTs=now, equity=0`, then the next 10s of attempts
+  // all served that 0 directly without retrying. Now equity=0 is
+  // explicitly NOT considered fresh; cache only gates positive values.
+  if (cur.equity > 0 && now - cur.freshTs < EQUITY_FRESH_MS && !cur.error) {
+    return cur.equity;
   }
   try {
     // 15s timeout: /account fans out to 5 sequential Bitget REST calls.
@@ -244,36 +267,48 @@ async function fetchEquity(mode) {
         ?? resp?.account?.equity
         ?? 0,
     );
-    _equityCache = {
-      freshTs: now, staleTs: now, equity, mode, error: '',
-    };
-    return equity;
+    if (equity > 0) {
+      _writeEquityCache(mode, {
+        freshTs: now, staleTs: now, equity, error: '',
+      });
+    } else {
+      // Got 0 from a "successful" fetch — still bad. Mark as error so
+      // next call retries instead of trusting the 0.
+      _writeEquityCache(mode, {
+        freshTs: cur.freshTs,        // keep prior fresh-ts intact
+        staleTs: now,
+        equity: cur.equity,           // preserve last good (could be 0)
+        error: 'fetched but equity was 0 (Bitget hiccup or empty account)',
+      });
+    }
+    return equity > 0 ? equity : (cur.equity || 0);
   } catch (err) {
     const msg = err?.message || String(err);
     console.warn('[trade_plan_modal] fetchEquity failed:', msg);
     // CRITICAL: do NOT zero the equity. Keep last good. The popup's
     // size_usdt calculation falls back to this via getCachedEquity().
-    const prevEquity = (_equityCache.mode === mode) ? _equityCache.equity : 0;
-    const prevFreshTs = (_equityCache.mode === mode) ? _equityCache.freshTs : 0;
-    _equityCache = {
-      freshTs: prevFreshTs,
+    _writeEquityCache(mode, {
+      freshTs: cur.freshTs,    // keep prior fresh ts so STALE_MS still in effect
       staleTs: now,
-      equity: prevEquity,
-      mode,
+      equity: cur.equity,      // last good (could be 0 if first call)
       error: msg,
-    };
-    return prevEquity;  // return last good instead of 0 so caller can proceed
+    });
+    return cur.equity;
   }
 }
 
 function getCachedEquity(mode) {
   const now = Date.now();
-  if (_equityCache.mode === mode && _equityCache.equity > 0
-      && now - _equityCache.freshTs < EQUITY_STALE_MS) {
-    return Number(_equityCache.equity) || 0;
+  const cur = _readEquityCache(mode);
+  if (cur.equity > 0 && now - cur.freshTs < EQUITY_STALE_MS) {
+    return Number(cur.equity) || 0;
   }
   return 0;
 }
+
+// Back-compat alias used by the placement path (line ~1623). Just writes
+// to the per-mode cache.
+function _equityCacheWrite(mode, entry) { _writeEquityCache(mode, entry); }
 
 /**
  * Open the modal.
@@ -560,7 +595,8 @@ export function openTradePlanModal(line, options = {}) {
       }
 
       const equity = await fetchEquity(mode);
-      const accountErr = _equityCache.error;
+      // 2026-04-24: read from per-mode bucket (was global _equityCache).
+      const accountErr = _readEquityCache(mode).error;
       // Friendlier message — user doesn't care about "signal is aborted",
       // they care whether they can still place the order (YES — notional
       // is independent of the equity fetch).
@@ -1620,7 +1656,11 @@ export function openQuickTradePopup(line, clickX = null, clickY = null) {
             const eq = Number(acct?.total_equity ?? acct?.usdt_available ?? acct?.equity ?? 0);
             if (eq > 0) {
               // Populate our module cache so future calls see it.
-              _equityCache = { freshTs: Date.now(), staleTs: Date.now(), equity: eq, mode, error: '' };
+              // 2026-04-24 fix: per-mode write so demo doesn't evict live.
+              _equityCacheWrite(mode, {
+                freshTs: Date.now(), staleTs: Date.now(),
+                equity: eq, error: '',
+              });
               return { equity: eq, stale: false };
             }
           } catch (err) {

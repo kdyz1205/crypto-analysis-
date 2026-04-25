@@ -33,10 +33,38 @@ def now_ts() -> int:
     return int(time.time())
 
 
-class ConditionalOrderStore:
+# 2026-04-25: ConditionalOrderStore is now an alias for the SQLite-backed
+# implementation. The legacy JSON-file class below is retained as
+# `_LegacyJsonConditionalOrderStore` and selected via the env var
+# COND_STORE_BACKEND=json (used by tests + as an emergency revert switch).
+#
+# Migration: SqliteConditionalOrderStore.__init__ auto-imports the JSON
+# file on first run, then renames it to .json.bak.
+import os as _os_for_backend
+
+
+def _resolve_backend():
+    backend = _os_for_backend.environ.get("COND_STORE_BACKEND", "sqlite").lower()
+    if backend == "json":
+        return _LegacyJsonConditionalOrderStore
+    from .sqlite_store import SqliteConditionalOrderStore
+    return SqliteConditionalOrderStore
+
+
+class _LegacyJsonConditionalOrderStore:
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or DEFAULT_PATH
         self._lock = threading.Lock()
+        # 2026-04-24: in-memory mirror to avoid the 614 KB JSON read on
+        # every list_all / get / mutation. Polling (decision_rail 30s,
+        # conditional_panel 10s) was producing 4-12 full deserializes /
+        # min when the file already had 96+ conds. Now the cache serves
+        # reads in O(1) and is invalidated when the file mtime changes
+        # (handles external edits e.g. manual cleanup scripts) or when
+        # we mutate via _write_all. Writes still go to disk atomically;
+        # crash safety unchanged.
+        self._cache: list[ConditionalOrder] | None = None
+        self._cache_mtime: float = 0.0
 
     # ─────────────────────────────────────────────────────────────
     # Public API
@@ -203,13 +231,30 @@ class ConditionalOrderStore:
     # Internal
     # ─────────────────────────────────────────────────────────────
     def _read_all(self) -> list[ConditionalOrder]:
+        # Cache hit when file's mtime hasn't changed since last load.
+        # Returns a SHALLOW COPY so callers mutating the list don't
+        # corrupt our cache (writes go through _write_all anyway).
         if not self.path.exists():
+            self._cache = []
+            self._cache_mtime = 0.0
             return []
+        try:
+            current_mtime = self.path.stat().st_mtime
+        except OSError:
+            current_mtime = 0.0
+        if self._cache is not None and current_mtime == self._cache_mtime:
+            return list(self._cache)   # shallow copy
+
+        # Miss: parse from disk + repopulate cache
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
+            self._cache = []
+            self._cache_mtime = current_mtime
             return []
         if not isinstance(raw, list):
+            self._cache = []
+            self._cache_mtime = current_mtime
             return []
         out: list[ConditionalOrder] = []
         for item in raw:
@@ -221,6 +266,8 @@ class ConditionalOrderStore:
                 # Skip malformed but log
                 print(f"[conditional_store] skip malformed: {e}", flush=True)
                 continue
+        self._cache = list(out)
+        self._cache_mtime = current_mtime
         return out
 
     def _write_all(self, items: list[ConditionalOrder]) -> None:
@@ -233,6 +280,13 @@ class ConditionalOrderStore:
             encoding="utf-8",
         )
         os.replace(tmp_path, self.path)
+        # Update in-memory mirror to match what we just persisted.
+        # Use the new mtime so next _read_all serves from cache.
+        try:
+            self._cache_mtime = self.path.stat().st_mtime
+        except OSError:
+            self._cache_mtime = 0.0
+        self._cache = list(items)   # shallow copy
 
     def _order_to_dict(self, o: ConditionalOrder) -> dict[str, Any]:
         """Serialize ConditionalOrder + nested dataclasses to JSON-safe dict.
@@ -328,4 +382,14 @@ class ConditionalOrderStore:
         )
 
 
-__all__ = ["ConditionalOrderStore", "DEFAULT_PATH", "now_ts"]
+# 2026-04-25: public symbol resolves to the active backend at import time.
+# Default backend is SQLite; set COND_STORE_BACKEND=json to revert.
+ConditionalOrderStore = _resolve_backend()
+
+
+__all__ = [
+    "ConditionalOrderStore",
+    "_LegacyJsonConditionalOrderStore",  # exposed for tests
+    "DEFAULT_PATH",
+    "now_ts",
+]

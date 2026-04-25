@@ -4,14 +4,95 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trading OS</title>
+  <!-- 2026-04-25 SW SELF-RECOVERY — runs BEFORE any other JS so the
+       moment a stale Service Worker is detected we kill it + reload.
+       After one auto-reload the new SW (v3-2026-04-25-jschart-fix) is
+       in control with stale-while-revalidate, so future code changes
+       no longer need this dance. The check is keyed by an expected
+       version string; bumping that string is how future cache-bust
+       events propagate. ZERO user action — they just F5. -->
+  <script>
+    (function(){
+      var EXPECTED_SW = 'v3-2026-04-25-jschart-fix';
+      var FLAG_KEY = 'tos.sw.recoveredAt.' + EXPECTED_SW;
+      try {
+        if (sessionStorage.getItem(FLAG_KEY)) return;  // already recovered this session
+      } catch (_) { /* private mode → fall through, single recover is fine */ }
+      if (!('serviceWorker' in navigator)) return;
+      // If a controller exists, ask it for its version. Old SW won't
+      // respond to this query (no handler) → null after 1500ms → kill.
+      var controller = navigator.serviceWorker.controller;
+      if (!controller) return;  // first visit ever, new SW will register naturally
+      var done = false;
+      var t = setTimeout(function(){
+        if (done) return; done = true;
+        // No version reply → assume old SW → nuke
+        navigator.serviceWorker.getRegistrations().then(function(rs){
+          return Promise.all(rs.map(function(r){ return r.unregister(); }));
+        }).then(function(){
+          if (!('caches' in window)) return null;
+          return caches.keys().then(function(ks){
+            return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+          });
+        }).then(function(){
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+          location.reload();
+        }).catch(function(){
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+        });
+      }, 1500);
+      // Actively probe the SW for its version.
+      var ch = new MessageChannel();
+      ch.port1.onmessage = function(ev){
+        if (done) return; done = true; clearTimeout(t);
+        var ver = ev && ev.data && ev.data.version;
+        if (ver !== EXPECTED_SW) {
+          // Mismatch: old SW reporting different version → force-reload
+          navigator.serviceWorker.getRegistrations().then(function(rs){
+            return Promise.all(rs.map(function(r){ return r.unregister(); }));
+          }).then(function(){
+            return caches.keys().then(function(ks){
+              return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+            });
+          }).then(function(){
+            try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+            location.reload();
+          });
+        } else {
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+        }
+      };
+      try {
+        controller.postMessage({ type: 'ping-version' }, [ch.port2]);
+      } catch (_) { /* unable → 1.5s timeout will catch it */ }
+    })();
+  </script>
+  <!-- 2026-04-23: preconnect hints. Browser opens TCP+TLS to these hosts
+       in parallel with HTML parsing, so by the time the JS runs they're
+       already warm. Shaves 100-300ms off first meaningful paint. -->
+  <link rel="preconnect" href="https://api.bitget.com" crossorigin />
+  <link rel="preconnect" href="https://ws.bitget.com" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+
+  <!-- 2026-04-23: preload critical chunks. HTML parser kicks off these
+       fetches in parallel with module resolution — JS, CSS, and charts
+       lib all transit the network at the same time instead of waiting
+       for each parse step to discover the next dep. -->
+  <link rel="preload" as="script" href="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" />
+  <link rel="modulepreload" href="/js/main.js" />
+  <link rel="modulepreload" href="/js/workbench/chart.js" />
+  <link rel="modulepreload" href="/js/services/market.js" />
+  <link rel="modulepreload" href="/js/services/ohlcv_cache.js" />
+  <link rel="modulepreload" href="/js/workbench/ws_ticker.js" />
+
   <!-- v param is bumped on every meaningful frontend change so browsers
        auto-fetch fresh assets without requiring Ctrl+Shift+R. Format:
        YYYYMMDDhh. Bump whenever JS/CSS semantics change in a way the
        user needs to see immediately (new preview rows, bug fixes, etc.) -->
-  <link rel="stylesheet" href="/style.css?v=2026042303" />
-  <link rel="stylesheet" href="/v2.css?v=2026042303" />
+  <link rel="stylesheet" href="/style.css?v=2026042406" />
+  <link rel="stylesheet" href="/v2.css?v=2026042406" />
   <!-- 2026-04-20: theme overrides (higher-contrast palette + softer radii) -->
-  <link rel="stylesheet" href="/v2-theme-enhanced.css?v=2026042303" />
+  <link rel="stylesheet" href="/v2-theme-enhanced.css?v=2026042406" />
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="v2-body">
@@ -22,6 +103,7 @@
     <nav class="v2-nav" id="v2-nav">
       <button class="v2-nav-btn active" data-view="market">市场</button>
       <button class="v2-nav-btn" data-view="runner">策略</button>
+      <button class="v2-nav-btn" data-view="strategies">策略 (Auto)</button>
       <button class="v2-nav-btn" data-view="trade_history">交易历史</button>
       <!-- Other panels hidden — focus on the line+order workflow.
            Routes still exist if you need them back later. -->
@@ -92,6 +174,13 @@
     <div class="v2-view-content" id="view-runner"></div>
   </main>
 
+  <!-- View: Strategies (MA Ribbon EMA21 auto-execution card) -->
+  <main class="v2-view" data-view="strategies">
+    <div class="v2-view-content" id="view-strategies">
+      <div id="ma-ribbon-card-mount"></div>
+    </div>
+  </main>
+
   <!-- View: Trade History (spreadsheet view of every closed manual-line trade) -->
   <main class="v2-view" data-view="trade_history">
     <div class="v2-view-content" id="view-trade_history"></div>
@@ -100,6 +189,21 @@
   <!-- Legacy execution panel (kept for backward compat) -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
-  <script type="module" src="/js/main.js?v=2026042303"></script>
+  <script type="module" src="/js/main.js?v=2026042531"></script>
+  <script src="/js/workbench/trendline_ai.js?v=2026042503"></script>
+  <!-- Strategies tab: lazy-mount the MA-ribbon auto-execution card on first activation. -->
+  <script type="module">
+    import { mountMaRibbonCard } from "/js/workbench/strategy_card_ma_ribbon.js?v=2026042530";
+    const _stratTab = document.querySelector('[data-view="strategies"].v2-nav-btn');
+    if (_stratTab) {
+      _stratTab.addEventListener("click", () => {
+        const mount = document.getElementById("ma-ribbon-card-mount");
+        if (mount && !mount.dataset.mounted) {
+          mountMaRibbonCard(mount);
+          mount.dataset.mounted = "1";
+        }
+      });
+    }
+  </script>
 </body>
 </html>

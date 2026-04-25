@@ -234,25 +234,55 @@ export function initChart(containerId = 'chart-container') {
   // into the OLD candle history, blowing up the chart's y-axis. Seen
   // when flipping HYPE → ETH: ETH's $2317 live tick got pasted onto
   // HYPE's $30-$45 historical candles → giant green spike.
-  const clearForSymbolSwitch = () => {
+  //
+  // 2026-04-23: ALSO swap drawings to the new symbol synchronously, so
+  // SVG overlay doesn't try to render OLD-symbol lines on NEW-symbol
+  // chart's price grid (caused the "lines flash off/on" bug user reported
+  // on XAU). preSwapDrawingsForSymbol hits an in-memory cache keyed by
+  // (symbol, TF) — instant swap; refreshManualDrawings refines from
+  // server right after via loadCurrent().
+  const clearForSymbolSwitch = (newSymbol, newInterval) => {
     try {
       candleSeries?.setData([]);
       volumeSeries?.setData([]);
     } catch {}
     // Also zero out lastCandles so onTickerTick doesn't compute
-    // high/low vs a stale bar from the previous symbol. Without this
-    // the first WS tick for the NEW symbol would take the MAX of its
-    // price and the old symbol's last bar → massive spike.
+    // high/low vs a stale bar from the previous symbol.
     try { setCandles([]); } catch {}
+    // Synchronously swap drawings to NEW symbol's cache (or empty if
+    // never visited). This eliminates the orphan-render flicker.
+    try {
+      const sym = newSymbol || marketState.currentSymbol;
+      const tf = newInterval || marketState.currentInterval;
+      if (sym && tf) {
+        // Lazy-import so we don't introduce a circular dep at top.
+        import('./drawings/manual_trendline_controller.js')
+          .then((mod) => mod.preSwapDrawingsForSymbol(sym, tf))
+          .catch(() => {});
+      }
+    } catch {}
   };
-  subscribe('market.symbol.changed', () => {
-    clearForSymbolSwitch();
-    void loadCurrent(true).catch((err) => console.warn('[chart] symbol refresh failed:', err));
-  });
-  subscribe('market.interval.changed', () => {
-    clearForSymbolSwitch();
-    void loadCurrent(true).catch((err) => console.warn('[chart] interval refresh failed:', err));
-  });
+  // 2026-04-25: coalesce symbol+interval changes that fire within the
+  // same microtask. Bug surfaced when user clicked a row in 我的手画线
+  // panel: handler did `setSymbol(X); setIntervalTF(Y);` back-to-back
+  // → two loadCurrent() calls raced; first one returned `{stale:true}`
+  // because its loadSeq was superseded; second sometimes also got
+  // superseded; chart stayed empty with no candles even though price
+  // scale showed the new symbol's range. Now we wait one microtask
+  // (queueMicrotask) before firing the actual reload, so a setSymbol
+  // immediately followed by setIntervalTF only triggers ONE fetch.
+  let _coalesceScheduled = false;
+  const _coalesceReload = () => {
+    if (_coalesceScheduled) return;
+    _coalesceScheduled = true;
+    queueMicrotask(() => {
+      _coalesceScheduled = false;
+      clearForSymbolSwitch(marketState.currentSymbol, marketState.currentInterval);
+      void loadCurrent(true).catch((err) => console.warn('[chart] coalesced reload failed:', err));
+    });
+  };
+  subscribe('market.symbol.changed', _coalesceReload);
+  subscribe('market.interval.changed', _coalesceReload);
   subscribe('market.history_mode.changed', () => {
     syncChartModePanel();
     void loadCurrent(true).catch((err) => console.warn('[chart] history mode refresh failed:', err));
@@ -310,30 +340,25 @@ export async function loadCurrent(forcePatterns = false) {
   }
 
   try {
-    // History windows per TF — targeting ~500-1000 initial bars per
-    // call, similar to TradingView's initial viewport. Scroll-back
-    // fetches additional history on demand (separate code path, TODO).
-    // Each TF capped so one fetch = one Bitget page (max 500 bars),
-    // so the backend finishes in ~1 request, not 9 paginated ones.
-    //   1m  × 0.35d ≈ 504
-    //   3m  × 1d    ≈ 480
-    //   5m  × 2d    ≈ 576
-    //   15m × 5d    ≈ 480
-    //   30m × 10d   ≈ 480
-    //   1h  × 21d   ≈ 504
-    //   2h  × 42d   ≈ 504
-    //   4h  × 84d   ≈ 504
-    //   6h  × 125d  ≈ 500
-    //   12h × 250d  ≈ 500
-    //   1d  × 500d  = 500
-    //   1w  × 3500d ≈ 500
+    // 2026-04-24: per PRINCIPLES.md P1 ("数据深度 = 交易所物理上限. 永远
+    // 不要在前端 / 后端按 TF 给 days 加 cap").
+    //
+    // Old tfDays (1m→1d, 5m→2d, 15m→5d, 1h→21d, 4h→84d, 1d→500d) was
+    // arbitrarily shallow — strategy.py was already loading 730d for
+    // 4h and 1095d for 1d, so chart vs analysis disagreed on what
+    // "history" meant. User saw HYPE deep (cached CSV) and other
+    // symbols shallow (chart cap kicked in before the cache filled).
+    //
+    // New rule: chart uses the SAME days as the strategy snapshot. One
+    // source of truth, parity across symbols. Bitget's klines paginate
+    // (200/page); the backend handles pagination so the result is
+    // always physical-limit, not our opinion.
     const tfDays = {
-      '1m': 1, '3m': 1, '5m': 2, '15m': 5,
-      '30m': 10, '1h': 21, '2h': 42,
-      '4h': 84, '6h': 125, '12h': 250,
-      '1d': 500, '1w': 3500,
+      '1m': 30, '3m': 30, '5m': 30, '15m': 60, '30m': 90,
+      '1h': 180, '2h': 365, '4h': 730, '6h': 730, '12h': 1095,
+      '1d': 1095, '1w': 3650,
     };
-    const days = tfDays[currentInterval] || 21;
+    const days = tfDays[currentInterval] || 180;
 
     // OPTIMISTIC SWAP: if we have a recent cached result for this
     // (symbol, interval, days), paint it IMMEDIATELY without waiting
@@ -404,12 +429,54 @@ export async function loadCurrent(forcePatterns = false) {
       'background:#0d4a2a;color:#00e676;padding:2px 6px;font-weight:bold'
     );
 
-    // ── Viewport (only on FIRST load per symbol/tf) ────────────
+    // ── Viewport invariant (2026-04-25, root-cause fix) ─────────
+    //
+    // INVARIANT: after a successful candle load, the user's visible
+    //   range must INTERSECT the loaded data's time range. If the
+    //   previous viewport (preserved from prior visit / user scroll)
+    //   no longer intersects today's data, force re-fit.
+    //
+    // Why this isn't "another patch":
+    //   The previous code only set viewport on FIRST visit per (sym,TF).
+    //   It assumed prior viewport state was always valid for new data.
+    //   That assumption was UNTESTED + UNENFORCED — it failed silently
+    //   when:
+    //     - user scrolled left to a date now outside the new data
+    //     - days param expanded (e.g. tfDays cap removal 04-24)
+    //     - IndexedDB cache returned an older subset
+    //   Black-screen chart was the symptom; the absent invariant was
+    //   the cause. The fix is the invariant, not a "fitContent on load".
+    const ts = chart.timeScale();
+    const dataFrom = candles[0]?.time;
+    const dataTo = candles[candles.length - 1]?.time;
+    let viewportStale = false;
+    try {
+      const vis = ts.getVisibleRange();
+      if (!vis) {
+        viewportStale = true;
+      } else if (typeof dataFrom === 'number' && typeof dataTo === 'number') {
+        // Intersect check: either end of viewport is outside the data span.
+        // 1-bar slack so a viewport ending exactly on the last bar is fine.
+        const barDurApprox = candles.length >= 2 ? (candles[1].time - candles[0].time) : 3600;
+        const slack = barDurApprox;
+        if (vis.to < dataFrom - slack || vis.from > dataTo + slack) {
+          viewportStale = true;
+        }
+      }
+    } catch { viewportStale = true; }
+
     const fitKey = `${currentSymbol}:${currentInterval}`;
-    if (_lastFitKey !== fitKey) {
+    const isFirstFit = _lastFitKey !== fitKey;
+    const needFit = isFirstFit || viewportStale;
+    if (viewportStale && !isFirstFit) {
+      console.log(
+        `%c[chart] VIEWPORT STALE — re-fitting (data: ${new Date(dataFrom*1000).toISOString().slice(0,10)} → ${new Date(dataTo*1000).toISOString().slice(0,10)})`,
+        'background:#7f1d1d;color:#fff;padding:2px 6px;font-weight:bold',
+      );
+    }
+    if (needFit) {
       _lastFitKey = fitKey;
       const VISIBLE_BARS = 200;
-      const ts = chart.timeScale();
       const totalBars = candles.length;
       const barDur = totalBars >= 2 ? candles[1].time - candles[0].time : 3600;
       // TF-aware future bars — 4h/1d with a flat 60-bar tail looked
@@ -544,6 +611,17 @@ export async function loadCurrent(forcePatterns = false) {
       // a safety net for missed events (stream disconnect, etc.).
       startPlanOverlayPoll(chart, candleSeries, 60000);
     } catch (err) { console.warn('[plan_overlay] wire err:', err); }
+    // 2026-04-25: OKX/Bitget-style trade execution markers (▲/▼ at entry
+    // + circle at SL/TP exits). Symbol-scoped, TF-agnostic — fills show
+    // on every chart of that symbol because the timestamp maps to the
+    // bar containing it.
+    try {
+      const { initTradeMarkers, refreshTradeMarkers, startTradeMarkersAutoRefresh } =
+        await import('./overlays/trade_markers_overlay.js');
+      initTradeMarkers(candleSeries);
+      void refreshTradeMarkers(currentSymbol).catch(() => {});
+      startTradeMarkersAutoRefresh();
+    } catch (err) { console.warn('[trade_markers] wire err:', err); }
     markBoot('patterns', 'ok', 'manual-only mode');
 
     return {
@@ -1001,6 +1079,15 @@ export function startLiveUpdates(intervalMs = 10000) {
   startTickerWS(marketState.currentSymbol, onTickerTick);
   // Re-subscribe when symbol changes
   subscribe('market.symbol.changed', (sym) => setTickerSymbol(sym));
+  // 2026-04-23: IndexedDB flow — when the service fires a background
+  // delta refresh after an instant IDB paint, repaint the chart so the
+  // newest bar catches up. loadCurrent() hits the now-warm hot cache
+  // (no server round-trip); it's cheap.
+  subscribe('ohlcv.delta', (evt) => {
+    if (!evt || evt.symbol !== marketState.currentSymbol) return;
+    if (evt.interval !== marketState.currentInterval) return;
+    void loadCurrent().catch((err) => console.warn('[chart] delta repaint failed:', err));
+  });
 }
 
 export function stopLiveUpdates() {

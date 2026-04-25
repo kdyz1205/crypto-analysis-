@@ -1,0 +1,51 @@
+{
+  "phase": "P1",
+  "universe": [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "TRXUSDT", "DOTUSDT",
+    "MATICUSDT", "LINKUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT",
+    "ATOMUSDT", "UNIUSDT", "ICPUSDT", "ETCUSDT", "FILUSDT",
+    "APTUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SEIUSDT",
+    "TIAUSDT", "WLDUSDT", "PEPEUSDT", "SHIBUSDT", "RNDRUSDT",
+    "FETUSDT", "AAVEUSDT", "ALGOUSDT", "VETUSDT", "HBARUSDT",
+    "MKRUSDT", "GRTUSDT", "FTMUSDT", "EGLDUSDT", "SANDUSDT",
+    "MANAUSDT", "AXSUSDT", "RUNEUSDT", "DYDXUSDT", "SUIUSDT"
+  ],
+  "timeframes": ["5m", "15m", "1h", "4h"],
+  "data_split": {
+    "train_pct": 0.70,
+    "test_pct": 0.30,
+    "split_by": "time"
+  },
+  "moving_averages": {
+    "ma_fast_1": 5,
+    "ma_fast_2": 8,
+    "ema_mid": 21,
+    "ma_slow": 55
+  },
+  "bullish_alignment": {
+    "require_close_above_ma5":  true,
+    "require_close_above_ma8":  true,
+    "require_close_above_ema21": true,
+    "require_close_above_ma55":  true,
+    "require_ma5_above_ma8":     true,
+    "require_ma8_above_ema21":   true,
+    "require_ema21_above_ma55":  true
+  },
+  "forward_return_bars": [5, 10, 20, 50],
+  "distance_buckets": [
+    [0.000, 0.005],
+    [0.005, 0.010],
+    [0.010, 0.020],
+    [0.020, 0.040],
+    [0.040, 0.070],
+    [0.070, 1.000]
+  ],
+  "fees": {
+    "per_side": 0.0005,
+    "slippage_per_fill": 0.0001
+  },
+  "data_cache_dir": "data/csv_cache/ma_ribbon_ema21",
+  "max_history_days": null,
+  "bitget_pages_per_symbol": 50
+}

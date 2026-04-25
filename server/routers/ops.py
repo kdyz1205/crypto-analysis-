@@ -47,6 +47,21 @@ async def index_v2_html():
     )
 
 
+@router.get("/sw.js")
+async def serve_service_worker():
+    """2026-04-23: Service Worker for static + OHLCV stale-while-revalidate.
+    MUST be served at ROOT (/sw.js) for its scope to cover the whole site.
+    Browser cache disabled so SW upgrades don't get stuck."""
+    return FileResponse(
+        str(FRONTEND_DIR / "sw.js"),
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Service-Worker-Allowed": "/",
+        },
+    )
+
+
 @router.get("/agents")
 async def index_agents():
     """Live Claude x Codex dialogue viewer (pixel-style chat bubbles).

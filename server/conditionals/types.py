@@ -104,6 +104,29 @@ class OrderConfig:
     reverse_rr_target: float | None = None
     reverse_leverage: float | None = None
 
+    # ── MA-ribbon auto-execution opt-in (added 2026-04-25 per spec
+    # docs/superpowers/specs/2026-04-25-ma-ribbon-auto-execution-design.md). ──
+    # When sl_logic == "ribbon_ema21_trailing", the watcher computes SL from
+    # current EMA21 of ribbon_meta["tf"] instead of from the manual line.
+    # When "line_buffer" (default), behaviour is unchanged.
+    sl_logic: Literal["line_buffer", "ribbon_ema21_trailing"] = "line_buffer"
+    ribbon_meta: dict | None = None
+    # Risk / qty targets used by the MA-ribbon adapter (Task 2). None means
+    # the existing risk_pct / equity_pct / notional_usd / leverage path is used.
+    risk_usd_target: float | None = None
+    qty_notional_target: float | None = None
+
+    def __post_init__(self) -> None:
+        # Runtime validation for sl_logic. Python's typing.Literal does not
+        # enforce values at runtime, so we have to check explicitly. This
+        # protects callers (e.g. JSON-loaded persisted configs) from silently
+        # routing through an unknown SL path.
+        if self.sl_logic not in ("line_buffer", "ribbon_ema21_trailing"):
+            raise ValueError(
+                "sl_logic must be 'line_buffer' or 'ribbon_ema21_trailing', "
+                f"got {self.sl_logic!r}"
+            )
+
 
 @dataclass(frozen=True, slots=True)
 class ConditionalEvent:
@@ -128,29 +151,48 @@ class ConditionalOrder:
     Mutable because status + events list evolve over time. Write through
     ConditionalOrderStore.update_status / .append_event rather than
     mutating directly.
+
+    Lineage (added 2026-04-25 per spec
+    docs/superpowers/specs/2026-04-25-ma-ribbon-auto-execution-design.md):
+    - "manual_line" (default): user-drawn line, anchored to a ManualTrendline
+    - "ma_ribbon":   spawned by MA-ribbon auto scanner, no manual line attached
+
+    For ma_ribbon lineage, manual_line_id / side / line coords are nominal
+    (None / "support" / 0). The watcher branches on lineage + on
+    OrderConfig.sl_logic to compute SL from EMA21 instead of from a line.
+
+    `config` and `direction` are convenience aliases:
+    - `cond.config` ≡ `cond.order` (the OrderConfig)
+    - `cond.direction` ≡ `cond.order.direction` ("long" | "short")
+    Callers may construct with EITHER `order=...` or `config=...` (passing
+    both with different values raises). Read-back is symmetric: post-init
+    sets both attributes to the same OrderConfig instance.
     """
-    conditional_id: str
-    manual_line_id: str          # FK to ManualTrendline
-    symbol: str
-    timeframe: str
-    side: Literal["support", "resistance"]
+    conditional_id: str = ""
+    manual_line_id: str | None = None  # FK to ManualTrendline, None for ma_ribbon
+    symbol: str = ""
+    timeframe: str = ""
+    side: Literal["support", "resistance"] = "support"
     # Line coords (snapshot at creation — we recompute projection each poll)
-    t_start: int
-    t_end: int
-    price_start: float
-    price_end: float
+    t_start: int = 0
+    t_end: int = 0
+    price_start: float = 0.0
+    price_end: float = 0.0
 
     # Pattern stats snapshot (what the user saw when they approved)
-    pattern_stats_at_create: dict[str, Any]
+    pattern_stats_at_create: dict[str, Any] = field(default_factory=dict)
 
     # Config
-    trigger: TriggerConfig
-    order: OrderConfig
+    trigger: TriggerConfig = field(default_factory=TriggerConfig)
+    order: OrderConfig | None = None
+    # Alias of `order`. __post_init__ keeps the two in sync. Spec uses
+    # `cond.config.sl_logic` (the watcher reads this in Task 5).
+    config: OrderConfig | None = None
 
     # State
-    status: ConditionalStatus
-    created_at: int
-    updated_at: int
+    status: ConditionalStatus = "pending"
+    created_at: int = 0
+    updated_at: int = 0
     triggered_at: int | None = None
     cancelled_at: int | None = None
     cancel_reason: str = ""
@@ -174,9 +216,40 @@ class ConditionalOrder:
     extend_left: bool = False
     extend_right: bool = True
 
+    # Lineage tag — see class docstring. Default keeps existing manual-line
+    # callers unchanged; the MA-ribbon adapter passes "ma_ribbon".
+    lineage: Literal["manual_line", "ma_ribbon"] = "manual_line"
+    # Direction alias. None means "infer from order.direction in __post_init__".
+    direction: Literal["long", "short"] | None = None
+
+    def __post_init__(self) -> None:
+        # Sync `order` and `config` aliases. If only one is set, mirror it.
+        # If both are set, `order` wins (it's the canonical field name and
+        # the one that `dataclasses.replace(cond, order=...)` updates). The
+        # alternative — raising on disagreement — breaks `replace(...)`,
+        # which always passes both fields back through __init__ but only
+        # updates one of them.
+        if self.order is None and self.config is not None:
+            self.order = self.config
+        else:
+            self.config = self.order
+        # If both are None we leave them as None — store/serialiser callers
+        # always supply one; rejecting here would break partial-object
+        # construction in tests. The watcher will fail loudly the first
+        # time it touches `cond.order` if it's missing.
+
+        # Resolve direction. Canonical source is OrderConfig.direction; this
+        # top-level attribute mirrors it for the MA-ribbon spec API. Always
+        # re-sync (don't honour stale `direction` kwargs from `replace()`).
+        if self.order is not None:
+            self.direction = self.order.direction
+
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        # events is already dicts via asdict
+        # `config` is the same OrderConfig instance as `order`. asdict will
+        # have produced two identical sub-dicts; drop `config` to keep the
+        # on-disk schema unchanged (the existing JSON store key is "order").
+        d.pop("config", None)
         return d
 
     def line_price_at(self, ts: int) -> float:

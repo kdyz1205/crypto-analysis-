@@ -1,0 +1,46 @@
+{
+  "phase": "P1-smoke",
+  "_comment": "Reduced-scope Phase 1 run for first real-data proof. 10 highest-liquidity symbols x 1h+4h x 20 pages (= 4000 bars per pair, ~166 days on 1h, ~666 days on 4h). Fits a 10-minute timeout. After this proves out, the full 45-symbol x 4-TF run can be staged with a longer timeout or a separate CSV-warm pass.",
+
+  "universe": [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT"
+  ],
+  "timeframes": ["1h", "4h"],
+  "data_split": {
+    "train_pct": 0.70,
+    "test_pct": 0.30,
+    "split_by": "time"
+  },
+  "moving_averages": {
+    "ma_fast_1": 5,
+    "ma_fast_2": 8,
+    "ema_mid": 21,
+    "ma_slow": 55
+  },
+  "bullish_alignment": {
+    "require_close_above_ma5":  true,
+    "require_close_above_ma8":  true,
+    "require_close_above_ema21": true,
+    "require_close_above_ma55":  true,
+    "require_ma5_above_ma8":     true,
+    "require_ma8_above_ema21":   true,
+    "require_ema21_above_ma55":  true
+  },
+  "forward_return_bars": [5, 10, 20, 50],
+  "distance_buckets": [
+    [0.000, 0.005],
+    [0.005, 0.010],
+    [0.010, 0.020],
+    [0.020, 0.040],
+    [0.040, 0.070],
+    [0.070, 1.000]
+  ],
+  "fees": {
+    "per_side": 0.0005,
+    "slippage_per_fill": 0.0001
+  },
+  "data_cache_dir": "data/csv_cache/ma_ribbon_ema21",
+  "max_history_days": null,
+  "bitget_pages_per_symbol": 20
+}

@@ -28,9 +28,12 @@ from .routers import (
     strategy, paper_execution, live_execution, drawings, runtime,
     tools_api, conditionals,
     mar_bb_runner, orderbook, line_alerts,
-    trades,
+    trades, trade_plan_setups,
+    trendline_signals,
+    ma_ribbon_auto,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
+from .subscribers import telegram_trade as telegram_trade_sub
 from .core import scheduler as sched_core
 
 # Force UTF-8 on stdout/stderr so non-ASCII chars in print() statements
@@ -70,6 +73,7 @@ async def _startup():
     # Register Phase 3 event bus subscribers
     audit_sub.register()
     telegram_sub.register()
+    telegram_trade_sub.register()   # 2026-04-25: trade.* (entry/sl/tp/cancel) classifier + TG handler
     sse_sub.register()
     print("[EventBus] Phase 3 subscribers registered")
 
@@ -108,6 +112,30 @@ async def _startup():
         print("[trendline_maintenance] always-on trailing loop started")
     except Exception as _e:
         print(f"[trendline_maintenance] start failed: {_e}")
+
+    # 2026-04-24: pre-warm flipped to OPT-IN (was opt-out). Reason: each
+    # pre-warm cycle hammers polars + numpy on 24 (symbol, TF) combos
+    # every 4 minutes — on the user's machine this added enough CPU
+    # pressure that page refresh felt slow ("卡的要死"). When opt-in,
+    # the user must explicitly set PREWARM_ENABLED=1 to turn it back on
+    # — and the same env name communicates "this is a perf trade-off,
+    # not a free win."
+    if _os.environ.get("PREWARM_ENABLED", "0") == "1":
+        try:
+            from .prewarm import start_prewarm
+            start_prewarm()
+        except Exception as _e:
+            print(f"[prewarm] start failed: {_e}")
+
+    # 2026-04-23: Bitget private WebSocket for live order/account push
+    # (eliminates 10-30s polling lag for fills / cancels / balance changes).
+    # ADDITIVE — existing polls still run as fallback. Disabled by default,
+    # set BITGET_PRIVATE_WS_ENABLED=1 to turn on.
+    try:
+        from .bitget_private_ws import start_ws as _start_priv_ws
+        _start_priv_ws()
+    except Exception as _e:
+        print(f"[bitget_private_ws] start failed: {_e}")
 
     # Auto-start orderbook websocket service for real-time L2 features.
     # Tracks top symbols for microstructure signals (imbalance, cancel pressure, etc.)
@@ -193,6 +221,22 @@ async def _startup():
     print("[Evolution] Engine available but not auto-started (avoids API congestion)")
 
 
+@app.on_event("startup")
+async def _start_ma_ribbon_scanner():
+    """MA-ribbon EMA21 auto-execution scanner. Runs every 60s in the
+    background; gated by state.enabled (default False), so spinning up
+    here is safe — the loop sees disabled state and just keeps the state
+    file warm until the user enables via POST /api/ma_ribbon_auto/enable.
+    """
+    import asyncio
+    try:
+        from .strategy.ma_ribbon_auto_scanner import scan_loop
+        asyncio.create_task(scan_loop())
+        print("[ma_ribbon_auto] scanner task scheduled (60s tick)")
+    except Exception as _e:
+        print(f"[ma_ribbon_auto] scanner start failed: {_e}")
+
+
 @app.on_event("shutdown")
 async def _shutdown():
     try:
@@ -275,5 +319,8 @@ app.include_router(mar_bb_runner.router) # /api/mar-bb/* — live MA ribbon + BB
 app.include_router(orderbook.router)    # /api/orderbook/* — real-time L2 features
 app.include_router(line_alerts.router)  # /api/alerts/* — trendline price alerts → Telegram
 app.include_router(trades.router)       # /api/trades/* — spreadsheet-friendly manual-trade history
+app.include_router(trade_plan_setups.router)  # /api/trade-plan-setups — persistent modal setup presets
+app.include_router(trendline_signals.router)  # /api/trendline/* — fusion model predictions + feedback (paper)
+app.include_router(ma_ribbon_auto.router)  # /api/ma_ribbon_auto/* — MA-ribbon EMA21 auto-execution control + scanner state
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
 # reload trigger 1776885655

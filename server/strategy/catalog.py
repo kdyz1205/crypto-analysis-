@@ -155,6 +155,28 @@ STRATEGY_CATALOG: list[StrategyTemplate] = [
         },
         risk_level="high",
     ),
+    StrategyTemplate(
+        template_id="ma_ribbon_ema21_auto",
+        name="MA Ribbon EMA21 自动",
+        name_en="MA Ribbon EMA21 Auto",
+        description=(
+            "多 TF MA-ribbon 自动扫单。5m/15m/1h/4h 形成多头/空头排列时分层加仓 "
+            "(Strategy Y 时间渐进)。SL 用当前 EMA21 × (1 ± buffer%) 跟随。"
+            "策略级 -15% DD 自动 halt。详见 spec 2026-04-25-ma-ribbon-auto-execution."
+        ),
+        category="trend",
+        supported_timeframes=("5m", "15m", "1h", "4h"),
+        default_trigger_modes=("ribbon_formation",),
+        default_params={
+            "ribbon_buffer_pct": {"5m": 0.01, "15m": 0.04, "1h": 0.07, "4h": 0.10},
+            "layer_risk_pct":    {"LV1": 0.001, "LV2": 0.0025, "LV3": 0.005, "LV4": 0.02},
+            "max_concurrent_orders": 25,
+            "per_symbol_risk_cap_pct": 0.02,
+            "dd_halt_pct": 0.15,
+            "directions": ["long", "short"],
+        },
+        risk_level="high",
+    ),
 ]
 
 CATALOG_BY_ID = {t.template_id: t for t in STRATEGY_CATALOG}

@@ -36,7 +36,11 @@ const BODY_HIT = 8;        // hit test distance for line body
 // Thinner than the 1.8 original. Iterated 2026-04-20:
 //   1.8 → 1.0 → 0.3 (final). User asked for "base = thinnest".
 // Presets now: 0.3 (default/base) / 1.0 (medium) / 2.0 (bold).
-const DEFAULT_LINE_WIDTH = 0.3;
+// 2026-04-25: was 0.3 — too thin to render visibly with the 0.45 stroke
+// alpha (sub-pixel + 45% opacity = invisible). User reported drawing
+// 3 ZEC lines and seeing none of them. Bumped to 1.5 so even on a
+// retina-density display the stroke remains a clearly visible mark.
+const DEFAULT_LINE_WIDTH = 1.5;
 
 // ─────────────────────────────────────────────────────────────
 // Module deps (set by init)
@@ -734,6 +738,30 @@ async function commitDrag() {
   const cursor = tx.cursor;
   if (!cursor) { transition('idle', 'no_cursor'); return; }
 
+  // 2026-04-25 SAFETY GUARD: refuse to PATCH a drag if the line being
+  // dragged doesn't belong to the symbol we're currently displaying.
+  // The user 2026-04-25 reported that a UI-bug (search box stuck on
+  // HYPEUSDT while chart actually rendered XAUUSDT) made it impossible
+  // for them to know which line they had moved — XAU vs HYPE — at a
+  // moment when REAL ORDERS were being cancelled+replaced. The UI bug
+  // is fixed (see symbol_picker subscribe market.symbol.changed and
+  // chart.js coalesced reload), but this guard ensures that even if a
+  // future bug recreates the ambiguous state, the wrong line CAN'T be
+  // mutated unintentionally.
+  const draggedLine = (drawingsState.lines || []).find(
+    (l) => l.manual_line_id === drag.lineId
+  );
+  if (draggedLine && draggedLine.symbol && marketState.currentSymbol
+      && draggedLine.symbol.toUpperCase() !== marketState.currentSymbol.toUpperCase()) {
+    console.error('[chart_drawing] REFUSED drag: line is for',
+      draggedLine.symbol, draggedLine.timeframe,
+      'but chart is showing', marketState.currentSymbol, marketState.currentInterval,
+      '— rolling back to prevent wrong-symbol mutation');
+    _showSymbolMismatchToast(draggedLine, marketState.currentSymbol);
+    transition('idle', 'symbol_mismatch_aborted');
+    return;
+  }
+
   // Compute final values
   let newStart, newEnd;
   if (drag.mode === 'anchor_start') {
@@ -802,6 +830,32 @@ async function commitDrag() {
       timeout: 25000,
     });
     console.log('[chart_drawing] drag PATCH ok');
+    // 2026-04-25: surface a confirmation toast so the user IMMEDIATELY
+    // sees which symbol/TF/side line was just moved + the price change.
+    // Pairs with the symbol-mismatch guard above so even if some new
+    // class of UI ambiguity appears, the user gets a loud post-action
+    // receipt: "已移动 XAUUSDT 4h 阻力线: 4752 → 4750". They have a
+    // window to undo / panic-cancel before the watcher replans orders.
+    _showLineMoveToast(draggedLine || { symbol: marketState.currentSymbol,
+                                        timeframe: marketState.currentInterval },
+                       drag.origLine, { newStart, newEnd });
+
+    // 2026-04-23: when the user moves a line that has an active
+    // conditional, the server's force_replan_line MARKS conds for replan
+    // — the actual cancel+replace happens in the next watcher tick (~3s).
+    // Fire 'cond-placed' immediately + at +3s + +6s so the panel catches
+    // both the cancel-state AND the new-order-appears state without
+    // depending on the 10s poll.
+    const fireCondPlaced = (stage) => {
+      try {
+        window.dispatchEvent(new CustomEvent('cond-placed', {
+          detail: { reason: 'line-moved', lineId: drag.lineId, stage },
+        }));
+      } catch {}
+    };
+    fireCondPlaced('immediate');
+    setTimeout(() => fireCondPlaced('post-watcher-tick'), 3500);
+    setTimeout(() => fireCondPlaced('settle'), 7000);
   } catch (err) {
     const msg = String(err?.message || err || '');
     const isAbort = /abort|timeout|signal/i.test(msg);
@@ -910,9 +964,14 @@ function render() {
     if (isSel || isHov) {
       color = isAuto ? 'rgba(248,113,113,1)' : 'rgba(251,191,36,1)';
     } else {
+      // 2026-04-25: alpha bumped 0.45 → 0.85 for manual lines. Combined
+      // with the new 1.5px default width, this restores the visibility
+      // the user expected. Original 0.45 was set when lines were drawn
+      // at 2-3px and still readable; once line_width default dropped to
+      // 0.3, the 0.45 alpha made them disappear into the chart background.
       color = isAuto
         ? (line.side === 'resistance' ? 'rgba(248,113,113,0.85)' : 'rgba(250,204,21,0.85)')
-        : 'rgba(251,191,36,0.45)';
+        : 'rgba(251,191,36,0.85)';
     }
     const baseWidth = lineStrokeWidth(line);
     const width = isSel ? baseWidth + 1.0 : (isHov ? baseWidth + 0.6 : baseWidth);
@@ -1230,5 +1289,60 @@ async function setLineWidth(lineId, width) {
 function lineStrokeWidth(line) {
   const width = Number(line?.line_width);
   if (!Number.isFinite(width)) return DEFAULT_LINE_WIDTH;
-  return Math.max(0.5, Math.min(width, 8));
+  // 2026-04-25: floor bumped 0.5 → 1.0 so legacy lines with line_width=0.3
+  // (saved before the bump above) still render visibly. Sub-pixel strokes
+  // were the root cause of the "我画了线但看不到" complaint.
+  return Math.max(1.0, Math.min(width, 8));
+}
+
+// 2026-04-25: confirmation toasts after line drag. Big visible
+// SYMBOL + TF + SIDE so the user can't possibly mistake which line
+// they just touched, even if the rest of the UI is in a weird state.
+function _showSymbolMismatchToast(line, currentSym) {
+  const t = document.createElement('div');
+  Object.assign(t.style, {
+    position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)',
+    background: '#7f1d1d', color: '#fff', padding: '14px 22px',
+    borderRadius: '8px', fontSize: '13px', fontWeight: 'bold',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.5)', zIndex: '99999',
+    border: '2px solid #fbbf24', maxWidth: '480px', textAlign: 'center',
+  });
+  t.textContent = `⛔ 拒绝移动: 这条线属于 ${line.symbol} ${line.timeframe} (${line.side}),`
+                + `但你当前显示的是 ${currentSym}。先切到正确的 symbol 再拖。`;
+  document.body.appendChild(t);
+  setTimeout(() => { try { t.remove(); } catch {} }, 6000);
+}
+
+function _showLineMoveToast(line, origLine, newPoints) {
+  const t = document.createElement('div');
+  const fmt = (v) => Number(v).toFixed(2);
+  const startChange = `${fmt(origLine.price_start)} → ${fmt(newPoints.newStart.price)}`;
+  const endChange = `${fmt(origLine.price_end)} → ${fmt(newPoints.newEnd.price)}`;
+  Object.assign(t.style, {
+    position: 'fixed', top: '60px', left: '50%', transform: 'translateX(-50%)',
+    background: '#0e3b2a', color: '#fff', padding: '12px 18px',
+    borderRadius: '8px', fontSize: '12px',
+    boxShadow: '0 8px 30px rgba(0,0,0,0.5)', zIndex: '99999',
+    border: '1px solid #00e676', maxWidth: '520px',
+    fontFamily: 'inherit',
+  });
+  t.innerHTML = (
+    `<div style="font-weight:bold;font-size:13px;margin-bottom:4px">`
+    + `已移动 ${escapeHtml(line.symbol || '?')} ${escapeHtml(line.timeframe || '?')} `
+    + `${escapeHtml(line.side || '?')} 线`
+    + `</div>`
+    + `<div style="color:#a0a0a0">起点 ${escapeHtml(startChange)} · 终点 ${escapeHtml(endChange)}</div>`
+    + `<div style="color:#fbbf24;font-size:10px;margin-top:3px">`
+    + `挂单将在 ~3-7 秒内 cancel+重挂. 如果不是你想动的线, 立即去 conditional panel 撤单.`
+    + `</div>`
+  );
+  document.body.appendChild(t);
+  setTimeout(() => { try { t.style.opacity = '0'; t.style.transition = 'opacity 0.5s'; } catch {} }, 5500);
+  setTimeout(() => { try { t.remove(); } catch {} }, 6500);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'
+  }[c]));
 }

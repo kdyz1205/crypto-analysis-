@@ -11,7 +11,15 @@ class ManualTrendlineModel(BaseModel):
     manual_line_id: str
     symbol: str
     timeframe: str
+    # `side` = the user's intent label at draw-time. Stable, never auto-flips.
+    # See TA_BASICS.md §2: when describing a line's CURRENT behavior vs price,
+    # use `effective_role` instead — it's computed live from line_at_now vs
+    # current price.
     side: Literal["resistance", "support"]
+    # Computed at API serialization time. None when current price is
+    # unavailable (e.g. /drawings/all without price context). Frontend should
+    # prefer this over `side` for display labels.
+    effective_role: Literal["support", "resistance", "on_line"] | None = None
     source: str = "manual"
     t_start: int
     t_end: int

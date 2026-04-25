@@ -1188,14 +1188,6 @@ async def _incremental_update(symbol: str, base_interval: str) -> pl.DataFrame:
 
 _ohlcv_inflight: dict[tuple, asyncio.Task] = {}
 _ohlcv_exchange_floor_ms: dict[tuple[str, str], int] = {}
-_ohlcv_last_redownload_ts: dict[tuple[str, str], float] = {}
-
-# Minimum seconds between re-download attempts for the SAME (symbol, interval).
-# Before this, we had 137 redundant "Re-downloading full range" calls for
-# ZECUSDT 1d in one session because every /api/ohlcv?days=500 triggered a
-# fresh download even though the prior one had already hit the exchange's
-# listing-date floor. See PRINCIPLES.md P14.
-_REDOWNLOAD_COOLDOWN_SEC = 600   # 10 minutes
 
 
 async def get_ohlcv(
@@ -1303,31 +1295,13 @@ async def _get_ohlcv_impl(
                         csv_first_ms is not None
                         and csv_first_ms > needed_first_ms + 24 * 60 * 60 * 1000  # 1d slack
                     )
-                    # Two additional guards (2026-04-24 PRINCIPLES.md P14):
-                    #
-                    # (a) Exchange-floor: if we already know this symbol's
-                    #     earliest available bar (recorded on a prior
-                    #     successful download), stop asking for more history
-                    #     than the exchange actually has. Otherwise every
-                    #     /api/ohlcv?days=500 on a newly-listed coin re-runs
-                    #     the full paginated Bitget crawl and blocks the
-                    #     event loop. This was the cause of the 137× redundant
-                    #     "Re-downloading full range" log storm.
-                    # (b) Cooldown: even when csv_too_short is genuinely true,
-                    #     don't re-download more often than _REDOWNLOAD_COOLDOWN_SEC
-                    #     per (symbol, base_interval).
+                    # If we have already PROVEN the exchange floor for this
+                    # (symbol, interval), don't keep asking for more history
+                    # than Bitget physically has. Crucially this cache must
+                    # only store an actual listing-date floor, not merely
+                    # "the earliest candle from a short prior request".
                     floor_ms = _ohlcv_exchange_floor_ms.get((symbol.upper(), base_interval))
                     if floor_ms is not None and csv_first_ms is not None and csv_first_ms <= floor_ms + 2 * 24 * 60 * 60 * 1000:
-                        csv_too_short = False
-                    now_wallclock = time.time()
-                    last_redownload = _ohlcv_last_redownload_ts.get((symbol.upper(), base_interval), 0.0)
-                    if csv_too_short and (now_wallclock - last_redownload) < _REDOWNLOAD_COOLDOWN_SEC:
-                        print(
-                            f"[data_service] skip re-download {symbol} {base_interval}: "
-                            f"cooldown active ({int(now_wallclock - last_redownload)}s since last, "
-                            f"need {_REDOWNLOAD_COOLDOWN_SEC}s).",
-                            flush=True,
-                        )
                         csv_too_short = False
                     if csv_too_short:
                         print(
@@ -1339,11 +1313,15 @@ async def _get_ohlcv_impl(
                         download_days = max(requested_days, DOWNLOAD_DAYS.get(base_interval, 60))
                         df = await download_ohlcv(symbol, base_interval, days=download_days)
                         loaded_from_api = True
-                        _ohlcv_last_redownload_ts[(symbol.upper(), base_interval)] = now_wallclock
-                        # Record the exchange's actual floor so future calls don't retry.
+                        # Only record an exchange floor if the freshly-downloaded
+                        # dataset is STILL shorter than requested. If the user
+                        # merely asked for 30d and got 30d, that is not proof
+                        # that the exchange listing also began 30d ago.
                         new_first = _get_first_timestamp_ms(df)
-                        if new_first is not None:
+                        if new_first is not None and new_first > needed_first_ms + 24 * 60 * 60 * 1000:
                             _ohlcv_exchange_floor_ms[(symbol.upper(), base_interval)] = new_first
+                        else:
+                            _ohlcv_exchange_floor_ms.pop((symbol.upper(), base_interval), None)
                     else:
                         is_okx_file = csv_path.name.upper().startswith("OKX_")
                         if not is_okx_file:

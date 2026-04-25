@@ -1,0 +1,24 @@
+{
+  "total_events": 169,
+  "report_path": "data/logs/backtest_reports/phase1_smoke_20260425T044632Z.md",
+  "gate": {
+    "passed": false,
+    "reason": "2/10 symbols (20%) cleared mean +20-bar return > 1.0% on [0.0%, 0.5%) (test split). Required: 30%.",
+    "passing_symbols": [
+      "BTCUSDT",
+      "SOLUSDT"
+    ],
+    "failing_symbols": [
+      "ADAUSDT",
+      "AVAXUSDT",
+      "BNBUSDT",
+      "DOGEUSDT",
+      "ETHUSDT",
+      "LINKUSDT",
+      "LTCUSDT",
+      "XRPUSDT"
+    ],
+    "symbols_total": 10,
+    "symbols_passing": 2
+  }
+}

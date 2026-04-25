@@ -81,6 +81,21 @@ When you complete a task in these areas, the final report must
 explicitly confirm: "TA_BASICS.md Section N checklist satisfied".
 If you cannot truthfully say this, the work is not done.
 
+## MANDATORY: Read USER_TRADE_RULES.md before any manual-line order change
+
+If the task touches the user's manual-line execution semantics, also
+read `USER_TRADE_RULES.md` in the project root before writing code.
+
+This file exists because generic TA correctness was still not enough:
+the user has explicit personal rules for:
+
+- buffer vs stop meaning
+- what "intersect" means on the live chart
+- active-order lines being movable but not deletable
+- setup persistence never silently resetting to default
+
+Final report must explicitly confirm: "USER_TRADE_RULES.md reviewed".
+
 ## How to fix bugs (the rule the user spent hours teaching you)
 
 **Bug fix ≠ patching the symptom.** Bug fix = abstract the principle + grep every violation + fix them all in one pass.
