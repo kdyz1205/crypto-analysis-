@@ -18,8 +18,9 @@ Four possible states this classifier returns:
   LIVE      — pending list contains oid, OR history row shows state=live.
               Action: keep triggered.
 
-  FILLED    — a matching position exists, OR history row shows state=filled
-              / state=triggered (Bitget's "triggered" on plan history = fired).
+  FILLED    — pending list AFFIRMED our oid is gone AND a matching open
+              position exists, OR history row shows state=filled /
+              state=triggered (Bitget's "triggered" on plan history = fired).
               Action: transition to filled.
 
   CANCELLED — history row EXISTS and shows state=cancelled.
@@ -30,6 +31,11 @@ Four possible states this classifier returns:
               do not know. Action: KEEP TRIGGERED, retry next cycle.
 
 The classifier NEVER returns CANCELLED based on absence alone.
+
+The classifier NEVER returns FILLED based on "a position matches symbol+
+side" alone — multiple plans on the same (symbol, side) make that
+inference unsafe. Position must be paired with affirmative evidence the
+oid is gone from pending. (2026-04-24 fix; see ZEC incident docs.)
 """
 from __future__ import annotations
 
@@ -139,13 +145,42 @@ async def classify_cond_state(
             path="pending_list_has_oid",
         )
 
-    # ── Fast path 2: a matching open position → FILLED ──
-    if positions_fetch_ok and positions:
+    # ── Fast path 2: pending list AFFIRMS the oid is gone AND a matching
+    #                 open position exists → FILLED ──
+    #
+    # 2026-04-24 fix (ZEC real-money incident, see memory/feedback_oid_
+    # state_position_matching.md): the previous version of this fast path
+    # only required `positions_fetch_ok and positions` — i.e. it inferred
+    # FILLED purely from "a position matches my symbol+side" without first
+    # confirming our oid was actually gone from the pending list.
+    #
+    # That logic is unsafe when the user has multiple plan-orders for the
+    # same (symbol, side). On 2026-04-24 the user had:
+    #   - ZECUSDT plan-order A (live, waiting on trigger $317)
+    #   - ZECUSDT plan-order B that had already fired and produced a long position
+    # The reconcile classifier saw "ZEC long position exists" and marked
+    # plan-order A as FILLED — even though A's oid was still in Bitget's
+    # pending list. From that point on, force_replan_line skipped A
+    # (because it filters status=triggered), so when the user moved A's
+    # parent line, the actual Bitget plan-order didn't update.
+    #
+    # The fix: require BOTH conditions:
+    #   1. `pending_fetch_ok` — we got an authoritative pending list
+    #   2. `oid not in pending_oids` — our specific plan is genuinely absent
+    # A position alone is not enough; only the pair (oid-gone-from-pending
+    # + position-exists) is sufficient evidence that THIS plan filled.
+    if (
+        pending_fetch_ok
+        and pending_oids is not None
+        and oid not in pending_oids
+        and positions_fetch_ok
+        and positions
+    ):
         pos = find_position_for_cond(positions, cond)
         if pos is not None:
             return ClassifyResult(
                 state=CondRemoteState.FILLED,
-                path="position_matches_symbol_side",
+                path="oid_gone_from_pending+position_matches",
                 matched_row=pos,
             )
 

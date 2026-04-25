@@ -18,6 +18,8 @@ const EVENT_TYPES = [
   'agent.started', 'agent.stopped', 'agent.mode.changed',
   'agent.regime.changed', 'agent.error.raised',
   'summary.daily', 'ops.healer.triggered',
+  // 2026-04-23: private Bitget WS push events (see server/bitget_private_ws.py)
+  'order.ws_update', 'account.ws_update', 'position.ws_update',
 ];
 
 export function connectStream() {
@@ -34,6 +36,15 @@ export function connectStream() {
       try {
         const data = ev.data ? JSON.parse(ev.data) : {};
         publish(t, data);
+        // 2026-04-23: bridge server-side order/position events → the UI's
+        // local 'conditionals.changed' bus so open panels refresh immediately
+        // when a fill / cancel comes in over SSE. Before this, frontend only
+        // fired 'conditionals.changed' after USER actions (local POST);
+        // server-triggered events (SL hit, TP hit, Bitget background-fill)
+        // had to wait for the 10s poll to show.
+        if (t.startsWith('order.') || t.startsWith('position.')) {
+          publish('conditionals.changed', { action: t, data, ts: Date.now() });
+        }
       } catch (err) {
         console.warn('[stream] parse error for', t, err);
       }

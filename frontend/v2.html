@@ -4,6 +4,69 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Trading OS</title>
+  <!-- 2026-04-25 SW SELF-RECOVERY — runs BEFORE any other JS so the
+       moment a stale Service Worker is detected we kill it + reload.
+       After one auto-reload the new SW (v3-2026-04-25-jschart-fix) is
+       in control with stale-while-revalidate, so future code changes
+       no longer need this dance. The check is keyed by an expected
+       version string; bumping that string is how future cache-bust
+       events propagate. ZERO user action — they just F5. -->
+  <script>
+    (function(){
+      var EXPECTED_SW = 'v3-2026-04-25-jschart-fix';
+      var FLAG_KEY = 'tos.sw.recoveredAt.' + EXPECTED_SW;
+      try {
+        if (sessionStorage.getItem(FLAG_KEY)) return;  // already recovered this session
+      } catch (_) { /* private mode → fall through, single recover is fine */ }
+      if (!('serviceWorker' in navigator)) return;
+      // If a controller exists, ask it for its version. Old SW won't
+      // respond to this query (no handler) → null after 1500ms → kill.
+      var controller = navigator.serviceWorker.controller;
+      if (!controller) return;  // first visit ever, new SW will register naturally
+      var done = false;
+      var t = setTimeout(function(){
+        if (done) return; done = true;
+        // No version reply → assume old SW → nuke
+        navigator.serviceWorker.getRegistrations().then(function(rs){
+          return Promise.all(rs.map(function(r){ return r.unregister(); }));
+        }).then(function(){
+          if (!('caches' in window)) return null;
+          return caches.keys().then(function(ks){
+            return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+          });
+        }).then(function(){
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+          location.reload();
+        }).catch(function(){
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+        });
+      }, 1500);
+      // Actively probe the SW for its version.
+      var ch = new MessageChannel();
+      ch.port1.onmessage = function(ev){
+        if (done) return; done = true; clearTimeout(t);
+        var ver = ev && ev.data && ev.data.version;
+        if (ver !== EXPECTED_SW) {
+          // Mismatch: old SW reporting different version → force-reload
+          navigator.serviceWorker.getRegistrations().then(function(rs){
+            return Promise.all(rs.map(function(r){ return r.unregister(); }));
+          }).then(function(){
+            return caches.keys().then(function(ks){
+              return Promise.all(ks.map(function(k){ return caches.delete(k); }));
+            });
+          }).then(function(){
+            try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+            location.reload();
+          });
+        } else {
+          try { sessionStorage.setItem(FLAG_KEY, '1'); } catch (_) {}
+        }
+      };
+      try {
+        controller.postMessage({ type: 'ping-version' }, [ch.port2]);
+      } catch (_) { /* unable → 1.5s timeout will catch it */ }
+    })();
+  </script>
   <!-- 2026-04-23: preconnect hints. Browser opens TCP+TLS to these hosts
        in parallel with HTML parsing, so by the time the JS runs they're
        already warm. Shaves 100-300ms off first meaningful paint. -->
@@ -126,7 +189,7 @@
   <!-- Legacy execution panel (kept for backward compat) -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
-  <script type="module" src="/js/main.js?v=2026042530"></script>
+  <script type="module" src="/js/main.js?v=2026042531"></script>
   <script src="/js/workbench/trendline_ai.js?v=2026042503"></script>
   <!-- Strategies tab: lazy-mount the MA-ribbon auto-execution card on first activation. -->
   <script type="module">

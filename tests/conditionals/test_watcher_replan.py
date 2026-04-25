@@ -6,6 +6,19 @@ from server.conditionals.types import ConditionalOrder, OrderConfig, TriggerConf
 from server.drawings.types import ManualTrendline
 
 
+@pytest.fixture(autouse=True)
+def _reset_global_state():
+    """Reset module-level globals that leak between tests.
+
+    2026-04-25: tests in this file share `_force_replan_set` (one test
+    explicitly adds to it, others assume it's empty). Add an autouse
+    fixture so every test starts from a clean slate.
+    """
+    watcher._force_replan_set.clear()
+    yield
+    watcher._force_replan_set.clear()
+
+
 class _FakeStore:
     def __init__(self, cond):
         self.cond = cond

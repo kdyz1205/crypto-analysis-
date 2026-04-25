@@ -15,6 +15,30 @@ import { $, on, esc } from './util/dom.js';
 import { subscribe } from './util/events.js';
 import { setScale, marketState } from './state/market.js';
 
+// 2026-04-23: Service Worker for aggressive static + OHLCV caching.
+// Registered asynchronously before `boot()`. Killswitch: set
+// localStorage.disableSW='1' in DevTools and reload, or call
+//   navigator.serviceWorker.controller.postMessage('killswitch')
+// The SW itself has a hard bypass for all /api/account, /api/conditionals,
+// /api/drawings, /api/live-execution, /api/place* — so order flow is
+// NEVER served from cache.
+(function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  let disabled = false;
+  try { disabled = localStorage.getItem('disableSW') === '1'; } catch {}
+  if (disabled) {
+    console.log('[sw] disabled via localStorage.disableSW');
+    navigator.serviceWorker.getRegistrations().then((regs) =>
+      regs.forEach((r) => r.unregister())).catch(() => {});
+    return;
+  }
+  navigator.serviceWorker.register('/sw.js').then((reg) => {
+    console.log('[sw] registered', reg.scope);
+  }).catch((err) => {
+    console.warn('[sw] register failed:', err);
+  });
+})();
+
 function boot() {
   console.log('[main] Trading OS booting...');
   let liveUpdatesStarted = false;

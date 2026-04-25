@@ -44,12 +44,19 @@ async def api_list_drawings(
     The UI doesn't use `comparison_status` / `nearest_auto_line_id`
     fields anymore, so the extra work is pure waste.
     Pass ?enrich=true only when you actually need those fields.
+
+    2026-04-24: each row carries `effective_role` computed against the
+    CURRENT price. Per TA_BASICS.md §2, the DB `side` is the draw-time
+    label and may be stale; downstream display + reasoning should prefer
+    `effective_role`.
     """
     normalized_symbol = _normalize_symbol(symbol)
     drawings = store.list(symbol=normalized_symbol, timeframe=timeframe)
     if enrich:
         drawings = await _enrich_drawings(drawings, normalized_symbol, timeframe)
-    return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in drawings]}
+    # Compute effective_role using the latest mark price for this symbol.
+    current_price = await _safe_current_price(normalized_symbol)
+    return {"drawings": [_serialize_with_role(item, current_price) for item in drawings]}
 
 
 @router.get("/all", response_model=ManualTrendlineListResponse)
@@ -60,9 +67,56 @@ async def api_list_all_drawings():
     picks a coin, expands it, sees all their drawings on that coin,
     clicks one to jump the chart to that symbol+tf. Never enriches —
     the grouped view doesn't use comparison data.
+
+    Carries `effective_role` per row, batched by symbol so we only fetch
+    each symbol's mark price once.
     """
     drawings = store.list()
-    return {"drawings": [ManualTrendlineModel.model_validate(item.to_dict()) for item in drawings]}
+    # Batch: one mark-price lookup per unique symbol
+    symbols = {d.symbol for d in drawings}
+    prices: dict[str, float | None] = {}
+    for sym in symbols:
+        prices[sym] = await _safe_current_price(sym)
+    return {"drawings": [_serialize_with_role(item, prices.get(item.symbol)) for item in drawings]}
+
+
+def _serialize_with_role(line: ManualTrendline, current_price: float | None) -> ManualTrendlineModel:
+    """Serialize a ManualTrendline with `effective_role` computed against
+    the supplied current price. None if price unavailable — frontend
+    falls back to `side`.
+    """
+    payload = line.to_dict()
+    if current_price is not None and current_price > 0:
+        try:
+            import time as _t
+            role = line.compute_effective_role(float(current_price), int(_t.time()))
+            payload["effective_role"] = role
+        except Exception as exc:
+            print(f"[drawings] effective_role compute failed for {line.manual_line_id}: {exc}")
+            payload["effective_role"] = None
+    else:
+        payload["effective_role"] = None
+    return ManualTrendlineModel.model_validate(payload)
+
+
+async def _safe_current_price(symbol: str) -> float | None:
+    """Best-effort current price for effective-role classification. Hits
+    the polars ohlcv cache (NO new Bitget fetch) so listing drawings
+    stays fast even with 50+ lines across many symbols. The 5% tolerance
+    in compute_effective_role makes 1h-close granularity plenty accurate
+    for support-vs-resistance classification."""
+    try:
+        from ..data_service import get_ohlcv_with_df
+        df, _ = await get_ohlcv_with_df(
+            symbol, "1h", None, days=2,
+            include_price_precision=False,
+            include_render_payload=False,
+        )
+        if df is not None and not df.is_empty():
+            return float(df["close"][-1])
+    except Exception:
+        return None
+    return None
 
 
 @router.post("", response_model=ManualTrendlineResponse)
@@ -149,8 +203,16 @@ async def api_update_drawing(manual_line_id: str, req: ManualTrendlineUpdateRequ
     )
     if anchors_moved:
         try:
-            from ..conditionals.watcher import force_replan_line
+            from ..conditionals.watcher import force_replan_line, force_replan_line_with_reconcile
+            # Sync flag for triggered conds (fast path, original behavior).
             force_replan_line(drawing.manual_line_id)
+            # 2026-04-24: ALSO schedule async Bitget reconciliation. Fixes
+            # the bug where a cond's local status drifted to 'filled' or
+            # 'cancelled' while the Bitget plan-order is still live —
+            # without reconcile, force_replan_line skips it (only scans
+            # status=triggered) and the user's line move silently fails
+            # to update the actual Bitget order.
+            asyncio.create_task(_run_replan_reconcile(drawing.manual_line_id))
         except Exception as exc:
             print(f"[drawings.patch] force_replan err: {exc}", flush=True)
         # Log the adjustment with before/after + affected orders so we
@@ -347,6 +409,19 @@ def _log_slope_pct_per_hour(p_start: float, p_end: float, t_start: int, t_end: i
     total = math.log(p_end) - math.log(p_start)
     hours = span / 3600.0
     return (math.exp(total / hours) - 1.0) * 100.0
+
+
+async def _run_replan_reconcile(manual_line_id: str) -> None:
+    """Fire-and-forget wrapper around force_replan_line_with_reconcile.
+    Logs the result but never raises; designed to be scheduled via
+    asyncio.create_task from the PATCH handler."""
+    try:
+        from ..conditionals.watcher import force_replan_line_with_reconcile
+        result = await force_replan_line_with_reconcile(manual_line_id)
+        if result.get("recovered", 0) > 0 or result.get("errors"):
+            print(f"[force_replan_reconcile] {manual_line_id}: {result}", flush=True)
+    except Exception as exc:
+        print(f"[force_replan_reconcile] {manual_line_id} unhandled: {exc}", flush=True)
 
 
 async def _log_line_adjustment(before: ManualTrendline, after: ManualTrendline,

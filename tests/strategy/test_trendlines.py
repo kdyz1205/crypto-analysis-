@@ -96,6 +96,14 @@ def _invalidation_candles(*, break_distance: bool = False) -> pd.DataFrame:
     high = [value + 0.10 for value in close]
     low = [value - 0.10 for value in close]
     open_ = [value - 0.02 for value in close]
+    if break_distance:
+        # 2026-04-23: force the body to STRADDLE the projected line at bar
+        # 11. Without this, open_[-1] = close_[-1] - 0.02 = 1.08, which is
+        # itself above the line (~0.90) and triggers "body_break" before
+        # "break_distance" ever gets checked in _detect_invalidation. We
+        # want this test to specifically exercise the break_distance
+        # branch, so pull open_[-1] down below the line.
+        open_[-1] = 0.88
     high[1] = 1.10
     high[4] = 1.04
     high[7] = 0.98
@@ -234,10 +242,18 @@ def test_dedup_keeps_higher_scored_similar_line(monkeypatch) -> None:
 
 
 def test_break_close_count_invalidation_is_detected() -> None:
+    # 2026-04-23: explicit config overrides because defaults have tightened
+    # since these tests were written:
+    #   - min_touch_spacing_bars=1 (default 5) — fixture pivots are 3 apart
+    #   - max_non_touch_crosses=5 (default 0) — invalidation bar legitimately
+    #     crosses the line (that's WHY it's invalidated), but the pre-score
+    #     filter would reject it under the strict default
+    # The test's purpose is to verify invalidation reason-setting, not those
+    # unrelated tightening filters.
     lines = build_candidate_lines(
         _invalidation_candles(),
         _invalidation_pivots(),
-        StrategyConfig(max_fresh_bars=20),
+        StrategyConfig(max_fresh_bars=20, min_touch_spacing_bars=1, max_non_touch_crosses=5),
         symbol="TEST",
         timeframe="1h",
     )
@@ -248,10 +264,16 @@ def test_break_close_count_invalidation_is_detected() -> None:
 
 
 def test_break_distance_invalidation_is_detected() -> None:
+    # 2026-04-23: also override break_close_count (default tightened to 1).
+    # Without this, bar 10 (close=0.93 vs line=0.92) fires break_close_count
+    # before bar 11 (close=1.10) ever triggers break_distance.
     lines = build_candidate_lines(
         _invalidation_candles(break_distance=True),
         _invalidation_pivots(),
-        StrategyConfig(max_fresh_bars=20),
+        StrategyConfig(
+            max_fresh_bars=20, min_touch_spacing_bars=1,
+            max_non_touch_crosses=5, break_close_count=3,
+        ),
         symbol="TEST",
         timeframe="1h",
     )
@@ -273,9 +295,13 @@ def test_late_pivot_does_not_count_as_confirming_touch_after_break() -> None:
         break_atr_mult=0.05,
         break_pct=0.001,
     )
+    # _evaluate_candidate_line now takes a _BarArrays bundle (numpy views
+    # of OHLC+ATR) instead of df+atr. Construct it from the fixture.
+    arrays = trendlines_module._extract_bar_arrays(
+        candles, calculate_atr(candles, config.atr_period)
+    )
     line = trendlines_module._evaluate_candidate_line(
-        candles,
-        calculate_atr(candles, config.atr_period),
+        arrays,
         pivots,
         pivots[0],
         pivots[1],

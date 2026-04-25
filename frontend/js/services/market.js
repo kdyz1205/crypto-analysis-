@@ -1,5 +1,7 @@
 // frontend/js/services/market.js
 import { fetchJson } from '../util/fetch.js';
+import { publish } from '../util/events.js';
+import * as ohlcvCache from './ohlcv_cache.js';
 
 export const getSymbols = (includeExtended = false) =>
   fetchJson(`/api/symbols${includeExtended ? '?include_extended=true' : ''}`);
@@ -44,33 +46,101 @@ export function peekOhlcvCache(symbol, interval, days = 30, historyMode = 'fast_
   return hit.data;
 }
 
-export const getOhlcv = async (symbol, interval, days = 30, endTime = null, historyMode = 'fast_window') => {
-  const key = `${symbol}|${interval}|${days}|${historyMode}`;
-  // Skip cache when running a replay (endTime set)
-  if (!endTime) {
-    const hit = _ohlcvCache.get(key);
-    if (hit && Date.now() - hit.ts < _cacheTtlMs(interval)) {
-      return hit.data;
-    }
-  }
+async function _fetchOhlcvFromServer(symbol, interval, days, endTime, historyMode) {
   const params = new URLSearchParams({
     symbol, interval, days: String(days), history_mode: historyMode,
-    include_overlays: 'false',   // compute MA/BB client-side — server skips loops + shrinks payload
+    include_overlays: 'false',
   });
   if (endTime) params.set('end_time', endTime);
-  // noCache on fetch layer: we manage our own freshness via the cache
-  // above; the fetch-layer 30s cache would hold stale bar counts.
-  const data = await fetchJson(`/api/ohlcv?${params}`, { noCache: true });
-  if (!endTime) {
+  return fetchJson(`/api/ohlcv?${params}`, { noCache: true });
+}
+
+export const getOhlcv = async (symbol, interval, days = 30, endTime = null, historyMode = 'fast_window') => {
+  const key = `${symbol}|${interval}|${days}|${historyMode}`;
+  // Skip all caches during replay (endTime set) — replay needs exact bars.
+  if (endTime) {
+    return _fetchOhlcvFromServer(symbol, interval, days, endTime, historyMode);
+  }
+
+  // Tier 1 — hot in-memory hit (sub-ms, survives TF flips).
+  const hit = _ohlcvCache.get(key);
+  if (hit && Date.now() - hit.ts < _cacheTtlMs(interval)) {
+    return hit.data;
+  }
+
+  // Tier 2 — IndexedDB persistent hit (survives F5 / server restart).
+  //   If cached bars cover the requested range and the last bar is still
+  //   fresh enough for this TF, return IMMEDIATELY and fire a small delta
+  //   refresh in the background. Otherwise fall through to full fetch.
+  //
+  // 2026-04-23: biggest "F5 feels fast" win. Historical bars are immutable
+  // so there's no reason to re-download 2,936 bars every time.
+  const idbHit = await ohlcvCache.getCached(symbol, interval).catch(() => null);
+  if (idbHit && ohlcvCache.isFreshEnough(idbHit, interval)) {
+    const data = {
+      candles: idbHit.bars,
+      volume: idbHit.volume || [],
+      pricePrecision: idbHit.pricePrecision,
+      fromIndexedDB: true,
+    };
     _ohlcvCache.set(key, { ts: Date.now(), data });
-    // Cap cache size
-    if (_ohlcvCache.size > 24) {
-      const oldest = [..._ohlcvCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
-      if (oldest) _ohlcvCache.delete(oldest[0]);
-    }
+    // Fire a background delta refresh. Don't await — user sees cached now.
+    _backgroundRefresh(symbol, interval, days, historyMode, key).catch((err) => {
+      console.warn('[ohlcv] bg refresh failed', err);
+    });
+    return data;
+  }
+
+  // Tier 3 — server fetch. Populate both caches on success.
+  const data = await _fetchOhlcvFromServer(symbol, interval, days, endTime, historyMode);
+  _ohlcvCache.set(key, { ts: Date.now(), data });
+  if (_ohlcvCache.size > 24) {
+    const oldest = [..._ohlcvCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+    if (oldest) _ohlcvCache.delete(oldest[0]);
+  }
+  const bars = Array.isArray(data?.candles) ? data.candles : [];
+  if (bars.length > 0) {
+    ohlcvCache.storeBars(symbol, interval, bars, {
+      volume: data.volume || [],
+      pricePrecision: data.pricePrecision,
+    }).catch(() => {});
   }
   return data;
 };
+
+/**
+ * Background-refresh: fetch the last ~7 days of bars, merge into IDB,
+ * then publish `ohlcv.delta` so subscribers (chart.js) can append the
+ * newest bars without a full redraw.
+ */
+async function _backgroundRefresh(symbol, interval, days, historyMode, hotKey) {
+  // We only need the tail for delta — 7 days covers any TF's new bars
+  // comfortably without asking the server to ship ALL history again.
+  const deltaDays = 7;
+  try {
+    const data = await _fetchOhlcvFromServer(symbol, interval, deltaDays, null, historyMode);
+    const bars = Array.isArray(data?.candles) ? data.candles : [];
+    if (bars.length === 0) return;
+    const { bars: mergedBars, volume: mergedVol } = await ohlcvCache.mergeBars(
+      symbol, interval, bars, data.volume || [], { pricePrecision: data.pricePrecision },
+    );
+    const mergedData = {
+      candles: mergedBars,
+      volume: mergedVol,
+      pricePrecision: data.pricePrecision,
+      fromIndexedDB: true,
+    };
+    _ohlcvCache.set(hotKey, { ts: Date.now(), data: mergedData });
+    publish('ohlcv.delta', {
+      symbol, interval,
+      newest: bars[bars.length - 1],
+      count: bars.length,
+      data: mergedData,
+    });
+  } catch (err) {
+    console.warn('[ohlcv] background refresh error', err);
+  }
+}
 
 /**
  * Lazy-load older bars for a chart.

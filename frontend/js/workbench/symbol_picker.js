@@ -22,6 +22,7 @@
 import { $, on, esc } from '../util/dom.js';
 import { marketState, setSymbol, setAllSymbols } from '../state/market.js';
 import * as marketSvc from '../services/market.js';
+import { subscribe } from '../util/events.js';
 
 const TOP_N_DEFAULT = 200;
 const DROPDOWN_MAX_ROWS = 300;
@@ -38,6 +39,54 @@ let _isOpen = false;
 let _outsideHandler = null;
 let _sortKey = 'volume_usdt';    // current sort column
 let _sortDir = 'desc';           // 'asc' | 'desc'
+
+// ──────────────────────────────────────────────────────────────
+// 2026-04-23: Bitget-style category tabs + user-owned favourites.
+//
+// Tabs:
+//   全部 | 收藏 | 贵金属 | 商品 | 股票 | ETF
+//
+// 收藏 (favourites) is user-defined, persisted in localStorage key
+// `v2.picker.favorites`. Each row in the dropdown has a ☆ / ★ toggle.
+// Seed defaults = the old hardcoded 核心资产 list so the first-time user
+// isn't staring at an empty favourites tab.
+// ──────────────────────────────────────────────────────────────
+const FAVORITES_LS_KEY = 'v2.picker.favorites';
+const DEFAULT_FAVORITES = ['BTCUSDT','ETHUSDT','SOLUSDT','HYPEUSDT','ZECUSDT','BNBUSDT','XRPUSDT','DOGEUSDT'];
+
+function loadFavorites() {
+  try {
+    const raw = localStorage.getItem(FAVORITES_LS_KEY);
+    if (!raw) return new Set(DEFAULT_FAVORITES);
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr.map(String) : DEFAULT_FAVORITES);
+  } catch { return new Set(DEFAULT_FAVORITES); }
+}
+
+function saveFavorites(set) {
+  try { localStorage.setItem(FAVORITES_LS_KEY, JSON.stringify([...set])); } catch {}
+}
+
+let _favorites = loadFavorites();
+
+function toggleFavorite(sym) {
+  if (_favorites.has(sym)) _favorites.delete(sym);
+  else _favorites.add(sym);
+  saveFavorites(_favorites);
+}
+
+const CATEGORY_TABS = [
+  { id: 'all',       label: '全部',    pred: () => true },
+  { id: 'favorite',  label: '收藏 ★',  pred: (r) => _favorites.has(r.symbol) },
+  { id: 'precious',  label: '贵金属',  pred: (r) => ['XAUUSDT','XAGUSDT','XPTUSDT','XPDUSDT'].includes(r.symbol) },
+  { id: 'commodity', label: '商品',    pred: (r) => r.category === 'commodity' },
+  { id: 'stock',     label: '股票',    pred: (r) => r.category === 'stock' },
+  { id: 'index',     label: 'ETF',     pred: (r) => r.category === 'index' },
+];
+const CATEGORY_LS_KEY = 'v2.picker.active_category';
+let _activeCategoryId = (() => {
+  try { return localStorage.getItem(CATEGORY_LS_KEY) || 'all'; } catch { return 'all'; }
+})();
 
 export async function initSymbolPicker(comboId = 'v2-symbol-combo') {
   const loadLegacyFallback = async (reason) => {
@@ -87,6 +136,25 @@ export async function initSymbolPicker(comboId = 'v2-symbol-combo') {
   injectStyles();
 
   _input.value = marketState.currentSymbol || '';
+
+  // 2026-04-25: subscribe to market.symbol.changed so the search box
+  // ALWAYS shows the active symbol — including changes made elsewhere
+  // (e.g. clicking a row in 我的手画线 panel, command palette, deep
+  // link). Bug surfaced when user clicked XAUUSDT in the side panel
+  // and the top search box still showed HYPEUSDT, with the chart half-
+  // rendered for XAU. Per PRINCIPLES.md P14, fix at the source: any
+  // UI element displaying current symbol MUST react to the bus event.
+  subscribe('market.symbol.changed', (sym) => {
+    if (!_input) return;
+    const next = String(sym || marketState.currentSymbol || '');
+    // Avoid clobbering the user's in-progress typing — only sync if the
+    // user isn't actively focused on the input. They could be searching
+    // for a different symbol when an event fires (e.g. ws_ticker
+    // reconnect re-publishing).
+    if (document.activeElement !== _input) {
+      _input.value = next;
+    }
+  });
 
   on(_input, 'focus', () => {
     _input.select();
@@ -279,6 +347,7 @@ function renderFilterBar() {
 function render() {
   if (!_dropdown) return;
 
+  const catBar = renderCategoryBar();
   const filterBar = renderFilterBar();
   const header = `
     <div class="sp-head">
@@ -290,7 +359,8 @@ function render() {
   `;
 
   if (_currentList.length === 0) {
-    _dropdown.innerHTML = filterBar + header + `<div class="sp-empty">(no match)</div>`;
+    _dropdown.innerHTML = catBar + filterBar + header + `<div class="sp-empty">(no match)</div>`;
+    wireCategoryBar();
     wireHeader();
     wireFilterBar();
     return;
@@ -299,19 +369,26 @@ function render() {
   const rows = _currentList.map((r, i) => {
     const activeCls = i === _activeIdx ? 'is-active' : '';
     const chgCls = r.change24h > 0 ? 'sp-up' : r.change24h < 0 ? 'sp-dn' : '';
+    const favCls = _favorites.has(r.symbol) ? 'is-fav' : '';
+    const favChar = _favorites.has(r.symbol) ? '★' : '☆';
     return `
       <div class="sp-row ${activeCls}" data-sym="${esc(r.symbol)}" data-idx="${i}">
-        <div class="sp-col sp-col-sym">${esc(r.symbol)}</div>
+        <div class="sp-col sp-col-sym">
+          <span class="sp-fav ${favCls}" data-fav-sym="${esc(r.symbol)}" title="收藏/取消收藏">${favChar}</span>
+          ${esc(r.symbol)}
+        </div>
         <div class="sp-col sp-col-vol">${fmtVolume(r.volume_usdt)}</div>
         <div class="sp-col sp-col-price">${fmtPrice(r.last_price)}</div>
         <div class="sp-col sp-col-chg ${chgCls}">${fmtChange(r.change24h)}</div>
       </div>`;
   }).join('');
 
-  _dropdown.innerHTML = filterBar + header + `<div class="sp-body">${rows}</div>`;
+  _dropdown.innerHTML = catBar + filterBar + header + `<div class="sp-body">${rows}</div>`;
 
+  wireCategoryBar();
   wireHeader();
   wireFilterBar();
+  wireFavoriteButtons();
   _dropdown.querySelectorAll('[data-sym]').forEach((el) => {
     el.addEventListener('mousedown', (ev) => {
       ev.preventDefault();
@@ -369,8 +446,51 @@ async function applyActiveFilter() {
 }
 
 function _applyFilterToList(list) {
-  if (!_matchedSymbols) return list;
-  return list.filter((r) => _matchedSymbols.has(String(r.symbol || '').toUpperCase()));
+  // Category tab first, then screener filter.
+  const tab = CATEGORY_TABS.find((t) => t.id === _activeCategoryId) || CATEGORY_TABS[0];
+  let out = tab.id === 'all' ? list : list.filter(tab.pred);
+  if (_matchedSymbols) {
+    out = out.filter((r) => _matchedSymbols.has(String(r.symbol || '').toUpperCase()));
+  }
+  return out;
+}
+
+function renderCategoryBar() {
+  const chips = CATEGORY_TABS.map((t) => {
+    const active = t.id === _activeCategoryId;
+    return `<div class="sp-cat-chip ${active ? 'is-active' : ''}" data-cat-id="${esc(t.id)}">${esc(t.label)}</div>`;
+  }).join('');
+  return `<div class="sp-cat-bar">${chips}</div>`;
+}
+
+function wireCategoryBar() {
+  if (!_dropdown) return;
+  _dropdown.querySelectorAll('[data-cat-id]').forEach((el) => {
+    // Same mousedown-stops-blur trick as other chips so clicking doesn't
+    // close the dropdown before the handler fires.
+    el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _activeCategoryId = el.dataset.catId;
+      try { localStorage.setItem(CATEGORY_LS_KEY, _activeCategoryId); } catch {}
+      open(_input.value);
+    });
+  });
+}
+
+function wireFavoriteButtons() {
+  if (!_dropdown) return;
+  _dropdown.querySelectorAll('[data-fav-sym]').forEach((el) => {
+    el.addEventListener('mousedown', (ev) => {
+      // Stop the row-click (pick symbol) AND the outside-click (close).
+      ev.preventDefault();
+      ev.stopPropagation();
+      const sym = el.dataset.favSym;
+      toggleFavorite(sym);
+      // Re-render so the star + the 收藏 tab both update in-place.
+      open(_input.value);
+    });
+  });
 }
 
 function openFilterConfigureModal() {
@@ -615,6 +735,58 @@ function injectStyles() {
     .sp-filter-chip.sp-filter-add:hover {
       color: #38bdf8;
       background: #141c2d;
+    }
+
+    /* 2026-04-23 Bitget-style category tabs — sits above the preset
+       screener filter bar. Category tabs are horizontal, slightly taller
+       than filter chips, underline-highlight for the active one. */
+    .sp-cat-bar {
+      display: flex;
+      gap: 2px;
+      padding: 4px 8px 0;
+      background: #0b121f;
+      border-bottom: 1px solid #111826;
+      overflow-x: auto;
+    }
+    .sp-cat-chip {
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #94a1b7;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.12s, border-color 0.12s;
+      white-space: nowrap;
+    }
+    .sp-cat-chip:hover {
+      color: #d8dde8;
+    }
+    .sp-cat-chip.is-active {
+      color: #e8edf5;
+      border-bottom-color: #38bdf8;
+      font-weight: 600;
+    }
+
+    /* 2026-04-23 收藏夹 star — single-click toggle on each row. Hollow ☆
+       = not favourited, solid ★ amber = favourited. Sits before the
+       symbol text so the row still reads naturally. */
+    .sp-fav {
+      display: inline-block;
+      width: 14px;
+      font-size: 12px;
+      color: #4a5568;
+      cursor: pointer;
+      margin-right: 4px;
+      user-select: none;
+      transition: color 0.12s, transform 0.12s;
+    }
+    .sp-fav:hover {
+      transform: scale(1.15);
+      color: #fbbf24;
+    }
+    .sp-fav.is-fav {
+      color: #fbbf24;
     }
   `;
   document.head.appendChild(el);

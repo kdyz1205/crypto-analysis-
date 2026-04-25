@@ -47,8 +47,39 @@ DEFAULT_DAYS_BY_INTERVAL = {
 SNAPSHOT_CACHE_LIMIT = 32
 REPLAY_CACHE_LIMIT = 16
 FAST_REPLAY_TAIL_THRESHOLD = 12
-_snapshot_cache: OrderedDict[tuple[Any, ...], StrategySnapshotResponse] = OrderedDict()
+
+# 2026-04-23: Stale-While-Revalidate (SWR) on snapshot.
+#
+# Why:
+#   Polling clients (decision_rail every 30s × N symbols) hit cold-start +
+#   bar-boundary misses where the cached snapshot_response key just changed
+#   because a new bar closed. Under the old pure-cache-key design, each
+#   bar-close triggered a fresh 0.5–1s compute that blocked the caller.
+#   SWR returns the previous snapshot INSTANTLY while kicking off the
+#   refresh in the background, so the user never waits — only the next
+#   poll sees updated data.
+#
+# Flow:
+#   - fresh (age <  SWR_FRESH_TTL): return cached, no refresh
+#   - stale (age < SWR_STALE_TTL): return cached + kick background refresh
+#   - expired (age >= SWR_STALE_TTL): compute inline (normal cache miss)
+SWR_FRESH_TTL = 3.0      # within 3s → data is "fresh enough" (user 2026-04-23: 10s太久)
+SWR_STALE_TTL = 120.0    # beyond 2min → don't trust it, recompute inline
+
+_snapshot_cache: OrderedDict[tuple[Any, ...], tuple[float, StrategySnapshotResponse]] = OrderedDict()
 _replay_cache: OrderedDict[tuple[Any, ...], StrategyReplayResponse] = OrderedDict()
+
+# In-flight dedup. If two pollers hit a cold cache at the same time
+# (decision_rail polls /snapshot every 30s for 4 symbols — very likely
+# to overlap), they would each spawn a full ~1s compute via asyncio.to_thread.
+# Now they share one task and return the same StrategySnapshotResponse.
+_snapshot_inflight: dict[tuple[Any, ...], "asyncio.Task[StrategySnapshotResponse]"] = {}
+_snapshot_swr_tasks: dict[tuple[Any, ...], "asyncio.Task[None]"] = {}
+# Reverse-lookup: inflight_key (symbol+interval+...) -> last-seen cache_key
+# (which includes candle signature). Lets the SWR fast path skip the 0.5s
+# ohlcv fetch for repeat calls and hit the response cache directly.
+_last_key_for: dict[tuple[Any, ...], tuple[Any, ...]] = {}
+_replay_inflight: dict[tuple[Any, ...], "asyncio.Task[StrategyReplayResponse]"] = {}
 
 
 @router.get("/config", response_model=StrategyConfigResponse)
@@ -62,6 +93,27 @@ async def api_strategy_config(
     normalized_symbol = _normalize_symbol(symbol) if symbol else None
     cfg = StrategyConfig()
     price_precision: int | None = None
+
+    # 2026-04-23: precision-aware config. Frontend reads tickSize from
+    # /config to set up chart formatter; without this it falls back to a
+    # generic 4dp which is wrong for low-priced alts. We read precision
+    # from the same get_ohlcv_with_df path the snapshot uses (small days
+    # param so it's cheap + the market_payload is cached).
+    if normalized_symbol:
+        try:
+            _, market_payload = await get_ohlcv_with_df(
+                normalized_symbol, interval, None, 1,
+                history_mode="fast_window",
+                include_price_precision=True,
+                include_render_payload=False,
+            )
+            if isinstance(market_payload, dict):
+                price_precision = market_payload.get("pricePrecision")
+                cfg = _config_with_market_precision(cfg, price_precision)
+        except Exception as exc:
+            # Never fail /config on metadata hiccup — frontend would lose
+            # chart formatting. Just log.
+            print(f"[strategy/config] precision lookup failed for {normalized_symbol}: {exc}")
 
     return serialize_config_response(
         cfg,
@@ -88,37 +140,72 @@ async def api_strategy_snapshot(
     normalized_symbol = _normalize_symbol(symbol)
     requested_days = days or DEFAULT_DAYS_BY_INTERVAL.get(interval, 120)
 
+    # inflight key (before ohlcv data loads). If a concurrent request is
+    # already building this exact snapshot, await its result instead of
+    # re-computing. Also used for SWR background-refresh dedup.
+    inflight_key = (
+        normalized_symbol, interval, end_time, requested_days,
+        history_mode, analysis_bars,
+    )
+
+    # 2026-04-23: no pre-ohlcv SWR shortcut. The regular cache keyed on
+    # (symbol, interval, candle_signature, drawings_signature) stays, so
+    # any change in market data or user drawings invalidates the cache
+    # correctly. The SWR fast-path was returning stale data when the
+    # user added a drawing or bars changed within 3s — correctness > speed.
+    # The regular cache hit still returns in ~0.2s because ohlcv has its
+    # own polars cache (server/data_service.py).
+
+    existing = _snapshot_inflight.get(inflight_key)
+    if existing is not None and not existing.done():
+        try:
+            return await existing
+        except Exception:
+            # If the piggy-backed task failed, fall through to our own attempt
+            pass
+
+    async def _build():
+        try:
+            candles_df, history, price_precision, cfg = await _load_strategy_inputs(
+                normalized_symbol,
+                interval,
+                end_time=end_time,
+                days=requested_days,
+                history_mode=history_mode,
+                analysis_bars=analysis_bars,
+            )
+            drawings_signature = manual_strategy_signature(normalized_symbol, interval)
+            cache_key = _snapshot_cache_key(candles_df, normalized_symbol, interval, price_precision, drawings_signature)
+            _last_key_for[inflight_key] = cache_key   # SWR reverse-map
+            cached = _get_cached_snapshot(cache_key)
+            if cached is not None:
+                return cached
+            response = await asyncio.to_thread(
+                _build_strategy_snapshot_response,
+                candles_df,
+                cfg,
+                normalized_symbol,
+                interval,
+                price_precision,
+                history,
+                drawings_signature,
+            )
+            return _store_cached_snapshot(cache_key, response)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(500, str(exc)) from exc
+
+    task = asyncio.create_task(_build())
+    _snapshot_inflight[inflight_key] = task
     try:
-        candles_df, history, price_precision, cfg = await _load_strategy_inputs(
-            normalized_symbol,
-            interval,
-            end_time=end_time,
-            days=requested_days,
-            history_mode=history_mode,
-            analysis_bars=analysis_bars,
-        )
-        drawings_signature = manual_strategy_signature(normalized_symbol, interval)
-        cache_key = _snapshot_cache_key(candles_df, normalized_symbol, interval, price_precision, drawings_signature)
-        cached = _get_cached_snapshot(cache_key)
-        if cached is not None:
-            return cached
-        response = await asyncio.to_thread(
-            _build_strategy_snapshot_response,
-            candles_df,
-            cfg,
-            normalized_symbol,
-            interval,
-            price_precision,
-            history,
-            drawings_signature,
-        )
-        return _store_cached_snapshot(cache_key, response)
-    except LookupError as exc:
-        raise HTTPException(404, str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(500, str(exc)) from exc
+        return await task
+    finally:
+        _snapshot_inflight.pop(inflight_key, None)
 
 
 @router.get("/replay", response_model=StrategyReplayResponse)
@@ -314,14 +401,27 @@ def _get_cached_snapshot(cache_key: tuple[Any, ...]) -> StrategySnapshotResponse
     if cached is None:
         return None
     _snapshot_cache.move_to_end(cache_key)
-    return cached
+    _, response = cached
+    return response
+
+
+def _get_cached_snapshot_with_age(cache_key: tuple[Any, ...]) -> tuple[float, StrategySnapshotResponse] | None:
+    """Return (age_seconds, response) for SWR logic, or None if not cached."""
+    import time as _t
+    cached = _snapshot_cache.get(cache_key)
+    if cached is None:
+        return None
+    _snapshot_cache.move_to_end(cache_key)
+    stored_at, response = cached
+    return _t.time() - stored_at, response
 
 
 def _store_cached_snapshot(
     cache_key: tuple[Any, ...],
     response: StrategySnapshotResponse,
 ) -> StrategySnapshotResponse:
-    _snapshot_cache[cache_key] = response
+    import time as _t
+    _snapshot_cache[cache_key] = (_t.time(), response)
     _snapshot_cache.move_to_end(cache_key)
     while len(_snapshot_cache) > SNAPSHOT_CACHE_LIMIT:
         _snapshot_cache.popitem(last=False)

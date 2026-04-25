@@ -73,6 +73,37 @@ export function initManualTrendlineController(chart, container) {
   renderPanel();
 }
 
+// 2026-04-23: per-(symbol,interval) drawings cache. Fixes the "lines
+// flash off then on" bug when switching symbols (e.g. HYPE → XAU). Before
+// this, drawingsState.lines held the OLD symbol's lines while the server
+// fetch for the NEW symbol was in flight — those lines would render at
+// HYPE's $40 price on XAU's $4700 chart, get mapped off-screen, then
+// reappear once the server response replaced them.
+//
+// With this cache, switching to a previously-viewed symbol shows its
+// lines INSTANTLY from memory; the server fetch then refines if needed.
+const _drawingsCache = new Map();   // key = "SYM|TF" → lines[]
+
+function _cacheKey(symbol, timeframe) {
+  return `${String(symbol).toUpperCase()}|${String(timeframe)}`;
+}
+
+/**
+ * Synchronously swap the drawingsState.lines to the cached set for
+ * (symbol, interval). Called BEFORE the network refresh so the SVG
+ * overlay never holds stale (wrong-symbol) lines during the switch.
+ * Returns true if a cache hit was applied (caller may skip the loading
+ * spinner).
+ */
+export function preSwapDrawingsForSymbol(symbol, timeframe) {
+  const key = _cacheKey(symbol, timeframe);
+  const cached = _drawingsCache.get(key);
+  // Always clear (even on cache miss) so OLD symbol's lines aren't
+  // attempted on NEW chart's price grid.
+  setManualDrawings(cached || []);
+  return cached !== undefined && cached.length >= 0;
+}
+
 export async function refreshManualDrawings(symbol, timeframe) {
   if (!symbol || !timeframe) return;
   // Don't overwrite drawingsState.lines while the user is mid-drag — it
@@ -97,7 +128,10 @@ export async function refreshManualDrawings(symbol, timeframe) {
       (l) => l._pending && l.symbol === symbol && l.timeframe === timeframe
         && !serverLines.some((s) => s.manual_line_id === l.manual_line_id),
     );
-    setManualDrawings([...serverLines, ...pending]);
+    const finalLines = [...serverLines, ...pending];
+    setManualDrawings(finalLines);
+    // Update per-symbol cache for instant swap on next visit.
+    _drawingsCache.set(_cacheKey(symbol, timeframe), finalLines);
     setDrawingsError(null);
   } catch (err) {
     if (requestSeq !== drawingsRequestSeq) return;
@@ -460,7 +494,7 @@ async function onPanelClick(event) {
       await refreshManualDrawings(marketState.currentSymbol, marketState.currentInterval);
     } catch (err) {
       console.error('[manual-panel] duplicate failed', err);
-      alert(`复制失败: ${err?.message || err}`);
+      alert(`复制失败: ${err?.message || err}`); // SAFE: alert() renders plain text, not HTML — XSS not reachable here
     }
     return;
   }

@@ -79,37 +79,103 @@ def _symbols_from_ticker_info_csv() -> list[str]:
 # Bitget lists equity/commodity perpetuals under the same usdt-futures
 # product type. These bases are NOT crypto — filter them out so the symbol
 # picker only shows what the user actually trades.
-_NON_CRYPTO_BASES = frozenset({
-    # US equities
-    "AAPL", "TSLA", "NVDA", "GOOGL", "MSFT", "AMZN", "META", "COIN", "MSTR",
-    "PLTR", "HOOD", "AMD", "INTC", "NFLX", "DIS", "BABA", "PDD", "JD", "TSM",
-    # Precious metals / commodities (XAUT is a crypto gold token — keep it)
-    "XAU", "XAG", "XPT", "XPD", "CL", "BZ", "NG", "HG", "GC", "SI",
-    "BRENT", "WTI", "GOLD", "SILVER", "OIL", "COPPER",
-    # Equity indices / ETFs
-    "SPY", "QQQ", "IWM", "DIA", "GLD", "SLV", "USO", "UNG", "TLT", "IEF",
-    "SPX", "NDX", "DJI", "RUT", "VIX",
+# Classification of Bitget USDT-M perpetuals into asset categories.
+#
+# 2026-04-23: user asked that these lists contain ONLY what Bitget
+# currently offers — no aspirational/fabricated entries. The lists below
+# were verified against Bitget's /api/v2/mix/market/contracts on 2026-04-23
+# (usdt-futures, symbolStatus=normal). If Bitget adds a new stock/metal/
+# ETF, re-run scripts/refresh_bitget_categories.py to update.
+_STOCK_BASES = frozenset({
+    # 24 equities live on Bitget USDT-M 2026-04-23
+    "AAPL", "AMD", "AMZN", "BA", "BABA", "COIN", "F", "GE", "GOOGL",
+    "HIVE", "HOOD", "INTC", "JD", "MCD", "META", "MSFT", "MSTR",
+    "NFLX", "NVDA", "ORCL", "PLTR", "TSLA", "TSM", "WMT",
+})
+_COMMODITY_BASES = frozenset({
+    # 7 commodities (precious metals + crude oil) live on Bitget 2026-04-23
+    "XAU",     # gold
+    "XAG",     # silver
+    "XPT",     # platinum
+    "XPD",     # palladium
+    "CL",      # WTI crude oil
+    "BZ",      # Brent crude oil
+    "COPPER",  # copper
+})
+_INDEX_BASES = frozenset({
+    # 4 equity-index/ETF products live on Bitget 2026-04-23
+    "DIA",     # Dow Jones ETF
+    "QQQ",     # Nasdaq-100 ETF
+    "SPX",     # S&P 500 index
+    "SPY",     # S&P 500 ETF
 })
 
-def _is_crypto_symbol(sym: str) -> bool:
+# Precious-metal subset used for the dedicated "贵金属" picker tab.
+_PRECIOUS_METAL_BASES = frozenset({"XAU", "XAG", "XPT", "XPD"})
+
+def _asset_category(sym: str) -> str:
+    """Return 'stock', 'commodity', 'index', or 'crypto' for a Bitget symbol."""
     if not sym.endswith("USDT"):
-        return False
+        return "crypto"
     base = sym[:-4]
-    return base not in _NON_CRYPTO_BASES
+    if base in _STOCK_BASES:
+        return "stock"
+    # XAUT is the tether-gold crypto token; keep it as crypto, not commodity.
+    if base in _COMMODITY_BASES and base != "XAUT":
+        return "commodity"
+    if base in _INDEX_BASES:
+        return "index"
+    return "crypto"
 
 
 @router.get("/symbols")
 async def get_symbols_route(include_extended: bool = Query(False, description="[Deprecated]")):
-    """Return Bitget USDT-M crypto perpetual symbols ranked by 24h volume."""
+    """Return all Bitget USDT-M perpetual symbols ranked by 24h volume.
+
+    2026-04-23: user explicitly asked to surface stocks, gold/oil, and all
+    tokens — the hard `_NON_CRYPTO_BASES` filter is gone. Category tagging
+    is available via `/api/symbols/categorized` when the frontend needs it.
+    """
     from ..data_service import get_top_volume_symbols
     try:
-        ranked = await get_top_volume_symbols(top_n=300)
-        crypto_only = [s for s in ranked if _is_crypto_symbol(s)]
-        if crypto_only:
-            return crypto_only[:200]
+        # Pull a wide pool so low-volume non-crypto (stocks, commodities)
+        # aren't cut off by the 24h-volume ranking. Bitget exposes ~543
+        # contracts; capping at 500 keeps the response small enough.
+        ranked = await get_top_volume_symbols(top_n=600)
+        if ranked:
+            return ranked[:500]
     except Exception as e:
         print(f"Warning: Failed to load Bitget symbols: {e}")
     return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'HYPEUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT']
+
+
+@router.get("/symbols/categorized")
+async def get_symbols_categorized():
+    """Return all USDT-M symbols grouped by asset category.
+
+    Payload: `{crypto: [...], stock: [...], commodity: [...], index: [...]}`.
+    Each list is already sorted by 24h volume descending. Intended for the
+    symbol picker's new "All markets" view.
+    """
+    from ..data_service import get_top_volume_symbols
+    try:
+        ranked = await get_top_volume_symbols(top_n=600)
+    except Exception as exc:
+        print(f"[symbols/categorized] fallback due to: {exc}")
+        ranked = []
+    buckets: dict[str, list[str]] = {
+        "crypto": [], "stock": [], "commodity": [], "index": [],
+    }
+    for sym in ranked:
+        buckets[_asset_category(sym)].append(sym)
+    return buckets
+
+
+def _is_crypto_symbol(sym: str) -> bool:
+    """Legacy helper kept for any remaining callsite that still wants
+    crypto-only (e.g. the extended ticker below). Equivalent to
+    `_asset_category(sym) == 'crypto'`."""
+    return _asset_category(sym) == "crypto"
 
 
 # 10-minute cache. Bitget ticker API returns ~540 symbols in one call —
@@ -121,12 +187,16 @@ _EXTENDED_CACHE_TTL = 600
 
 
 @router.get("/symbols/extended")
-async def get_symbols_extended(top_n: int = Query(200, ge=1, le=500)):
-    """Bitget USDT-M crypto perps with ticker columns for a sortable picker.
+async def get_symbols_extended(top_n: int = Query(500, ge=1, le=1000)):
+    """Bitget USDT-M perpetuals with ticker columns for the sortable picker.
 
-    Each row: `{symbol, last_price, change24h, volume_usdt}`. change24h is
-    a fraction (e.g. -0.0028 = -0.28%); the frontend formats it. volume_usdt
-    is the 24h quote-volume in USDT, matching the existing rank order.
+    Each row: `{symbol, last_price, change24h, volume_usdt, category}`.
+    `category` is one of: 'crypto' | 'stock' | 'commodity' | 'index'.
+
+    2026-04-23: default cap lifted 200 → 500 and all categories are included
+    (user wants Bitget-style All/Core/PreciousMetals/Commodities/Stocks/ETF
+    tabs). change24h is a fraction; the frontend formats it. volume_usdt is
+    24h quote volume in USDT.
     """
     global _extended_cache
     import time as _time
@@ -150,7 +220,10 @@ async def get_symbols_extended(top_n: int = Query(200, ge=1, le=500)):
     enriched: list[dict] = []
     for r in rows:
         sym = str(r.get("symbol") or "").upper()
-        if not _is_crypto_symbol(sym):
+        # 2026-04-23: removed crypto-only filter. User asked for stocks
+        # (TSLA/AAPL/NVDA...), metals (XAU/XAG), oil (CL/BZ), indices
+        # (SPY/QQQ) — all already live on Bitget's USDT-futures API.
+        if not sym.endswith("USDT"):
             continue
         try:
             vol = float(r.get("usdtVolume") or r.get("quoteVolume") or 0.0)
@@ -165,6 +238,7 @@ async def get_symbols_extended(top_n: int = Query(200, ge=1, le=500)):
             "last_price": last,
             "change24h": chg,
             "volume_usdt": vol,
+            "category": _asset_category(sym),
         })
 
     enriched.sort(key=lambda x: x["volume_usdt"], reverse=True)
@@ -471,6 +545,13 @@ async def api_market_snapshot(symbol: str = Query(...), interval: str = Query("4
     }
 
 
+# 2026-04-23: in-flight dedup. decision_rail polls structure-summary
+# every 30s for all active symbols. On page refresh / bar boundary, 4+
+# pollers hit at once; without dedup each spawns an asyncio.to_thread
+# compute. Now they share one task.
+_structure_summary_inflight: dict[tuple[str, str], "asyncio.Task[dict]"] = {}
+
+
 @router.get("/market/structure-summary")
 async def api_market_structure_summary(symbol: str = Query(...), interval: str = Query("4h")):
     """
@@ -481,30 +562,46 @@ async def api_market_structure_summary(symbol: str = Query(...), interval: str =
     if not symbol.endswith("USDT"):
         symbol += "USDT"
 
-    try:
-        df, _ = await get_ohlcv_with_df(
-            symbol,
-            interval,
-            None,
-            days=90,
-            include_price_precision=False,
-            include_render_payload=False,
-        )
-    except Exception as e:
-        return {"error": str(e), "symbol": symbol}
-    if df is None or df.is_empty():
-        return {"error": "no data", "symbol": symbol}
+    inflight_key = (symbol, interval)
+    existing = _structure_summary_inflight.get(inflight_key)
+    if existing is not None and not existing.done():
+        try:
+            return await existing
+        except Exception:
+            pass  # our own attempt below
 
+    async def _build():
+        try:
+            df, _ = await get_ohlcv_with_df(
+                symbol,
+                interval,
+                None,
+                days=90,
+                include_price_precision=False,
+                include_render_payload=False,
+            )
+        except Exception as e:
+            return {"error": str(e), "symbol": symbol}
+        if df is None or df.is_empty():
+            return {"error": "no data", "symbol": symbol}
+
+        try:
+            trimmed_df = _trim_structure_summary_df(df, interval)
+            cache_key = _structure_summary_cache_key(trimmed_df, symbol, interval)
+            cached = _get_cached_structure_summary(cache_key)
+            if cached is not None:
+                return cached
+            response = await asyncio.to_thread(_build_structure_summary, trimmed_df, symbol, interval)
+            return _store_cached_structure_summary(cache_key, response)
+        except Exception as e:
+            return {"error": str(e), "symbol": symbol}
+
+    task = asyncio.create_task(_build())
+    _structure_summary_inflight[inflight_key] = task
     try:
-        trimmed_df = _trim_structure_summary_df(df, interval)
-        cache_key = _structure_summary_cache_key(trimmed_df, symbol, interval)
-        cached = _get_cached_structure_summary(cache_key)
-        if cached is not None:
-            return cached
-        response = await asyncio.to_thread(_build_structure_summary, trimmed_df, symbol, interval)
-        return _store_cached_structure_summary(cache_key, response)
-    except Exception as e:
-        return {"error": str(e), "symbol": symbol}
+        return await task
+    finally:
+        _structure_summary_inflight.pop(inflight_key, None)
 
 
 def _trim_structure_summary_df(df, interval: str):
