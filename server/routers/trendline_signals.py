@@ -188,6 +188,39 @@ def agent_reports(limit: int = 20) -> dict:
     return {"reports": tail_reports(n=limit)}
 
 
+@router.post("/agent/run")
+def agent_run(req: dict | None = Body(None)) -> dict:
+    """Run ONE iteration of the self-evolving agent on demand.
+
+    Body (all optional):
+      {"symbols": ["BTCUSDT"], "timeframes": ["5m"],
+       "feedback_threshold": 5, "force_retrain": false}
+
+    Returns the IterationReport as a dict. Blocks until the iteration
+    finishes; for long-running iterations, prefer running the loop
+    standalone via `python -m trendline_tokenizer.agent.loop ...`.
+    """
+    from trendline_tokenizer.agent.loop import iteration_step
+    from trendline_tokenizer.agent.state import AgentState
+
+    req = req or {}
+    symbols = req.get("symbols") or ["BTCUSDT"]
+    timeframes = req.get("timeframes") or ["5m"]
+    feedback_threshold = int(req.get("feedback_threshold", 5))
+    force_retrain = bool(req.get("force_retrain", False))
+
+    state = AgentState.load()
+    state.iteration += 1
+    rep = iteration_step(
+        state=state, symbols=symbols, timeframes=timeframes,
+        feedback_threshold=feedback_threshold,
+        force_retrain=force_retrain,
+    )
+    state.last_run_ts = int(time.time())
+    state.save()
+    return rep.as_dict()
+
+
 @router.get("/agent/auto_drawn")
 def agent_auto_drawn(symbol: str | None = None, timeframe: str | None = None,
                      limit: int = 50) -> dict:
