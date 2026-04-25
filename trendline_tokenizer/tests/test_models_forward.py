@@ -70,3 +70,64 @@ def test_price_seq_encoder_handles_padding():
     pad_mask[0, -10:] = True
     h = enc(x, pad_mask)
     assert torch.isfinite(h).all()
+
+
+# ---------------------------------------------------------------------
+# Task 3 - TrendlineMultiStreamEncoder
+# ---------------------------------------------------------------------
+
+from trendline_tokenizer.models.trendline_encoder import TrendlineMultiStreamEncoder
+
+
+def _toy_trendline_batch(cfg, B):
+    return {
+        "rule_coarse": torch.randint(0, cfg.rule_coarse_vocab_size, (B, cfg.token_seq_len)),
+        "rule_fine": torch.randint(0, cfg.rule_fine_vocab_size, (B, cfg.token_seq_len)),
+        "learned_coarse": torch.randint(0, cfg.learned_coarse_vocab_size, (B, cfg.token_seq_len)),
+        "learned_fine": torch.randint(0, cfg.learned_fine_vocab_size, (B, cfg.token_seq_len)),
+        "raw_feat": torch.randn(B, cfg.token_seq_len, cfg.raw_feat_dim),
+        "token_pad": torch.zeros(B, cfg.token_seq_len, dtype=torch.bool),
+    }
+
+
+def test_trendline_encoder_all_streams_forward_shape():
+    cfg = FusionConfig(d_model=64, n_layers_token=2, n_heads_token=4)
+    enc = TrendlineMultiStreamEncoder(cfg)
+    B = 3
+    batch = _toy_trendline_batch(cfg, B)
+    h = enc(batch, batch["token_pad"])
+    assert h.shape == (B, cfg.token_seq_len, cfg.d_model)
+
+
+def test_trendline_encoder_rule_only_ablation():
+    cfg = FusionConfig(d_model=32, n_layers_token=1, n_heads_token=2,
+                       use_rule_tokens=True, use_learned_tokens=False,
+                       use_raw_features=False)
+    enc = TrendlineMultiStreamEncoder(cfg)
+    B = 2
+    batch = _toy_trendline_batch(cfg, B)
+    h = enc(batch, batch["token_pad"])
+    assert h.shape == (B, cfg.token_seq_len, cfg.d_model)
+    assert enc.learned_coarse_emb is None
+    assert enc.raw_proj is None
+
+
+def test_trendline_encoder_raw_only_ablation():
+    cfg = FusionConfig(d_model=32, n_layers_token=1, n_heads_token=2,
+                       use_rule_tokens=False, use_learned_tokens=False,
+                       use_raw_features=True)
+    enc = TrendlineMultiStreamEncoder(cfg)
+    B = 2
+    batch = _toy_trendline_batch(cfg, B)
+    h = enc(batch, batch["token_pad"])
+    assert h.shape == (B, cfg.token_seq_len, cfg.d_model)
+
+
+def test_trendline_encoder_clamps_out_of_range_ids():
+    cfg = FusionConfig(d_model=32, n_layers_token=1, n_heads_token=2)
+    enc = TrendlineMultiStreamEncoder(cfg)
+    B = 1
+    batch = _toy_trendline_batch(cfg, B)
+    batch["rule_coarse"] = batch["rule_coarse"] + cfg.rule_coarse_vocab_size
+    h = enc(batch, batch["token_pad"])
+    assert torch.isfinite(h).all()
