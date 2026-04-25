@@ -30,16 +30,36 @@ from .sequence_dataset import build_examples, SequenceDataset
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def _load_vqvae(ckpt_path: Path | None):
+def _load_vqvae(ckpt_path: Path | None, fusion_cfg: FusionConfig | None = None):
+    """Load a HierarchicalVQVAE checkpoint. If a FusionConfig is given,
+    validate the checkpoint's code counts match its learned_* vocabs;
+    otherwise inference would silently misalign embedding tables."""
     if ckpt_path is None or not Path(ckpt_path).exists():
         print(f"[train] no vqvae checkpoint at {ckpt_path}; learned tokens will be zeros")
         return None
     state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = VQVAEConfig(**state["cfg"])
+    if fusion_cfg is not None:
+        if cfg.coarse_codes != fusion_cfg.learned_coarse_vocab_size:
+            raise ValueError(
+                f"VQ-VAE checkpoint coarse_codes={cfg.coarse_codes} "
+                f"!= FusionConfig.learned_coarse_vocab_size={fusion_cfg.learned_coarse_vocab_size}. "
+                f"Either retrain the VQ-VAE or update FusionConfig."
+            )
+        if cfg.fine_codes != fusion_cfg.learned_fine_vocab_size:
+            raise ValueError(
+                f"VQ-VAE checkpoint fine_codes={cfg.fine_codes} "
+                f"!= FusionConfig.learned_fine_vocab_size={fusion_cfg.learned_fine_vocab_size}."
+            )
+        if cfg.feat_dim != fusion_cfg.raw_feat_dim:
+            raise ValueError(
+                f"VQ-VAE feat_dim={cfg.feat_dim} != raw_feat_dim={fusion_cfg.raw_feat_dim}"
+            )
     model = HierarchicalVQVAE(cfg)
     model.load_state_dict(state["model_state"])
     model.eval()
-    print(f"[train] loaded VQ-VAE from {ckpt_path}")
+    print(f"[train] loaded VQ-VAE from {ckpt_path} "
+          f"(coarse_codes={cfg.coarse_codes}, fine_codes={cfg.fine_codes})")
     return model
 
 
@@ -79,7 +99,8 @@ def main():
         n_layers_token=args.n_layers_token,
         n_layers_fusion=args.n_layers_fusion,
     )
-    vqvae = _load_vqvae(Path(cfg.vqvae_checkpoint_path) if cfg.vqvae_checkpoint_path else None)
+    vqvae = _load_vqvae(Path(cfg.vqvae_checkpoint_path) if cfg.vqvae_checkpoint_path else None,
+                        fusion_cfg=cfg)
 
     records = _load_records(args.symbols, args.timeframes, args.max_records)
     print(f"[train] loaded {len(records)} records")
