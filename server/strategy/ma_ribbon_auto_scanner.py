@@ -87,3 +87,93 @@ def expire_orphans(state: AutoState, now_utc: int, max_age_seconds: int = 86400)
         s for s in state.pending_signals
         if (now_utc - s.get("registered_at_utc", 0)) < max_age_seconds
     ]
+
+
+# ---------------------------------------------------------------------------
+# Task 9 — six independent risk gates (`can_spawn_layer`)
+#
+# Any one tripped blocks the spawn. Order matters for reason-string clarity:
+# global state first (disabled/halted/locked), then config sanity, then
+# market-state-dependent caps. A config bug should be flagged before any
+# capital-dependent check so an operator can fix it without misreading.
+# ---------------------------------------------------------------------------
+from dataclasses import dataclass
+
+from server.strategy.ma_ribbon_auto_state import current_ramp_cap_pct
+
+
+@dataclass
+class GateResult:
+    ok: bool
+    reason: str = ""
+
+
+def _strategy_pnl_pct(state: AutoState) -> float:
+    cap = state.config.strategy_capital_usd
+    if cap <= 0:
+        return 0.0
+    realized = state.ledger.realized_pnl_usd_cumulative
+    unrealized = sum(p.get("unrealized_pnl_usd", 0.0) for p in state.ledger.open_positions)
+    return (realized + unrealized) / cap
+
+
+def _per_symbol_risk_pct(state: AutoState, symbol: str) -> float:
+    return sum(
+        p.get("risk_pct", 0.0)
+        for p in state.ledger.open_positions
+        if p.get("symbol") == symbol
+    )
+
+
+def _total_open_risk_pct(state: AutoState) -> float:
+    return sum(p.get("risk_pct", 0.0) for p in state.ledger.open_positions)
+
+
+def can_spawn_layer(
+    state: AutoState,
+    symbol: str,
+    layer: str,
+    now_utc: int,
+) -> GateResult:
+    """Six independent risk gates. Any one tripped blocks the spawn.
+
+    Order matters for the reason string clarity; a config bug should be
+    flagged before any market-state-dependent check.
+    """
+    cfg = state.config
+    if not state.enabled:
+        return GateResult(False, "strategy disabled")
+    if state.halted:
+        return GateResult(False, f"halted: {state.halt_reason}")
+    if state.locked_until_utc is not None and now_utc < state.locked_until_utc:
+        return GateResult(False, f"locked until {state.locked_until_utc}")
+
+    # Per-layer hard size cap (defends against config misedit)
+    layer_risk = cfg.layer_risk_pct.get(layer)
+    if layer_risk is None or layer_risk > 0.05:
+        return GateResult(False, f"per_layer hard cap: {layer} risk {layer_risk}")
+
+    if cfg.strategy_capital_usd <= 0:
+        return GateResult(False, "strategy_capital_usd not configured")
+
+    # Concurrent open-orders cap
+    if len(state.ledger.open_positions) >= cfg.max_concurrent_orders:
+        return GateResult(False, f"concurrent cap {cfg.max_concurrent_orders} reached")
+
+    # DD halt
+    pnl_pct = _strategy_pnl_pct(state)
+    if pnl_pct <= -cfg.dd_halt_pct:
+        return GateResult(False, f"DD halt: PnL {pnl_pct:.4%} <= -{cfg.dd_halt_pct:.0%}")
+
+    # Per-symbol cap
+    if _per_symbol_risk_pct(state, symbol) + layer_risk > cfg.per_symbol_risk_cap_pct:
+        return GateResult(False,
+            f"per_symbol cap {cfg.per_symbol_risk_cap_pct:.1%} exceeded for {symbol}")
+
+    # Ramp-up
+    ramp_cap = current_ramp_cap_pct(state, now_utc)
+    if _total_open_risk_pct(state) + layer_risk > ramp_cap:
+        return GateResult(False,
+            f"ramp cap {ramp_cap:.1%} exceeded (current open {_total_open_risk_pct(state):.2%})")
+
+    return GateResult(True, "")
