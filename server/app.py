@@ -30,6 +30,7 @@ from .routers import (
     mar_bb_runner, orderbook, line_alerts,
     trades, trade_plan_setups,
     trendline_signals,
+    ma_ribbon_auto,
 )
 from .subscribers import audit as audit_sub, telegram as telegram_sub, sse_broadcast as sse_sub
 from .subscribers import telegram_trade as telegram_trade_sub
@@ -220,6 +221,22 @@ async def _startup():
     print("[Evolution] Engine available but not auto-started (avoids API congestion)")
 
 
+@app.on_event("startup")
+async def _start_ma_ribbon_scanner():
+    """MA-ribbon EMA21 auto-execution scanner. Runs every 60s in the
+    background; gated by state.enabled (default False), so spinning up
+    here is safe — the loop sees disabled state and just keeps the state
+    file warm until the user enables via POST /api/ma_ribbon_auto/enable.
+    """
+    import asyncio
+    try:
+        from .strategy.ma_ribbon_auto_scanner import scan_loop
+        asyncio.create_task(scan_loop())
+        print("[ma_ribbon_auto] scanner task scheduled (60s tick)")
+    except Exception as _e:
+        print(f"[ma_ribbon_auto] scanner start failed: {_e}")
+
+
 @app.on_event("shutdown")
 async def _shutdown():
     try:
@@ -304,5 +321,6 @@ app.include_router(line_alerts.router)  # /api/alerts/* — trendline price aler
 app.include_router(trades.router)       # /api/trades/* — spreadsheet-friendly manual-trade history
 app.include_router(trade_plan_setups.router)  # /api/trade-plan-setups — persistent modal setup presets
 app.include_router(trendline_signals.router)  # /api/trendline/* — fusion model predictions + feedback (paper)
+app.include_router(ma_ribbon_auto.router)  # /api/ma_ribbon_auto/* — MA-ribbon EMA21 auto-execution control + scanner state
 app.include_router(ops.router)          # LAST: /api/health, /, /style.css, /app.js, telegram, logs, healer
 # reload trigger 1776885655
