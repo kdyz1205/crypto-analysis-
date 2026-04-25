@@ -40,6 +40,7 @@
     <nav class="v2-nav" id="v2-nav">
       <button class="v2-nav-btn active" data-view="market">市场</button>
       <button class="v2-nav-btn" data-view="runner">策略</button>
+      <button class="v2-nav-btn" data-view="strategies">策略 (Auto)</button>
       <button class="v2-nav-btn" data-view="trade_history">交易历史</button>
       <!-- Other panels hidden — focus on the line+order workflow.
            Routes still exist if you need them back later. -->
@@ -110,6 +111,13 @@
     <div class="v2-view-content" id="view-runner"></div>
   </main>
 
+  <!-- View: Strategies (MA Ribbon EMA21 auto-execution card) -->
+  <main class="v2-view" data-view="strategies">
+    <div class="v2-view-content" id="view-strategies">
+      <div id="ma-ribbon-card-mount"></div>
+    </div>
+  </main>
+
   <!-- View: Trade History (spreadsheet view of every closed manual-line trade) -->
   <main class="v2-view" data-view="trade_history">
     <div class="v2-view-content" id="view-trade_history"></div>
@@ -118,7 +126,21 @@
   <!-- Legacy execution panel (kept for backward compat) -->
   <aside class="v2-execution-panel hidden" id="v2-execution-panel"></aside>
 
-  <script type="module" src="/js/main.js?v=2026042520"></script>
+  <script type="module" src="/js/main.js?v=2026042530"></script>
   <script src="/js/workbench/trendline_ai.js?v=2026042503"></script>
+  <!-- Strategies tab: lazy-mount the MA-ribbon auto-execution card on first activation. -->
+  <script type="module">
+    import { mountMaRibbonCard } from "/js/workbench/strategy_card_ma_ribbon.js?v=2026042530";
+    const _stratTab = document.querySelector('[data-view="strategies"].v2-nav-btn');
+    if (_stratTab) {
+      _stratTab.addEventListener("click", () => {
+        const mount = document.getElementById("ma-ribbon-card-mount");
+        if (mount && !mount.dataset.mounted) {
+          mountMaRibbonCard(mount);
+          mount.dataset.mounted = "1";
+        }
+      });
+    }
+  </script>
 </body>
 </html>
