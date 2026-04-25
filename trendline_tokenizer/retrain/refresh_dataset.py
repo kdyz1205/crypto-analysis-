@@ -25,6 +25,7 @@ from ..schemas.trendline import TrendlineRecord
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PATTERNS = ROOT / "data" / "patterns"
+DEFAULT_PATTERNS_SWEEP = ROOT / "data" / "patterns_sweep"
 DEFAULT_MANUAL = ROOT / "data" / "manual_trendlines.json"
 DEFAULT_OUTCOMES = ROOT / "data" / "user_drawing_outcomes.jsonl"
 DEFAULT_LABELS = ROOT / "data" / "user_drawing_labels.jsonl"
@@ -34,6 +35,7 @@ DEFAULT_ML = ROOT / "data" / "user_drawings_ml.jsonl"
 def collect_records(
     *,
     patterns_dir: Path | None = None,
+    patterns_sweep_dir: Path | None = None,
     manual_path: Path | None = None,
     outcomes_path: Path | None = None,
     labels_path: Path | None = None,
@@ -44,6 +46,7 @@ def collect_records(
     max_legacy_per_pair: int | None = None,
     manual_oversample: int = 50,
     include_legacy: bool = True,
+    include_sweep: bool = True,
 ) -> tuple[list[TrendlineRecord], dict]:
     """Return (records, stats).
 
@@ -51,6 +54,7 @@ def collect_records(
     later still distributes the manual gold across train/val.
     """
     patterns_dir = patterns_dir or DEFAULT_PATTERNS
+    patterns_sweep_dir = patterns_sweep_dir or DEFAULT_PATTERNS_SWEEP
     manual_path = manual_path or DEFAULT_MANUAL
     outcomes_path = outcomes_path or DEFAULT_OUTCOMES
     labels_path = labels_path or DEFAULT_LABELS
@@ -60,7 +64,8 @@ def collect_records(
     stats = {"manual_loaded": 0, "manual_after_enrich": 0,
              "manual_oversample_factor": manual_oversample,
              "manual_total_in_pool": 0,
-             "auto_loaded": 0, "feedback_corrected": 0,
+             "auto_loaded": 0, "auto_sweep_loaded": 0,
+             "feedback_corrected": 0,
              "outcomes_coverage": None}
 
     # 1. Manual (gold) -> enrich with outcomes -> oversample.
@@ -105,6 +110,30 @@ def collect_records(
                     count += 1
                     if max_legacy_per_pair and count >= max_legacy_per_pair:
                         break
+
+    # 2b. Sweep-augmented patterns (pivot_window x max_anchor_distance variants).
+    if include_sweep and patterns_sweep_dir.exists():
+        for f in sorted(patterns_sweep_dir.glob("*.jsonl")):
+            stem = f.stem
+            if "__" in stem:
+                pair = stem.split("__", 1)[0]
+            else:
+                pair = stem
+            if symbols or timeframes:
+                ok = True
+                if symbols:
+                    ok = ok and any(pair.upper().startswith(s.upper()) for s in symbols)
+                if timeframes:
+                    ok = ok and any(pair.endswith(f"_{tf}") for tf in timeframes)
+                if not ok:
+                    continue
+            count = 0
+            for rec in iter_legacy_pattern_records(f):
+                out.append(rec)
+                stats["auto_sweep_loaded"] += 1
+                count += 1
+                if max_legacy_per_pair and count >= max_legacy_per_pair:
+                    break
 
     # 3. Corrected lines from the feedback store (overrides matching auto by id).
     if feedback_path is not None and feedback_path.exists():
