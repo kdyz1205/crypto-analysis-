@@ -4,16 +4,17 @@
 >
 > **原则**: 永远不说"做不到"。每一步都执行,每一步都可验证。
 
-## 当前状态 (2026-04-24)
+## 当前状态 (2026-04-25 09:42)
 
-| 指标 | 现在 | 目标 (T1) | T2 | T3 |
-|---|---|---|---|---|
-| Trendline 训练样本 | 271k auto + 78 manual + 1393 outcomes | 10M | 1B | **20B+** |
-| 模型参数量 | 8.86M | 50M | 500M | **5B+** |
-| OHLCV 历史覆盖 | ~10 symbols × 5 tfs × 1-3 月 | 200 sym × 6 tfs × 5 年 | 全 Bitget + Binance | + 股票 + ETF |
-| 训练算力 | Local CUDA GPU | Vast.ai 3090 ($0.20/h) | 8× A100 cluster | TPU pod |
-| 训练时长 | 30 分钟 | 12 小时 | 3 天 | 2 周 |
-| 单次成本 | $0 | ~$3 | ~$200 | ~$5000 |
+| 指标 | 起点 | **当前 ✅** | T1 目标 | T2 | T3 |
+|---|---|---|---|---|---|
+| Trendline 训练样本 | 271k auto + 78 manual + 1393 outcomes | **1.43M auto-sweep + 271k legacy + 82 manual + 1393 outcomes ≈ 1.7M** | 10M | 1B | **20B+** |
+| 模型参数量 | 8.86M | **5.98M (d_model=96)** → 准备升 d_model=128 (~12M) | 50M | 500M | **5B+** |
+| OHLCV 历史覆盖 | ~10 symbols × 5 tfs × 1-3 月 | 11 symbols × 5 tfs × 同 OHLCV(扫了 pivot_window × max_anchor) | 200 sym × 6 tfs × 5 年 | 全 Bitget + Binance | + 股票 + ETF |
+| 训练算力 | Local CUDA GPU | **Local CUDA GPU** | Vast.ai 3090 ($0.20/h) | 8× A100 cluster | TPU pod |
+| Self-evolving agent | 无 | **✅ 已建** (state + auto_drawer + style_score + loop + report + 12 tests) | 24/7 跑 | 多 agent 协作 | 多 agent + 自动调参 |
+| 训练时长 | 30 分钟 | 进行中(d_model=128, 5 epochs, 30k records) | 12 小时 | 3 天 | 2 周 |
+| 单次成本 | $0 | $0 | ~$3 | ~$200 | ~$5000 |
 
 ## 架构(已经在 repo 里跑通的)
 
