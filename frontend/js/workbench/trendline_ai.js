@@ -77,6 +77,56 @@
   }
 
   let _lastSignal = null;
+  let _overlaySeries = null;
+
+  function tfSeconds(tf) {
+    const m = String(tf || '').match(/^(\d+)([mhd])$/);
+    if (!m) return 60;
+    const n = parseInt(m[1], 10);
+    const unit = m[2];
+    return n * (unit === 'm' ? 60 : unit === 'h' ? 3600 : 86400);
+  }
+
+  function drawPredictedLineOnChart() {
+    const sig = _lastSignal;
+    const chart = window.__chartRef;
+    if (!sig || !chart) return false;
+    try {
+      // Anchor at the latest close, project the predicted slope forward.
+      const anchorClose = (sig.extras && sig.extras.anchor_close) || 0;
+      const anchorMs = (sig.extras && sig.extras.anchor_open_time_ms) || sig.timestamp || (Date.now());
+      const anchorSec = Math.floor(anchorMs / 1000);
+      const slope = sig.decoded_log_slope_per_bar || 0;
+      const dur = Math.max(2, sig.decoded_duration_bars || 30);
+      const dt = tfSeconds(sig.timeframe);
+      const endSec = anchorSec + dur * dt;
+      const endPrice = anchorClose * Math.exp(slope * dur);
+      const color = sig.action === 'LONG' ? '#16a34a'
+                  : sig.action === 'SHORT' ? '#dc2626' : '#94a3b8';
+      // Remove old overlay if any
+      try { if (_overlaySeries) chart.removeSeries(_overlaySeries); } catch (e) {}
+      _overlaySeries = chart.addLineSeries({
+        color, lineWidth: 2, lineStyle: 2, // dashed
+        priceLineVisible: false, lastValueVisible: false,
+        crosshairMarkerVisible: false,
+      });
+      _overlaySeries.setData([
+        { time: anchorSec, value: anchorClose },
+        { time: endSec, value: endPrice },
+      ]);
+      return true;
+    } catch (e) {
+      console.error('[trendline_ai] overlay draw failed', e);
+      return false;
+    }
+  }
+
+  function clearOverlay() {
+    const chart = window.__chartRef;
+    if (!chart || !_overlaySeries) return;
+    try { chart.removeSeries(_overlaySeries); } catch (e) {}
+    _overlaySeries = null;
+  }
 
   function renderLoading() {
     const card = document.getElementById('tl-ai-card');
@@ -135,6 +185,10 @@
       <div id="tl-ai-reason" style="background:#0f1116;border:1px solid #2c313c;border-radius:5px;padding:8px;font-size:11px;color:#94a3b8;line-height:1.5"></div>
 
       <div style="display:flex;gap:6px;margin-top:10px">
+        <button id="tl-ai-draw" style="flex:1;background:#2563eb;color:white;border:none;border-radius:5px;padding:8px;cursor:pointer;font-weight:600">📈 画到图表</button>
+        <button id="tl-ai-clear" style="flex:0 0 auto;background:#475569;color:white;border:none;border-radius:5px;padding:8px 12px;cursor:pointer">清除</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
         <button id="tl-ai-accept" style="flex:1;background:#16a34a;color:white;border:none;border-radius:5px;padding:8px;cursor:pointer;font-weight:600">✓ 接受</button>
         <button id="tl-ai-reject" style="flex:1;background:#dc2626;color:white;border:none;border-radius:5px;padding:8px;cursor:pointer;font-weight:600">✗ 拒绝</button>
       </div>

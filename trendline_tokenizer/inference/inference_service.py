@@ -48,6 +48,18 @@ class PredictionRecord:
     suggested_buffer_pct: float
     n_input_records: int
     n_bars_in_cache: int
+    # Decoded geometry of the predicted next line.
+    decoded_role: str = "unknown"
+    decoded_direction: str = "flat"
+    decoded_log_slope_per_bar: float = 0.0
+    decoded_duration_bars: int = 1
+    # Projected price/time target derived from the decoded geometry +
+    # the latest cached close. price_target_pct is signed (positive =
+    # price expected up, negative = down). horizon_seconds is duration
+    # x bar_seconds(timeframe), so the UI / strategy knows when the
+    # predicted line is supposed to mature.
+    price_target_pct: float = 0.0
+    horizon_seconds: int = 0
     extras: dict = field(default_factory=dict)
 
 
@@ -120,9 +132,49 @@ class InferenceService:
         }
         pred = self.model.predict(batch)
 
+        # Decode the predicted next-line for chart overlay.
+        from ..tokenizer.rule import (
+            _decompose, SLOPE_COARSE_EDGES, SLOPE_FINE_QUANTILES, DURATION_EDGES,
+        )
+        from ..tokenizer.vocab import (
+            LINE_ROLES, DIRECTIONS, coarse_cardinalities, fine_cardinalities,
+        )
+        coarse_id = int(pred["next_coarse_id"].item())
+        fine_id = int(pred["next_fine_id"].item())
+        ci = _decompose(coarse_id, coarse_cardinalities())
+        fi = _decompose(fine_id, fine_cardinalities())
+        decoded_role = LINE_ROLES[ci[0]] if 0 <= ci[0] < len(LINE_ROLES) else "unknown"
+        decoded_dir = DIRECTIONS[ci[1]] if 0 <= ci[1] < len(DIRECTIONS) else "flat"
+        dur_idx = ci[3]
+        slope_coarse_idx = ci[4]
+        slope_fine_idx = fi[0]
+        # duration midpoint (bars)
+        if dur_idx + 1 < len(DURATION_EDGES):
+            dlo, dhi = DURATION_EDGES[dur_idx], DURATION_EDGES[dur_idx + 1]
+            dmid = (dlo + dhi) / 2 if dhi < 1e6 else (dlo * 1.5 if dlo > 0 else 200)
+        else:
+            dmid = 50
+        duration_bars = max(1, int(dmid))
+        # slope midpoint (log per bar) within coarse x fine bin
+        if slope_coarse_idx + 1 < len(SLOPE_COARSE_EDGES):
+            s_lo = SLOPE_COARSE_EDGES[slope_coarse_idx]
+            s_hi = SLOPE_COARSE_EDGES[slope_coarse_idx + 1]
+            if s_hi > 1e6:
+                s_hi = s_lo * 2 if s_lo > 0 else 0.08
+            q_lo = s_lo + (s_hi - s_lo) * slope_fine_idx / SLOPE_FINE_QUANTILES
+            q_hi = s_lo + (s_hi - s_lo) * (slope_fine_idx + 1) / SLOPE_FINE_QUANTILES
+            abs_slope = (q_lo + q_hi) / 2
+        else:
+            abs_slope = 0.0
+        signed_slope = abs_slope if decoded_dir == "up" else (
+            -abs_slope if decoded_dir == "down" else 0.0
+        )
+
+        last_close = float(df["close"].iloc[-1]) if len(df) else 0.0
+        last_open_time = int(df["open_time"].iloc[-1]) if len(df) else int(time.time() * 1000)
         return PredictionRecord(
             symbol=symbol.upper(), timeframe=tf,
-            timestamp=int(df["open_time"].iloc[-1]) if len(df) else int(time.time() * 1000),
+            timestamp=last_open_time,
             artifact_name=self.manifest.artifact_name,
             tokenizer_version=self.manifest.tokenizer_version,
             next_coarse_id=int(pred["next_coarse_id"].item()),
@@ -133,4 +185,9 @@ class InferenceService:
             suggested_buffer_pct=float(pred["suggested_buffer_pct"].item()),
             n_input_records=len(lines),
             n_bars_in_cache=len(df),
+            decoded_role=decoded_role,
+            decoded_direction=decoded_dir,
+            decoded_log_slope_per_bar=float(signed_slope),
+            decoded_duration_bars=duration_bars,
+            extras={"anchor_close": last_close, "anchor_open_time_ms": last_open_time},
         )
