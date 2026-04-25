@@ -104,3 +104,13 @@ def update_config(payload: dict = Body(...)) -> dict:
             s.config.ribbon_buffer_pct[tf] = float(val)
     _save(s)
     return get_status()
+
+
+@router.post("/emergency_stop")
+async def emergency_stop_endpoint(payload: dict = Body(...)) -> dict:
+    from server.strategy.ma_ribbon_auto_scanner import emergency_stop
+    s = _state()
+    reason = payload.get("reason", "manual")
+    await emergency_stop(s, now_utc=int(time.time()), reason=reason)
+    _save(s)
+    return get_status()

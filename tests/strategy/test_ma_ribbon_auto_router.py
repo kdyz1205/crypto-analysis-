@@ -109,3 +109,11 @@ def test_config_rejects_dd_halt_above_50pct(client):
         "dd_halt_pct": 0.6,
     })
     assert r.status_code == 400
+
+
+def test_emergency_stop_sets_halt_and_lock(client):
+    r = client.post("/api/ma_ribbon_auto/emergency_stop", json={"reason": "manual click"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["halted"] is True
+    assert body["locked_until_utc"] is not None
