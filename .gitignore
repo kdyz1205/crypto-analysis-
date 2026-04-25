@@ -95,3 +95,7 @@ sr_patterns_replay.ipynb
 Thumbs.db
 .vercel
 *.log
+
+# Bitget OHLCV cache for ma_ribbon_ema21 backtests (re-downloadable, multi-MB per symbol)
+data/csv_cache/
+backtests/**/csv_cache/
