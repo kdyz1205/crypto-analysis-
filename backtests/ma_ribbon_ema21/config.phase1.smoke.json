@@ -1,17 +1,12 @@
 {
-  "phase": "P1",
+  "phase": "P1-smoke",
+  "_comment": "Reduced-scope Phase 1 run for first real-data proof. 10 highest-liquidity symbols x 1h+4h x 20 pages (= 4000 bars per pair, ~166 days on 1h, ~666 days on 4h). Fits a 10-minute timeout. After this proves out, the full 45-symbol x 4-TF run can be staged with a longer timeout or a separate CSV-warm pass.",
+
   "universe": [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "TRXUSDT", "DOTUSDT",
-    "MATICUSDT", "LINKUSDT", "LTCUSDT", "BCHUSDT", "NEARUSDT",
-    "ATOMUSDT", "UNIUSDT", "ICPUSDT", "ETCUSDT", "FILUSDT",
-    "APTUSDT", "ARBUSDT", "OPUSDT", "INJUSDT", "SEIUSDT",
-    "TIAUSDT", "WLDUSDT", "PEPEUSDT", "SHIBUSDT", "RNDRUSDT",
-    "FETUSDT", "AAVEUSDT", "ALGOUSDT", "VETUSDT", "HBARUSDT",
-    "MKRUSDT", "GRTUSDT", "FTMUSDT", "EGLDUSDT", "SANDUSDT",
-    "MANAUSDT", "AXSUSDT", "RUNEUSDT", "DYDXUSDT", "SUIUSDT"
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "LTCUSDT"
   ],
-  "timeframes": ["5m", "15m", "1h", "4h"],
+  "timeframes": ["1h", "4h"],
   "data_split": {
     "train_pct": 0.70,
     "test_pct": 0.30,
@@ -47,5 +42,5 @@
   },
   "data_cache_dir": "data/csv_cache/ma_ribbon_ema21",
   "max_history_days": null,
-  "bitget_pages_per_symbol": 50
+  "bitget_pages_per_symbol": 20
 }

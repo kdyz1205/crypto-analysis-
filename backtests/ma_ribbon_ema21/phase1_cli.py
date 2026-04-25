@@ -36,7 +36,10 @@ def run_phase1(config_path: str, output_path: str) -> dict:
     universe = UniverseConfig(
         symbols=cfg_data["universe"],
         timeframes=cfg_data["timeframes"],
-        loader=DataLoaderConfig(cache_dir=cfg_data["data_cache_dir"]),
+        loader=DataLoaderConfig(
+            cache_dir=cfg_data["data_cache_dir"],
+            bitget_pages_per_symbol=int(cfg_data.get("bitget_pages_per_symbol", 50)),
+        ),
         alignment_cfg=AlignmentConfig.from_dict(cfg_data["bullish_alignment"]),
         forward_horizons=tuple(cfg_data["forward_return_bars"]),
         fee_per_side=cfg_data["fees"]["per_side"],
