@@ -29,3 +29,61 @@ def test_status_returns_default_state_disabled(client):
     assert body["config"]["max_concurrent_orders"] == 25
     assert body["config"]["dd_halt_pct"] == 0.15
     assert body["current_ramp_cap_pct"] == 0.0  # never enabled → 0
+
+
+def test_enable_requires_both_confirm_flags(client):
+    r = client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        # missing confirm_first_day_cap_2pct
+        "strategy_capital_usd": 1000.0,
+    })
+    assert r.status_code == 400
+
+
+def test_enable_with_both_flags_sets_first_enabled_and_enabled(client):
+    r = client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        "confirm_first_day_cap_2pct": True,
+        "strategy_capital_usd": 1_000.0,
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["enabled"] is True
+    assert body["first_enabled_at_utc"] is not None
+
+
+def test_re_enable_does_not_reset_first_enabled_at(client):
+    client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        "confirm_first_day_cap_2pct": True,
+        "strategy_capital_usd": 1_000.0,
+    })
+    first_ts = client.get("/api/ma_ribbon_auto/status").json()["first_enabled_at_utc"]
+    client.post("/api/ma_ribbon_auto/disable")
+    client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        "confirm_first_day_cap_2pct": True,
+        "strategy_capital_usd": 1_000.0,
+    })
+    again_ts = client.get("/api/ma_ribbon_auto/status").json()["first_enabled_at_utc"]
+    assert again_ts == first_ts
+
+
+def test_disable_flips_enabled_off(client):
+    client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        "confirm_first_day_cap_2pct": True,
+        "strategy_capital_usd": 1_000.0,
+    })
+    r = client.post("/api/ma_ribbon_auto/disable")
+    assert r.status_code == 200
+    assert client.get("/api/ma_ribbon_auto/status").json()["enabled"] is False
+
+
+def test_enable_rejects_zero_capital(client):
+    r = client.post("/api/ma_ribbon_auto/enable", json={
+        "confirm_acknowledged_p2_gate": True,
+        "confirm_first_day_cap_2pct": True,
+        "strategy_capital_usd": 0.0,
+    })
+    assert r.status_code == 400

@@ -43,3 +43,32 @@ def get_status() -> dict:
         "pending_signals_count": len(s.pending_signals),
         "errors_recent_count": len(s.errors_recent),
     }
+
+
+class EnableRequest(BaseModel):
+    confirm_acknowledged_p2_gate: bool = False
+    confirm_first_day_cap_2pct: bool = False
+    strategy_capital_usd: float = 0.0
+
+
+@router.post("/enable")
+def enable(req: EnableRequest) -> dict:
+    if not (req.confirm_acknowledged_p2_gate and req.confirm_first_day_cap_2pct):
+        raise HTTPException(400, detail="both confirm flags required")
+    if req.strategy_capital_usd <= 0:
+        raise HTTPException(400, detail="strategy_capital_usd must be > 0")
+    s = _state()
+    s.enabled = True
+    s.config.strategy_capital_usd = req.strategy_capital_usd
+    if s.first_enabled_at_utc is None:
+        s.first_enabled_at_utc = int(time.time())
+    _save(s)
+    return get_status()
+
+
+@router.post("/disable")
+def disable() -> dict:
+    s = _state()
+    s.enabled = False
+    _save(s)
+    return get_status()
