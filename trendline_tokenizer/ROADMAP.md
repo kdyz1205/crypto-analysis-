@@ -36,17 +36,26 @@ trendline_tokenizer/
 
 ---
 
-## T0 → T1: 271k → 10M trendlines (一周内可执行)
+## T0 → T1: 271k → 1-3M trendlines (本地几小时)
 
-### 步骤 1.1 — SR-Params 参数扫描爆发式生成
+### 步骤 1.1 — pivot_window × max_anchor_distance 扫描
 
-文件: [`scripts/sweep_sr_params_full.py`](../scripts/sweep_sr_params_full.py)
+**文件**: [`scripts/scale_patterns_sweep.py`](../scripts/scale_patterns_sweep.py) ✅ **已跑**
 
-**原理**: 现有 271k 是 sr_patterns 在**默认参数**下的输出。每组不同 SRParams (lookback / pivot_strength / tolerance / min_touches 等)在同一段 OHLCV 上会产出不同的趋势线。10×10×10 = **1000 组参数**,每组在每个 (symbol, tf) 上 ~1k 行 → 10 个 sym × 5 tf × 1000 组 × 1k 行 = **50M 行**。
+**原理**: 现有 271k 来自 `tools/pattern_engine.scan_historical_patterns` 在 `pivot_window=3, max_anchor_distance=100` 下的输出。把 pivot_window 扫到 [2, 3, 5, 7],max_anchor_distance 扫到 [50, 100, 200],就能在同一段 OHLCV 上抽出 12 倍的不同 anchor-pair 组合。
 
-**成本**: 在本地 CPU 跑 ~2-5 天(可分片)。无网络成本。
+**实测**: BTCUSDT 5m × pw=2 × mad=100 × 5000 bars = **9,102 records / 81s** (单核)。
+4 worker 并行,11 sym × 5 tf × 3 pw × 2 mad = 330 tasks ≈ **1.5-3M records / 1.8 小时**。
 
-**行动**: 已写好 sweep generator(下面),启动即可。
+**成本**: 本地 CPU $0,无网络。
+
+**早期 ablation 上 6 任务 = 30k records 已产出**,扩展按比例 → ~1.65M 总量。
+
+⚠️ **不是 50M**。要 50M 必须扩展数据宽度(更多 symbols),不是只重跑现有 OHLCV。
+
+### 步骤 1.1b ~~SR-Params sweep~~ (已废弃)
+
+[`scripts/sweep_sr_params_full.py`](../scripts/sweep_sr_params_full.py) — 错路。`sr_patterns.detect_patterns` 返回**当前活跃** S/R 快照(~80 行),不是 trendline 池所需的滚动 anchor-pair 流。保留作历史参考。
 
 ### 步骤 1.2 — Binance Vision 拉历史 OHLCV
 
