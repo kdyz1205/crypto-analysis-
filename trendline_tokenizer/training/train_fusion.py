@@ -24,6 +24,7 @@ from ..learned.vqvae import HierarchicalVQVAE, VQVAEConfig
 from ..registry.manifest import ArtifactManifest
 from ..registry.paths import fusion_dir
 from ..evolve.draw import _ohlcv_dataframe
+from ..retrain.refresh_dataset import collect_records
 from .sequence_dataset import build_examples, SequenceDataset
 
 
@@ -63,18 +64,28 @@ def _load_vqvae(ckpt_path: Path | None, fusion_cfg: FusionConfig | None = None):
     return model
 
 
-def _load_records(symbols, timeframes, max_records):
-    out = []
-    for s in symbols:
-        for tf in timeframes:
-            f = ROOT / "data" / "patterns" / f"{s.upper()}_{tf}.jsonl"
-            if not f.exists():
-                continue
-            for rec in iter_legacy_pattern_records(f):
-                out.append(rec)
-                if len(out) >= max_records:
-                    return out
-    return out
+def _load_records(symbols, timeframes, max_records, *,
+                  use_manual: bool = True,
+                  manual_oversample: int = 50):
+    """Load training records from EVERY source.
+
+    Returns the merged pool (manual oversampled + auto). max_records
+    caps the AUTO portion only - the manual gold is always fully
+    included so style alignment doesn't get throttled by the cap.
+    """
+    records, stats = collect_records(
+        symbols=symbols, timeframes=timeframes,
+        max_legacy_per_pair=None,    # honour max_records globally below instead
+        manual_oversample=manual_oversample if use_manual else 0,
+    )
+    print(f"[train] pool stats: {stats}")
+    if max_records and len(records) > max_records:
+        # Keep all manual (front of list), then truncate auto
+        n_manual = stats["manual_total_in_pool"]
+        keep_auto = max(0, max_records - n_manual)
+        records = records[:n_manual + keep_auto]
+        print(f"[train] truncated to {len(records)} (manual={n_manual}, auto={keep_auto})")
+    return records
 
 
 def main():
@@ -91,6 +102,10 @@ def main():
     ap.add_argument("--n-layers-price", type=int, default=2)
     ap.add_argument("--n-layers-token", type=int, default=2)
     ap.add_argument("--n-layers-fusion", type=int, default=2)
+    ap.add_argument("--no-manual", action="store_true",
+                    help="skip manual_trendlines.json (auto-only training)")
+    ap.add_argument("--manual-oversample", type=int, default=50,
+                    help="duplicate each manual record N times in the training pool")
     args = ap.parse_args()
 
     cfg = FusionConfig(
@@ -102,7 +117,9 @@ def main():
     vqvae = _load_vqvae(Path(cfg.vqvae_checkpoint_path) if cfg.vqvae_checkpoint_path else None,
                         fusion_cfg=cfg)
 
-    records = _load_records(args.symbols, args.timeframes, args.max_records)
+    records = _load_records(args.symbols, args.timeframes, args.max_records,
+                            use_manual=(not args.no_manual),
+                            manual_oversample=args.manual_oversample)
     print(f"[train] loaded {len(records)} records")
     if not records:
         raise SystemExit("no records - populate data/patterns/*.jsonl first")
