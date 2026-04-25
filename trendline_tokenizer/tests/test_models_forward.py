@@ -183,3 +183,84 @@ def test_heads_forward_shapes():
     assert out["break_logits"].shape == (B, 2)
     assert out["continuation_logits"].shape == (B, 2)
     assert out["buffer_pct"].shape == (B,)
+
+
+# ---------------------------------------------------------------------
+# Task 6 - Full TrendlineFusionModel
+# ---------------------------------------------------------------------
+
+from trendline_tokenizer.models.full_model import TrendlineFusionModel
+
+
+def _full_batch(cfg, B):
+    return {
+        "price": torch.randn(B, cfg.price_seq_len, cfg.price_feat_dim),
+        "price_pad": torch.zeros(B, cfg.price_seq_len, dtype=torch.bool),
+        "rule_coarse": torch.randint(0, cfg.rule_coarse_vocab_size, (B, cfg.token_seq_len)),
+        "rule_fine": torch.randint(0, cfg.rule_fine_vocab_size, (B, cfg.token_seq_len)),
+        "learned_coarse": torch.randint(0, cfg.learned_coarse_vocab_size, (B, cfg.token_seq_len)),
+        "learned_fine": torch.randint(0, cfg.learned_fine_vocab_size, (B, cfg.token_seq_len)),
+        "raw_feat": torch.randn(B, cfg.token_seq_len, cfg.raw_feat_dim),
+        "token_pad": torch.zeros(B, cfg.token_seq_len, dtype=torch.bool),
+    }
+
+
+def test_full_model_forward_returns_all_heads():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    out = model(_full_batch(cfg, 2))
+    for k in ("next_coarse_logits", "next_fine_logits", "bounce_logits",
+              "break_logits", "continuation_logits", "buffer_pct"):
+        assert k in out
+
+
+def test_full_model_compute_loss_returns_scalar():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    B = 4
+    batch = _full_batch(cfg, B)
+    targets = {
+        "next_coarse": torch.randint(0, cfg.rule_coarse_vocab_size, (B,)),
+        "next_fine": torch.randint(0, cfg.rule_fine_vocab_size, (B,)),
+        "bounce": torch.randint(0, 2, (B,)),
+        "brk": torch.randint(0, 2, (B,)),
+        "cont": torch.randint(0, 2, (B,)),
+        "buffer_pct": torch.rand(B) * 0.05,
+    }
+    total, parts = model.compute_loss(batch, targets)
+    assert total.ndim == 0
+    assert torch.isfinite(total)
+    for k in ("next_coarse_ce", "next_fine_ce", "bounce_ce", "break_ce", "cont_ce", "buffer_mse"):
+        assert k in parts
+
+
+def test_full_model_runs_with_only_one_stream():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1,
+                       use_rule_tokens=False, use_learned_tokens=False, use_raw_features=True)
+    model = TrendlineFusionModel(cfg)
+    B = 2
+    batch = _full_batch(cfg, B)
+    targets = {
+        "next_coarse": torch.randint(0, cfg.rule_coarse_vocab_size, (B,)),
+        "next_fine": torch.randint(0, cfg.rule_fine_vocab_size, (B,)),
+        "bounce": torch.randint(0, 2, (B,)),
+        "brk": torch.randint(0, 2, (B,)),
+        "cont": torch.randint(0, 2, (B,)),
+        "buffer_pct": torch.rand(B) * 0.05,
+    }
+    total, _ = model.compute_loss(batch, targets)
+    assert torch.isfinite(total)
+
+
+def test_full_model_predict_returns_probs_and_ids():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    B = 2
+    batch = _full_batch(cfg, B)
+    pred = model.predict(batch)
+    assert pred["next_coarse_id"].shape == (B,)
+    assert pred["next_fine_id"].shape == (B,)
+    for k in ("bounce_prob", "break_prob", "continuation_prob"):
+        assert pred[k].shape == (B,)
+        assert (pred[k] >= 0).all() and (pred[k] <= 1).all()
+    assert (pred["suggested_buffer_pct"] >= 0).all()
