@@ -1,38 +1,45 @@
-"""MA Ribbon EMA21 backtest web panel.
+"""MA Ribbon EMA21 backtest web panel — LIVE async version.
 
-A standalone FastAPI app that exposes:
+Endpoints:
   - GET  /                    -> the HTML panel
-  - GET  /api/cache           -> list cached (symbol, TF) pairs in CSV cache
-  - GET  /api/universe        -> recommended symbols from config.phase1.json
-  - POST /api/fetch           -> prefetch CSVs for the given (symbols, TFs)
-  - POST /api/scan            -> run the formation-event scan + cohort report
-                                  on already-cached symbols and return results
+  - GET  /api/symbols         -> live Bitget USDT-perp universe (filtered by 24h vol)
+  - POST /api/scan            -> live-fetch selected (symbols, TFs), run scan,
+                                  return cohorts + gate result. Takes ~2-5 min for
+                                  100+ symbols on first call; in-process cache (5 min)
+                                  makes immediate re-runs near-instant.
+  - GET  /api/cache           -> [legacy] list any CSV-cached pairs from prior runs
+  - GET  /api/universe        -> [legacy] hardcoded recommended set from config
 
 Run:
     python -m backtests.ma_ribbon_ema21.web_app --port 8765
 
-Or via the launcher .bat:
-    scripts/launch_ma_ribbon_panel.bat
+Or via the launcher .bat / desktop shortcut.
 """
 from __future__ import annotations
 import argparse
+import asyncio
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from backtests.ma_ribbon_ema21.data_loader import (
-    DataLoaderConfig, csv_path, load_or_fetch, load_ohlcv_from_csv,
+    DataLoaderConfig, csv_path, load_ohlcv_from_csv,
+)
+from backtests.ma_ribbon_ema21.data_loader_async import (
+    AsyncLoaderConfig, FetchProgress,
+    fetch_all_usdt_perp_symbols, fetch_universe_async,
 )
 from backtests.ma_ribbon_ema21.ma_alignment import AlignmentConfig
 from backtests.ma_ribbon_ema21.phase1_engine import (
-    UniverseConfig, scan_universe, scan_symbol_tf, Phase1Event,
+    scan_symbol_tf, Phase1Event,
 )
 from backtests.ma_ribbon_ema21.cohort_report import (
     aggregate_cohorts, CohortStats,
@@ -59,18 +66,6 @@ app = FastAPI(title="MA Ribbon EMA21 Backtest Panel")
 # ──────────────────────────── request/response models ────────────────────────────
 
 
-class FetchRequest(BaseModel):
-    symbols: list[str]
-    tfs: list[str] = Field(default_factory=lambda: list(_TIMEFRAMES))
-    pages: int = 30
-
-
-class FetchResponse(BaseModel):
-    fetched: int
-    skipped: int
-    errors: list[str]
-
-
 class ScanRequest(BaseModel):
     symbols: list[str]
     tfs: list[str] = Field(default_factory=lambda: list(_TIMEFRAMES))
@@ -81,7 +76,9 @@ class ScanRequest(BaseModel):
     slippage_per_fill: float = 0.0001
     gate_threshold_pct: float = 0.01
     gate_min_symbol_pct: float = 0.30
-    alignment: dict[str, bool] | None = None  # mirrors AlignmentConfig fields
+    pages_per_symbol: int = 5
+    concurrency: int = 10
+    alignment: dict[str, bool] | None = None
 
 
 class CohortRow(BaseModel):
@@ -114,6 +111,9 @@ class ScanResponse(BaseModel):
     gate: GateBlock
     horizon: int
     skipped_pairs: list[tuple[str, str]]
+    fetch_seconds: float
+    scan_seconds: float
+    total_seconds: float
 
 
 # ──────────────────────────── routes ────────────────────────────
@@ -125,38 +125,18 @@ def root() -> HTMLResponse:
     return HTMLResponse(content=html)
 
 
-@app.get("/api/cache")
-def api_cache() -> dict:
-    """List cached (symbol, TF) pairs in the CSV cache."""
-    cfg = DataLoaderConfig()
-    cache_dir = Path(cfg.cache_dir)
-    if not cache_dir.exists():
-        return {"available": []}
-    out = []
-    for p in sorted(cache_dir.glob("*.csv")):
-        name = p.stem  # SYMBOL_TF
-        if "_" not in name:
-            continue
-        sym, tf = name.rsplit("_", 1)
-        if tf not in _TIMEFRAMES:
-            continue
-        try:
-            with p.open("r") as f:
-                bar_count = sum(1 for _ in f) - 1
-        except OSError:
-            bar_count = 0
-        out.append({
-            "symbol": sym,
-            "tf": tf,
-            "bars": bar_count,
-            "size_kb": p.stat().st_size // 1024,
-        })
-    return {"available": out}
+@app.get("/api/symbols")
+async def api_symbols(min_volume: float = 10_000_000.0) -> dict:
+    """Live: full Bitget USDT-perp universe filtered by 24h quote volume."""
+    cfg = AsyncLoaderConfig()
+    async with httpx.AsyncClient() as client:
+        syms = await fetch_all_usdt_perp_symbols(client, cfg, min_quote_volume_24h=min_volume)
+    return {"symbols": syms, "count": len(syms), "min_volume_usd": min_volume}
 
 
 @app.get("/api/universe")
 def api_universe() -> dict:
-    """Return the recommended universe + TF list from config.phase1.json."""
+    """[Legacy] Recommended universe + TF list from config.phase1.json."""
     cfg_data = _load_default_config()
     return {
         "universe":   cfg_data.get("universe", []),
@@ -168,51 +148,79 @@ def api_universe() -> dict:
     }
 
 
-@app.post("/api/fetch", response_model=FetchResponse)
-def api_fetch(req: FetchRequest) -> FetchResponse:
-    cfg = DataLoaderConfig(bitget_pages_per_symbol=int(req.pages))
-    fetched = 0
-    skipped = 0
-    errors: list[str] = []
-    for sym in req.symbols:
-        for tf in req.tfs:
-            cp = csv_path(sym, tf, cfg)
-            if cp.exists() and cp.stat().st_size > 100:
-                skipped += 1
-                continue
-            try:
-                df = load_or_fetch(sym, tf, cfg)
-                if df.empty:
-                    errors.append(f"{sym} {tf}: empty result")
-                else:
-                    fetched += 1
-            except Exception as exc:  # noqa: BLE001 — surface to caller per PRINCIPLES P10
-                errors.append(f"{sym} {tf}: {exc}")
-    return FetchResponse(fetched=fetched, skipped=skipped, errors=errors)
+@app.get("/api/cache")
+def api_cache() -> dict:
+    """[Legacy] List CSV-cached (symbol, TF) pairs from earlier runs."""
+    cfg = DataLoaderConfig()
+    cache_dir = Path(cfg.cache_dir)
+    if not cache_dir.exists():
+        return {"available": []}
+    out = []
+    for p in sorted(cache_dir.glob("*.csv")):
+        name = p.stem
+        if "_" not in name:
+            continue
+        sym, tf = name.rsplit("_", 1)
+        if tf not in _TIMEFRAMES:
+            continue
+        try:
+            with p.open("r") as f:
+                bar_count = sum(1 for _ in f) - 1
+        except OSError:
+            bar_count = 0
+        out.append({
+            "symbol": sym, "tf": tf,
+            "bars": bar_count, "size_kb": p.stat().st_size // 1024,
+        })
+    return {"available": out}
 
 
 @app.post("/api/scan", response_model=ScanResponse)
-def api_scan(req: ScanRequest) -> ScanResponse:
-    cfg = DataLoaderConfig()
+async def api_scan(req: ScanRequest) -> ScanResponse:
+    """Live fetch + scan + cohort + gate. The 'big one'.
+
+    For 100+ symbols on 4 TFs at 5 pages each, expect 2-5 min on first call,
+    then ~10s on repeat (in-process 5-min cache). 5-min cache means clicking
+    'rescan' with different alignment / gate thresholds is fast — only the
+    aggregate + gate re-runs, not the data fetch.
+    """
     align_cfg = AlignmentConfig.from_dict(req.alignment) if req.alignment else AlignmentConfig.default()
 
+    fetch_cfg = AsyncLoaderConfig(
+        pages_per_symbol=int(req.pages_per_symbol),
+        concurrency=int(req.concurrency),
+    )
+
+    # --- live fetch -------------------------------------------------------------
+    fetch_start = time.time()
+    progress = FetchProgress()
+    data = await fetch_universe_async(
+        symbols=req.symbols,
+        tfs=req.tfs,
+        cfg=fetch_cfg,
+        progress=progress,
+    )
+    fetch_seconds = time.time() - fetch_start
+    _LOG.info("fetch done: %d pairs, %.2fs (errors: %d)",
+              len(data), fetch_seconds, len(progress.errors))
+
+    # --- scan -------------------------------------------------------------------
+    scan_start = time.time()
     all_events: list[Phase1Event] = []
     skipped: list[tuple[str, str]] = []
-    for sym in req.symbols:
-        for tf in req.tfs:
-            df = load_ohlcv_from_csv(sym, tf, cfg)
-            if df.empty:
-                skipped.append((sym, tf))
-                continue
-            events = scan_symbol_tf(
-                df, symbol=sym, tf=tf,
-                alignment_cfg=align_cfg,
-                forward_horizons=tuple(req.forward_horizons),
-                fee_per_side=req.fee_per_side,
-                slippage_per_fill=req.slippage_per_fill,
-                train_pct=req.train_pct,
-            )
-            all_events.extend(events)
+    for (sym, tf), df in data.items():
+        if df.empty:
+            skipped.append((sym, tf))
+            continue
+        events = scan_symbol_tf(
+            df, symbol=sym, tf=tf,
+            alignment_cfg=align_cfg,
+            forward_horizons=tuple(req.forward_horizons),
+            fee_per_side=req.fee_per_side,
+            slippage_per_fill=req.slippage_per_fill,
+            train_pct=req.train_pct,
+        )
+        all_events.extend(events)
 
     cohorts: list[CohortStats] = aggregate_cohorts(all_events, horizon=req.horizon_for_gate)
     gate = evaluate_phase1_gate(
@@ -220,6 +228,7 @@ def api_scan(req: ScanRequest) -> ScanResponse:
         threshold_pct=req.gate_threshold_pct,
         min_symbol_pct=req.gate_min_symbol_pct,
     )
+    scan_seconds = time.time() - scan_start
 
     return ScanResponse(
         total_events=len(all_events),
@@ -244,6 +253,9 @@ def api_scan(req: ScanRequest) -> ScanResponse:
         ),
         horizon=req.horizon_for_gate,
         skipped_pairs=skipped,
+        fetch_seconds=round(fetch_seconds, 2),
+        scan_seconds=round(scan_seconds, 2),
+        total_seconds=round(fetch_seconds + scan_seconds, 2),
     )
 
 

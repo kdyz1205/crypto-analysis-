@@ -12,10 +12,10 @@
   }
   header {
     padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d;
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: center; gap: 16px; justify-content: space-between;
   }
   header h1 { margin: 0; font-size: 16px; font-weight: 600; }
-  .layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 50px); }
+  .layout { display: grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 50px); }
   aside {
     padding: 16px; background: #0d1117; border-right: 1px solid #30363d;
     overflow-y: auto; max-height: calc(100vh - 50px);
@@ -25,12 +25,13 @@
   .group h2 {
     font-size: 12px; text-transform: uppercase; color: #8b949e;
     margin: 0 0 8px 0; letter-spacing: 0.04em;
+    display: flex; justify-content: space-between; align-items: center;
   }
   .row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; font-size: 13px; }
   label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
   input[type="number"], input[type="text"], select {
     background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-    border-radius: 4px; padding: 4px 8px; width: 80px;
+    border-radius: 4px; padding: 4px 8px; width: 90px;
   }
   input[type="checkbox"] { accent-color: #2f81f7; }
   button {
@@ -38,25 +39,25 @@
     padding: 8px 16px; cursor: pointer; font-weight: 600;
   }
   button:hover { background: #2ea043; }
-  button.secondary { background: #30363d; }
+  button.secondary { background: #30363d; font-size: 12px; padding: 4px 10px; }
   button.secondary:hover { background: #444c56; }
   button:disabled { background: #6e7681; cursor: wait; }
   .symbol-list {
-    max-height: 240px; overflow-y: auto;
+    max-height: 360px; overflow-y: auto;
     border: 1px solid #30363d; border-radius: 4px; padding: 6px;
     background: #010409;
   }
-  .symbol-list label { display: block; padding: 2px 0; }
+  .symbol-list label { display: block; padding: 1px 0; font-size: 12px; }
   .pill {
     display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
     background: #21262d; color: #8b949e;
   }
-  .pill.cached { background: #1f6feb; color: #fff; }
+  .pill.live { background: #1f6feb; color: #fff; }
   .pill.pass { background: #238636; color: #fff; }
   .pill.fail { background: #da3633; color: #fff; }
   table { border-collapse: collapse; width: 100%; font-size: 12px; }
   th, td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #21262d; }
-  th { color: #8b949e; text-align: left; font-weight: 500; }
+  th { color: #8b949e; text-align: left; font-weight: 500; position: sticky; top: 0; background: #0d1117; }
   th:first-child, td:first-child, td:nth-child(2), td:nth-child(3), td:nth-child(4) {
     text-align: left;
   }
@@ -64,6 +65,7 @@
   .neg { color: #f85149; }
   #status { color: #8b949e; font-size: 12px; padding: 4px 0; }
   #status.err { color: #f85149; }
+  #status.run { color: #58a6ff; }
   #gate-banner {
     padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;
     display: none; font-size: 13px;
@@ -74,13 +76,25 @@
   summary { cursor: pointer; color: #8b949e; font-size: 12px; }
   .help { font-size: 11px; color: #6e7681; margin-top: 2px; }
   .smallnum { font-variant-numeric: tabular-nums; }
+  .progress-shell {
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 12px 16px; margin-bottom: 16px; display: none;
+  }
+  .progress-bar {
+    height: 6px; background: #21262d; border-radius: 3px; overflow: hidden;
+    margin-top: 6px;
+  }
+  .progress-fill {
+    height: 100%; background: linear-gradient(90deg, #1f6feb, #58a6ff);
+    transition: width 0.3s;
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>MA Ribbon EMA21 Backtest Panel</h1>
-  <span id="status">loading…</span>
+  <h1>MA Ribbon EMA21 Backtest Panel · live</h1>
+  <span id="status">loading universe…</span>
 </header>
 
 <div class="layout">
@@ -88,8 +102,16 @@
   <aside>
 
     <div class="group">
-      <h2>1. 选币种 <button class="secondary" id="select-all" style="float:right;font-size:11px;padding:2px 8px">全选</button></h2>
+      <h2>1. 币种 (Bitget USDT-perp)
+        <button class="secondary" id="select-all">全选</button>
+      </h2>
+      <div class="row">
+        <label>min 24h vol $</label>
+        <input type="number" id="min-vol" value="10" min="0" max="1000" step="1" />
+        <button class="secondary" id="reload-syms">M$ 刷新</button>
+      </div>
       <div class="symbol-list" id="symbol-list"></div>
+      <div class="help" id="symbol-count">—</div>
     </div>
 
     <div class="group">
@@ -103,8 +125,8 @@
     </div>
 
     <div class="group">
-      <h2>3. 多头排列 (alignment)</h2>
-      <details open>
+      <h2>3. 多头排列 alignment</h2>
+      <details>
         <summary>调整对齐严格度</summary>
         <div class="row"><label><input type="checkbox" id="al_close_ma5"   checked /> close &gt; MA5</label></div>
         <div class="row"><label><input type="checkbox" id="al_close_ma8"   checked /> close &gt; MA8</label></div>
@@ -134,21 +156,26 @@
     </div>
 
     <div class="group">
-      <h2>5. 数据补充 fetch</h2>
+      <h2>5. 数据深度</h2>
       <div class="row">
         <label>pages</label>
-        <input type="number" id="pages" value="30" min="5" max="100" />
-        <button class="secondary" id="fetch-btn" style="font-size:12px;padding:4px 10px">补 CSV</button>
+        <input type="number" id="pages" value="5" min="1" max="50" />
+        <label style="margin-left:10px">concurrency</label>
+        <input type="number" id="concurrency" value="10" min="1" max="20" />
       </div>
-      <div class="help">未缓存的 (币,TF) 才会发 Bitget 请求。已缓存的跳过。</div>
+      <div class="help">5 pages = 1000 candles per (币,TF). 1h ≈ 41 天,4h ≈ 166 天,5m ≈ 3.5 天.</div>
     </div>
 
     <div class="group">
-      <button id="run-btn" style="width:100%;padding:12px">回测</button>
+      <button id="run-btn" style="width:100%;padding:12px">回测 (live fetch + scan)</button>
     </div>
   </aside>
 
   <main>
+    <div id="progress" class="progress-shell">
+      <div id="progress-text">fetching…</div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
     <div id="gate-banner"></div>
     <div id="summary"></div>
     <div id="results"></div>
@@ -159,14 +186,13 @@
 <script>
 const TFS = ["5m", "15m", "1h", "4h"];
 let UNIVERSE = [];
-let CACHED   = new Map();   // "SYMBOL_TF" -> {bars, size_kb}
 
 const $ = id => document.getElementById(id);
 
-function setStatus(msg, isErr=false) {
+function setStatus(msg, mode = "") {
   const el = $("status");
   el.textContent = msg;
-  el.className = isErr ? "err" : "";
+  el.className = mode;
 }
 
 function fmtPct(v) {
@@ -181,29 +207,28 @@ function fmtRate(v) {
   return `<span class="smallnum">${(v * 100).toFixed(0)}%</span>`;
 }
 
-async function loadUniverse() {
-  const res = await fetch("/api/universe").then(r => r.json());
-  UNIVERSE = res.universe;
-  const cache = await fetch("/api/cache").then(r => r.json());
-  CACHED = new Map(cache.available.map(c => [`${c.symbol}_${c.tf}`, c]));
-  renderSymbolList();
-  setStatus(`universe ${UNIVERSE.length} symbols, ${CACHED.size} cached pairs`);
-}
-
-function isAnyCached(sym) {
-  return TFS.some(tf => CACHED.has(`${sym}_${tf}`));
+async function loadSymbols() {
+  setStatus("fetching live universe from Bitget…", "run");
+  try {
+    const min_vol = parseFloat($("min-vol").value) * 1_000_000;
+    const r = await fetch(`/api/symbols?min_volume=${min_vol}`).then(r => r.json());
+    UNIVERSE = r.symbols;
+    renderSymbolList();
+    $("symbol-count").textContent = `${UNIVERSE.length} symbols (24h vol ≥ $${(min_vol/1e6).toFixed(0)}M)`;
+    setStatus(`universe ready: ${UNIVERSE.length} symbols`);
+  } catch (e) {
+    setStatus(`universe load failed: ${e.message}`, "err");
+  }
 }
 
 function renderSymbolList() {
   const host = $("symbol-list");
   host.innerHTML = "";
   for (const sym of UNIVERSE) {
-    const cached = isAnyCached(sym);
     const cb = document.createElement("label");
     cb.innerHTML = `
-      <input type="checkbox" name="symbol" value="${sym}" ${cached ? "checked" : ""}/>
+      <input type="checkbox" name="symbol" value="${sym}" checked />
       ${sym}
-      <span class="pill ${cached ? "cached" : ""}" style="margin-left:6px">${cached ? "cached" : "no-data"}</span>
     `;
     host.appendChild(cb);
   }
@@ -225,34 +250,36 @@ function getAlignment() {
   };
 }
 
-async function runFetch() {
-  const symbols = getSelected("symbol");
-  const tfs = getSelected("tf");
-  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", true); return; }
-  $("fetch-btn").disabled = true;
-  setStatus(`fetching ${symbols.length} symbols × ${tfs.length} TFs ...`);
-  try {
-    const r = await fetch("/api/fetch", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({symbols, tfs, pages: parseInt($("pages").value, 10)})
-    }).then(r => r.json());
-    setStatus(`fetch done: +${r.fetched} fresh, ${r.skipped} cached, ${r.errors.length} errors`);
-    if (r.errors.length) console.warn("fetch errors", r.errors);
-    await loadUniverse();
-  } catch (e) {
-    setStatus(`fetch failed: ${e.message}`, true);
-  } finally {
-    $("fetch-btn").disabled = false;
-  }
+let progressTimer = null;
+function showProgress(message) {
+  $("progress").style.display = "block";
+  $("progress-text").textContent = message;
+  $("progress-fill").style.width = "10%";
+  let elapsed = 0;
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = setInterval(() => {
+    elapsed += 1;
+    $("progress-text").textContent = `${message} — ${elapsed}s elapsed`;
+    // crude exponential approach to 95%
+    const pct = Math.min(95, 10 + 85 * (1 - Math.exp(-elapsed / 60)));
+    $("progress-fill").style.width = pct + "%";
+  }, 1000);
+}
+function endProgress() {
+  if (progressTimer) clearInterval(progressTimer);
+  progressTimer = null;
+  $("progress-fill").style.width = "100%";
+  setTimeout(() => { $("progress").style.display = "none"; }, 800);
 }
 
 async function runScan() {
   const symbols = getSelected("symbol");
   const tfs = getSelected("tf");
-  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", true); return; }
+  if (!symbols.length || !tfs.length) { setStatus("先选币 + TF", "err"); return; }
 
   $("run-btn").disabled = true;
-  setStatus(`scanning ${symbols.length} symbols × ${tfs.length} TFs ...`);
+  setStatus(`live fetch + scan: ${symbols.length} syms × ${tfs.length} TFs`, "run");
+  showProgress(`fetching ${symbols.length} × ${tfs.length} = ${symbols.length * tfs.length} pairs from Bitget`);
   try {
     const body = {
       symbols, tfs,
@@ -260,22 +287,24 @@ async function runScan() {
       horizon_for_gate: parseInt($("horizon").value, 10),
       gate_threshold_pct: parseFloat($("threshold").value) / 100,
       gate_min_symbol_pct: parseFloat($("min-symbol-pct").value) / 100,
+      pages_per_symbol: parseInt($("pages").value, 10),
+      concurrency: parseInt($("concurrency").value, 10),
     };
     const r = await fetch("/api/scan", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify(body)
     }).then(r => r.json());
     renderResults(r);
-    setStatus(`scan done: ${r.total_events} events`);
+    setStatus(`done — ${r.total_events} events, fetch ${r.fetch_seconds}s + scan ${r.scan_seconds}s = ${r.total_seconds}s total`);
   } catch (e) {
-    setStatus(`scan failed: ${e.message}`, true);
+    setStatus(`scan failed: ${e.message}`, "err");
   } finally {
     $("run-btn").disabled = false;
+    endProgress();
   }
 }
 
 function renderResults(r) {
-  // Gate banner
   const banner = $("gate-banner");
   banner.style.display = "block";
   banner.className = r.gate.passed ? "pass" : "fail";
@@ -286,19 +315,21 @@ function renderResults(r) {
     </div>
     <div style="margin-top:6px;color:#8b949e">${r.gate.reason}</div>
     ${r.gate.passing_symbols.length ? `<div style="margin-top:6px"><strong style="color:#3fb950">PASS:</strong> ${r.gate.passing_symbols.join(", ")}</div>` : ""}
-    ${r.gate.failing_symbols.length ? `<div><strong style="color:#f85149">FAIL:</strong> ${r.gate.failing_symbols.join(", ")}</div>` : ""}
+    ${r.gate.failing_symbols.length ? `<div><strong style="color:#f85149">FAIL (${r.gate.failing_symbols.length}):</strong> ${r.gate.failing_symbols.slice(0, 30).join(", ")}${r.gate.failing_symbols.length > 30 ? "…" : ""}</div>` : ""}
   `;
 
-  // Skipped pairs (no cache)
   const skipMsg = r.skipped_pairs.length
-    ? `<div style="color:#f85149;margin-bottom:8px">⚠ ${r.skipped_pairs.length} 对没缓存被跳过 (例: ${r.skipped_pairs.slice(0,3).map(p => p.join(" ")).join(", ")}). 先点 "补 CSV"</div>`
+    ? `<div style="color:#f85149;margin-bottom:8px">⚠ ${r.skipped_pairs.length} 对没拉到数据被跳过 (Bitget 没历史/网络错误).</div>`
     : "";
 
   $("summary").innerHTML = skipMsg + `
-    <div style="margin-bottom:8px">${r.total_events} formation events, horizon = +${r.horizon} bars</div>
+    <div style="margin-bottom:8px">
+      <strong>${r.total_events}</strong> formation events,
+      horizon = +${r.horizon} bars |
+      fetch ${r.fetch_seconds}s + scan ${r.scan_seconds}s = ${r.total_seconds}s
+    </div>
   `;
 
-  // Cohort table — sort by (symbol, TF, split, bucket)
   const sorted = r.cohorts.slice().sort((a, b) => {
     if (a.symbol !== b.symbol) return a.symbol.localeCompare(b.symbol);
     if (a.tf !== b.tf) return TFS.indexOf(a.tf) - TFS.indexOf(b.tf);
@@ -306,8 +337,7 @@ function renderResults(r) {
     return a.bucket.localeCompare(b.bucket);
   });
 
-  const rows = sorted.map(c => {
-    return `<tr>
+  const rows = sorted.map(c => `<tr>
       <td>${c.symbol}</td>
       <td>${c.tf}</td>
       <td>${c.bucket}</td>
@@ -317,8 +347,7 @@ function renderResults(r) {
       <td>${fmtPct(c.median_post_fee)}</td>
       <td>${fmtRate(c.win_rate)}</td>
       <td>${fmtPct(c.worst_post_fee)}</td>
-    </tr>`;
-  }).join("");
+    </tr>`).join("");
 
   $("results").innerHTML = `
     <table>
@@ -332,14 +361,14 @@ function renderResults(r) {
 }
 
 $("run-btn").addEventListener("click", runScan);
-$("fetch-btn").addEventListener("click", runFetch);
+$("reload-syms").addEventListener("click", loadSymbols);
 $("select-all").addEventListener("click", () => {
   const all = document.querySelectorAll("input[name='symbol']");
   const allOn = Array.from(all).every(c => c.checked);
   all.forEach(c => c.checked = !allOn);
 });
 
-loadUniverse();
+loadSymbols();
 </script>
 </body>
 </html>
