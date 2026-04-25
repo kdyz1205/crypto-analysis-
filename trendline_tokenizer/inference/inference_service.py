@@ -53,12 +53,15 @@ class PredictionRecord:
     decoded_direction: str = "flat"
     decoded_log_slope_per_bar: float = 0.0
     decoded_duration_bars: int = 1
-    # Projected price/time target derived from the decoded geometry +
-    # the latest cached close. price_target_pct is signed (positive =
-    # price expected up, negative = down). horizon_seconds is duration
-    # x bar_seconds(timeframe), so the UI / strategy knows when the
-    # predicted line is supposed to mature.
-    price_target_pct: float = 0.0
+    # Projected geometry of the predicted next LINE (not the trade).
+    #   line_endpoint_pct_change = exp(decoded_slope * duration) - 1
+    #     i.e. signed % change of the line's price endpoint vs anchor
+    #     after `decoded_duration_bars` bars at the predicted slope.
+    #     This is the LINE's path, NOT the trade's expected return —
+    #     a breakout_long can have a negative line_endpoint_pct_change
+    #     (descending resistance) and still be a long-direction trade.
+    #   horizon_seconds = duration_bars * bar_seconds(timeframe)
+    line_endpoint_pct_change: float = 0.0
     horizon_seconds: int = 0
     extras: dict = field(default_factory=dict)
 
@@ -173,15 +176,15 @@ class InferenceService:
         last_close = float(df["close"].iloc[-1]) if len(df) else 0.0
         last_open_time = int(df["open_time"].iloc[-1]) if len(df) else int(time.time() * 1000)
 
-        # Real values for price_target_pct + horizon_seconds (previously
-        # left at default 0). Derived from the decoded slope + duration:
-        #   price_target_pct = exp(slope * duration) - 1
-        #   horizon_seconds  = duration * bar_seconds(timeframe)
+        # Real values for line_endpoint_pct_change + horizon_seconds.
+        # NB: line_endpoint_pct_change is the LINE's path, not the trade's
+        #     expected return. A breakout_long on a descending-resistance
+        #     line has a NEGATIVE line_endpoint_pct_change.
         import math as _math
         try:
-            price_target_pct = float(_math.exp(signed_slope * duration_bars) - 1.0)
+            line_endpoint_pct_change = float(_math.exp(signed_slope * duration_bars) - 1.0)
         except (OverflowError, ValueError):
-            price_target_pct = 0.0
+            line_endpoint_pct_change = 0.0
         # bar seconds from timeframe string (e.g. "5m" -> 300)
         _tf_str = str(tf or "1m").lower()
         _tf_unit_secs = {"m": 60, "h": 3600, "d": 86400, "w": 86400 * 7}
@@ -210,7 +213,7 @@ class InferenceService:
             decoded_direction=decoded_dir,
             decoded_log_slope_per_bar=float(signed_slope),
             decoded_duration_bars=duration_bars,
-            price_target_pct=price_target_pct,
+            line_endpoint_pct_change=line_endpoint_pct_change,
             horizon_seconds=horizon_seconds,
             extras={"anchor_close": last_close, "anchor_open_time_ms": last_open_time},
         )

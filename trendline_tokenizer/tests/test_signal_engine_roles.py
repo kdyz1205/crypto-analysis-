@@ -28,7 +28,7 @@ def _pred(role: str, bounce_prob: float, break_prob: float,
           decoded_direction: str = "up",
           decoded_log_slope_per_bar: float = 0.001,
           decoded_duration_bars: int = 30,
-          price_target_pct: float = 0.03,
+          line_endpoint_pct_change: float = 0.03,
           horizon_seconds: int = 9000,
           anchor_close: float = 100.0,
           anchor_open_time_ms: int = 1700000000000) -> PredictionRecord:
@@ -43,7 +43,7 @@ def _pred(role: str, bounce_prob: float, break_prob: float,
         decoded_direction=decoded_direction,
         decoded_log_slope_per_bar=decoded_log_slope_per_bar,
         decoded_duration_bars=decoded_duration_bars,
-        price_target_pct=price_target_pct,
+        line_endpoint_pct_change=line_endpoint_pct_change,
         horizon_seconds=horizon_seconds,
         extras={"anchor_close": anchor_close,
                 "anchor_open_time_ms": anchor_open_time_ms},
@@ -137,13 +137,13 @@ def test_signal_carries_decoded_geometry_through():
     pred = _pred("support", bounce_prob=0.8, break_prob=0.1,
                  decoded_role="channel_lower", decoded_direction="up",
                  decoded_log_slope_per_bar=0.0042, decoded_duration_bars=60,
-                 price_target_pct=0.279, horizon_seconds=18000)
+                 line_endpoint_pct_change=0.279, horizon_seconds=18000)
     sig = se.evaluate(pred)
     assert sig.decoded_role == "channel_lower"
     assert sig.decoded_direction == "up"
     assert sig.decoded_log_slope_per_bar == pytest.approx(0.0042)
     assert sig.decoded_duration_bars == 60
-    assert sig.price_target_pct == pytest.approx(0.279)
+    assert sig.line_endpoint_pct_change == pytest.approx(0.279)
     assert sig.horizon_seconds == 18000
 
 
@@ -161,10 +161,10 @@ def test_signal_serialises_decoded_fields_to_dict():
     response and the frontend."""
     se = SignalEngine()
     pred = _pred("support", bounce_prob=0.8, break_prob=0.1,
-                 decoded_log_slope_per_bar=0.005, price_target_pct=0.15)
+                 decoded_log_slope_per_bar=0.005, line_endpoint_pct_change=0.15)
     sig = se.evaluate(pred)
     d = sig.to_dict()
     for k in ("decoded_role", "decoded_direction", "decoded_log_slope_per_bar",
-             "decoded_duration_bars", "price_target_pct", "horizon_seconds"):
+             "decoded_duration_bars", "line_endpoint_pct_change", "horizon_seconds"):
         assert k in d, f"missing {k} in serialised SignalRecord"
-    assert d["price_target_pct"] == pytest.approx(0.15)
+    assert d["line_endpoint_pct_change"] == pytest.approx(0.15)

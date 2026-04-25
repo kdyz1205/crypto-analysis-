@@ -138,7 +138,11 @@ def _label_outcomes(rec: TrendlineRecord, df: pd.DataFrame, horizon_bars: int) -
         bounce = int(bool(rec.bounce_after))
         brk = int(bool(rec.break_after))
         cont = int(not brk)
-        buffer_pct = float(rec.bounce_strength_atr or 0.0) * 0.005
+        # bounce_strength_atr can be 0..100+, but the target buffer is
+        # a price-percent in [0, 0.05]. Clip aggressively to avoid MSE
+        # gradient explosion (root cause of training NaN at 30k records).
+        raw_strength = float(rec.bounce_strength_atr or 0.0)
+        buffer_pct = max(0.0, min(0.05, raw_strength * 0.005))
         return {"bounce": bounce, "brk": brk, "cont": cont, "buffer_pct": buffer_pct}
     end = min(len(df), rec.end_bar_index + horizon_bars)
     seg = df.iloc[rec.end_bar_index:end]

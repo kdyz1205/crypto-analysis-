@@ -1,7 +1,7 @@
 """Predict-endpoint response shape contract.
 
 Pins the keys the frontend relies on. Would have caught the audit
-bugs (decoded_* fields dropped before reaching JSON, price_target_pct
+bugs (decoded_* fields dropped before reaching JSON, line_endpoint_pct_change
 always zero) at PR time.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ REQUIRED_TOP_LEVEL = {
     "next_coarse_id", "next_fine_id", "predicted_role", "reason",
     "decoded_role", "decoded_direction",
     "decoded_log_slope_per_bar", "decoded_duration_bars",
-    "price_target_pct", "horizon_seconds",
+    "line_endpoint_pct_change", "horizon_seconds",
     "extras",
 }
 
@@ -82,7 +82,7 @@ def test_prediction_record_has_all_required_decoded_fields(tmp_path: Path):
     assert pred.decoded_direction in ("up", "down", "flat")
     assert isinstance(pred.decoded_log_slope_per_bar, float)
     assert pred.decoded_duration_bars >= 1
-    # price_target_pct + horizon_seconds must be COMPUTED, not 0 default.
+    # line_endpoint_pct_change + horizon_seconds must be COMPUTED, not 0 default.
     # horizon_seconds = duration_bars * bar_seconds("5m"=300)
     assert pred.horizon_seconds == pred.decoded_duration_bars * 300, (
         f"horizon_seconds wrong: got {pred.horizon_seconds}, "
@@ -116,7 +116,7 @@ def test_signal_record_decoded_fields_are_propagated(tmp_path: Path):
     assert sig.decoded_direction == pred.decoded_direction
     assert sig.decoded_log_slope_per_bar == pred.decoded_log_slope_per_bar
     assert sig.decoded_duration_bars == pred.decoded_duration_bars
-    assert sig.price_target_pct == pred.price_target_pct
+    assert sig.line_endpoint_pct_change == pred.line_endpoint_pct_change
     assert sig.horizon_seconds == pred.horizon_seconds
     assert sig.extras["anchor_close"] == pred.extras["anchor_close"]
     assert sig.extras["anchor_open_time_ms"] == pred.extras["anchor_open_time_ms"]

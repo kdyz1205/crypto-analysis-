@@ -80,7 +80,9 @@ class SignalRecord:
     decoded_direction: str = "flat"
     decoded_log_slope_per_bar: float = 0.0
     decoded_duration_bars: int = 1
-    price_target_pct: float = 0.0
+    # See PredictionRecord.line_endpoint_pct_change — this is the LINE's
+    # endpoint % change, NOT the trade's expected return.
+    line_endpoint_pct_change: float = 0.0
     horizon_seconds: int = 0
     extras: dict = field(default_factory=dict)
 
@@ -167,7 +169,7 @@ class SignalEngine:
             decoded_direction=pred.decoded_direction,
             decoded_log_slope_per_bar=pred.decoded_log_slope_per_bar,
             decoded_duration_bars=pred.decoded_duration_bars,
-            price_target_pct=pred.price_target_pct,
+            line_endpoint_pct_change=pred.line_endpoint_pct_change,
             horizon_seconds=pred.horizon_seconds,
             extras={"n_input_records": pred.n_input_records,
                     "n_bars_in_cache": pred.n_bars_in_cache,
