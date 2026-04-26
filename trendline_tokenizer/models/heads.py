@@ -24,6 +24,7 @@ class MultiTaskHeads(nn.Module):
         self.brk = nn.Linear(h, 2) if cfg.break_head else None
         self.cont = nn.Linear(h, 2) if cfg.continuation_head else None
         self.buffer = nn.Sequential(nn.Linear(h, h), nn.GELU(), nn.Linear(h, 1)) if cfg.buffer_head else None
+        self._buffer_max_pct = cfg.buffer_max_pct
         # Phase 2: regime + pattern + invalidation
         self.regime = nn.Linear(h, cfg.n_regime_classes) if cfg.regime_head else None
         self.pattern = nn.Linear(h, cfg.n_pattern_classes) if cfg.pattern_head else None
@@ -41,7 +42,12 @@ class MultiTaskHeads(nn.Module):
         if self.cont is not None:
             out["continuation_logits"] = self.cont(pooled)
         if self.buffer is not None:
-            out["buffer_pct"] = self.buffer(pooled).squeeze(-1)
+            # Targets are clipped to [0, buffer_max_pct] in
+            # sequence_dataset._buffer_pct; constrain output to the same
+            # range so MSE doesn't pull toward the unbounded space and
+            # produce negatives. Verified by multi_task_phase2_v1.
+            raw = self.buffer(pooled).squeeze(-1)
+            out["buffer_pct"] = torch.sigmoid(raw) * self._buffer_max_pct
         # Phase 2 heads (per the user's spec)
         if self.regime is not None:
             out["regime_logits"] = self.regime(pooled)

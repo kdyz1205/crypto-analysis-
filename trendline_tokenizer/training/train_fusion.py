@@ -216,7 +216,8 @@ def main():
         raise SystemExit("no examples - check OHLCV availability for the records")
 
     n_val = max(1, len(all_examples) // 10)
-    train_ds = SequenceDataset(all_examples[:-n_val])
+    train_examples = all_examples[:-n_val]
+    train_ds = SequenceDataset(train_examples)
     val_ds = SequenceDataset(all_examples[-n_val:])
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size)
@@ -224,6 +225,56 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[train] device={device}")
     model = TrendlineFusionModel(cfg).to(device)
+
+    # ── Class weights (inverse-frequency on TRAIN slice only) ────────
+    # multi_task_phase2_v1 showed every classification head collapsed
+    # to the majority class (bounce → "no" 99%; continuation → "yes" 90%;
+    # regime → "high_vol" 94%; invalidation → "valid" 99%).
+    # Mirror geometry_pretrain.py: counter the imbalance with
+    # weight[c] = N / (n_classes * count[c]), normalised so mean ≈ 1.
+    cw_specs = {
+        "bounce": ("bounce", 2),
+        "brk": ("brk", 2),
+        "cont": ("cont", 2),
+        "regime": ("regime", cfg.n_regime_classes),
+        "pattern": ("pattern", cfg.n_pattern_classes),
+        "invalidation": ("invalidation", cfg.n_invalidation_classes),
+    }
+    weights_by_head: dict[str, torch.Tensor] = {}
+    for head_name, (target_key, n_classes) in cw_specs.items():
+        counts = [0] * n_classes
+        for ex in train_examples:
+            v = getattr(ex, target_key, None)
+            if v is None:
+                continue
+            iv = int(v)
+            if 0 <= iv < n_classes:
+                counts[iv] += 1
+        n_total = sum(counts)
+        if n_total == 0:
+            continue
+        # weight[c] = N / (n_present * count[c]) for classes with data;
+        # 0 for missing. This way:
+        #   - present classes stay close to mean=1 after normalisation
+        #   - missing classes get 0 (irrelevant — F.cross_entropy weight
+        #     only applies to the GT class anyway, but it keeps the
+        #     normalisation honest).
+        n_present = sum(1 for c in counts if c > 0)
+        if n_present == 0:
+            continue
+        ws = [n_total / (n_present * c) if c > 0 else 0.0 for c in counts]
+        t = torch.tensor(ws, dtype=torch.float32)
+        # Normalise so the mean over PRESENT classes is ~1
+        present_mask = torch.tensor([c > 0 for c in counts])
+        present_mean = t[present_mask].mean().item()
+        if present_mean > 0:
+            t = t / present_mean
+        weights_by_head[head_name] = t
+        pretty = ", ".join(f"c{i}={t[i].item():.2f} (n={counts[i]})"
+                            for i in range(n_classes))
+        print(f"[train] class_weights {head_name}: {pretty}")
+    model.set_class_weights(weights_by_head)
+
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     target_keys = ("next_coarse", "next_fine", "bounce", "brk", "cont",
@@ -272,14 +323,28 @@ def main():
 
     model.eval()
     n, agg = 0, 0.0
+    n_val_skipped = 0
     with torch.no_grad():
         for batch in val_loader:
             batch = {k: v.to(device) for k, v in batch.items()}
             targets = {k: batch.pop(k) for k in target_keys}
+            # Mirror the train loop's guard: scrub NaN/inf, skip non-finite loss.
+            # Without this, a single bad batch turns val_loss into nan and
+            # makes the saved manifest's "val_loss" useless for model selection.
+            for k, v in list(batch.items()):
+                if v.dtype.is_floating_point:
+                    batch[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
+            for k, v in list(targets.items()):
+                if v.dtype.is_floating_point:
+                    targets[k] = torch.nan_to_num(v, nan=0.0, posinf=0.0, neginf=0.0)
             loss, _ = model.compute_loss(batch, targets)
+            if not torch.isfinite(loss):
+                n_val_skipped += 1
+                continue
             n += 1; agg += loss.item()
     val_loss = agg / max(n, 1)
-    print(f"[train] val_loss={val_loss:.4f}")
+    print(f"[train] val_loss={val_loss:.4f} "
+          f"(n_ok={n}, n_skipped_nan={n_val_skipped})")
 
     name = f"{cfg.version}-{int(time.time())}"
     out_dir = fusion_dir(name)

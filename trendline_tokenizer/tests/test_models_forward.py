@@ -209,6 +209,31 @@ def test_heads_phase2_default_class_counts():
     assert cfg.n_invalidation_classes == 5
 
 
+def test_heads_buffer_pct_in_constrained_range():
+    """multi_task_phase2_v1.json caught the bug: buffer head was unbounded
+    so the model emitted negatives (pred_mean=-0.018) while targets are
+    clipped to [0, 0.05]. The fix is sigmoid * buffer_max_pct."""
+    cfg = FusionConfig(d_model=32, buffer_max_pct=0.05)
+    heads = MultiTaskHeads(cfg)
+    # Force extreme pre-sigmoid activations to prove the cap holds even
+    # for blown-up logits — not just the random init regime.
+    pooled = torch.randn(64, cfg.d_model) * 100.0
+    out = heads(pooled)
+    bp = out["buffer_pct"]
+    assert (bp >= 0).all(), f"buffer_pct went negative: min={bp.min().item()}"
+    assert (bp <= cfg.buffer_max_pct).all(), \
+        f"buffer_pct exceeded cap {cfg.buffer_max_pct}: max={bp.max().item()}"
+
+
+def test_heads_buffer_pct_respects_custom_max():
+    cfg = FusionConfig(d_model=32, buffer_max_pct=0.10)
+    heads = MultiTaskHeads(cfg)
+    pooled = torch.randn(16, cfg.d_model) * 50.0
+    out = heads(pooled)
+    assert (out["buffer_pct"] <= 0.10).all()
+    assert (out["buffer_pct"] >= 0).all()
+
+
 # ---------------------------------------------------------------------
 # Task 6 - Full TrendlineFusionModel
 # ---------------------------------------------------------------------
@@ -274,6 +299,95 @@ def test_full_model_runs_with_only_one_stream():
     }
     total, _ = model.compute_loss(batch, targets)
     assert torch.isfinite(total)
+
+
+def test_full_model_class_weights_default_uniform():
+    """Default class_weights buffers are all-ones — equivalent to plain CE."""
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    assert torch.allclose(model._cw_bounce, torch.ones(2))
+    assert torch.allclose(model._cw_brk, torch.ones(2))
+    assert torch.allclose(model._cw_cont, torch.ones(2))
+    assert torch.allclose(model._cw_regime, torch.ones(cfg.n_regime_classes))
+    assert torch.allclose(model._cw_pattern, torch.ones(cfg.n_pattern_classes))
+    assert torch.allclose(model._cw_invalidation, torch.ones(cfg.n_invalidation_classes))
+
+
+def test_full_model_set_class_weights_normalises_to_mean_one():
+    """Inverse-freq weights normalised so the mean is ~1 (loss-scale stable)."""
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    # mocked inverse-freq for a 90/10 distribution: cls 0 weight low, cls 1 high
+    raw = torch.tensor([0.5, 4.5])   # mean = 2.5
+    model.set_class_weights({"bounce": raw})
+    assert abs(model._cw_bounce.mean().item() - 1.0) < 1e-5
+    # ratios preserved: 4.5 / 0.5 = 9 ; after normalisation, same ratio
+    assert abs(model._cw_bounce[1].item() / model._cw_bounce[0].item() - 9.0) < 1e-5
+
+
+def test_full_model_set_class_weights_handles_missing_classes():
+    """Smoke runs can have classes with 0 samples; the previous all-classes
+    normalisation inverted the weights (gave missing classes huge weight,
+    present class near zero — visible in train_fusion smoke output before
+    the fix). The new behaviour: normalise over PRESENT (non-zero) classes.
+    """
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    # 3-class regime, only middle has data: raw weights [0, 1.5, 0]
+    raw = torch.tensor([0.0, 1.5, 0.0])
+    model.set_class_weights({"regime": raw})
+    cw = model._cw_regime
+    # Only the present class (idx 1) gets normalised to 1
+    assert abs(cw[1].item() - 1.0) < 1e-5
+    # Missing classes stay at 0 (no spurious upweighting)
+    assert cw[0].item() == 0.0
+    assert cw[2].item() == 0.0
+
+
+def test_full_model_set_class_weights_rejects_wrong_shape():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    with pytest.raises(ValueError):
+        model.set_class_weights({"regime": torch.ones(99)})
+
+
+def test_full_model_set_class_weights_rejects_unknown_head():
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    with pytest.raises(KeyError):
+        model.set_class_weights({"nonexistent": torch.ones(2)})
+
+
+def test_full_model_loss_changes_when_class_weights_change():
+    """Sanity: weighted CE produces a different loss than uniform CE on
+    the same imbalanced minibatch — proves the buffer is being read."""
+    cfg = FusionConfig(d_model=32, n_layers_price=1, n_layers_token=1, n_layers_fusion=1)
+    model = TrendlineFusionModel(cfg)
+    torch.manual_seed(0)
+    B = 16
+    batch = _full_batch(cfg, B)
+    targets = {
+        "next_coarse": torch.randint(0, cfg.rule_coarse_vocab_size, (B,)),
+        "next_fine": torch.randint(0, cfg.rule_fine_vocab_size, (B,)),
+        # All zeros -> heavily imbalanced; weight should change loss
+        "bounce": torch.zeros(B, dtype=torch.long),
+        "brk": torch.randint(0, 2, (B,)),
+        "cont": torch.randint(0, 2, (B,)),
+        "buffer_pct": torch.rand(B) * 0.05,
+        "regime": torch.randint(0, cfg.n_regime_classes, (B,)),
+        "pattern": torch.randint(0, cfg.n_pattern_classes, (B,)),
+        "invalidation": torch.randint(0, cfg.n_invalidation_classes, (B,)),
+    }
+    model.eval()
+    with torch.no_grad():
+        loss_uniform, parts_uniform = model.compute_loss(batch, targets)
+    # Now skew the bounce weight heavily — class 1 weight 9x class 0
+    model.set_class_weights({"bounce": torch.tensor([1.0, 9.0])})
+    with torch.no_grad():
+        loss_weighted, parts_weighted = model.compute_loss(batch, targets)
+    # bounce_ce should differ now (all targets are class 0; class-0 weight
+    # got down-scaled after normalisation so weighted bounce_ce < uniform).
+    assert parts_uniform["bounce_ce"] != parts_weighted["bounce_ce"]
 
 
 def test_full_model_predict_returns_probs_and_ids():

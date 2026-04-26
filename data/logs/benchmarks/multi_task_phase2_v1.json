@@ -1,0 +1,283 @@
+{
+  "manifest": {
+    "artifact_name": "fusion.v0.1-1777171051",
+    "model_kind": "fusion",
+    "model_version": "fusion.v0.1",
+    "tokenizer_version": "rule.v1+raw.v1",
+    "training_dataset_version": "legacy-patterns-30000",
+    "feature_norm_version": "none",
+    "ckpt_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\fusion.v0.1-1777171051\\fusion.pt",
+    "config_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\fusion.v0.1-1777171051\\fusion.json",
+    "metrics": {
+      "val_loss": null,
+      "n_train": 26955,
+      "n_val": 2995,
+      "streams": {
+        "rule": true,
+        "learned": false,
+        "raw": true
+      }
+    },
+    "created_at": 1777171051
+  },
+  "n_eval_examples": 1499,
+  "bounce": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.1041,
+    "macro_f1": 0.0969,
+    "per_class": {
+      "no": {
+        "support": 148,
+        "tp": 145,
+        "fp": 1340,
+        "fn": 3,
+        "precision": 0.0976,
+        "recall": 0.9797,
+        "f1": 0.1776
+      },
+      "yes": {
+        "support": 1351,
+        "tp": 11,
+        "fp": 3,
+        "fn": 1340,
+        "precision": 0.7857,
+        "recall": 0.0081,
+        "f1": 0.0161
+      }
+    },
+    "confusion_matrix": [
+      [
+        145,
+        3
+      ],
+      [
+        1340,
+        11
+      ]
+    ]
+  },
+  "break": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.4897,
+    "macro_f1": 0.4585,
+    "per_class": {
+      "no": {
+        "support": 402,
+        "tp": 187,
+        "fp": 550,
+        "fn": 215,
+        "precision": 0.2537,
+        "recall": 0.4652,
+        "f1": 0.3284
+      },
+      "yes": {
+        "support": 1097,
+        "tp": 547,
+        "fp": 215,
+        "fn": 550,
+        "precision": 0.7178,
+        "recall": 0.4986,
+        "f1": 0.5885
+      }
+    },
+    "confusion_matrix": [
+      [
+        187,
+        215
+      ],
+      [
+        550,
+        547
+      ]
+    ]
+  },
+  "continuation": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.2889,
+    "macro_f1": 0.2676,
+    "per_class": {
+      "no": {
+        "support": 1097,
+        "tp": 89,
+        "fp": 58,
+        "fn": 1008,
+        "precision": 0.6054,
+        "recall": 0.0811,
+        "f1": 0.1431
+      },
+      "yes": {
+        "support": 402,
+        "tp": 344,
+        "fp": 1008,
+        "fn": 58,
+        "precision": 0.2544,
+        "recall": 0.8557,
+        "f1": 0.3922
+      }
+    },
+    "confusion_matrix": [
+      [
+        89,
+        1008
+      ],
+      [
+        58,
+        344
+      ]
+    ]
+  },
+  "regime": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.0534,
+    "macro_f1": 0.3119,
+    "per_class": {
+      "low_vol": {
+        "support": 1418,
+        "tp": 0,
+        "fp": 0,
+        "fn": 1418,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "normal_vol": {
+        "support": 81,
+        "tp": 80,
+        "fp": 10,
+        "fn": 1,
+        "precision": 0.8889,
+        "recall": 0.9877,
+        "f1": 0.9357
+      },
+      "high_vol": {
+        "support": 0,
+        "tp": 0,
+        "fp": 1409,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        0,
+        10,
+        1408
+      ],
+      [
+        0,
+        80,
+        1
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "invalidation": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.2882,
+    "macro_f1": 0.0924,
+    "per_class": {
+      "valid": {
+        "support": 427,
+        "tp": 423,
+        "fp": 1062,
+        "fn": 4,
+        "precision": 0.2848,
+        "recall": 0.9906,
+        "f1": 0.4425
+      },
+      "weak_pen": {
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "confirmed_break": {
+        "support": 911,
+        "tp": 9,
+        "fp": 5,
+        "fn": 902,
+        "precision": 0.6429,
+        "recall": 0.0099,
+        "f1": 0.0195
+      },
+      "break_retest": {
+        "support": 142,
+        "tp": 0,
+        "fp": 0,
+        "fn": 142,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "failed_breakout": {
+        "support": 19,
+        "tp": 0,
+        "fp": 0,
+        "fn": 19,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        423,
+        0,
+        4,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        902,
+        0,
+        9,
+        0,
+        0
+      ],
+      [
+        142,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        18,
+        0,
+        1,
+        0,
+        0
+      ]
+    ]
+  },
+  "buffer_pct": {
+    "n_samples": 1499,
+    "mae": 0.04384,
+    "median_abs_err": 0.043687,
+    "p95_abs_err": 0.081751,
+    "true_mean": 0.022594,
+    "pred_mean": -0.017736
+  },
+  "next_coarse": {
+    "n_samples": 1499,
+    "top1": 0.4903,
+    "top5": 0.7665,
+    "top10": 0.8386
+  }
+}

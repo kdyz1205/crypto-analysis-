@@ -56,6 +56,12 @@ class FusionConfig(BaseModel):
     break_head: bool = True
     continuation_head: bool = True
     buffer_head: bool = True
+    # SequenceExample clips buffer_pct targets to [0, 0.05] (5% — anything
+    # higher is non-actionable as a stop buffer). Head output MUST match
+    # this range; an unconstrained linear regression learns to emit
+    # negatives. Verified empirically (multi_task_phase2_v1.json):
+    # pred_mean=-0.018 vs true_mean=0.023 → head was unbounded.
+    buffer_max_pct: float = 0.05
     # heads — Phase 2 multi-task (per the user's research-grade spec)
     # regime: low_vol / normal_vol / high_vol  (from volatility_atr_pct)
     # pattern: channel / triangle / wedge / parallel_same / diverging / unrelated
