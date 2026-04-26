@@ -13,14 +13,21 @@
 // Service Workers → Unregister. Or set `localStorage.disableSW = '1'`
 // BEFORE reload and the sw.js registration in main.js will skip.
 
-// 2026-04-25 ROOT-CAUSE FIX: SW was using cache-first for JS modules.
-// That meant every code change required user Ctrl+Shift+R + manual SW
-// unregister to take effect — chart.js fixes shipped on the server were
-// never reaching the browser. Now JS / CSS are stale-while-revalidate
-// so user sees yesterday's code once (free), and the next reload picks
-// up today's fix automatically. SW_VERSION bump auto-evicts the old
-// cache below.
-const SW_VERSION = 'v3-2026-04-25-jschart-fix';
+// 2026-04-25 ROOT-CAUSE FIX (v4): SWR for HTML/JS/CSS still made the
+// FIRST F5 serve stale code (cached) — user had to F5 twice for any
+// code update to be visible. That ate hours of "AI please clear my
+// cache" interactions. The trade between offline-shell and "F5 = newest"
+// goes to "F5 = newest" every time for an active dev product. The
+// browser's HTTP cache + ?v= cache-buster query strings on critical
+// assets handle the offline / fast-load case anyway.
+//
+// Now: HTML / JS / CSS bypass the SW entirely (network-only). OHLCV
+// + symbol catalogues remain stale-while-revalidate because they're
+// large + immutable. Live state APIs already in NEVER_CACHE_PATTERNS.
+//
+// Net effect: edit code, push, user F5s ONCE → sees new code. No
+// manual SW reset needed ever again.
+const SW_VERSION = 'v4-2026-04-25-network-first-code';
 const STATIC_CACHE = `tos-static-${SW_VERSION}`;
 const OHLCV_CACHE = `tos-ohlcv-${SW_VERSION}`;
 
@@ -92,20 +99,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2026-04-25 ROOT FIX: JS / CSS / HTML use stale-while-revalidate, NOT
-  // cache-first. The original cache-first served the user yesterday's
-  // chart.js forever (until they manually killed the SW), making every
-  // code fix invisible. SWR shows the cached file once for instant load,
-  // then the BG fetch updates the cache so the NEXT reload picks up the
-  // newest code automatically. /v2 HTML included so cache-buster bumps
-  // (?v=...) take effect on the very next reload.
+  // 2026-04-25 v4 ROOT FIX: HTML / JS / CSS bypass SW entirely (no
+  // event.respondWith → browser hits network directly). One F5 always
+  // shows the newest code. The browser's built-in HTTP cache + the
+  // ?v=2026... cache-buster query strings already give us the same
+  // "instant from cache" feel that SWR was supposed to provide, but
+  // without the "stale on first visit" gotcha that wasted hours of
+  // AI ↔ user "clear your cache" loops.
   if (url.pathname === '/v2' ||
       url.pathname === '/v2.html' ||
       url.pathname.endsWith('.js') ||
       url.pathname.endsWith('.css') ||
       url.pathname.endsWith('.mjs')) {
-    event.respondWith(staleWhileRevalidate(req, STATIC_CACHE));
-    return;
+    return;  // SW does nothing → browser fetches fresh
   }
 
   // Everything else same-origin (favicon, fonts, images): static assets
