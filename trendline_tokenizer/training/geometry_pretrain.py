@@ -61,6 +61,7 @@ GEOMETRY_LABEL_TO_IDX = {
     "parallel_same": 3, "diverging": 4, "unrelated": 5,
 }
 N_GEOMETRY_CLASSES = len(GEOMETRY_LABEL_TO_IDX)
+IDX_TO_LABEL = {v: k for k, v in GEOMETRY_LABEL_TO_IDX.items()}
 
 
 class GeometryPairDataset(Dataset):
@@ -90,7 +91,8 @@ class GeometryPairDataset(Dataset):
 
 
 class GeometryClassifier(nn.Module):
-    def __init__(self, hidden: int = 128, dropout: float = 0.1):
+    def __init__(self, hidden: int = 128, dropout: float = 0.1,
+                 class_weights: torch.Tensor | None = None):
         super().__init__()
         in_dim = FEATURE_VECTOR_DIM * 4   # a, b, a*b, a-b
         self.net = nn.Sequential(
@@ -100,13 +102,20 @@ class GeometryClassifier(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden, N_GEOMETRY_CLASSES),
         )
+        # Class weights for the loss (inverse-frequency). Stored as a
+        # buffer so it moves with .to(device) and is loaded with the
+        # state_dict.
+        if class_weights is None:
+            class_weights = torch.ones(N_GEOMETRY_CLASSES)
+        self.register_buffer("class_weights", class_weights.float())
 
     def forward(self, x):
         return self.net(x)
 
     def compute_loss(self, batch):
         logits = self.forward(batch["x"])
-        loss = F.cross_entropy(logits, batch["y"])
+        # Weighted CE; uses class_weights buffer (moved with .to(device)).
+        loss = F.cross_entropy(logits, batch["y"], weight=self.class_weights)
         # Track per-class accuracy
         pred = logits.argmax(dim=-1)
         acc = (pred == batch["y"]).float().mean().item()
@@ -127,6 +136,9 @@ def main():
     ap.add_argument("--manual-oversample", type=int, default=0,
                     help="0 = no oversample (pairs are already abundant)")
     ap.add_argument("--dataset-version", default="trendline-structure-v0.1.0")
+    ap.add_argument("--class-weight-mode", default="inverse_freq",
+                    choices=["uniform", "inverse_freq"],
+                    help="counter the parallel_same class dominance")
     args = ap.parse_args()
 
     records, stats = collect_records(
@@ -200,9 +212,27 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size)
 
+    # ── Class weights (counter parallel_same dominance) ────────────
+    label_counts = label_distribution(train_pairs)
+    if args.class_weight_mode == "inverse_freq":
+        n_total = sum(label_counts.values())
+        weights = []
+        for label, idx in sorted(GEOMETRY_LABEL_TO_IDX.items(), key=lambda kv: kv[1]):
+            count = max(1, label_counts.get(label, 0))
+            weights.append(n_total / (N_GEOMETRY_CLASSES * count))
+        cw = torch.tensor(weights, dtype=torch.float32)
+        # Normalise so the average weight is ~1 (keeps overall loss scale stable)
+        cw = cw / cw.mean()
+        print(f"[geom] class_weights (inv_freq, normalised): " +
+              ", ".join(f"{IDX_TO_LABEL[i]}={cw[i].item():.2f}"
+                         for i in range(N_GEOMETRY_CLASSES)))
+    else:
+        cw = torch.ones(N_GEOMETRY_CLASSES, dtype=torch.float32)
+        print(f"[geom] class_weights: uniform")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[geom] device={device}")
-    model = GeometryClassifier(hidden=args.hidden).to(device)
+    model = GeometryClassifier(hidden=args.hidden, class_weights=cw).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     for epoch in range(args.epochs):
