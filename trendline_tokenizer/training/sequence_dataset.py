@@ -43,6 +43,12 @@ class SequenceExample:
     brk: int = 0
     cont: int = 0
     buffer_pct: float = 0.0
+    # Phase 2 supervised targets (derived from the target record)
+    # regime:        0=low_vol, 1=normal_vol, 2=high_vol
+    # invalidation:  0=valid, 1=weak_pen, 2=confirmed_break,
+    #                3=break_retest, 4=failed_breakout
+    regime: int = 0
+    invalidation: int = 0
 
 
 def _price_window(df: pd.DataFrame, end_idx: int, length: int) -> tuple[np.ndarray, np.ndarray]:
@@ -133,7 +139,46 @@ def _price_window(df: pd.DataFrame, end_idx: int, length: int) -> tuple[np.ndarr
     return feats, mask
 
 
+def _regime_class(rec: TrendlineRecord) -> int:
+    """Phase 2 regime label: 0=low_vol, 1=normal_vol, 2=high_vol."""
+    v = rec.volatility_atr_pct
+    if v is None:
+        return 1
+    if v < 0.005:
+        return 0
+    if v < 0.015:
+        return 1
+    return 2
+
+
+def _invalidation_class(rec: TrendlineRecord) -> int:
+    """Phase 2 invalidation label:
+      0=valid, 1=weak_pen, 2=confirmed_break,
+      3=break_retest, 4=failed_breakout
+
+    Derived from break_after / retested_after_break / break_distance_atr.
+    Best-effort — many records won't have full outcome metadata; default
+    to 0 (valid) when unsure.
+    """
+    if not rec.break_after:
+        # Touched but didn't break -> weak penetration only if
+        # break_distance_atr is present and small
+        if rec.break_distance_atr is not None and 0 < rec.break_distance_atr < 0.5:
+            return 1   # weak_pen
+        return 0       # valid
+    # Broke
+    if rec.retested_after_break:
+        return 3       # break + retest
+    # Broken but not retested. If distance is huge, it's a confirmed break;
+    # if tiny, it's likely a failed breakout (price reverted)
+    if rec.break_distance_atr is not None and rec.break_distance_atr < 0.3:
+        return 4       # failed_breakout
+    return 2           # confirmed_break
+
+
 def _label_outcomes(rec: TrendlineRecord, df: pd.DataFrame, horizon_bars: int) -> dict:
+    regime = _regime_class(rec)
+    invalidation = _invalidation_class(rec)
     if rec.bounce_after is not None and rec.break_after is not None:
         bounce = int(bool(rec.bounce_after))
         brk = int(bool(rec.break_after))
@@ -143,11 +188,14 @@ def _label_outcomes(rec: TrendlineRecord, df: pd.DataFrame, horizon_bars: int) -
         # gradient explosion (root cause of training NaN at 30k records).
         raw_strength = float(rec.bounce_strength_atr or 0.0)
         buffer_pct = max(0.0, min(0.05, raw_strength * 0.005))
-        return {"bounce": bounce, "brk": brk, "cont": cont, "buffer_pct": buffer_pct}
+        return {"bounce": bounce, "brk": brk, "cont": cont,
+                "buffer_pct": buffer_pct, "regime": regime,
+                "invalidation": invalidation}
     end = min(len(df), rec.end_bar_index + horizon_bars)
     seg = df.iloc[rec.end_bar_index:end]
     if len(seg) == 0 or rec.start_price <= 0 or rec.end_price <= 0:
-        return {"bounce": 0, "brk": 0, "cont": 1, "buffer_pct": 0.005}
+        return {"bounce": 0, "brk": 0, "cont": 1, "buffer_pct": 0.005,
+                "regime": regime, "invalidation": invalidation}
     moved = (float(seg["close"].iloc[-1]) - rec.end_price) / max(rec.end_price, 1e-9)
     if rec.line_role == "support":
         bounce = int(moved > 0.005); brk = int(moved < -0.005)
@@ -158,7 +206,8 @@ def _label_outcomes(rec: TrendlineRecord, df: pd.DataFrame, horizon_bars: int) -
     cont = int(not brk)
     buffer_pct = float(seg["high"].max() - seg["low"].min()) / max(rec.end_price, 1e-9)
     return {"bounce": bounce, "brk": brk, "cont": cont,
-            "buffer_pct": min(0.05, max(0.0, buffer_pct))}
+            "buffer_pct": min(0.05, max(0.0, buffer_pct)),
+            "regime": regime, "invalidation": invalidation}
 
 
 def build_examples(
@@ -218,6 +267,8 @@ def build_examples(
             next_fine=target_tok.fine_token_id,
             bounce=outcomes["bounce"], brk=outcomes["brk"],
             cont=outcomes["cont"], buffer_pct=outcomes["buffer_pct"],
+            regime=outcomes.get("regime", 1),
+            invalidation=outcomes.get("invalidation", 0),
         ))
     return examples
 
@@ -246,4 +297,6 @@ class SequenceDataset(Dataset):
             "brk": torch.tensor(ex.brk, dtype=torch.long),
             "cont": torch.tensor(ex.cont, dtype=torch.long),
             "buffer_pct": torch.tensor(ex.buffer_pct, dtype=torch.float32),
+            "regime": torch.tensor(ex.regime, dtype=torch.long),
+            "invalidation": torch.tensor(ex.invalidation, dtype=torch.long),
         }

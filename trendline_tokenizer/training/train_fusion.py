@@ -231,7 +231,8 @@ def main():
     model = TrendlineFusionModel(cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
-    target_keys = ("next_coarse", "next_fine", "bounce", "brk", "cont", "buffer_pct")
+    target_keys = ("next_coarse", "next_fine", "bounce", "brk", "cont",
+                   "buffer_pct", "regime", "invalidation")
 
     for epoch in range(args.epochs):
         model.train()

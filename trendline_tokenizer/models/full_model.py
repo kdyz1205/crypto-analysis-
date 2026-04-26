@@ -59,8 +59,25 @@ class TrendlineFusionModel(nn.Module):
             "break_ce": br.detach().item(),
             "cont_ce": co.detach().item(),
             "buffer_mse": bf.detach().item(),
-            "total": total.detach().item(),
         }
+
+        # Phase 2 multi-task heads — only contribute if BOTH the head is
+        # active AND the target is supplied. Lets older datasets without
+        # regime/pattern/invalidation labels still train Phase 1.
+        if "regime_logits" in out and "regime" in targets:
+            rg = F.cross_entropy(out["regime_logits"], targets["regime"])
+            total = total + w.regime * rg
+            parts["regime_ce"] = rg.detach().item()
+        if "pattern_logits" in out and "pattern" in targets:
+            pt = F.cross_entropy(out["pattern_logits"], targets["pattern"])
+            total = total + w.pattern * pt
+            parts["pattern_ce"] = pt.detach().item()
+        if "invalidation_logits" in out and "invalidation" in targets:
+            iv = F.cross_entropy(out["invalidation_logits"], targets["invalidation"])
+            total = total + w.invalidation * iv
+            parts["invalidation_ce"] = iv.detach().item()
+
+        parts["total"] = total.detach().item()
         return total, parts
 
     @torch.no_grad()
