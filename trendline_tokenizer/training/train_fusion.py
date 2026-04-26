@@ -22,10 +22,18 @@ from ..models.config import FusionConfig
 from ..models.full_model import TrendlineFusionModel
 from ..learned.vqvae import HierarchicalVQVAE, VQVAEConfig
 from ..registry.manifest import ArtifactManifest
-from ..registry.paths import fusion_dir
+from ..registry.paths import fusion_dir, ROOT as REGISTRY_ROOT
+from ..registry.dataset import (
+    DatasetManifest, SplitSpec, build_manifest_from_collect_records,
+)
+from ..registry.experiment import begin_experiment, finalize_experiment
 from ..evolve.draw import _ohlcv_dataframe
-from ..retrain.refresh_dataset import collect_records
+from ..retrain.refresh_dataset import (
+    collect_records, DEFAULT_PATTERNS, DEFAULT_PATTERNS_SWEEP,
+    DEFAULT_MANUAL, DEFAULT_OUTCOMES,
+)
 from .sequence_dataset import build_examples, SequenceDataset
+from .splits import split_records
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -106,6 +114,12 @@ def main():
                     help="skip manual_trendlines.json (auto-only training)")
     ap.add_argument("--manual-oversample", type=int, default=50,
                     help="duplicate each manual record N times in the training pool")
+    ap.add_argument("--split-policy", default="time_forward",
+                    choices=["random", "time_forward",
+                             "symbol_heldout", "regime_heldout"],
+                    help="default time_forward; random is SMOKE-ONLY")
+    ap.add_argument("--dataset-version", default="trendline-structure-v0.1.0",
+                    help="DatasetManifest version stamp")
     args = ap.parse_args()
 
     cfg = FusionConfig(
@@ -123,6 +137,66 @@ def main():
     print(f"[train] loaded {len(records)} records")
     if not records:
         raise SystemExit("no records - populate data/patterns/*.jsonl first")
+
+    # ── Layer 0: provenance ─────────────────────────────────────────
+    split = split_records(records, policy=args.split_policy)
+    print(f"[train] split: policy={split.policy} "
+          f"train={len(split.train_idx)} val={len(split.val_idx)} test={len(split.test_idx)} "
+          f"meta={split.metadata}")
+    if args.split_policy == "random":
+        print("[train] WARNING: --split-policy=random is for SMOKE TESTS only")
+
+    raw_paths = {
+        "auto_patterns": DEFAULT_PATTERNS,
+        "patterns_sweep": DEFAULT_PATTERNS_SWEEP,
+        "manual_lines": DEFAULT_MANUAL,
+        "user_outcomes": DEFAULT_OUTCOMES,
+    }
+    raw_paths = {k: v for k, v in raw_paths.items() if v.exists()}
+    # Re-collect just for the stats dict (records list is already loaded)
+    _, ds_stats = collect_records(
+        symbols=args.symbols, timeframes=args.timeframes,
+        max_legacy_per_pair=None,
+        manual_oversample=(args.manual_oversample if not args.no_manual else 0),
+    )
+    split_spec = SplitSpec(
+        policy=args.split_policy,        # type: ignore[arg-type]
+        train_count=len(split.train_idx),
+        val_count=len(split.val_idx),
+        test_count=len(split.test_idx),
+        val_start_ts=split.metadata.get("val_start_ts"),
+        test_start_ts=split.metadata.get("test_start_ts"),
+        notes=split.metadata.get("warning", ""),
+    )
+    pretrain_run_dir = REGISTRY_ROOT / "experiments" / f"supervised-{int(time.time())}"
+    pretrain_run_dir.mkdir(parents=True, exist_ok=True)
+    dataset_manifest_path = pretrain_run_dir / "dataset_manifest.json"
+    dataset_manifest = build_manifest_from_collect_records(
+        dataset_name="trendline-supervised-pool",
+        dataset_version=args.dataset_version,
+        raw_paths=raw_paths,
+        symbols=args.symbols, timeframes=args.timeframes,
+        stats=ds_stats, split_spec=split_spec,
+    )
+    dataset_manifest.save(dataset_manifest_path)
+    print(f"[train] dataset manifest written: {dataset_manifest_path}")
+
+    tokenizer_versions = []
+    if cfg.use_rule_tokens:
+        tokenizer_versions.append("rule.v1")
+    if cfg.use_learned_tokens and vqvae is not None:
+        tokenizer_versions.append("vqvae.v0")
+    if cfg.use_raw_features:
+        tokenizer_versions.append("raw.v1")
+    tokenizer_version_str = "+".join(tokenizer_versions) or "none"
+
+    exp_manifest = begin_experiment(
+        experiment_kind="supervised",
+        cli_args=vars(args),
+        model_cfg=cfg.model_dump(),
+        dataset_manifest_path=dataset_manifest_path,
+        tokenizer_version=tokenizer_version_str,
+    )
 
     by_key = defaultdict(list)
     for r in records:
@@ -194,6 +268,11 @@ def main():
             n += 1; agg += loss.item()
         print(f"[train] epoch {epoch}: train_loss={agg/max(n,1):.4f} "
               f"({time.time()-t0:.1f}s, n_ok={n}, n_skipped_nan={n_skipped_nan})")
+        exp_manifest.add_epoch(
+            epoch=epoch, train_loss=float(agg / max(n, 1)),
+            n_ok=n, n_skipped_nan=n_skipped_nan,
+            seconds=float(time.time() - t0),
+        )
 
     model.eval()
     n, agg = 0, 0.0
@@ -235,6 +314,25 @@ def main():
     )
     manifest.save(out_dir / "manifest.json")
     print(f"[train] saved {out_dir}")
+
+    # ── Layer 0: finalise experiment manifest with provenance trail ──
+    exp_path = finalize_experiment(
+        exp_manifest,
+        checkpoint_path=out_dir / "fusion.pt",
+        config_path=out_dir / "fusion.json",
+        final_metrics={"val_loss": float(val_loss),
+                       "n_train": len(train_ds), "n_val": len(val_ds),
+                       "tokenizer_version": tokenizer_version_str},
+        out_dir=out_dir,
+    )
+    print(f"[train] experiment manifest: {exp_path}")
+
+    # Auto-backup to HuggingFace Hub if env vars set.
+    try:
+        from ..registry.hf_backup import maybe_upload
+        maybe_upload(out_dir)
+    except Exception as _e:
+        print(f"[train] hf backup failed: {_e}")
 
 
 if __name__ == "__main__":

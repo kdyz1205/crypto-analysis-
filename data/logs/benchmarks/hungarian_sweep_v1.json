@@ -1,0 +1,1722 @@
+{
+  "summary": {
+    "n_manual": 82,
+    "n_pairs_with_candidates": 40,
+    "n_no_candidates_in_pair": 42,
+    "role_match_rate": 1.0,
+    "best_cost_median": 0.6292905767937059,
+    "best_cost_p95": 1.8047220866253215,
+    "slope_err_median": 0.0005518093160264387,
+    "slope_err_p95": 0.005024620372165824,
+    "anchor_err_median_bars": 14.0,
+    "anchor_err_p95_bars": 32,
+    "price_err_median_pct": 0.36908168723307044,
+    "price_err_p95_pct": 1.0209717409119003,
+    "auto_source": "patterns_sweep",
+    "top_k": 5
+  },
+  "matches": [
+    {
+      "manual_id": "manual-RAVEUSDT-5m-support-1776150000-1776150900",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776156852-1776157472",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776155061-1776156995",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776147300-1776148200",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776171000-1776173598",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776173619-1776173849",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-resistance-1776169200-1776179067",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776166800-1776166800",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776176400-1776177624",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776176400-1776177585",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-15m-support-1776141000-1776178800",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-15m-resistance-1776182408-1776194403",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776191239-1776193039",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-MYXUSDT-5m-support-1776191390-1776193190",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-support-1775919600-1776337200",
+      "best_auto_id": "legacy-e3d6148825bd",
+      "best_cost": 0.7746284333621603,
+      "candidates": [
+        [
+          "legacy-e3d6148825bd",
+          0.7746284333621603
+        ],
+        [
+          "legacy-ba66acd8335a",
+          0.7746339430649665
+        ],
+        [
+          "legacy-fba1846385a5",
+          0.7790583422068312
+        ],
+        [
+          "legacy-c4b997bc615d",
+          0.7790583422068312
+        ],
+        [
+          "legacy-6c43b7d2b6bc",
+          0.7826498797160781
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.000633652674196585,
+      "anchor_err_bars": 4,
+      "price_err_pct": 0.48893738699515615
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776414600-1776424207",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-TESTCOINUSDT-1h-support-1776000000000-1776300000000",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-resistance-1776420900-1776456533",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776414600-1776455562",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-15m-resistance-1776483900-1776502117",
+      "best_auto_id": "legacy-70d0664b8728",
+      "best_cost": 0.4518674925455294,
+      "candidates": [
+        [
+          "legacy-70d0664b8728",
+          0.4518674925455294
+        ],
+        [
+          "legacy-9773c7498a7b",
+          0.4518674925455294
+        ],
+        [
+          "legacy-33a4c66e4cc6",
+          0.46217247239737713
+        ],
+        [
+          "legacy-2abbc38ce51e",
+          0.46217247239737713
+        ],
+        [
+          "legacy-17496ccb8ae0",
+          0.46217247239737713
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.00019671814145011998,
+      "anchor_err_bars": 5,
+      "price_err_pct": 0.31763848326945393
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-15m-support-1776394800-1776502990",
+      "best_auto_id": "legacy-f679f55e01ec",
+      "best_cost": 0.4583510935559235,
+      "candidates": [
+        [
+          "legacy-f679f55e01ec",
+          0.4583510935559235
+        ],
+        [
+          "legacy-2a7c4fd5d932",
+          0.4583510935559235
+        ],
+        [
+          "legacy-c479d61b57cb",
+          0.45943213172484754
+        ],
+        [
+          "legacy-377f27311fee",
+          0.45943213172484754
+        ],
+        [
+          "legacy-fee01b5a161d",
+          0.5348934930763503
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 9.376517423343524e-05,
+      "anchor_err_bars": 12,
+      "price_err_pct": 0.280338686911696
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-15m-resistance-1776340800-1776550700",
+      "best_auto_id": "legacy-70d0664b8728",
+      "best_cost": 0.526095934322481,
+      "candidates": [
+        [
+          "legacy-70d0664b8728",
+          0.526095934322481
+        ],
+        [
+          "legacy-9773c7498a7b",
+          0.526095934322481
+        ],
+        [
+          "legacy-914d4a2d0341",
+          0.5579437978132611
+        ],
+        [
+          "legacy-33a4c66e4cc6",
+          0.5757445424643528
+        ],
+        [
+          "legacy-2abbc38ce51e",
+          0.5757445424643528
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0007427981758608702,
+      "anchor_err_bars": 5,
+      "price_err_pct": 0.3308962286360116
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-15m-support-1776063600-1776615238",
+      "best_auto_id": "legacy-f679f55e01ec",
+      "best_cost": 0.46313409291690044,
+      "candidates": [
+        [
+          "legacy-f679f55e01ec",
+          0.46313409291690044
+        ],
+        [
+          "legacy-2a7c4fd5d932",
+          0.46313409291690044
+        ],
+        [
+          "legacy-c479d61b57cb",
+          0.46421513108582446
+        ],
+        [
+          "legacy-377f27311fee",
+          0.46421513108582446
+        ],
+        [
+          "legacy-fee01b5a161d",
+          0.5396764924373272
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 6.830037993730679e-05,
+      "anchor_err_bars": 12,
+      "price_err_pct": 0.28559414582758713
+    },
+    {
+      "manual_id": "manual-BTCUSDT-4h-resistance-1776441600-1776558031",
+      "best_auto_id": "legacy-bd4bc20acfea",
+      "best_cost": 1.3839405669020348,
+      "candidates": [
+        [
+          "legacy-bd4bc20acfea",
+          1.3839405669020348
+        ],
+        [
+          "legacy-751623c17013",
+          1.3839405669020348
+        ],
+        [
+          "legacy-093051b08d0d",
+          1.3839405669020348
+        ],
+        [
+          "legacy-0a8889598c07",
+          1.3839405669020348
+        ],
+        [
+          "legacy-7ef30cdfa484",
+          1.4667197859858636
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 7.560789821940955e-05,
+      "anchor_err_bars": 5,
+      "price_err_pct": 0.7345635368423582
+    },
+    {
+      "manual_id": "manual-BTCUSDT-4h-support-1776340800-1776521302",
+      "best_auto_id": "legacy-bd1bac1b5247",
+      "best_cost": 1.8047220866253215,
+      "candidates": [
+        [
+          "legacy-bd1bac1b5247",
+          1.8047220866253215
+        ],
+        [
+          "legacy-27ae55e018b5",
+          1.8047220866253215
+        ],
+        [
+          "legacy-ec875dc1f078",
+          1.8111955092380767
+        ],
+        [
+          "legacy-007f3199cf80",
+          1.8187435677263493
+        ],
+        [
+          "legacy-944c31d926bf",
+          1.8187435677263493
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.003454353811779118,
+      "anchor_err_bars": 18,
+      "price_err_pct": 0.7217643063069785
+    },
+    {
+      "manual_id": "manual-BTCUSDT-4h-support-1776067200-1776676475",
+      "best_auto_id": "legacy-bd1bac1b5247",
+      "best_cost": 1.5648497504545638,
+      "candidates": [
+        [
+          "legacy-bd1bac1b5247",
+          1.5648497504545638
+        ],
+        [
+          "legacy-27ae55e018b5",
+          1.5648497504545638
+        ],
+        [
+          "legacy-ec875dc1f078",
+          1.571323173067319
+        ],
+        [
+          "legacy-61a140aec8df",
+          1.5903026212026172
+        ],
+        [
+          "legacy-96de7ebae779",
+          1.5903026212026172
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0011134710758643643,
+      "anchor_err_bars": 18,
+      "price_err_pct": 0.7201503104159844
+    },
+    {
+      "manual_id": "manual-BTCUSDT-4h-support-1775635200-1775793600",
+      "best_auto_id": "legacy-bd1bac1b5247",
+      "best_cost": 1.4719188299360277,
+      "candidates": [
+        [
+          "legacy-bd1bac1b5247",
+          1.4719188299360277
+        ],
+        [
+          "legacy-27ae55e018b5",
+          1.4719188299360277
+        ],
+        [
+          "legacy-ec875dc1f078",
+          1.4752571356408488
+        ],
+        [
+          "legacy-61a140aec8df",
+          1.4773716514346686
+        ],
+        [
+          "legacy-96de7ebae779",
+          1.4773716514346686
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0004335116357745109,
+      "anchor_err_bars": 18,
+      "price_err_pct": 0.7130845386467625
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-resistance-1776442500-1776509344",
+      "best_auto_id": "legacy-1bd48c0c3ec3",
+      "best_cost": 0.13485866186898005,
+      "candidates": [
+        [
+          "legacy-1bd48c0c3ec3",
+          0.13485866186898005
+        ],
+        [
+          "legacy-b2bae783d6c7",
+          0.1368510549911438
+        ],
+        [
+          "legacy-5f76ee3f9ed0",
+          0.1407527336822311
+        ],
+        [
+          "legacy-0d78b1590996",
+          0.14364306666454588
+        ],
+        [
+          "legacy-8921d29883b5",
+          0.14649539517950294
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0005978368962562086,
+      "anchor_err_bars": 7,
+      "price_err_pct": 0.0050878717272705215
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-support-1776432600-1776507619",
+      "best_auto_id": "legacy-6927037ba9f8",
+      "best_cost": 0.20345791181590842,
+      "candidates": [
+        [
+          "legacy-6927037ba9f8",
+          0.20345791181590842
+        ],
+        [
+          "legacy-610dd4814aaa",
+          0.20345791181590842
+        ],
+        [
+          "legacy-a225252dd532",
+          0.20345791181590842
+        ],
+        [
+          "legacy-5ded620db1fb",
+          0.20365981646523615
+        ],
+        [
+          "legacy-745eb2504ec9",
+          0.20365981646523615
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 2.8716386624565832e-05,
+      "anchor_err_bars": 19,
+      "price_err_pct": 0.01053043577409625
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-support-1776425400-1776425400",
+      "best_auto_id": "legacy-e8819545da55",
+      "best_cost": 0.29321626987975513,
+      "candidates": [
+        [
+          "legacy-e8819545da55",
+          0.29321626987975513
+        ],
+        [
+          "legacy-c1f9ce2dc387",
+          0.29321626987975513
+        ],
+        [
+          "legacy-158ca79abfa4",
+          0.29321626987975513
+        ],
+        [
+          "legacy-746e190a4868",
+          0.29321626987975513
+        ],
+        [
+          "legacy-8aaef511b711",
+          0.29321626987975513
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0001210043929957827,
+      "anchor_err_bars": 25,
+      "price_err_pct": 0.0306367153387289
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-support-1776350700-1776575351",
+      "best_auto_id": "legacy-17603c9de4a8",
+      "best_cost": 0.20197831950566258,
+      "candidates": [
+        [
+          "legacy-17603c9de4a8",
+          0.20197831950566258
+        ],
+        [
+          "legacy-6ba8470af865",
+          0.20197831950566258
+        ],
+        [
+          "legacy-0fc85e05027e",
+          0.20280267782142528
+        ],
+        [
+          "legacy-549ab69e6de5",
+          0.20280267782142528
+        ],
+        [
+          "legacy-3a26b0b447c5",
+          0.20280267782142528
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 2.1733443395361378e-05,
+      "anchor_err_bars": 19,
+      "price_err_pct": 0.00975706311713722
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-resistance-1776436200-1776506931",
+      "best_auto_id": "legacy-b2bae783d6c7",
+      "best_cost": 0.1495651071931719,
+      "candidates": [
+        [
+          "legacy-b2bae783d6c7",
+          0.1495651071931719
+        ],
+        [
+          "legacy-1bd48c0c3ec3",
+          0.15634642232975549
+        ],
+        [
+          "legacy-64d1d7770444",
+          0.16076247210848127
+        ],
+        [
+          "legacy-5f76ee3f9ed0",
+          0.16224049414300656
+        ],
+        [
+          "legacy-0d78b1590996",
+          0.16513082712532132
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0007418535519185599,
+      "anchor_err_bars": 7,
+      "price_err_pct": 0.005394248851941712
+    },
+    {
+      "manual_id": "manual-ETHUSDT-15m-support-1776482100-1776491100",
+      "best_auto_id": "legacy-6927037ba9f8",
+      "best_cost": 0.2142859991014936,
+      "candidates": [
+        [
+          "legacy-6927037ba9f8",
+          0.2142859991014936
+        ],
+        [
+          "legacy-610dd4814aaa",
+          0.2142859991014936
+        ],
+        [
+          "legacy-a225252dd532",
+          0.2142859991014936
+        ],
+        [
+          "legacy-5ded620db1fb",
+          0.22097841330193319
+        ],
+        [
+          "legacy-745eb2504ec9",
+          0.22097841330193319
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.00015398241671775006,
+      "anchor_err_bars": 19,
+      "price_err_pct": 0.008927370816869616
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-resistance-1776434400-1776558226",
+      "best_auto_id": "legacy-707014388e56",
+      "best_cost": 0.6467083202882189,
+      "candidates": [
+        [
+          "legacy-707014388e56",
+          0.6467083202882189
+        ],
+        [
+          "legacy-7732bbe24607",
+          0.6511796028792218
+        ],
+        [
+          "legacy-3e3cdce1842a",
+          0.6708509706079983
+        ],
+        [
+          "legacy-f92b189adade",
+          0.6809754202921247
+        ],
+        [
+          "legacy-313adb2390dc",
+          0.6962000802497685
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.00043008505295646655,
+      "anchor_err_bars": 2,
+      "price_err_pct": 0.792658681813698
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-support-1776420000-1776547804",
+      "best_auto_id": "legacy-09b3414740ac",
+      "best_cost": 0.8996016347816468,
+      "candidates": [
+        [
+          "legacy-09b3414740ac",
+          0.8996016347816468
+        ],
+        [
+          "legacy-47cb2353f8e3",
+          0.8996016347816468
+        ],
+        [
+          "legacy-f0da9f491825",
+          0.8996016347816468
+        ],
+        [
+          "legacy-9a0b889efa67",
+          0.8996016347816468
+        ],
+        [
+          "legacy-dbaf88acc189",
+          0.8996016347816468
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 8.168220861042399e-05,
+      "anchor_err_bars": 24,
+      "price_err_pct": 0.9182885607516776
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-resistance-1776441600-1776520302",
+      "best_auto_id": "legacy-3e3cdce1842a",
+      "best_cost": 0.6099211655360768,
+      "candidates": [
+        [
+          "legacy-3e3cdce1842a",
+          0.6099211655360768
+        ],
+        [
+          "legacy-7732bbe24607",
+          0.6108415311079758
+        ],
+        [
+          "legacy-707014388e56",
+          0.6299322971961105
+        ],
+        [
+          "legacy-f92b189adade",
+          0.6395128663407098
+        ],
+        [
+          "legacy-313adb2390dc",
+          0.6778399110381298
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.00015582925099666411,
+      "anchor_err_bars": 2,
+      "price_err_pct": 0.7759548828318676
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-support-1776344400-1776538829",
+      "best_auto_id": "legacy-ba322afe148d",
+      "best_cost": 0.9195617342391065,
+      "candidates": [
+        [
+          "legacy-ba322afe148d",
+          0.9195617342391065
+        ],
+        [
+          "legacy-ffc75ab429af",
+          0.9195617342391065
+        ],
+        [
+          "legacy-48452659c5bf",
+          0.9195617342391065
+        ],
+        [
+          "legacy-328230a05eb8",
+          0.9195617342391065
+        ],
+        [
+          "legacy-5fb5abfc5e8b",
+          0.9398160898465104
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.000265938098734538,
+      "anchor_err_bars": 24,
+      "price_err_pct": 0.9212344542588828
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-support-1776373200-1776474000",
+      "best_auto_id": "legacy-09b3414740ac",
+      "best_cost": 0.9016887229970926,
+      "candidates": [
+        [
+          "legacy-09b3414740ac",
+          0.9016887229970926
+        ],
+        [
+          "legacy-47cb2353f8e3",
+          0.9016887229970926
+        ],
+        [
+          "legacy-f0da9f491825",
+          0.9016887229970926
+        ],
+        [
+          "legacy-9a0b889efa67",
+          0.9016887229970926
+        ],
+        [
+          "legacy-dbaf88acc189",
+          0.9016887229970926
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0003531451564423302,
+      "anchor_err_bars": 24,
+      "price_err_pct": 0.8708150796128677
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-resistance-1776391200-1776563793",
+      "best_auto_id": "legacy-707014388e56",
+      "best_cost": 0.722007586864587,
+      "candidates": [
+        [
+          "legacy-707014388e56",
+          0.722007586864587
+        ],
+        [
+          "legacy-7732bbe24607",
+          0.7264788694555899
+        ],
+        [
+          "legacy-3e3cdce1842a",
+          0.7461502371843662
+        ],
+        [
+          "legacy-f92b189adade",
+          0.7562746868684926
+        ],
+        [
+          "legacy-cd006f8042e5",
+          0.7631170500926974
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0009340732993295539,
+      "anchor_err_bars": 2,
+      "price_err_pct": 0.8378570698082739
+    },
+    {
+      "manual_id": "manual-DOGEUSDT-1h-resistance-1776438000-1776591969",
+      "best_auto_id": "legacy-fa8627a0d89c",
+      "best_cost": 0.8944650174043711,
+      "candidates": [
+        [
+          "legacy-fa8627a0d89c",
+          0.8944650174043711
+        ],
+        [
+          "legacy-104790f23657",
+          0.8944650174043711
+        ],
+        [
+          "legacy-7af95fc5e8e0",
+          0.9367582631500928
+        ],
+        [
+          "legacy-f9cfee0093b1",
+          0.9498693686722441
+        ],
+        [
+          "legacy-73c036021ae3",
+          0.970908786104684
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0004919531996123673,
+      "anchor_err_bars": 8,
+      "price_err_pct": 1.1495740311057927
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1776528000-1776610062",
+      "best_auto_id": "legacy-610237a98e7a",
+      "best_cost": 0.5684153889539189,
+      "candidates": [
+        [
+          "legacy-610237a98e7a",
+          0.5684153889539189
+        ],
+        [
+          "legacy-f69b5b70d131",
+          0.5684153889539189
+        ],
+        [
+          "legacy-dc1c50845f0b",
+          0.5975690921834811
+        ],
+        [
+          "legacy-7dc796408b55",
+          0.5975690921834811
+        ],
+        [
+          "legacy-df4cd4b7078f",
+          0.6315591524713529
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.00021018394529065398,
+      "anchor_err_bars": 16,
+      "price_err_pct": 0.3211784469451664
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1776470400-1776798636",
+      "best_auto_id": "legacy-b581f717b86e",
+      "best_cost": 0.611872833299193,
+      "candidates": [
+        [
+          "legacy-b581f717b86e",
+          0.611872833299193
+        ],
+        [
+          "legacy-f06bdd0797db",
+          0.611872833299193
+        ],
+        [
+          "legacy-6dffa942876a",
+          0.6547543977937693
+        ],
+        [
+          "legacy-e9d898541243",
+          0.6547543977937693
+        ],
+        [
+          "legacy-c4a7315f8fa0",
+          0.6547543977937693
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 3.6653870850440794e-05,
+      "anchor_err_bars": 25,
+      "price_err_pct": 0.30107193001540644
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-resistance-1776578400-1776584690",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776573000-1776584438",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1776600000-1776729295",
+      "best_auto_id": "legacy-6dffa942876a",
+      "best_cost": 0.5275535736773949,
+      "candidates": [
+        [
+          "legacy-6dffa942876a",
+          0.5275535736773949
+        ],
+        [
+          "legacy-e9d898541243",
+          0.5275535736773949
+        ],
+        [
+          "legacy-c4a7315f8fa0",
+          0.5275535736773949
+        ],
+        [
+          "legacy-d8ae8d25f009",
+          0.5781574209780295
+        ],
+        [
+          "legacy-1e002f0c4d31",
+          0.5781574209780295
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0012559699175226893,
+      "anchor_err_bars": 12,
+      "price_err_pct": 0.24569356564463876
+    },
+    {
+      "manual_id": "manual-ENAUSDT-1h-support-1776085200-1776420000",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-5m-resistance-1776647100-1776661200",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-resistance-1776643200-1776676148",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-5m-resistance-1776643500-1776672070",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-5m-support-1776669300-1776675487",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1776628800-1776785391",
+      "best_auto_id": "legacy-4566a78049ac",
+      "best_cost": 0.680723524378318,
+      "candidates": [
+        [
+          "legacy-4566a78049ac",
+          0.680723524378318
+        ],
+        [
+          "legacy-1a48f52aadbb",
+          0.680723524378318
+        ],
+        [
+          "legacy-57e46e39c1e1",
+          0.6814865730477837
+        ],
+        [
+          "legacy-45d49cc75d05",
+          0.6814865730477837
+        ],
+        [
+          "legacy-b581f717b86e",
+          0.8065252967500636
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0010634330729991101,
+      "anchor_err_bars": 25,
+      "price_err_pct": 0.2770246974425522
+    },
+    {
+      "manual_id": "manual-ETHUSDT-4h-resistance-1776628800-1776901741",
+      "best_auto_id": "legacy-e92339c07c44",
+      "best_cost": 0.3151537266080894,
+      "candidates": [
+        [
+          "legacy-e92339c07c44",
+          0.3151537266080894
+        ],
+        [
+          "legacy-c686d47cc001",
+          0.3151537266080894
+        ],
+        [
+          "legacy-d6faf7e7a206",
+          0.3151537266080894
+        ],
+        [
+          "legacy-8e054492be86",
+          0.3151537266080894
+        ],
+        [
+          "legacy-3089db68fd9d",
+          0.3151537266080894
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0015953141166948656,
+      "anchor_err_bars": 6,
+      "price_err_pct": 0.091192805841069
+    },
+    {
+      "manual_id": "manual-SOLUSDT-4h-support-1776427200-1776978172",
+      "best_auto_id": "legacy-83c496746eed",
+      "best_cost": 1.4780977107059443,
+      "candidates": [
+        [
+          "legacy-83c496746eed",
+          1.4780977107059443
+        ],
+        [
+          "legacy-a12a2978b8b3",
+          1.4780977107059443
+        ],
+        [
+          "legacy-0a8eb5ac2c61",
+          1.6560669687012082
+        ],
+        [
+          "legacy-4af8611fd9b4",
+          1.6666240505730778
+        ],
+        [
+          "legacy-02ca9045903c",
+          1.6666240505730778
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0009813868782729109,
+      "anchor_err_bars": 11,
+      "price_err_pct": 0.7191568703143977
+    },
+    {
+      "manual_id": "manual-ETHUSDT-4h-support-1776441600-1776852351",
+      "best_auto_id": "legacy-5f0e3994c8c1",
+      "best_cost": 0.5375446465306002,
+      "candidates": [
+        [
+          "legacy-5f0e3994c8c1",
+          0.5375446465306002
+        ],
+        [
+          "legacy-cbc48b0bc2cc",
+          0.5375446465306002
+        ],
+        [
+          "legacy-d4fbc54b4699",
+          0.8309412078500562
+        ],
+        [
+          "legacy-b126155968e9",
+          0.8330076383282667
+        ],
+        [
+          "legacy-db1ad0e3e0d3",
+          0.8330076383282667
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.003258461777058196,
+      "anchor_err_bars": 11,
+      "price_err_pct": 0.09669811571282716
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-resistance-1776737700-1776751356",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-BASUSDT-4h-resistance-1776686400-1776789649",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-1h-resistance-1776495600-1776772565",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-1h-resistance-1776740400-1776785944",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1775793600-1777049147",
+      "best_auto_id": "legacy-4566a78049ac",
+      "best_cost": 0.5761655657858417,
+      "candidates": [
+        [
+          "legacy-4566a78049ac",
+          0.5761655657858417
+        ],
+        [
+          "legacy-1a48f52aadbb",
+          0.5761655657858417
+        ],
+        [
+          "legacy-57e46e39c1e1",
+          0.5769286144553074
+        ],
+        [
+          "legacy-45d49cc75d05",
+          0.5769286144553074
+        ],
+        [
+          "legacy-b581f717b86e",
+          0.7019673381575873
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0006359302318605789,
+      "anchor_err_bars": 25,
+      "price_err_pct": 0.23092942803377564
+    },
+    {
+      "manual_id": "manual-ETHUSDT-1h-resistance-1776718800-1776841258",
+      "best_auto_id": "legacy-f0f2e9e95791",
+      "best_cost": 0.17325666645578353,
+      "candidates": [
+        [
+          "legacy-f0f2e9e95791",
+          0.17325666645578353
+        ],
+        [
+          "legacy-8e9238505211",
+          0.17325666645578353
+        ],
+        [
+          "legacy-9d77b6997b70",
+          0.17325666645578353
+        ],
+        [
+          "legacy-a2ac851fcf5a",
+          0.17325666645578353
+        ],
+        [
+          "legacy-b8e8038ed468",
+          0.17325666645578353
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 6.030545147853796e-05,
+      "anchor_err_bars": 6,
+      "price_err_pct": 0.11318594108336784
+    },
+    {
+      "manual_id": "manual-BTCUSDT-4h-support-1776758400-1776874989",
+      "best_auto_id": "legacy-bd1bac1b5247",
+      "best_cost": 1.913486398900473,
+      "candidates": [
+        [
+          "legacy-bd1bac1b5247",
+          1.913486398900473
+        ],
+        [
+          "legacy-27ae55e018b5",
+          1.913486398900473
+        ],
+        [
+          "legacy-ec875dc1f078",
+          1.9168247046052937
+        ],
+        [
+          "legacy-61a140aec8df",
+          1.9189392203991136
+        ],
+        [
+          "legacy-96de7ebae779",
+          1.9189392203991136
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.004891601941931399,
+      "anchor_err_bars": 18,
+      "price_err_pct": 0.7118650132634817
+    },
+    {
+      "manual_id": "manual-RAVEUSDT-15m-support-1776743100-1776815123",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-support-1776780000-1776835630",
+      "best_auto_id": "legacy-09b3414740ac",
+      "best_cost": 1.2106492970363965,
+      "candidates": [
+        [
+          "legacy-09b3414740ac",
+          1.2106492970363965
+        ],
+        [
+          "legacy-47cb2353f8e3",
+          1.2106492970363965
+        ],
+        [
+          "legacy-f0da9f491825",
+          1.2106492970363965
+        ],
+        [
+          "legacy-9a0b889efa67",
+          1.2106492970363965
+        ],
+        [
+          "legacy-dbaf88acc189",
+          1.2106492970363965
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0026707084143810468,
+      "anchor_err_bars": 24,
+      "price_err_pct": 1.0209717409119003
+    },
+    {
+      "manual_id": "manual-BASUSDT-1h-resistance-1776812400-1776846004",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-BASUSDT-1h-resistance-1776812400-1776846281",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-BASUSDT-1h-support-1776834000-1776851791",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-BASUSDT-1h-support-1776834000-1776906018",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-resistance-1776686400-1777123807",
+      "best_auto_id": "legacy-4566a78049ac",
+      "best_cost": 0.676963871447446,
+      "candidates": [
+        [
+          "legacy-4566a78049ac",
+          0.676963871447446
+        ],
+        [
+          "legacy-1a48f52aadbb",
+          0.676963871447446
+        ],
+        [
+          "legacy-57e46e39c1e1",
+          0.6777269201169116
+        ],
+        [
+          "legacy-45d49cc75d05",
+          0.6777269201169116
+        ],
+        [
+          "legacy-b581f717b86e",
+          0.8027656438191915
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0006508719262441604,
+      "anchor_err_bars": 25,
+      "price_err_pct": 0.30363176050233537
+    },
+    {
+      "manual_id": "manual-ETHUSDT-4h-support-1776859200-1776998417",
+      "best_auto_id": "legacy-5f0e3994c8c1",
+      "best_cost": 0.5987283214009369,
+      "candidates": [
+        [
+          "legacy-5f0e3994c8c1",
+          0.5987283214009369
+        ],
+        [
+          "legacy-cbc48b0bc2cc",
+          0.5987283214009369
+        ],
+        [
+          "legacy-d4fbc54b4699",
+          0.8921248827203929
+        ],
+        [
+          "legacy-b126155968e9",
+          0.8941913131986035
+        ],
+        [
+          "legacy-db1ad0e3e0d3",
+          0.8941913131986035
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.003877321922417368,
+      "anchor_err_bars": 11,
+      "price_err_pct": 0.0960634681265
+    },
+    {
+      "manual_id": "manual-ORDIUSDT-4h-support-1776384000-1777121706",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-CHIPUSDT-1h-support-1776859200-1776998742",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-CHIPUSDT-1h-support-1776859200-1776924828",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-SOLUSDT-1h-support-1776866400-1776942478",
+      "best_auto_id": "legacy-09b3414740ac",
+      "best_cost": 1.2215193306476615,
+      "candidates": [
+        [
+          "legacy-09b3414740ac",
+          1.2215193306476615
+        ],
+        [
+          "legacy-47cb2353f8e3",
+          1.2215193306476615
+        ],
+        [
+          "legacy-f0da9f491825",
+          1.2215193306476615
+        ],
+        [
+          "legacy-9a0b889efa67",
+          1.2215193306476615
+        ],
+        [
+          "legacy-dbaf88acc189",
+          1.2215193306476615
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0028813428187312038,
+      "anchor_err_bars": 24,
+      "price_err_pct": 1.000475793014966
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-support-1776888000-1776986867",
+      "best_auto_id": "legacy-e3d6148825bd",
+      "best_cost": 1.0854743330144045,
+      "candidates": [
+        [
+          "legacy-e3d6148825bd",
+          1.0854743330144045
+        ],
+        [
+          "legacy-ba66acd8335a",
+          1.085479842717211
+        ],
+        [
+          "legacy-fba1846385a5",
+          1.0899042418590756
+        ],
+        [
+          "legacy-c4b997bc615d",
+          1.0899042418590756
+        ],
+        [
+          "legacy-6c43b7d2b6bc",
+          1.0934957793683227
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.005024620372165824,
+      "anchor_err_bars": 4,
+      "price_err_pct": 0.4190045164833187
+    },
+    {
+      "manual_id": "manual-ZECUSDT-1d-support-1775750400-1778727272",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-ZECUSDT-1d-resistance-1776614400-1777518279",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-HYPEUSDT-4h-support-1775764800-1776571200",
+      "best_auto_id": "legacy-6c43b7d2b6bc",
+      "best_cost": 0.5639150949784875,
+      "candidates": [
+        [
+          "legacy-6c43b7d2b6bc",
+          0.5639150949784875
+        ],
+        [
+          "legacy-56b04e1b9c64",
+          0.5781760556531141
+        ],
+        [
+          "legacy-ba66acd8335a",
+          0.593708586362816
+        ],
+        [
+          "legacy-fba1846385a5",
+          0.5939447857137082
+        ],
+        [
+          "legacy-c4b997bc615d",
+          0.5939447857137082
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 9.036146186036664e-06,
+      "anchor_err_bars": 4,
+      "price_err_pct": 0.40726714583012924
+    },
+    {
+      "manual_id": "manual-ZECUSDT-1d-support-1775750400-1775750400",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-XAUUSDT-4h-resistance-1776427200-1777234919",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-KATUSDT-4h-support-1776931200-1777122135",
+      "best_auto_id": null,
+      "best_cost": Infinity,
+      "candidates": [],
+      "role_match": false,
+      "slope_err": null,
+      "anchor_err_bars": null,
+      "price_err_pct": null,
+      "no_candidates_in_pair": true
+    },
+    {
+      "manual_id": "manual-DOGEUSDT-1d-support-1767628800-1778622436",
+      "best_auto_id": "legacy-3f931c2cc477",
+      "best_cost": 1.478698703270435,
+      "candidates": [
+        [
+          "legacy-3f931c2cc477",
+          1.478698703270435
+        ],
+        [
+          "legacy-f5924919159f",
+          1.478698703270435
+        ],
+        [
+          "legacy-a232ccd4a56d",
+          1.5742651358465751
+        ],
+        [
+          "legacy-82e53c35747b",
+          1.5742651358465751
+        ],
+        [
+          "legacy-8cc3ce4df07d",
+          1.6125470857970468
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.005539680175334033,
+      "anchor_err_bars": 32,
+      "price_err_pct": 0.8307590929513865
+    },
+    {
+      "manual_id": "manual-DOGEUSDT-1d-support-1770307200-1778952712",
+      "best_auto_id": "legacy-3f931c2cc477",
+      "best_cost": 0.9334956734114477,
+      "candidates": [
+        [
+          "legacy-3f931c2cc477",
+          0.9334956734114477
+        ],
+        [
+          "legacy-f5924919159f",
+          0.9334956734114477
+        ],
+        [
+          "legacy-5b167425251c",
+          1.0263176812860892
+        ],
+        [
+          "legacy-c28228c69c74",
+          1.0263176812860892
+        ],
+        [
+          "legacy-b9f7ae4654c4",
+          1.0263176812860892
+        ]
+      ],
+      "role_match": true,
+      "slope_err": 0.0005057817357966689,
+      "anchor_err_bars": 32,
+      "price_err_pct": 0.7557875449640096
+    }
+  ]
+}
