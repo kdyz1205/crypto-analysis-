@@ -77,9 +77,8 @@ def _load_records(symbols, timeframes, max_records, *,
                   manual_oversample: int = 50):
     """Load training records from EVERY source.
 
-    Returns the merged pool (manual oversampled + auto). max_records
-    caps the AUTO portion only - the manual gold is always fully
-    included so style alignment doesn't get throttled by the cap.
+    Returns (records, stats) tuple so callers can build provenance
+    manifests without re-loading the 1.7M-record pool a second time.
     """
     records, stats = collect_records(
         symbols=symbols, timeframes=timeframes,
@@ -93,7 +92,7 @@ def _load_records(symbols, timeframes, max_records, *,
         keep_auto = max(0, max_records - n_manual)
         records = records[:n_manual + keep_auto]
         print(f"[train] truncated to {len(records)} (manual={n_manual}, auto={keep_auto})")
-    return records
+    return records, stats
 
 
 def main():
@@ -131,9 +130,9 @@ def main():
     vqvae = _load_vqvae(Path(cfg.vqvae_checkpoint_path) if cfg.vqvae_checkpoint_path else None,
                         fusion_cfg=cfg)
 
-    records = _load_records(args.symbols, args.timeframes, args.max_records,
-                            use_manual=(not args.no_manual),
-                            manual_oversample=args.manual_oversample)
+    records, ds_stats = _load_records(args.symbols, args.timeframes, args.max_records,
+                                       use_manual=(not args.no_manual),
+                                       manual_oversample=args.manual_oversample)
     print(f"[train] loaded {len(records)} records")
     if not records:
         raise SystemExit("no records - populate data/patterns/*.jsonl first")
@@ -153,12 +152,8 @@ def main():
         "user_outcomes": DEFAULT_OUTCOMES,
     }
     raw_paths = {k: v for k, v in raw_paths.items() if v.exists()}
-    # Re-collect just for the stats dict (records list is already loaded)
-    _, ds_stats = collect_records(
-        symbols=args.symbols, timeframes=args.timeframes,
-        max_legacy_per_pair=None,
-        manual_oversample=(args.manual_oversample if not args.no_manual else 0),
-    )
+    # ds_stats already returned from _load_records; do NOT re-collect
+    # (re-collecting the 1.7M-record pool doubles peak memory to ~5GB).
     split_spec = SplitSpec(
         policy=args.split_policy,        # type: ignore[arg-type]
         train_count=len(split.train_idx),
