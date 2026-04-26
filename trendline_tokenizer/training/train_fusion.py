@@ -227,7 +227,7 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
 
     target_keys = ("next_coarse", "next_fine", "bounce", "brk", "cont",
-                   "buffer_pct", "regime", "invalidation")
+                   "buffer_pct", "regime", "invalidation", "pattern")
 
     for epoch in range(args.epochs):
         model.train()

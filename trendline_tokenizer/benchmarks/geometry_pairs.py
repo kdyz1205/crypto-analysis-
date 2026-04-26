@@ -150,3 +150,53 @@ def label_distribution(pairs: Iterable[LinePair]) -> dict[str, int]:
     for p in pairs:
         counts[p.label] = counts.get(p.label, 0) + 1
     return counts
+
+
+# ── Per-record pattern label (collapses pair labels) ────────────────
+
+# Priority order for ambiguous records — when a record participates in
+# multiple structures, prefer the most-distinctive one.
+# triangle/wedge are highly informative; channel slightly less; the
+# rest are background. parallel_same and unrelated are noise.
+_PATTERN_PRIORITY = ("triangle", "wedge", "channel", "diverging",
+                      "parallel_same", "unrelated")
+_PATTERN_TO_IDX = {label: i for i, label in enumerate(_PATTERN_PRIORITY)}
+
+
+def per_record_pattern_labels(
+    records: Sequence[TrendlineRecord], *,
+    max_per_pair: int | None = 200,
+) -> dict[str, str]:
+    """For each record, return the most-distinctive pair-label it
+    participates in. Records without any valid pair stay 'unrelated'.
+
+    Output dict: record_id -> label_str ('triangle' / 'channel' / ...)
+
+    Used to populate the pattern_head target (per-record) without
+    having to re-derive the geometry at training time.
+    """
+    pairs = all_pairs_within_pair(records, max_per_pair=max_per_pair)
+
+    # For each record, gather (priority, pair) tuples; lower priority wins
+    by_record: dict[str, str] = {}
+    for p in pairs:
+        for rid in (p.line_a_id, p.line_b_id):
+            current = by_record.get(rid)
+            cur_pri = _PATTERN_TO_IDX.get(current, len(_PATTERN_PRIORITY)) if current else len(_PATTERN_PRIORITY)
+            new_pri = _PATTERN_TO_IDX.get(p.label, len(_PATTERN_PRIORITY))
+            if new_pri < cur_pri:
+                by_record[rid] = p.label
+
+    # Records that never paired are 'unrelated'
+    for r in records:
+        by_record.setdefault(r.id, "unrelated")
+    return by_record
+
+
+def per_record_pattern_distribution(records: Sequence[TrendlineRecord], *,
+                                     max_per_pair: int | None = 200) -> dict[str, int]:
+    labels = per_record_pattern_labels(records, max_per_pair=max_per_pair)
+    counts: dict[str, int] = {}
+    for v in labels.values():
+        counts[v] = counts.get(v, 0) + 1
+    return counts

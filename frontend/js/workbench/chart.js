@@ -340,23 +340,38 @@ export async function loadCurrent(forcePatterns = false) {
   }
 
   try {
-    // 2026-04-24: per PRINCIPLES.md P1 ("数据深度 = 交易所物理上限. 永远
-    // 不要在前端 / 后端按 TF 给 days 加 cap").
+    // 2026-04-25: per CLAUDE.md "When in doubt about a default value":
+    // **Chart initial-fetch SIZE is bounded by render budget, NOT data
+    // depth.** Lightweight-charts is smooth up to ~5000 bars; beyond
+    // that, candle painting + indicator recompute + marker placement
+    // visibly stutters. Older bars are NOT lost — they lazy-load via
+    // the existing `/api/ohlcv/backfill` path when the user scrolls
+    // toward the left edge.
     //
-    // Old tfDays (1m→1d, 5m→2d, 15m→5d, 1h→21d, 4h→84d, 1d→500d) was
-    // arbitrarily shallow — strategy.py was already loading 730d for
-    // 4h and 1095d for 1d, so chart vs analysis disagreed on what
-    // "history" meant. User saw HYPE deep (cached CSV) and other
-    // symbols shallow (chart cap kicked in before the cache filled).
+    // Why the previous "1m=30d" rule had to die: 30d of 1m = 43,200
+    // bars = 15MB JSON. The API took ~25s to serialize, the browser
+    // froze for ~10s parsing it, and the chart took another ~5s to
+    // mount the indicator series across all 43K bars. User clicked
+    // "1m" and the page hung for 30+ seconds. Strategy.py's deep
+    // history is a separate fetch path with its own caching — it
+    // does NOT need to share the chart's initial-window budget.
     //
-    // New rule: chart uses the SAME days as the strategy snapshot. One
-    // source of truth, parity across symbols. Bitget's klines paginate
-    // (200/page); the backend handles pagination so the result is
-    // always physical-limit, not our opinion.
+    // The target is ~5000 bars per TF for smooth render on commodity
+    // laptops (HYPE 1m → 3.5d, 4h → 833d, 1d → 5000d ≈ all history).
+    // Each entry below is computed as: max bars / bars-per-day.
     const tfDays = {
-      '1m': 30, '3m': 30, '5m': 30, '15m': 60, '30m': 90,
-      '1h': 180, '2h': 365, '4h': 730, '6h': 730, '12h': 1095,
-      '1d': 1095, '1w': 3650,
+      '1m': 4,        // 5760 bars
+      '3m': 12,       // 5760 bars
+      '5m': 18,       // 5184 bars
+      '15m': 60,      // 5760 bars
+      '30m': 100,     // 4800 bars
+      '1h': 210,      // 5040 bars
+      '2h': 420,      // 5040 bars
+      '4h': 730,      // 4380 bars
+      '6h': 1100,     // 4400 bars
+      '12h': 2500,    // 5000 bars
+      '1d': 5000,     // 5000 bars (effectively all history)
+      '1w': 3650,     // ~520 bars (full Bitget retention)
     };
     const days = tfDays[currentInterval] || 180;
 
@@ -619,7 +634,11 @@ export async function loadCurrent(forcePatterns = false) {
       const { initTradeMarkers, refreshTradeMarkers, startTradeMarkersAutoRefresh } =
         await import('./overlays/trade_markers_overlay.js');
       initTradeMarkers(candleSeries);
-      void refreshTradeMarkers(currentSymbol).catch(() => {});
+      // Pass currentInterval so the overlay can bucket entry fills by
+      // bar (one marker per (bar, side), not one per fill). Switching
+      // TF re-runs this with the new interval, so the bucketing
+      // refreshes naturally.
+      void refreshTradeMarkers(currentSymbol, currentInterval).catch(() => {});
       startTradeMarkersAutoRefresh();
     } catch (err) { console.warn('[trade_markers] wire err:', err); }
     markBoot('patterns', 'ok', 'manual-only mode');

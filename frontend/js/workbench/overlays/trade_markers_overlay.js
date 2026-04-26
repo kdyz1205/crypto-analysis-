@@ -2,30 +2,43 @@
 //
 // 2026-04-25: OKX/Bitget-style fill markers on the chart.
 //
-// Each filled cond + each closed-position event produces a marker:
-//
 //   ▲ green below bar  = LONG entry filled
 //   ▼ red   above bar  = SHORT entry filled
-//   ▼ gray  above bar  = LONG exit (positions closed from below)
-//   ▲ gray  below bar  = SHORT exit
 //   🔴 red  above bar  = SL hit
 //   🎯 amber above bar = TP hit
+//   ⬛ gray  above bar  = manual/other close
 //
-// The marker timestamp is the actual fill_time, so:
-//   - On 1m chart, the marker pinpoints the exact minute
-//   - On 1d chart, the marker maps to the day-bar containing that minute
+// 2026-04-25 (later, per user request): **Per-bar dedup.** "一次多空就好了
+// — 在一个时间框架里面，你多次的买入就会显示一次。只有打开到最小的时间
+// 框架，你才会看到每次。" Multiple entries on the SAME side within the
+// SAME chart bar collapse to ONE marker. Switching to a smaller TF
+// (1m / 5m) splits them apart again because each fill now lands in
+// its own bucket.
 //
-// This file ONLY does setMarkers; it doesn't change candle data or
-// drawings. Safe to plug into any chart that already has a candleSeries.
+// Implementation: bucket entries by `(floor(time / TF_seconds), side)`.
+// Keep one representative fill per bucket (latest within the bucket).
+// Exits stay per-fill — SL / TP / manual closes are individual story-
+// points the trader needs to see.
 
 import { fetchJson } from '../../util/fetch.js';
 
 let _candleSeries = null;
 let _currentSymbol = null;
+let _currentInterval = null;     // needed to compute per-bar buckets
 let _refreshTimer = null;
 
 const REFRESH_MS = 60_000;        // refetch every 60s in case new fills arrive
 const LOOKBACK_DAYS = 30;          // keep marker count manageable
+
+// TF → seconds. Used for floor-to-bar bucketing of entry markers.
+// UTC-aligned; lightweight-charts snaps marker.time to the bar
+// containing it, so per-second precision past the bucket boundary
+// doesn't matter.
+const TF_SECONDS = {
+  '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+  '1h': 3600, '2h': 7200, '4h': 14400, '6h': 21600, '12h': 43200,
+  '1d': 86400, '1w': 604800,
+};
 
 export function initTradeMarkers(candleSeries) {
   _candleSeries = candleSeries;
@@ -33,11 +46,13 @@ export function initTradeMarkers(candleSeries) {
 
 /**
  * Pull fills for `symbol` and apply as markers. Replaces any prior set.
- * Caller decides when to call (typically on chart.load.succeeded).
+ * `interval` is required for per-bar bucketing — same fill list, different
+ * TF → different marker count.
  */
-export async function refreshTradeMarkers(symbol) {
+export async function refreshTradeMarkers(symbol, interval) {
   if (!_candleSeries || !symbol) return;
   _currentSymbol = String(symbol).toUpperCase();
+  if (interval) _currentInterval = interval;
   let payload;
   try {
     payload = await fetchJson(
@@ -51,7 +66,10 @@ export async function refreshTradeMarkers(symbol) {
   // Race guard: if symbol switched while fetch was in flight, drop.
   if (String(_currentSymbol).toUpperCase() !== String(symbol).toUpperCase()) return;
   const fills = Array.isArray(payload?.fills) ? payload.fills : [];
-  const markers = fills.map(_fillToMarker).filter(Boolean);
+  const intervalSec = TF_SECONDS[_currentInterval] || 3600;  // 1h fallback
+  const markers = _bucketEntriesPerBar(fills, intervalSec)
+    .map(_fillToMarker)
+    .filter(Boolean);
   // lightweight-charts requires markers sorted by time ascending
   markers.sort((a, b) => a.time - b.time);
   try {
@@ -64,7 +82,7 @@ export async function refreshTradeMarkers(symbol) {
 export function startTradeMarkersAutoRefresh() {
   stopTradeMarkersAutoRefresh();
   _refreshTimer = setInterval(() => {
-    if (_currentSymbol) void refreshTradeMarkers(_currentSymbol);
+    if (_currentSymbol) void refreshTradeMarkers(_currentSymbol, _currentInterval);
   }, REFRESH_MS);
 }
 
@@ -79,14 +97,50 @@ export function clearTradeMarkers() {
 
 // ─── Internals ──────────────────────────────────────────────────────────
 
+/**
+ * Collapse entry fills that share `(bar_bucket, side)` into a single
+ * representative fill. Exits and other types pass through unchanged.
+ *
+ * Why floor-bucketing works even when bars have non-UTC-midnight opens
+ * (Bitget 1d opens at UTC 16:00): lightweight-charts snaps marker.time
+ * to the bar CONTAINING that time, so the bucket key only needs to be
+ * a stable function of the time within the desired granularity. Two
+ * fills with `floor(t / 86400)` matching share a calendar day, and
+ * lightweight-charts snaps both into the same daily bar regardless of
+ * the bar's open offset.
+ */
+function _bucketEntriesPerBar(fills, intervalSec) {
+  const entryBuckets = new Map();   // key `${bucket}|${side}` → latest fill
+  const passthrough = [];
+
+  for (const f of fills) {
+    if (!f || typeof f.time !== 'number') continue;
+    const type = (f.type || '').toLowerCase();
+    if (type !== 'entry') {
+      passthrough.push(f);
+      continue;
+    }
+    const side = (f.side || '').toLowerCase();
+    const bucket = Math.floor(f.time / intervalSec) * intervalSec;
+    const key = `${bucket}|${side}`;
+    const existing = entryBuckets.get(key);
+    if (!existing || existing.time < f.time) {
+      entryBuckets.set(key, f);
+    }
+  }
+
+  return [...entryBuckets.values(), ...passthrough];
+}
+
 function _fillToMarker(f) {
   if (!f || typeof f.time !== 'number') return null;
   const type = (f.type || '').toLowerCase();
   const side = (f.side || '').toLowerCase();
   const closeReason = (f.close_reason || '').toLowerCase();
 
-  // Build a label that fits OKX/Bitget style: emoji + abbreviation
-  // (no full sentences — chart space is precious).
+  // 2026-04-25: User asked for TradingView/OKX/Bitget-style — just the
+  // 多/空 character, no price, no qty. Arrow shape + color + position
+  // already conveys side; text is purely a Chinese-language hint.
   if (type === 'entry') {
     const isLong = side === 'long';
     return {
@@ -94,8 +148,7 @@ function _fillToMarker(f) {
       position: isLong ? 'belowBar' : 'aboveBar',
       color: isLong ? '#26a69a' : '#ef5350',
       shape: isLong ? 'arrowUp' : 'arrowDown',
-      text: _entryLabel(side, f.price, f.qty),
-      // size: 1, // default
+      text: isLong ? '多' : '空',
     };
   }
 
@@ -132,12 +185,6 @@ function _fillToMarker(f) {
   return null;
 }
 
-function _entryLabel(side, price, qty) {
-  const sideLabel = side === 'long' ? '多' : '空';
-  const qtyTxt = (qty != null && Number.isFinite(qty)) ? ` x${_qtyFmt(qty)}` : '';
-  return `${sideLabel} ${_priceFmt(price)}${qtyTxt}`;
-}
-
 function _priceFmt(p) {
   if (p == null) return '';
   const v = Number(p);
@@ -146,12 +193,6 @@ function _priceFmt(p) {
   if (v >= 10) return v.toFixed(3);
   if (v >= 1) return v.toFixed(4);
   return v.toFixed(6);
-}
-
-function _qtyFmt(q) {
-  const v = Number(q);
-  if (!Number.isFinite(v)) return '';
-  return v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 function _pnlSuffix(pnl) {

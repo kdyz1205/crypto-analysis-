@@ -103,3 +103,50 @@ def test_label_distribution():
     dist = label_distribution(pairs)
     assert dist.get("triangle", 0) >= 1
     assert dist.get("parallel_same", 0) >= 1
+
+
+# ── Per-record pattern labels ─────────────────────────────────────────
+
+def test_per_record_pattern_priority():
+    """When a record participates in multiple pair structures, the
+    higher-priority (more-distinctive) one wins."""
+    from trendline_tokenizer.benchmarks.geometry_pairs import per_record_pattern_labels
+    # sup1 + res1 form a triangle (converging opposite roles).
+    # sup2 only parallels sup1 (kept far enough from res1 by symbol).
+    recs = [
+        _r("sup1", role="support", start_idx=10, end_idx=100,
+           start_price=100, end_price=110),
+        _r("res1", role="resistance", start_idx=10, end_idx=100,
+           start_price=130, end_price=120),
+        _r("sup2_iso", role="support", start_idx=10, end_idx=100,
+           start_price=95, end_price=105, symbol="ETH"),   # different symbol, isolated
+    ]
+    labels = per_record_pattern_labels(recs)
+    # sup1 is in a triangle with res1. Triangle wins.
+    assert labels["sup1"] == "triangle"
+    assert labels["res1"] == "triangle"
+    # sup2 is on a different symbol — no pair, falls to 'unrelated'
+    assert labels["sup2_iso"] == "unrelated"
+
+
+def test_per_record_pattern_priority_when_multiple_pairs():
+    """sup1 in BOTH triangle + parallel_same — triangle wins."""
+    from trendline_tokenizer.benchmarks.geometry_pairs import per_record_pattern_labels
+    recs = [
+        _r("sup1", role="support", start_idx=10, end_idx=100,
+           start_price=100, end_price=110),
+        _r("res1", role="resistance", start_idx=10, end_idx=100,
+           start_price=130, end_price=120),  # triangle w/ sup1
+        _r("sup2", role="support", start_idx=10, end_idx=100,
+           start_price=95, end_price=105),   # parallel w/ sup1
+    ]
+    labels = per_record_pattern_labels(recs)
+    # sup1 in (triangle vs parallel_same) -> triangle wins
+    assert labels["sup1"] == "triangle"
+
+
+def test_per_record_pattern_isolated_record_is_unrelated():
+    from trendline_tokenizer.benchmarks.geometry_pairs import per_record_pattern_labels
+    recs = [_r("solo", symbol="BTC")]
+    labels = per_record_pattern_labels(recs)
+    assert labels["solo"] == "unrelated"

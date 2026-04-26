@@ -47,8 +47,11 @@ class SequenceExample:
     # regime:        0=low_vol, 1=normal_vol, 2=high_vol
     # invalidation:  0=valid, 1=weak_pen, 2=confirmed_break,
     #                3=break_retest, 4=failed_breakout
+    # pattern:       0=channel, 1=triangle, 2=wedge,
+    #                3=parallel_same, 4=diverging, 5=unrelated
     regime: int = 0
     invalidation: int = 0
+    pattern: int = 5     # default 'unrelated' if no neighbour
 
 
 def _price_window(df: pd.DataFrame, end_idx: int, length: int) -> tuple[np.ndarray, np.ndarray]:
@@ -221,6 +224,12 @@ def build_examples(
     vqvae=None,
 ) -> list[SequenceExample]:
     """One example per record (the record is the prediction target)."""
+    # Pattern labels: derive once for the whole batch (per-record neighbour
+    # geometry); avoids O(n^2) recomputation per example.
+    from ..benchmarks.geometry_pairs import per_record_pattern_labels
+    pattern_label_map = per_record_pattern_labels(records, max_per_pair=200)
+    _PATTERN_NAME_TO_IDX = {"channel": 0, "triangle": 1, "wedge": 2,
+                             "parallel_same": 3, "diverging": 4, "unrelated": 5}
     sorted_recs = sorted(records, key=lambda r: r.end_bar_index)
     examples: list[SequenceExample] = []
     for i, target in enumerate(sorted_recs):
@@ -269,6 +278,8 @@ def build_examples(
             cont=outcomes["cont"], buffer_pct=outcomes["buffer_pct"],
             regime=outcomes.get("regime", 1),
             invalidation=outcomes.get("invalidation", 0),
+            pattern=_PATTERN_NAME_TO_IDX.get(
+                pattern_label_map.get(target.id, "unrelated"), 5),
         ))
     return examples
 
@@ -299,4 +310,5 @@ class SequenceDataset(Dataset):
             "buffer_pct": torch.tensor(ex.buffer_pct, dtype=torch.float32),
             "regime": torch.tensor(ex.regime, dtype=torch.long),
             "invalidation": torch.tensor(ex.invalidation, dtype=torch.long),
+            "pattern": torch.tensor(ex.pattern, dtype=torch.long),
         }
