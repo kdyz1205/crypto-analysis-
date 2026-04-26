@@ -183,6 +183,30 @@ def test_heads_forward_shapes():
     assert out["break_logits"].shape == (B, 2)
     assert out["continuation_logits"].shape == (B, 2)
     assert out["buffer_pct"].shape == (B,)
+    # Phase 2 heads (per the user's research-grade spec)
+    assert out["regime_logits"].shape == (B, cfg.n_regime_classes)
+    assert out["pattern_logits"].shape == (B, cfg.n_pattern_classes)
+    assert out["invalidation_logits"].shape == (B, cfg.n_invalidation_classes)
+
+
+def test_heads_phase2_can_be_disabled():
+    cfg = FusionConfig(d_model=32, regime_head=False,
+                       pattern_head=False, invalidation_head=False)
+    heads = MultiTaskHeads(cfg)
+    B = 2
+    pooled = torch.randn(B, cfg.d_model)
+    out = heads(pooled)
+    assert "regime_logits" not in out
+    assert "pattern_logits" not in out
+    assert "invalidation_logits" not in out
+    assert "bounce_logits" in out
+
+
+def test_heads_phase2_default_class_counts():
+    cfg = FusionConfig()
+    assert cfg.n_regime_classes == 3
+    assert cfg.n_pattern_classes == 6
+    assert cfg.n_invalidation_classes == 5
 
 
 # ---------------------------------------------------------------------

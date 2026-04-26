@@ -50,12 +50,22 @@ class FusionConfig(BaseModel):
     n_heads_fusion: int = 4
     dropout: float = 0.1
 
-    # heads
+    # heads — Phase 1 supervised (already in production)
     next_token_head: bool = True
     bounce_head: bool = True
     break_head: bool = True
     continuation_head: bool = True
     buffer_head: bool = True
+    # heads — Phase 2 multi-task (per the user's research-grade spec)
+    # regime: low_vol / normal_vol / high_vol  (from volatility_atr_pct)
+    # pattern: channel / triangle / wedge / parallel_same / diverging / unrelated
+    # invalidation: valid / weak_pen / confirmed_break / break_retest / failed_breakout
+    regime_head: bool = True
+    n_regime_classes: int = 3
+    pattern_head: bool = True
+    n_pattern_classes: int = 6
+    invalidation_head: bool = True
+    n_invalidation_classes: int = 5
 
     def n_streams(self) -> int:
         return (int(self.use_rule_tokens)

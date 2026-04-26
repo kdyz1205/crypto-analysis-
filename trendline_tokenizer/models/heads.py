@@ -17,12 +17,17 @@ class MultiTaskHeads(nn.Module):
         super().__init__()
         self.cfg = cfg
         h = cfg.d_model
+        # Phase 1: next-token + bounce/break/cont + buffer
         self.next_coarse = nn.Linear(h, cfg.rule_coarse_vocab_size) if cfg.next_token_head else None
         self.next_fine = nn.Linear(h, cfg.rule_fine_vocab_size) if cfg.next_token_head else None
         self.bounce = nn.Linear(h, 2) if cfg.bounce_head else None
         self.brk = nn.Linear(h, 2) if cfg.break_head else None
         self.cont = nn.Linear(h, 2) if cfg.continuation_head else None
         self.buffer = nn.Sequential(nn.Linear(h, h), nn.GELU(), nn.Linear(h, 1)) if cfg.buffer_head else None
+        # Phase 2: regime + pattern + invalidation
+        self.regime = nn.Linear(h, cfg.n_regime_classes) if cfg.regime_head else None
+        self.pattern = nn.Linear(h, cfg.n_pattern_classes) if cfg.pattern_head else None
+        self.invalidation = nn.Linear(h, cfg.n_invalidation_classes) if cfg.invalidation_head else None
 
     def forward(self, pooled: torch.Tensor) -> dict:
         out: dict[str, torch.Tensor] = {}
@@ -37,4 +42,11 @@ class MultiTaskHeads(nn.Module):
             out["continuation_logits"] = self.cont(pooled)
         if self.buffer is not None:
             out["buffer_pct"] = self.buffer(pooled).squeeze(-1)
+        # Phase 2 heads (per the user's spec)
+        if self.regime is not None:
+            out["regime_logits"] = self.regime(pooled)
+        if self.pattern is not None:
+            out["pattern_logits"] = self.pattern(pooled)
+        if self.invalidation is not None:
+            out["invalidation_logits"] = self.invalidation(pooled)
         return out
