@@ -1,0 +1,283 @@
+{
+  "manifest": {
+    "artifact_name": "fusion.v0.1-1777172621",
+    "model_kind": "fusion",
+    "model_version": "fusion.v0.1",
+    "tokenizer_version": "rule.v1+raw.v1",
+    "training_dataset_version": "legacy-patterns-30000",
+    "feature_norm_version": "none",
+    "ckpt_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\fusion.v0.1-1777172621\\fusion.pt",
+    "config_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\fusion.v0.1-1777172621\\fusion.json",
+    "metrics": {
+      "val_loss": 0.0,
+      "n_train": 26955,
+      "n_val": 2995,
+      "streams": {
+        "rule": true,
+        "learned": false,
+        "raw": true
+      }
+    },
+    "created_at": 1777172621
+  },
+  "n_eval_examples": 1499,
+  "bounce": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.8012,
+    "macro_f1": 0.6001,
+    "per_class": {
+      "no": {
+        "support": 148,
+        "tp": 69,
+        "fp": 219,
+        "fn": 79,
+        "precision": 0.2396,
+        "recall": 0.4662,
+        "f1": 0.3165
+      },
+      "yes": {
+        "support": 1351,
+        "tp": 1132,
+        "fp": 79,
+        "fn": 219,
+        "precision": 0.9348,
+        "recall": 0.8379,
+        "f1": 0.8837
+      }
+    },
+    "confusion_matrix": [
+      [
+        69,
+        79
+      ],
+      [
+        219,
+        1132
+      ]
+    ]
+  },
+  "break": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.501,
+    "macro_f1": 0.425,
+    "per_class": {
+      "no": {
+        "support": 402,
+        "tp": 103,
+        "fp": 449,
+        "fn": 299,
+        "precision": 0.1866,
+        "recall": 0.2562,
+        "f1": 0.2159
+      },
+      "yes": {
+        "support": 1097,
+        "tp": 648,
+        "fp": 299,
+        "fn": 449,
+        "precision": 0.6843,
+        "recall": 0.5907,
+        "f1": 0.6341
+      }
+    },
+    "confusion_matrix": [
+      [
+        103,
+        299
+      ],
+      [
+        449,
+        648
+      ]
+    ]
+  },
+  "continuation": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.6104,
+    "macro_f1": 0.4105,
+    "per_class": {
+      "no": {
+        "support": 1097,
+        "tp": 894,
+        "fp": 381,
+        "fn": 203,
+        "precision": 0.7012,
+        "recall": 0.8149,
+        "f1": 0.7538
+      },
+      "yes": {
+        "support": 402,
+        "tp": 21,
+        "fp": 203,
+        "fn": 381,
+        "precision": 0.0938,
+        "recall": 0.0522,
+        "f1": 0.0671
+      }
+    },
+    "confusion_matrix": [
+      [
+        894,
+        203
+      ],
+      [
+        381,
+        21
+      ]
+    ]
+  },
+  "regime": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.054,
+    "macro_f1": 0.2288,
+    "per_class": {
+      "low_vol": {
+        "support": 1418,
+        "tp": 0,
+        "fp": 0,
+        "fn": 1418,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "normal_vol": {
+        "support": 81,
+        "tp": 81,
+        "fp": 74,
+        "fn": 0,
+        "precision": 0.5226,
+        "recall": 1.0,
+        "f1": 0.6864
+      },
+      "high_vol": {
+        "support": 0,
+        "tp": 0,
+        "fp": 1344,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        0,
+        74,
+        1344
+      ],
+      [
+        0,
+        81,
+        0
+      ],
+      [
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "invalidation": {
+    "n_samples": 1499,
+    "overall_accuracy": 0.0507,
+    "macro_f1": 0.0413,
+    "per_class": {
+      "valid": {
+        "support": 427,
+        "tp": 34,
+        "fp": 56,
+        "fn": 393,
+        "precision": 0.3778,
+        "recall": 0.0796,
+        "f1": 0.1315
+      },
+      "weak_pen": {
+        "support": 0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "confirmed_break": {
+        "support": 911,
+        "tp": 23,
+        "fp": 35,
+        "fn": 888,
+        "precision": 0.3966,
+        "recall": 0.0252,
+        "f1": 0.0475
+      },
+      "break_retest": {
+        "support": 142,
+        "tp": 0,
+        "fp": 0,
+        "fn": 142,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "failed_breakout": {
+        "support": 19,
+        "tp": 19,
+        "fp": 1332,
+        "fn": 0,
+        "precision": 0.0141,
+        "recall": 1.0,
+        "f1": 0.0277
+      }
+    },
+    "confusion_matrix": [
+      [
+        34,
+        0,
+        35,
+        0,
+        358
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        52,
+        0,
+        23,
+        0,
+        836
+      ],
+      [
+        4,
+        0,
+        0,
+        0,
+        138
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        19
+      ]
+    ]
+  },
+  "buffer_pct": {
+    "n_samples": 1499,
+    "mae": 0.015657,
+    "median_abs_err": 0.009091,
+    "p95_abs_err": 0.043731,
+    "true_mean": 0.022594,
+    "pred_mean": 0.009501
+  },
+  "next_coarse": {
+    "n_samples": 1499,
+    "top1": 0.4857,
+    "top5": 0.7892,
+    "top10": 0.8426
+  }
+}

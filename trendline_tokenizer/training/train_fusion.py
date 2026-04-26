@@ -254,15 +254,19 @@ def main():
         if n_total == 0:
             continue
         # weight[c] = N / (n_present * count[c]) for classes with data;
-        # 0 for missing. This way:
-        #   - present classes stay close to mean=1 after normalisation
-        #   - missing classes get 0 (irrelevant — F.cross_entropy weight
-        #     only applies to the GT class anyway, but it keeps the
-        #     normalisation honest).
+        # for missing classes we use a small FLOOR (not 0) — F.cross_entropy
+        # with weight=0 for ALL targets in a batch divides by 0 and emits
+        # NaN. Verified empirically: phase2_v2 had val_loss=0.0 because
+        # 94/94 val batches were NaN-skipped on regime (class 0 absent
+        # from train, present in val). Floor 0.1 keeps the weight low
+        # enough to NOT distract the model but non-zero so the loss is
+        # finite when GT lands on a missing class.
         n_present = sum(1 for c in counts if c > 0)
         if n_present == 0:
             continue
-        ws = [n_total / (n_present * c) if c > 0 else 0.0 for c in counts]
+        MISSING_CLASS_FLOOR = 0.1
+        ws = [n_total / (n_present * c) if c > 0 else MISSING_CLASS_FLOOR
+              for c in counts]
         t = torch.tensor(ws, dtype=torch.float32)
         # Normalise so the mean over PRESENT classes is ~1
         present_mask = torch.tensor([c > 0 for c in counts])
