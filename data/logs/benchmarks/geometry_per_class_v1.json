@@ -1,0 +1,140 @@
+{
+  "manifest": {
+    "artifact_name": "geometry.v0.1-1777169191",
+    "model_kind": "geometry-classifier",
+    "model_version": "geometry.v0.1",
+    "tokenizer_version": "raw_features.v1",
+    "training_dataset_version": "trendline-structure-v0.1.0",
+    "feature_norm_version": "none",
+    "ckpt_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\geometry.v0.1-1777169191\\geometry.pt",
+    "config_path": "C:\\Users\\alexl\\Desktop\\crypto-analysis-\\checkpoints\\fusion\\geometry.v0.1-1777169191\\geometry_config.json",
+    "metrics": {
+      "val_loss": 0.1908912668004632,
+      "val_acc": 0.9434267222881317,
+      "n_pairs": 2115,
+      "n_records": 1000
+    },
+    "created_at": 1777169191
+  },
+  "n_records_eval": 1500,
+  "n_pairs_eval": 3885,
+  "truth_distribution": {
+    "wedge": 35,
+    "triangle": 44,
+    "channel": 11,
+    "parallel_same": 3775,
+    "diverging": 14,
+    "unrelated": 6
+  },
+  "metrics": {
+    "n_samples": 3885,
+    "overall_accuracy": 0.9717,
+    "macro_f1": 0.1643,
+    "per_class": {
+      "channel": {
+        "support": 11,
+        "tp": 0,
+        "fp": 0,
+        "fn": 11,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "triangle": {
+        "support": 44,
+        "tp": 0,
+        "fp": 0,
+        "fn": 44,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "wedge": {
+        "support": 35,
+        "tp": 0,
+        "fp": 0,
+        "fn": 35,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "parallel_same": {
+        "support": 3775,
+        "tp": 3775,
+        "fp": 110,
+        "fn": 0,
+        "precision": 0.9717,
+        "recall": 1.0,
+        "f1": 0.9856
+      },
+      "diverging": {
+        "support": 14,
+        "tp": 0,
+        "fp": 0,
+        "fn": 14,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      },
+      "unrelated": {
+        "support": 6,
+        "tp": 0,
+        "fp": 0,
+        "fn": 6,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        0,
+        0,
+        0,
+        11,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        44,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        35,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        3775,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        14,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        6,
+        0,
+        0
+      ]
+    ]
+  }
+}
